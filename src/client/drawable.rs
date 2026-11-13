@@ -296,8 +296,10 @@ impl Drawable {
     /// (#174) `getCurrentClientBonePositions(boneNamePrefix, startIndex, positions, transforms, maxBones)`
     /// (Drawable.cpp:799-822): each draw module's [`W3DModelDraw::get_current_bone_positions`] in turn while `maxBones`
     /// is above 0, the arrays moved on and `maxBones` lowered by each module's count. `None` for a `NULL` array. Returns
-    /// the count.
-    pub fn get_current_client_bone_positions(&self, bone_name_prefix: &[u8], start_index: i32, positions: Option<&mut [Coord3D]>, transforms: Option<&mut [Matrix3D]>, max_bones: i32) -> i32 {
+    /// the count. (#179) Each module's bones at `sync_time` (`WW3D::Get_Sync_Time()`), read without writing the render
+    /// objects ([`W3DModelDraw::peek_current_bone_positions`]): its caller, the FX lists' `doFxAtBones`, holds the
+    /// drawables only to read (upstream's query moves each animation on and validates its hierarchy: #179's gaps).
+    pub fn get_current_client_bone_positions(&self, bone_name_prefix: &[u8], start_index: i32, positions: Option<&mut [Coord3D]>, transforms: Option<&mut [Matrix3D]>, max_bones: i32, sync_time: u32) -> i32 {
         let mut positions = positions;
         let mut transforms = transforms;
         let mut count = 0;
@@ -309,7 +311,7 @@ impl Drawable {
             }
             let p = positions.as_deref_mut().map(|p| p.get_mut(p_off..).unwrap_or_default());
             let t = transforms.as_deref_mut().map(|t| t.get_mut(t_off..).unwrap_or_default());
-            let subcount = dm.get_current_bone_positions(bone_name_prefix, start_index, p, t, max_bones);
+            let subcount = dm.peek_current_bone_positions(bone_name_prefix, start_index, p, t, max_bones, sync_time);
             if subcount > 0 {
                 count += subcount;
                 if positions.is_some() {
@@ -474,7 +476,7 @@ impl Drawable {
     /// puts it at the drawable's, [`Drawable::react_to_transform_change`]).
     pub fn handle_weapon_fire_fx_at<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, env: &mut DrawEnv<'_, A>) -> Option<WeaponFireFxAt> {
         for dm in self.get_draw_modules(env) {
-            if let Some(at) = dm.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl) {
+            if let Some(at) = dm.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, env.sync_time) {
                 return Some(at);
             }
         }
@@ -534,6 +536,10 @@ pub struct ClientDrawables {
     /// (#168) `GameClient::m_nextDrawableID` for the drawables the client numbers itself (the logic-made ones): from
     /// [`LOGIC_DRAWABLE_ID_BASE`], apart from the object-backed drawables, whose ids are their objects'.
     pub next_drawable_id: DrawableId,
+    /// (#179) `WW3D::Get_Sync_Time()`: the sync time of the last [`ClientDrawables::draw`] or
+    /// [`ClientDrawables::apply_events`] (upstream's is a global the display sets each frame), which the bone queries of
+    /// the client update modules and the effects read (an animated bone is posed at it).
+    pub sync_time: u32,
 }
 
 /// (#168) The first id [`ClientDrawables::alloc_drawable_id`] gives. Upstream numbers every drawable from one counter
@@ -558,6 +564,7 @@ impl Default for ClientDrawables {
             laser_module_data: BTreeMap::new(),
             logic_drawables: BTreeMap::new(),
             next_drawable_id: LOGIC_DRAWABLE_ID_BASE,
+            sync_time: 0,
         }
     }
 }
@@ -768,6 +775,7 @@ impl ClientDrawables {
     /// [`ClientFx::weapon_fire_fx`] once the drawable has answered `handleWeaponFireFX`). Other events are left to
     /// their consumers.
     pub fn apply_events<A: W3dAssetSource>(&mut self, w: &World, events: &[ClientEvent], assets: &mut A, sync_time: u32) {
+        self.sync_time = sync_time;
         for e in events {
             match e {
                 ClientEvent::ObjectCreated { object_id, .. } => {
@@ -856,7 +864,7 @@ impl ClientDrawables {
                             contact_weapon: *contact_weapon,
                             handled: handled.map(|h| (h.bone_transform, h.render_hidden)),
                         };
-                        let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index: self.local_player_index.or(w.players.local_index()) };
+                        let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index: self.local_player_index.or(w.players.local_index()), sync_time: self.sync_time };
                         self.fx.weapon_fire_fx(&host, &mut self.random, &f);
                     }
                 }
@@ -922,7 +930,7 @@ impl ClientDrawables {
                 _ => {}
             }
             // the effects of the event, in its place among the drawables' (GitHub #43, #44)
-            let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index: self.local_player_index.or(w.players.local_index()) };
+            let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index: self.local_player_index.or(w.players.local_index()), sync_time: self.sync_time };
             self.fx.apply_event(&host, &mut self.random, e);
         }
     }
@@ -941,7 +949,7 @@ impl ClientDrawables {
         let mut destroyed = false;
         let local_player_index = self.local_player_index.or(w.players.local_index());
         {
-            let mut host = DrawableClientHost { world: w, drawable: d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+            let mut host = DrawableClientHost { world: w, drawable: d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed, sync_time: self.sync_time };
             for m in &mut modules {
                 if let ClientUpdateModule::Laser(l) = &mut m.module {
                     l.destroy(&mut host);
@@ -999,26 +1007,26 @@ impl ClientDrawables {
                     b.hide_beacon(&mut host);
                 }
                 (ClientUpdateCall::Update, ClientUpdateModule::Sway(s)) => {
-                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed, sync_time: self.sync_time };
                     if s.client_update(&mut host).is_err() {
                         // (not reached: the module's drawable is the host's)
                         self.errors.push((d.template.clone(), SWAY_CLIENT_UPDATE.to_vec(), "SwayClientUpdate without a drawable".into()));
                     }
                 }
                 (ClientUpdateCall::Update, ClientUpdateModule::AnimatedParticleSysBone(a)) => {
-                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed, sync_time: self.sync_time };
                     a.client_update(&mut host);
                 }
                 (ClientUpdateCall::Update, ClientUpdateModule::Laser(l)) => {
-                    let host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    let host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed, sync_time: self.sync_time };
                     l.client_update(&host);
                 }
                 (ClientUpdateCall::SetDecayFrames(frames), ClientUpdateModule::Laser(l)) if laser == Some(i) => {
-                    let host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    let host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed, sync_time: self.sync_time };
                     l.set_decay_frames(*frames, &host);
                 }
                 (ClientUpdateCall::InitLaser { parent, target, start, end, bone, size_delta_frames }, ClientUpdateModule::Laser(l)) if laser == Some(i) => {
-                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed, sync_time: self.sync_time };
                     if let Err(e) = l.init_laser(&mut host, parent.as_ref(), target.as_ref(), Some(start), Some(end), bone, *size_delta_frames) {
                         self.errors.push((d.template.clone(), LASER_UPDATE.to_vec(), format!("initLaser undefined upstream: {e:?}")));
                     }
@@ -1057,7 +1065,7 @@ impl ClientDrawables {
             let mut destroyed = false;
             for m in &mut modules {
                 if let ClientUpdateModule::Sway(s) = &mut m.module {
-                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed, sync_time: self.sync_time };
                     s.load_post_process(&mut host);
                 }
             }
@@ -1210,6 +1218,7 @@ impl ClientDrawables {
     /// ([`ClientDrawables::draw_facts`]) and the World is taken as `&World`:
     /// nothing is written.
     pub fn draw<A: W3dAssetSource>(&mut self, w: &World, assets: &mut A, sync_time: u32) {
+        self.sync_time = sync_time;
         for id in w.objects.ids_in_order() {
             if !self.drawables.contains_key(&id) && !self.destroyed_by_client.contains(&id) && w.find_object(id).is_some_and(|o| !o.is_destroyed()) {
                 self.create_drawable(w, id, assets, sync_time);
@@ -1281,7 +1290,7 @@ impl ClientDrawables {
             }
         }
         // `W3DDisplay::draw`'s `TheParticleSystemManager->update()`, once per logic frame (GitHub #43, #44)
-        let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index };
+        let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index, sync_time: self.sync_time };
         self.fx.update(&host, &mut self.random);
     }
 }
@@ -1325,6 +1334,8 @@ pub struct DrawableClientHost<'a> {
     pub local_player_index: Option<i32>,
     /// Set by `TheGameClient->destroyDrawable(getDrawable())`.
     pub destroyed: &'a mut bool,
+    /// (#179) `WW3D::Get_Sync_Time()` ([`ClientDrawables::sync_time`]).
+    pub sync_time: u32,
 }
 
 impl DrawableClientHost<'_> {
@@ -1387,8 +1398,7 @@ impl AnimatedParticleSysBoneHost for DrawableClientHost<'_> {
         let construction = ClientDrawables::construction(self.world, self.drawable.object_id);
         let dm = &mut self.drawable.draw_modules[i];
         dm.react_to_transform_change(&transform, construction);
-        let transform = dm.render_object.as_ref().map_or(transform, |r| r.transform);
-        dm.update_bones_for_client_particle_systems(&transform, Some(&mut *self.particles))
+        dm.update_bones_for_client_particle_systems(Some(&mut *self.particles), self.sync_time)
     }
 }
 
@@ -1411,7 +1421,8 @@ impl LaserHost for DrawableClientHost<'_> {
         };
         // (#174) each render object's transform as `reactToTransformChange` would put it (nothing written: another drawable)
         let construction = ClientDrawables::construction(self.world, d.object_id);
-        d.draw_modules.iter().find_map(|m| m.get_current_worldspace_client_bone_positions(bone, &m.reacted_transform(&world, construction)))
+        // (#179) at the sync time, read without writing (#179's gaps)
+        d.draw_modules.iter().find_map(|m| m.peek_current_worldspace_client_bone_positions(bone, &m.reacted_transform(&world, construction), self.sync_time))
     }
     fn drawable_object_effectively_dead(&self, id: DrawableId) -> bool {
         self.find_drawable(id).and_then(|d| self.world.find_object(d.object_id)).is_some_and(|o| o.is_effectively_dead())
@@ -1642,7 +1653,7 @@ mod tests {
         let mut a = mtx;
         d.draw_modules[0].adjust_transform_mtx(&mut a, Some((25.0, 8.0)));
         assert_eq!(a.get_translation(), crate::ww::vector3::Vector3::new(8.0, 1.0, -3.0));
-        assert_eq!(d.get_current_client_bone_positions(b"Bone", 1, None, None, 4), 0);
+        assert_eq!(d.get_current_client_bone_positions(b"Bone", 1, None, None, 4, 0), 0);
     }
 
     /// Predictions: in the gate game, every object gets a drawable from its creation event (13 objects); none has a

@@ -3852,6 +3852,13 @@ struct EvalWorld {
     combos: Vec<HAnimCombo<usize>>,
     maps: Vec<PivotMapRef>,
     datas: Vec<ComboDataRef<usize>>,
+    /// (#179) the render objects ops 40-49 made, each with whether its `PrevFrame` is still comparable (no blend since
+    /// it was made: upstream's union overlaps it), and `WW3D::Get_Sync_Time()` (op 41)
+    robjs: Vec<(md::RenderObj, bool)>,
+    now: u32,
+    /// (#179) the animations as the render objects share them (one object each, as upstream's `HAnimClass`: their
+    /// channels' caches carry over from one render object's evaluation to another's), made on first use
+    anim_datas: Vec<std::sync::Arc<md::AnimData>>,
 }
 
 /// wrap_w3d_eval.cpp's pose hook: the first raw or compressed animation of
@@ -3866,7 +3873,7 @@ impl PoseLookup for EvalWorld {
 /// with `mode`'s `Float_To_Long` (#19).
 fn rust_eval_load(data: &[u8], mode: FloatToLongMode) -> W3dResult<(Log, EvalWorld)> {
     let mut log = vec![b'L'];
-    let mut w = EvalWorld { trees: Vec::new(), anims: Vec::new(), combos: Vec::new(), maps: Vec::new(), datas: Vec::new() };
+    let mut w = EvalWorld { trees: Vec::new(), anims: Vec::new(), combos: Vec::new(), maps: Vec::new(), datas: Vec::new(), robjs: Vec::new(), now: 0, anim_datas: Vec::new() };
     let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
     while c.open_chunk()? {
         let trees = &w.trees;
@@ -4037,6 +4044,7 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
             }
         }
         12..=31 => rust_combo_op(w, r, log, op)?,
+        40..=49 => rust_robj_op(w, r, log, op)?,
         _ => unreachable!(),
     }
     Ok(())
@@ -4196,6 +4204,14 @@ fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
             19 | 21 | 22 | 26 | 27 => 2,
             24 => 2 + 12,
             25 => 0,
+            // (#179)
+            40 => 2,
+            41 | 43 => 1,
+            42 => 4,
+            44 => 6,
+            45 | 48 | 49 => 2,
+            46 => 1 + 12,
+            47 => 4 + 12,
             _ => unreachable!(),
         };
         v.push((i, i + 1 + 4 * words));
@@ -4208,6 +4224,142 @@ fn cpp_eval(data: &[u8], script: &[u8]) -> Log {
     cpp_log(|log, cap, n| unsafe {
         cpp::ref_w3d_eval(data.as_ptr() as *const _, data.len() as i32, script.as_ptr(), script.len() as i32, log, cap, n)
     })
+}
+
+/// (#179) The render objects' ops (40-49, see `ref_w3d_eval`) on the port's `RenderObj`.
+use rts_lockstep_engine::client::w3d_model_draw as md;
+
+/// The animation `a` as a render object is given it: its handle with the motion's data, a morph animation's poses the
+/// raw and compressed animations (the wrapper's pose hook: the first of that exact name; the generated names differ
+/// case-insensitively too, so `AnimData`'s lookup finds the same one).
+fn robj_handle(w: &mut EvalWorld, a: usize) -> md::AnimHandle {
+    if w.anim_datas.is_empty() {
+        let shared: Vec<std::sync::Arc<HAnim>> = w.anims.iter().map(|(x, _)| std::sync::Arc::new(x.clone())).collect();
+        let poses: Vec<std::sync::Arc<HAnim>> = shared.iter().zip(&w.anims).filter(|(_, (_, k))| *k != 2).map(|(x, _)| x.clone()).collect();
+        w.anim_datas = shared.iter().map(|m| std::sync::Arc::new(md::AnimData { motion: m.clone(), poses: poses.clone() })).collect();
+    }
+    let anim = &w.anims[a].0;
+    md::AnimHandle {
+        name: anim.name().to_vec(),
+        num_frames: anim.get_num_frames(),
+        frame_rate: rts_lockstep_engine::formats::w3d::render::get_frame_rate(anim),
+        data: Some(w.anim_datas[a].clone()),
+    }
+}
+
+/// The wrapper's `put_robj`.
+fn log_robj(log: &mut Log, r: &md::RenderObj, clean: bool) {
+    let mode = if r.anim.is_some() {
+        2
+    } else if r.mode_interp.is_some() {
+        3
+    } else if r.mode_combo.is_some() {
+        4
+    } else {
+        1
+    };
+    log.push(mode);
+    log.push(u8::from(r.is_hierarchy_valid()));
+    match &r.anim {
+        Some(a) => {
+            p32(log, a.frame.to_bits());
+            p32(log, if clean { a.prev_frame } else { 0.0 }.to_bits());
+            p32(log, a.last_sync_time);
+            p32(log, a.anim_direction.to_bits());
+            p32(log, a.frame_rate_multiplier.to_bits());
+            p32(log, md::anim_mode_index(a.anim_mode) as u32);
+            log.push(u8::from(r.is_animation_complete_hlod()));
+        }
+        None => {
+            for _ in 0..6 {
+                p32(log, 0);
+            }
+            log.push(0);
+        }
+    }
+}
+
+/// Whether a loaded hierarchy can be a render object's: its pivots read, and every pivot after the first with a parent
+/// the port's skeleton keeps (`Skeleton::bones_of` reads the parent's `Index`; a missing parent or one past the end,
+/// undefined upstream, has no place in a skeleton).
+fn robj_ok(t: &HTree) -> bool {
+    let n = t.num_pivots;
+    n > 0
+        && t.pivots.len() == n as usize
+        && t.pivots.iter().skip(1).all(|p| p.parent.is_some_and(|q| q < n as u32 && t.pivots[q as usize].index == q as i32))
+}
+
+fn rust_robj_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: u8) -> W3dResult<()> {
+    match op {
+        40 => {
+            let t = r.u() as usize;
+            let scale = r.f();
+            // `new HTreeClass(*source)`, then `Create_Render_Obj`'s scale
+            let mut tree = w.trees[t].clone();
+            md::scale_render_obj_hierarchy(&mut tree, scale);
+            let k = md::Skeleton { bones: md::Skeleton::bones_of(&tree), sub_objects: Vec::new(), scale_factor: tree.scale_factor };
+            w.robjs.push((md::RenderObj::new(b"R", true).with_skeleton(Some(k)), true));
+            let (ro, clean) = w.robjs.last().expect("pushed");
+            log_robj(log, ro, *clean);
+        }
+        41 => w.now = r.u(),
+        _ => {
+            let ri = r.u() as usize;
+            let now = w.now;
+            match op {
+                42 => {
+                    let a = r.u() as i32;
+                    let frame = r.f();
+                    let mode = r.u() as i32;
+                    let h = (a >= 0).then(|| robj_handle(w, a as usize));
+                    w.robjs[ri].0.set_animation(h, frame, md::anim_mode_from_index(mode), now);
+                }
+                43 => w.robjs[ri].0.set_animation_base_pose(),
+                44 => {
+                    let (a0, f0) = (r.u() as usize, r.f());
+                    let (a1, f1) = (r.u() as usize, r.f());
+                    let pct = r.f();
+                    let (h0, h1) = (robj_handle(w, a0), robj_handle(w, a1));
+                    w.robjs[ri].0.set_animation_blend(Some(h0), f0, Some(h1), f1, pct);
+                    w.robjs[ri].1 = false;
+                }
+                45 => {
+                    let bone = r.u() as i32;
+                    let m = w.robjs[ri].0.try_get_bone_transform(bone, now)?;
+                    log_m(log, &m);
+                }
+                46 => {
+                    let m = r.m();
+                    w.robjs[ri].0.set_transform(&m);
+                }
+                47 => {
+                    let bone = r.u() as i32;
+                    let capture = r.u();
+                    let wst = r.u();
+                    let m = r.m();
+                    let ro = &mut w.robjs[ri].0;
+                    if capture != 0 {
+                        ro.capture_bone(bone);
+                        ro.control_bone_world(bone, &m, wst != 0);
+                    } else {
+                        ro.release_bone(bone);
+                    }
+                }
+                48 => {
+                    let ro = &mut w.robjs[ri].0;
+                    ro.hidden = r.u() != 0;
+                    ro.try_render(now)?;
+                }
+                _ => {
+                    let f = r.f();
+                    w.robjs[ri].0.set_animation_frame_rate_multiplier(f);
+                }
+            }
+            let (ro, clean) = &w.robjs[ri];
+            log_robj(log, ro, *clean);
+        }
+    }
+    Ok(())
 }
 
 // ---- generation ----
@@ -4826,6 +4978,171 @@ fn combo_evaluation_matches_upstream() {
     eval_cases(FloatToLongMode::PortableTruncate, 0xC0B0, 20_000, "W3D anim combos (hanim.cpp, Combo_Update)", combo_script);
 }
 
+/// (#179) A script of render-object ops (40-49; see `ref_w3d_eval`) over the file's hierarchies and animations: render
+/// objects made on the hierarchies a skeleton can hold ([`robj_ok`]) at a scale (1, 0.5, 2, within `scale_epsilon` of 1,
+/// or any in 0.25..4), then, in any order, the sync time moved on (by 0, a few ms, a frame, seconds; a wild script also
+/// moves it back and far), `Set_Animation` of any animation (or `NULL`) at a frame ([`ev_frame`]) in any of the six
+/// modes, `Set_Animation()`, a blend of two animations, `Get_Bone_Transform` of any bone, `Set_Transform`, a bone
+/// captured and controlled (or released), `Render` (hidden 1 in 5) and the frame-rate multiplier. Each op is followed by
+/// the render object's state (mode, `IsTreeValid`, `ModeAnim`).
+fn animobj_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    let mut s = Vec::new();
+    let na = w.anims.len() as u32;
+    let ok: Vec<u32> = (0..w.trees.len() as u32).filter(|&t| robj_ok(&w.trees[t as usize])).collect();
+    if na == 0 || ok.is_empty() {
+        return s;
+    }
+    let mut robjs: Vec<u32> = Vec::new();
+    let mut now = g.below(1000);
+    s.push(41);
+    w32(&mut s, now);
+    for _ in 0..1 + g.below(60) {
+        if robjs.is_empty() || g.below(14) == 0 {
+            let t = ok[g.below(ok.len() as u32) as usize];
+            s.push(40);
+            w32(&mut s, t);
+            let scale = match g.below(8) {
+                0..=2 => 1.0f32,
+                3 => 0.5,
+                4 => 2.0,
+                5 => [0.995f32, 1.005, 0.9899, 1.0101][g.below(4) as usize],
+                _ => g.g.uniform(0.25, 4.0),
+            };
+            w32(&mut s, scale.to_bits());
+            robjs.push(w.trees[t as usize].num_pivots as u32);
+            continue;
+        }
+        let ri = g.below(robjs.len() as u32);
+        let npiv = robjs[ri as usize];
+        let anim = |g: &mut Gn| g.below(na);
+        match g.below(100) {
+            0..=14 => {
+                now = match g.below(if g.clean { 8 } else { 10 }) {
+                    0 => now,
+                    1..=3 => now.wrapping_add(g.below(50)),
+                    4 | 5 => now.wrapping_add(33),
+                    6 => now.wrapping_add(100 + g.below(2000)),
+                    7 => now.wrapping_add(g.below(100_000)),
+                    8 => now.wrapping_sub(1 + g.below(200)),
+                    _ => g.g.u32(),
+                };
+                s.push(41);
+                w32(&mut s, now);
+            }
+            15..=29 => {
+                s.push(42);
+                w32(&mut s, ri);
+                let a = if g.below(12) == 0 { u32::MAX } else { anim(g) };
+                w32(&mut s, a);
+                let nf = if a == u32::MAX { 10 } else { w.anims[a as usize].0.get_num_frames() };
+                w32(&mut s, ev_frame(g, nf).to_bits());
+                w32(&mut s, g.below(6));
+            }
+            30..=32 => {
+                s.push(43);
+                w32(&mut s, ri);
+            }
+            33..=37 => {
+                s.push(44);
+                w32(&mut s, ri);
+                for _ in 0..2 {
+                    let a = anim(g);
+                    w32(&mut s, a);
+                    w32(&mut s, ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits());
+                }
+                let pct = match g.below(6) {
+                    0 => 0.0f32,
+                    1 => 1.0,
+                    _ => g.g.uniform(-0.2, 1.2),
+                };
+                w32(&mut s, pct.to_bits());
+            }
+            38..=62 => {
+                s.push(45);
+                w32(&mut s, ri);
+                w32(&mut s, g.below(npiv));
+            }
+            63..=70 => {
+                s.push(46);
+                w32(&mut s, ri);
+                ev_matrix(g, &mut s);
+            }
+            71..=78 => {
+                s.push(47);
+                w32(&mut s, ri);
+                w32(&mut s, g.below(npiv));
+                w32(&mut s, u32::from(g.below(4) != 0));
+                w32(&mut s, g.below(2));
+                ev_matrix(g, &mut s);
+            }
+            79..=94 => {
+                s.push(48);
+                w32(&mut s, ri);
+                w32(&mut s, u32::from(g.below(5) == 0));
+            }
+            _ => {
+                s.push(49);
+                w32(&mut s, ri);
+                let m = match g.below(6) {
+                    0 => 1.0f32,
+                    1 => 0.5,
+                    2 => 2.0,
+                    3 => -1.0,
+                    4 => 0.0,
+                    _ => g.g.uniform(-3.0, 3.0),
+                };
+                w32(&mut s, m.to_bits());
+            }
+        }
+    }
+    s
+}
+
+/// GitHub #179: `Animatable3DObjClass`'s bone query with the animation's current pose (animobj.cpp:658-675
+/// `Get_Bone_Transform`, 780-860 `Update_Sub_Object_Transforms`, 1048-1075 `Single_Anim_Progress`, 949-1045
+/// `Compute_Current_Frame`, 288-305 `Render`, the `Set_Animation`s, `Set_Transform`, `Capture_Bone`, `Release_Bone`,
+/// `Control_Bone`, and animobj.h's inline updates, cut verbatim into `wrap_w3d_eval.cpp`) against the port's
+/// `client::w3d_model_draw::RenderObj`, over section 13's random files (the real loaders and the real `htree.cpp`,
+/// `hrawanim.cpp`, `hcanim.cpp`, `hmorphanim.cpp`, `motchan.cpp` on the C++ side) with [`animobj_script`]'s scripts,
+/// the portable `Float_To_Long` on both sides. Compared as raw bits after every op: each bone's 12 floats, and each render
+/// object's mode, `IsTreeValid` and `ModeAnim` (frame, previous frame, last sync time, direction, multiplier, mode,
+/// `Is_Animation_Complete`). A script stops before an op the Rust reports undefined upstream.
+///
+/// Predictions (`issue179_predictions.md`, before the first run): 0 mismatches, max ULP 0; a few scripts stopped at
+/// `FloatToInt` (compressed animations at negative or NaN frames, wild scripts) and at the wild files' undefined
+/// evaluations.
+///
+/// Results (2026-11-13). **First run:** 444 of 20,000 files mismatched, all in `Get_Bone_Transform`'s translations
+/// (rotations equal): the test gave each `Set_Animation` a *clone* of the animation, so the compressed channels' caches
+/// started fresh, where upstream's render objects share one `HAnimClass` (the port's do too: the asset manager's
+/// `Arc`). The test's error, fixed ([`robj_handle`] shares one `AnimData` per animation). **Second run:** 20,000 files,
+/// 20,000 run (9,446 tame scripts to the end), 494,431 of 595,883 ops compared (40: 51,850; 41: 82,985; 42: 64,459;
+/// 43: 12,700; 44: 21,289; 45: 104,412; 46: 34,244; 47: 34,220; 48: 66,979; 49: 21,293), **0 mismatches, max ULP 0**.
+/// Scripts stopped at undefined upstream: 4,429 (op 45: `IndexOutOfRange` 1,531, `FloatToInt` 841, `NonTerminating`
+/// 248, `NullPointer` 178, `UninitialisedRead` 175; op 48 (`Render`'s update): 813, 320, 143, 101, 79): the wild
+/// files' evaluations, as section 13's. Predictions hit, apart from the first run's test error.
+///
+/// Planted bugs (`L9_PLANT`, mismatching files of 20,000; those marked * hung the C++ before the end of the full run,
+/// because the planted Rust stopped predicting an evaluation the C++ then ran undefined, so they were run on 300 cases,
+/// or 60 for 9808): 9801 `Get_Bone_Transform` always re-evaluates 2,991; 9802* `Set_Transform` does not invalidate 139 of
+/// 300; 9803* no `Single_Anim_Progress` in the update 102 of 300; 9804 progress in `MANUAL` too 1,401; 9805 a raw
+/// animation through the virtual `Anim_Update` 2,148; 9806* `Single_Anim_Progress` does not invalidate 8 of 300; 9807
+/// `Control_Bone` does not invalidate 7,569; 9808* `Set_Animation` does not invalidate 37 of 60; 9809* `Render` does
+/// not update 14 of 20; 9810 the pose under the identity 10,114; 9811 the blend's percentage reversed 3,201; 9813 the
+/// scale factor not carried 4,924; 9814 no `PrevFrame` restore 8,066; 9815 `Set_Animation()` keeps the animation
+/// 5,124; 9817 `Release_Bone` does nothing 181; 9818 the sync-time difference signed 4 of 300 (only a wild script's
+/// backward sync time reaches it); 9819 the live hierarchy made afresh each update (no previous transforms) 429; and
+/// #172/#174's, moved into the live hierarchy: 9694 6,374, 9698 7,848, 9751 4,077. 9812 (`Combo_Update` replaced by
+/// the base pose) and 9816 (`get_bone_transform_under` restores without invalidating) are not reachable here: caught by
+/// the lib test `a_render_object_s_bones_follow_its_animation` (`--features differential`), which also catches 9801,
+/// 9805, 9810 and 9811.
+#[test]
+fn animatable_bones_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let n = std::env::var("W3D_ANIMOBJ_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
+    eval_cases(FloatToLongMode::PortableTruncate, 0x179_A0B1, n, "W3D render objects' animated bones (animobj.cpp)", animobj_script);
+}
+
 /// Random W3D files (one or two hierarchies of 1 to 6 pivots, sometimes
 /// pre-3.0, with random base poses and parents, now and then a parent that
 /// is missing, the pivot itself, a later pivot or one past the end; one to
@@ -5014,7 +5331,7 @@ fn eval_cases(mode: FloatToLongMode, seed: u64, cases: usize, label: &str, scrip
     let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
     let mut load_excluded: BTreeMap<String, u64> = BTreeMap::new();
     let (mut files, mut ops_run, mut ops_total) = (0u64, 0u64, 0u64);
-    let mut per_op = [0u64; 32];
+    let mut per_op = [0u64; 64];
     for case in 0..cases {
         g.clean = case % 2 == 0;
         let data = ev_file(&mut g);
@@ -5086,7 +5403,7 @@ fn eval_cases(mode: FloatToLongMode, seed: u64, cases: usize, label: &str, scrip
         files += 1;
     }
     println!(
-        "{label} ({mode:?}): {cases} files, {files} run ({tame_full} tame scripts run to the end), {ops_run} of {ops_total} ops compared (per op 1..=31: {:?}); \
+        "{label} ({mode:?}): {cases} files, {files} run ({tame_full} tame scripts run to the end), {ops_run} of {ops_total} ops compared (per op 1..=63: {:?}); \
          files excluded (loading undefined): {load_excluded:?}; scripts stopped at (undefined upstream): {} {excluded:?}",
         &per_op[1..],
         excluded.values().sum::<u64>()

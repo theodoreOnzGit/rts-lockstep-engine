@@ -714,7 +714,8 @@ pub struct AssetManager {
     /// `HTreeManagerClass::TreePtr[0..NumTrees]`, with their names.
     trees: Vec<(Vec<u8>, HTree)>,
     /// `HAnimManagerClass::AnimPtrTable`.
-    anims: Vec<Entry<HAnim>>,
+    /// (#179) shared: a render object keeps the motion it plays (`ModeAnim.Motion`, Add_Ref'd upstream).
+    anims: Vec<Entry<std::sync::Arc<HAnim>>>,
     /// `HAnimManagerClass::MissingAnimTable`.
     missing: Vec<Entry<()>>,
     serial: u64,
@@ -907,14 +908,20 @@ impl AssetManager {
     /// `HAnimManagerClass::Peek_Anim(name)`: the newest animation of that
     /// name (no on-demand loading).
     pub fn peek_anim(&self, name: &[u8]) -> Option<&HAnim> {
-        self.peek_anim_index(c_name(name)).map(|i| &self.anims[i].value)
+        self.peek_anim_index(c_name(name)).map(|i| &*self.anims[i].value)
+    }
+
+    /// (#179) [`AssetManager::peek_anim`] as a shared reference (`Peek_Anim` then `Add_Ref`): what a render object keeps
+    /// of the motion it plays (`ModeAnim.Motion`).
+    pub fn peek_anim_shared(&self, name: &[u8]) -> Option<std::sync::Arc<HAnim>> {
+        self.peek_anim_index(c_name(name)).map(|i| self.anims[i].value.clone())
     }
 
     /// `Add_Anim(new_anim)`: added without a check, shadowing any older one.
     pub fn add_anim(&mut self, anim: HAnim) {
         let serial = self.next_serial();
         let name = anim.name().to_vec();
-        self.anims.push(Entry { serial, name, value: anim });
+        self.anims.push(Entry { serial, name, value: std::sync::Arc::new(anim) });
     }
 
     /// `HAnimManagerClass::Is_Missing(name)`.
@@ -1178,7 +1185,7 @@ impl AssetManager {
                 self.register_missing(name);
             }
         }
-        Ok(i.map(|i| &self.anims[i].value))
+        Ok(i.map(|i| &*self.anims[i].value))
     }
 
     /// `Free_Assets()`: the prototypes, animations and hierarchies (not the

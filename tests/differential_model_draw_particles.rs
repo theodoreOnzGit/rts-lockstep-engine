@@ -145,6 +145,15 @@
 //!   **14 of 14 caught.** The #171/#172 plants re-run: 9661-9696 and 9698 all caught (9697 0 here, caught by its lib
 //!   test as before).
 //!
+//! # #179 (2026-11-13): the render object's live hierarchy
+//!
+//! The port's bones now come from the render object's own hierarchy, evaluated when it is not valid and cached while it
+//! is (`RenderObj::get_bone_transform`); this wrapper's stand-in still runs `Base_Update` on every query. Its models have
+//! no animation, and every op that changes the base pose also invalidates the port's hierarchy, so predicted
+//! (`issue179_predictions.md`): no change. Measured: main 0 mismatches over 20,000 (407,965 steps, 45,344 systems, 37 NaN
+//! words); any scale 0 over 20,000 (407,905 steps, 44,672 systems, 2,291 NaN words, 165 NaN-payload-only): the #174
+//! numbers. The animated pose itself is checked in `tests/differential_w3d.rs` (`animatable_bones_match_upstream`).
+//!
 //! # Planted bugs
 //!
 //! `L9_PLANT=<id>` (the run prints `MEASURED` lines and fails on purpose):
@@ -466,7 +475,7 @@ impl W3dAssetSource for Models {
         let mut root = Matrix3D::IDENTITY;
         root.scale(scale);
         tree.base_update(&root).expect("parents come first");
-        Some(Skeleton { bones: Skeleton::bones_of(&tree), sub_objects: Vec::new() })
+        Some(Skeleton { bones: Skeleton::bones_of(&tree), sub_objects: Vec::new(), scale_factor: tree.scale_factor })
     }
 }
 
@@ -636,8 +645,8 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
                 // (#174) the render object's transform is the module's: `reactToTransformChange` first
                 let world = matrix(&s[2..]);
                 m.react_to_transform_change(&world, construction);
-                let t = m.render_object.as_ref().map_or(world, |ro| ro.transform);
-                m.update_bones_for_client_particle_systems(&t, Some(&mut mgr));
+                // (#179) the render object's own transform (no animation here: sync time 0)
+                m.update_bones_for_client_particle_systems(Some(&mut mgr), 0);
             }
             3 => m.set_hidden(s[1] != 0, Some(&mut mgr)),
             4 => m.set_fully_obscured_by_shroud(s[1] != 0, Some(&mut mgr)),
@@ -683,6 +692,7 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
                     if s[4] != 0 { Some(&mut pos) } else { None },
                     if s[5] != 0 { Some(&mut mtx) } else { None },
                     s[3],
+                    0,
                 );
                 out.extend([300, n]);
                 for i in 0..(n.max(0) as usize).min(64) {
@@ -703,8 +713,7 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
                 // (#174) the module's: `reactToTransformChange` first
                 let world = matrix(&s[2..]);
                 m.react_to_transform_change(&world, construction);
-                let t = m.render_object.as_ref().map_or(world, |ro| ro.transform);
-                match m.get_current_worldspace_client_bone_positions(STATE_BONE_NAMES[s[1] as usize % 6].as_bytes(), &t) {
+                match m.get_current_worldspace_client_bone_positions(STATE_BONE_NAMES[s[1] as usize % 6].as_bytes(), 0) {
                     Some(t) => {
                         out.extend([200, 1]);
                         for row in 0..3 {

@@ -464,7 +464,7 @@ impl W3dAssetSource for Models {
     }
     fn get_hanim(&mut self, name: &[u8]) -> Option<AnimHandle> {
         let i = ["A0", "A1"].iter().position(|n| n.as_bytes().eq_ignore_ascii_case(name))?;
-        Some(AnimHandle { name: name.to_vec(), num_frames: self.anims[i].0, frame_rate: 30.0 })
+        Some(AnimHandle { name: name.to_vec(), num_frames: self.anims[i].0, frame_rate: 30.0, data: None })
     }
     fn skeleton(&mut self, name: &[u8], pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
         let i = MODEL_NAMES.iter().position(|n| n.as_bytes().eq_ignore_ascii_case(name))?;
@@ -502,7 +502,7 @@ impl W3dAssetSource for Models {
             .iter()
             .map(|(n, bone)| SkeletonSubObject { name: n.clone(), bone_index: *bone, hidden: false, transform: tree.get_transform(*bone).unwrap(), linear_offset_materials: 0 })
             .collect();
-        Some(Skeleton { bones: Skeleton::bones_of(&tree), sub_objects })
+        Some(Skeleton { bones: Skeleton::bones_of(&tree), sub_objects, scale_factor: tree.scale_factor })
     }
 }
 

@@ -36,7 +36,32 @@
 **
 ** Then a script of evaluations (see ref_w3d_eval), each result appended to a
 ** byte log that tests/differential_w3d.rs (section 13) reproduces from the
-** Rust. Allocation (zero-filled) and the file are wrap_w3d.cpp's. */
+** Rust. Allocation (zero-filled) and the file are wrap_w3d.cpp's.
+**
+** GitHub #179: render objects (ops 40-49), `Animatable3DObjClass` compiled from upstream's text, cut verbatim by
+** build.rs into OUT_DIR/w3d_animobj_gen:
+**   ao_body.inc       WW3D2/animobj.cpp:242-869: Release, Render, Special_Render, Set_Transform, Set_Position,
+**                     Get_Num_Bones, Get_Bone_Name, Get_Bone_Index, the four Set_Animation, Peek_Animation, both
+**                     Get_Bone_Transform, Capture_Bone, Release_Bone, Is_Bone_Captured, Control_Bone,
+**                     Update_Sub_Object_Transforms;
+**   ao_progress.inc   animobj.cpp:949-1128: Compute_Current_Frame, Single_Anim_Progress, Is_Animation_Complete,
+**                     Peek_Animation_And_Info, Set_Animation_Frame_Rate_Multiplier;
+**   ao_members.inc    animobj.h:168-216: IsTreeValid, HTree, the motion-mode enum, CurMotionMode and the
+**                     ModeAnim/ModeInterp/ModeCombo union;
+**   ao_inline.inc     animobj.h:235-327: the inline Base_Update, Anim_Update (the raw fast path for
+**                     CLASSID_HRAWANIM), Blend_Update, Combo_Update;
+**   ao_anim_mode.inc  rendobj.h:331-339: RenderObjClass::AnimMode.
+** No edit. Compiled (namespace ao) on stand-ins: the base class (CompositeRenderObjClass: `Transform`,
+** `Set_Transform`/`Set_Position` as RenderObjClass's assignments, `Update_Sub_Object_Transforms` and `Validate_Transform`
+** doing nothing (RenderObjClass's; no container), `Is_Not_Hidden_At_All` the driver's hidden flag,
+** `Are_Sub_Object_Transforms_Dirty` false: HLodClass sets that bit only with Set_Transform, which also invalidates the
+** hierarchy, and its update clears both), `WW3D::Get_Sync_Time()` the driver's sync time (op 41),
+** AnimatedSoundMgrClass with no embedded sound (Get_Embedded_Sound_Name NULL, so Has_Embedded_Sounds is false and
+** Trigger_Sound is never reached: it aborts), and the constructor (animobj.cpp:82-111's member initialisation, with
+** `HTree = W3DNEW HTreeClass(*source)` of a loaded hierarchy) followed by W3DAssetManager::Create_Render_Obj's
+** `reallyscale` test (W3DAssetManager.cpp:738) and HLodClass::Scale's hierarchy part (hlod.cpp:3264-3286: `if
+** (scale==1.0f) return;`, `HTree->Scale(scale)`, `Set_Hierarchy_Valid(false)`). The hierarchy, animations and
+** combinations are the real ones loaded above. */
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -244,6 +269,151 @@ void free_all()
 }
 
 } /* namespace */
+
+/* ---- GitHub #179: Animatable3DObjClass (see the header) ---- */
+namespace ao {
+
+unsigned int g_sync_time;
+
+class WW3D
+{
+public:
+	static unsigned int Get_Sync_Time(void) { return g_sync_time; }
+};
+
+class AnimatedSoundMgrClass
+{
+public:
+	static const char *Get_Embedded_Sound_Name(HAnimClass *) { return NULL; }
+	static float Trigger_Sound(HAnimClass *, float, float, const Matrix3D &) { abort(); }
+};
+
+class RenderInfoClass {};
+class SpecialRenderInfoClass {};
+
+class CompositeRenderObjClass
+{
+public:
+#include "ao_anim_mode.inc"
+	Matrix3D Transform;
+	bool Hidden;
+	CompositeRenderObjClass() : Transform(true), Hidden(false) {}
+	void Set_Transform(const Matrix3D &m) { Transform = m; }
+	void Set_Position(const Vector3 &v) { Transform.Set_Translation(v); }
+	void Update_Sub_Object_Transforms(void) {}
+	void Validate_Transform(void) const {}
+	const Matrix3D &Get_Transform(void) const { return Transform; }
+	int Is_Not_Hidden_At_All(void) { return !Hidden; }
+	bool Are_Sub_Object_Transforms_Dirty(void) { return false; }
+};
+
+class Animatable3DObjClass : public CompositeRenderObjClass
+{
+public:
+	Animatable3DObjClass(const HTreeClass *source, float scale);
+	~Animatable3DObjClass(void)
+	{
+		Release();
+		if (HTree) delete HTree;
+	}
+	void Render(RenderInfoClass &rinfo);
+	void Special_Render(SpecialRenderInfoClass &rinfo);
+	void Set_Transform(const Matrix3D &m);
+	void Set_Position(const Vector3 &v);
+	void Set_Animation(void);
+	void Set_Animation(HAnimClass *motion, float frame, int anim_mode = ANIM_MODE_MANUAL);
+	void Set_Animation(HAnimClass *motion0, float frame0, HAnimClass *motion1, float frame1, float percentage);
+	void Set_Animation(HAnimComboClass *anim_combo);
+	void Set_Animation_Frame_Rate_Multiplier(float multiplier);
+	HAnimClass *Peek_Animation_And_Info(float &frame, int &numFrames, int &mode, float &mult);
+	HAnimClass *Peek_Animation(void);
+	bool Is_Animation_Complete(void) const;
+	int Get_Num_Bones(void);
+	const char *Get_Bone_Name(int bone_index);
+	int Get_Bone_Index(const char *bonename);
+	const Matrix3D &Get_Bone_Transform(const char *bonename);
+	const Matrix3D &Get_Bone_Transform(int boneindex);
+	void Capture_Bone(int boneindex);
+	void Release_Bone(int boneindex);
+	bool Is_Bone_Captured(int boneindex) const;
+	void Control_Bone(int bindex, const Matrix3D &objtm, bool world_space_translation = false);
+	float Compute_Current_Frame(float *newDirection = NULL) const;
+	void Update_Sub_Object_Transforms(void);
+	void Base_Update(const Matrix3D &root);
+	void Anim_Update(const Matrix3D &root, HAnimClass *motion, float frame);
+	void Blend_Update(const Matrix3D &root, HAnimClass *motion0, float frame0, HAnimClass *motion1, float frame1, float percentage);
+	void Combo_Update(const Matrix3D &root, HAnimComboClass *anim);
+	bool Is_Hierarchy_Valid(void) const { return IsTreeValid; }
+	void Set_Hierarchy_Valid(bool onoff) const { IsTreeValid = onoff; }
+	void Single_Anim_Progress(void);
+	void Release(void);
+
+#include "ao_members.inc"
+};
+
+#include "ao_body.inc"
+#include "ao_progress.inc"
+#include "ao_inline.inc"
+
+/* animobj.cpp:82-111's initialisation, the hierarchy copied from a loaded one; then Create_Render_Obj's scale (see the
+** header) */
+Animatable3DObjClass::Animatable3DObjClass(const HTreeClass *source, float scale) : IsTreeValid(0), CurMotionMode(BASE_POSE)
+{
+	ModeAnim.Motion = NULL;
+	ModeAnim.Frame = 0.0f;
+	ModeAnim.PrevFrame = 0.0f;
+	ModeAnim.LastSyncTime = WW3D::Get_Sync_Time();
+	ModeAnim.frameRateMultiplier = 1.0;
+	ModeAnim.animDirection = 1.0;
+	ModeInterp.Motion0 = NULL;
+	ModeInterp.Motion1 = NULL;
+	ModeInterp.Frame0 = 0.0f;
+	ModeInterp.PrevFrame0 = 0.0f;
+	ModeInterp.PrevFrame1 = 0.0f;
+	ModeInterp.Frame1 = 0.0f;
+	ModeInterp.Percentage = 0.0f;
+	ModeCombo.AnimCombo = NULL;
+	HTree = new HTreeClass(*source);
+	bool reallyscale = (WWMath::Fabs(scale - 1.0f) > 0.01f);
+	if (reallyscale && scale != 1.0f) {
+		HTree->Scale(scale);
+		Set_Hierarchy_Valid(false);
+	}
+}
+
+std::vector<Animatable3DObjClass *> g_robjs;
+/* per render object: whether ModeAnim.PrevFrame still means what it says (no DOUBLE_ANIM or MULTIPLE_ANIM since it was
+** made: their union members overlap it) */
+std::vector<bool> g_clean;
+
+/* the state after a render-object op: CurMotionMode, IsTreeValid; in SINGLE_ANIM ModeAnim's Frame, PrevFrame (0 when
+** not clean), LastSyncTime, animDirection, frameRateMultiplier, AnimMode, and Is_Animation_Complete; zeros otherwise */
+void put_robj(size_t i)
+{
+	Animatable3DObjClass *r = g_robjs[i];
+	put8(r->CurMotionMode);
+	put8(r->IsTreeValid ? 1 : 0);
+	if (r->CurMotionMode == Animatable3DObjClass::SINGLE_ANIM) {
+		putF(r->ModeAnim.Frame);
+		putF(g_clean[i] ? r->ModeAnim.PrevFrame : 0.0f);
+		put32((uint32_t)r->ModeAnim.LastSyncTime);
+		putF(r->ModeAnim.animDirection);
+		putF(r->ModeAnim.frameRateMultiplier);
+		put32((uint32_t)r->ModeAnim.AnimMode);
+		put8(r->Is_Animation_Complete() ? 1 : 0);
+	} else {
+		putF(0.0f); putF(0.0f); put32(0); putF(0.0f); putF(0.0f); put32(0); put8(0);
+	}
+}
+
+void free_robjs()
+{
+	for (size_t i = 0; i < g_robjs.size(); ++i) delete g_robjs[i];
+	g_robjs.clear();
+	g_clean.clear();
+}
+
+} /* namespace ao */
 
 extern "C" {
 
@@ -514,10 +684,71 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 		case 31:
 			put_map(g_maps[rd.u()]);
 			break;
+		/* (#179) render objects (namespace ao): 40 tree scale (new, then the state); 41 sync time; 42 robj anim (-1 NULL)
+		** frame mode; 43 robj (Set_Animation()); 44 robj a0 f0 a1 f1 pct (the blend); 45 robj bone (Get_Bone_Transform:
+		** 12 floats, then the state); 46 robj matrix (Set_Transform); 47 robj bone capture wst matrix (Capture_Bone and
+		** Control_Bone, or Release_Bone when capture is 0); 48 robj hidden (Render); 49 robj multiplier. Every op but 41
+		** ends with the render object's state (put_robj). */
+		case 40: {
+			HTreeClass *t = g_trees[rd.u()];
+			float scale = rd.f();
+			ao::g_robjs.push_back(new ao::Animatable3DObjClass(t, scale));
+			ao::g_clean.push_back(true);
+			ao::put_robj(ao::g_robjs.size() - 1);
+			break;
+		}
+		case 41:
+			ao::g_sync_time = rd.u();
+			break;
+		case 42: case 43: case 44: case 45: case 46: case 47: case 48: case 49: {
+			size_t ri = rd.u();
+			ao::Animatable3DObjClass *r = ao::g_robjs[ri];
+			if (op == 42) {
+				int a = (int)rd.u();
+				float frame = rd.f();
+				int mode = (int)rd.u();
+				r->Set_Animation(a < 0 ? NULL : g_anims[a].first, frame, mode);
+			} else if (op == 43) {
+				r->Set_Animation();
+			} else if (op == 44) {
+				HAnimClass *a0 = g_anims[rd.u()].first;
+				float f0 = rd.f();
+				HAnimClass *a1 = g_anims[rd.u()].first;
+				float f1 = rd.f();
+				float pct = rd.f();
+				r->Set_Animation(a0, f0, a1, f1, pct);
+				ao::g_clean[ri] = false;
+			} else if (op == 45) {
+				int bone = (int)rd.u();
+				putM(r->Get_Bone_Transform(bone));
+			} else if (op == 46) {
+				r->Set_Transform(rd.m());
+			} else if (op == 47) {
+				int bone = (int)rd.u();
+				uint32_t capture = rd.u();
+				uint32_t wst = rd.u();
+				Matrix3D m = rd.m();
+				if (capture) {
+					r->Capture_Bone(bone);
+					r->Control_Bone(bone, m, wst != 0);
+				} else {
+					r->Release_Bone(bone);
+				}
+			} else if (op == 48) {
+				r->Hidden = rd.u() != 0;
+				ao::RenderInfoClass rinfo;
+				r->Render(rinfo);
+			} else {
+				r->Set_Animation_Frame_Rate_Multiplier(rd.f());
+			}
+			ao::put_robj(ri);
+			break;
+		}
 		default:
 			abort();
 		}
 	}
+	ao::free_robjs();
 	free_all();
 	forget_pool_blocks();
 	int n = (int)g_log.size();

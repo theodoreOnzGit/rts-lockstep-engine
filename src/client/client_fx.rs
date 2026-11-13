@@ -40,7 +40,10 @@
 //! - **The FX bone's place** is the bone's pose as made (the skeleton's) times the object's transform: the animated
 //!   pose, ~~the turret's turn and the barrel's recoil are~~ is not applied yet. **Corrected 2026-11-13 (#174):** the
 //!   bone is chained from the render object's transform with its captured bones (the turret's turn and the barrel's
-//!   recoil), `crate::client::w3d_model_draw::RenderObj::get_bone_transform`; the animated pose is still not applied.
+//!   recoil), `crate::client::w3d_model_draw::RenderObj::get_bone_transform`; ~~the animated pose is still not
+//!   applied~~ **Corrected 2026-11-13 (#179):** with the animation's current pose at the sync time. The FX lists' bones
+//!   (`doFxAtBones`) are read without writing the render objects (this host holds the drawables only to read), where
+//!   upstream's query also moves the animation on (#179's gaps).
 //! - **The local player** is the client's (`ClientDrawables::local_player_index`), else the World's; with none, the
 //!   shroud is taken as clear.
 //! - **The particle limit** is `TheGlobalData->m_maxParticleCount`, which upstream's static game LOD sets
@@ -127,6 +130,8 @@ pub struct WorldFxHost<'a> {
     pub world: &'a World,
     pub drawables: &'a BTreeMap<ObjectId, Drawable>,
     pub local_player_index: Option<i32>,
+    /// (#179) `WW3D::Get_Sync_Time()`, at which the drawables' animated bones are posed.
+    pub sync_time: u32,
 }
 
 impl WorldFxHost<'_> {
@@ -161,7 +166,7 @@ impl FxHost for WorldFxHost<'_> {
         let (Some(o), Some(draw)) = (self.world.find_object(obj), self.drawables.get(&obj)) else { return Vec::new() };
         let mut bone_pos = [Coord3D::default(); MAX_BONE_POINTS];
         let mut bone_mtx = [Matrix3D::IDENTITY; MAX_BONE_POINTS];
-        let count = draw.get_current_client_bone_positions(bone_name, start, Some(&mut bone_pos), Some(&mut bone_mtx), MAX_BONE_POINTS as i32);
+        let count = draw.get_current_client_bone_positions(bone_name, start, Some(&mut bone_pos), Some(&mut bone_mtx), MAX_BONE_POINTS as i32, self.sync_time);
         (0..count.max(0) as usize).filter(|&i| i < MAX_BONE_POINTS).map(|i| o.thing.convert_bone_pos_to_world_pos(&bone_pos[i], &bone_mtx[i])).collect()
     }
 }

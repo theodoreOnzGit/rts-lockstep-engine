@@ -1508,7 +1508,7 @@ mod tests {
             } else {
                 return None;
             };
-            Some(AnimHandle { name: name.to_ascii_lowercase(), num_frames: frames, frame_rate: 30.0 })
+            Some(AnimHandle { name: name.to_ascii_lowercase(), num_frames: frames, frame_rate: 30.0, data: None })
         }
         fn skeleton(&mut self, _: &[u8], _: Option<(&[u8], f32)>, _: f32) -> Option<Skeleton> {
             use crate::client::w3d_model_draw::{SkeletonBone, SkeletonSubObject};
@@ -1517,6 +1517,7 @@ mod tests {
             Some(Skeleton {
                 bones: vec![SkeletonBone { name: b"ROOTTRANSFORM".to_vec(), parent_index: 0, transform: Matrix3D::IDENTITY, base: Matrix3D::IDENTITY }],
                 sub_objects: vec![sub("TANKA.CHASSIS", 0), sub("TANKA.TREADSL", 1), sub("TANKA.TREADSR", 1), sub("TANKA.TURRET", 0)],
+                scale_factor: 1.0,
             })
         }
     }

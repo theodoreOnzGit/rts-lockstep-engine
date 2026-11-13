@@ -186,11 +186,25 @@
 //!   [`RenderObj::get_bone_transform`]. Both are computed as upstream computes them, in its order, so they agree
 //!   with it bit for bit at any scale (`tests/differential_model_draw_particles.rs`, gated). (#174) Both apply the
 //!   render object's captured bones (`Capture_Bone`, `Control_Bone`: the turrets and the recoil,
-//!   [`Skeleton::bone_transform_controlled`]); neither applies the animation's current pose (#174's gaps).
-//! - (#174) **Not translated:** the animation's current pose in the bones (`Get_Bone_Transform` ->
+//!   [`Skeleton::bone_transform_controlled`]); ~~neither applies the animation's current pose (#174's gaps)~~
+//!   **Corrected 2026-11-13 (#179):** root (B) is the animation's current pose ([`RenderObj::get_bone_transform`]); root
+//!   (A), the pristine bones, is the asset source's pose (a fresh render object's, at the state's first animation's frame).
+//! - (#174) ~~**Not translated:** the animation's current pose in the bones (`Get_Bone_Transform` ->
 //!   `Update_Sub_Object_Transforms` -> `Anim_Update`/`Blend_Update`, animobj.cpp:780-860): the render object keeps the
 //!   animation's name, frame count, rate and frame ([`ModeAnim`]) but not its channels nor a pose source, and upstream's
-//!   evaluation also advances the frame (`Single_Anim_Progress`) when the hierarchy is not valid. `applyPhysicsXform`'s
+//!   evaluation also advances the frame (`Single_Anim_Progress`) when the hierarchy is not valid.~~ **Corrected
+//!   2026-11-13 (#179):** translated. The render object keeps the motion's data ([`AnimHandle::data`], [`AnimData`]: the
+//!   asset manager's shared animation, a morph's poses), its own live hierarchy and `IsTreeValid`; `Get_Bone_Transform`
+//!   (animobj.cpp:658-675) evaluates the pose when the hierarchy is not valid (`Update_Sub_Object_Transforms`, 780-860:
+//!   `Single_Anim_Progress` unless `MANUAL`, then the inline `Anim_Update` with the raw fast path, or `Blend_Update`,
+//!   `Combo_Update`, `Base_Update`), and answers the last pose while it is valid. So **a bone query moves the animation
+//!   on** (frame, `PrevFrame`, `LastSyncTime`, a ping-pong's direction) as upstream's does; every bone query of the port
+//!   takes the sync time (`WW3D::Get_Sync_Time()`) for it. `Set_Transform`, `Set_Animation` and `Control_Bone`
+//!   invalidate the hierarchy, `Capture_Bone` and `Release_Bone` do not ([`RenderObj::set_transform`] and the rest);
+//!   `Render` progresses and then evaluates ([`RenderObj::render`]). Where the port may only read a render object (another
+//!   drawable's bone for a laser, the FX lists' bones), it answers without writing the state upstream's query writes
+//!   ([`RenderObj::peek_bone_transform`]: #179's gaps). Checked against animobj.cpp compiled verbatim
+//!   (`tests/differential_w3d.rs`, `animatable_bones_match_upstream`). `applyPhysicsXform`'s
 //!   pitch, roll and bounce and the drawable's instance matrix (Drawable.cpp:2663-2674) are not in the draw's root
 //!   either ([`crate::client::drawable::Drawable::physics_xform`] is kept apart for the renderer).
 //! - **Not translated yet** (GitHub #25's remaining work): ~~the bone caches
@@ -275,8 +289,11 @@ use crate::common::model_state::{ModelConditionFlags, ModelConditionNames, MODEL
 use crate::common::random_value::RandomValues;
 use crate::common::sparse_match_finder::{SparseMatchFinder, SparseMatchable};
 use crate::common::thing_template::{ClientModuleData, CLIENT_NESTED_BLOCKS};
-use crate::formats::w3d::assetmgr::{AssetManager, Prototype};
+use crate::formats::w3d::assetmgr::{AssetManager, HAnim, Prototype};
+use crate::formats::w3d::hanim_combo::HAnimCombo;
+use crate::formats::w3d::hmorphanim::PoseLookup;
 use crate::formats::w3d::htree::{HTree, Pivot};
+use crate::formats::w3d::W3dResult;
 use crate::formats::w3d::w3d_file::W3D_NAME_LEN;
 use crate::formats::w3d::render::{compute_current_frame, get_frame_rate, AnimMode, RenderModel};
 use crate::logic::weapon_set::{SLOTS, WEAPON_SLOT_TYPE_NAMES};
@@ -844,6 +861,14 @@ impl ModelConditionInfo {
         self.cache().pristine_bones = map;
 
         if let Some(r) = robj {
+            // (#179) upstream poses the live render object itself: `Set_Transform(tmp)` (W3DModelDraw.cpp:672), its bones
+            // read, `Set_Transform(originalTransform)` (702). The bones are the fresh skeleton's here (above); what remains
+            // on the live one is the hierarchy left not valid by the two `Set_Transform`s.
+            let original_transform = r.transform;
+            let mut tmp = Matrix3D::IDENTITY;
+            tmp.scale(scale);
+            r.set_transform(&tmp);
+            r.set_transform(&original_transform);
             if r.is_hlod {
                 if let (Some(h), Some(f)) = (anim_to_use, which_frame) {
                     r.set_animation(Some(h), f as f32, AnimMode::Manual, env.sync_time);
@@ -2124,6 +2149,64 @@ pub struct AnimHandle {
     pub num_frames: i32,
     /// `Get_Frame_Rate()`.
     pub frame_rate: f32,
+    /// (#179) The motion itself: what `Animatable3DObjClass` evaluates the pose from (`ModeAnim.Motion`, an Add_Ref'd
+    /// `HAnimClass*`). `None` from a source that gives only the name, frame count and rate (a test's): a render object
+    /// playing such a handle evaluates the base pose (`Base_Update`), as every render object did before #179.
+    pub data: Option<Arc<AnimData>>,
+}
+
+/// (#179) An animation as a render object holds it: the motion (shared with the asset manager, as upstream's
+/// `HAnimClass*` is reference counted) and, for a morph animation, the pose animations its channels name. Upstream
+/// resolves a morph channel's pose with `WW3DAssetManager::Get_HAnim` once, when the morph animation is loaded
+/// (hmorphanim.cpp); here the poses are resolved by name ([`AssetManager::peek_anim_shared`], the newest of the name)
+/// when the handle is made, transitively (a pose that is itself a morph animation brings its own). They agree unless an
+/// animation of the same name is added in between.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AnimData {
+    pub motion: Arc<HAnim>,
+    pub poses: Vec<Arc<HAnim>>,
+}
+
+impl AnimData {
+    /// The data of `motion` with its poses resolved through `assets` (see [`AnimData`]).
+    pub fn new(motion: Arc<HAnim>, assets: &AssetManager) -> Self {
+        let mut poses: Vec<Arc<HAnim>> = Vec::new();
+        let mut todo = vec![motion.clone()];
+        while let Some(a) = todo.pop() {
+            if let HAnim::Morph(m) = &*a {
+                for name in m.channels.iter().filter_map(|c| c.pose_name.as_deref()) {
+                    if let Some(p) = assets.peek_anim_shared(name) {
+                        if !poses.iter().any(|q| Arc::ptr_eq(q, &p)) && !Arc::ptr_eq(&p, &motion) {
+                            poses.push(p.clone());
+                            todo.push(p);
+                        }
+                    }
+                }
+            }
+        }
+        AnimData { motion, poses }
+    }
+}
+
+/// (#179) A morph animation's poses as [`AnimData`] resolved them: the first of the name, ignoring case and anything
+/// after a NUL (`Peek_Anim`'s comparison).
+impl PoseLookup for AnimData {
+    fn pose(&self, name: &[u8]) -> Option<&HAnim> {
+        let name = &name[..name.iter().position(|&c| c == 0).unwrap_or(name.len())];
+        self.poses.iter().map(|p| &**p).find(|p| {
+            let n = p.name();
+            n[..n.iter().position(|&c| c == 0).unwrap_or(n.len())].eq_ignore_ascii_case(name)
+        })
+    }
+}
+
+/// (#179) Two animations' poses (`Blend_Update`'s and `Combo_Update`'s motions): the first's, then the second's.
+struct PosesOf<'a>(&'a [&'a AnimData]);
+
+impl PoseLookup for PosesOf<'_> {
+    fn pose(&self, name: &[u8]) -> Option<&HAnim> {
+        self.0.iter().find_map(|d| d.pose(name))
+    }
 }
 
 /// What `W3DDisplay::m_assetManager` answers the draw module.
@@ -2198,11 +2281,21 @@ pub struct SkeletonSubObject {
 /// [`W3dAssetSource::skeleton`]). The sub-objects are [`RenderModel`]'s: the top LOD's meshes,
 /// then the aggregates' (upstream counts every LOD and non-mesh sub-objects too; the same list
 /// for the game's one-LOD models made only of meshes).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Skeleton {
     /// The pivots; empty for a render object without a hierarchy (a mesh).
     pub bones: Vec<SkeletonBone>,
     pub sub_objects: Vec<SkeletonSubObject>,
+    /// (#179) The hierarchy's `ScaleFactor` (1 as loaded; times the scale `HTreeClass::Scale` was given when the render
+    /// object was made at one, [`scale_render_obj_hierarchy`]): what the animation updates multiply the animated
+    /// translations by.
+    pub scale_factor: f32,
+}
+
+impl Default for Skeleton {
+    fn default() -> Self {
+        Skeleton { bones: Vec::new(), sub_objects: Vec::new(), scale_factor: 1.0 }
+    }
 }
 
 impl Skeleton {
@@ -2223,7 +2316,7 @@ impl Skeleton {
                 linear_offset_materials: s.model.vertex_materials.iter().filter(|v| v.mapper[0] == MapperKind::LinearOffset).count(),
             })
             .collect();
-        Skeleton { bones, sub_objects }
+        Skeleton { bones, sub_objects, scale_factor: tree.scale_factor }
     }
 
     /// The bones of a posed hierarchy: each pivot's name, parent, posed transform (`Get_Transform(i)`) and (#172) base
@@ -2253,6 +2346,9 @@ impl Skeleton {
     /// and recoil captures are not applied, as before~~ **Corrected 2026-11-13 (#174):** no bone is captured in this
     /// one; [`Skeleton::bone_transform_controlled`] applies a render object's captures). Without bones, or a bone out of
     /// range (an upstream assertion), or a hierarchy `Base_Update` cannot run (a parent out of range): `root`.
+    ///
+    /// (#179) No longer the render object's path: [`RenderObj::get_bone_transform`] evaluates its own live hierarchy (the
+    /// animation's pose, cached while valid). Kept as the base-pose chain from a root.
     pub fn bone_transform(&self, root: &Matrix3D, bone: i32) -> Matrix3D {
         self.bone_transform_controlled(root, bone, &BTreeMap::new())
     }
@@ -2268,7 +2364,7 @@ impl Skeleton {
             return *root;
         }
         if plant(9694) {
-            let made = Skeleton { bones: self.bones.clone(), sub_objects: Vec::new() };
+            let made = Skeleton { bones: self.bones.clone(), sub_objects: Vec::new(), scale_factor: self.scale_factor };
             return Matrix3D::multiply(root, &made.bone_transform_base_update(&Matrix3D::IDENTITY, bone, controls));
         }
         self.bone_transform_base_update(root, bone, controls)
@@ -2365,7 +2461,12 @@ impl<D: LocalDevice> W3dAssetSource for W3dFiles<'_, D> {
     }
     fn get_hanim(&mut self, name: &[u8]) -> Option<AnimHandle> {
         match self.assets.get_hanim(self.fs, name) {
-            Ok(Some(a)) => Some(AnimHandle { name: a.name().to_vec(), num_frames: a.get_num_frames(), frame_rate: get_frame_rate(a) }),
+            Ok(Some(a)) => {
+                let handle = AnimHandle { name: a.name().to_vec(), num_frames: a.get_num_frames(), frame_rate: get_frame_rate(a), data: None };
+                // (#179) the motion itself, shared (`Get_HAnim` returns an Add_Ref'd pointer)
+                let data = self.assets.peek_anim_shared(&handle.name).map(|m| Arc::new(AnimData::new(m, self.assets)));
+                Some(AnimHandle { data, ..handle })
+            }
             _ => None,
         }
     }
@@ -2415,6 +2516,36 @@ pub struct ModeAnim {
     pub anim_mode: AnimMode,
 }
 
+/// (#179) `Animatable3DObjClass::ModeInterp` (in `DOUBLE_ANIM`, `Set_Animation(motion0, frame0, motion1, frame1,
+/// percentage)`): a blend of two animations. A motion may be `NULL` upstream (its `Blend_Update` then dereferences it:
+/// undefined). `PrevFrame0`/`PrevFrame1` share their bytes with `ModeAnim`'s (a union) upstream; here they are the
+/// previous blend's frames (0 at first): only the embedded sounds, not translated, read them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModeInterp {
+    pub motion0: Option<AnimHandle>,
+    pub motion1: Option<AnimHandle>,
+    pub frame0: f32,
+    pub frame1: f32,
+    pub prev_frame0: f32,
+    pub prev_frame1: f32,
+    pub percentage: f32,
+}
+
+/// (#179) `Animatable3DObjClass::ModeCombo` (in `MULTIPLE_ANIM`, `Set_Animation(HAnimComboClass *)`): the combination,
+/// which upstream keeps as the caller's pointer (no reference is added: the caller may change it later), with its
+/// entries' motions as indices into `motions`. Compared as upstream compares the pointers.
+#[derive(Clone, Debug)]
+pub struct ModeCombo {
+    pub combo: Arc<HAnimCombo<usize>>,
+    pub motions: Arc<Vec<Arc<AnimData>>>,
+}
+
+impl PartialEq for ModeCombo {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.combo, &other.combo) && Arc::ptr_eq(&self.motions, &other.motions)
+    }
+}
+
 /// Where a handled `handleWeaponFireFX` plays its FX list (GitHub #43).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WeaponFireFxAt {
@@ -2433,8 +2564,21 @@ pub struct RenderObj {
     pub model_name: Vec<u8>,
     /// `Class_ID() == CLASSID_HLOD`: only these play animations.
     pub is_hlod: bool,
-    /// `CurMotionMode == SINGLE_ANIM`'s `ModeAnim`; `None` in `BASE_POSE`.
+    /// `CurMotionMode == SINGLE_ANIM`'s `ModeAnim`; `None` in `BASE_POSE` ~~.~~ (#179) and in the two modes below.
     pub anim: Option<ModeAnim>,
+    /// (#179) `CurMotionMode == DOUBLE_ANIM`'s `ModeInterp` (`None` otherwise).
+    pub mode_interp: Option<ModeInterp>,
+    /// (#179) `CurMotionMode == MULTIPLE_ANIM`'s `ModeCombo` (`None` otherwise). With none of the three set the mode is
+    /// `BASE_POSE`; at most one is set.
+    pub mode_combo: Option<ModeCombo>,
+    /// (#179) `IsTreeValid` (`Is_Hierarchy_Valid()`): whether the hierarchy's pivots hold the pose for the current
+    /// transform and animation state. 0 as made; see [`RenderObj::get_bone_transform`].
+    is_tree_valid: bool,
+    /// (#179) `HTree`: the render object's own copy of its hierarchy (made from [`RenderObj::skeleton`] the first time it
+    /// is updated), whose pivots keep the transforms of the last update (`Get_Bone_Transform` answers them while the tree
+    /// is valid, and a parent later in the array contributes its previous transform, as upstream's). Its capture state is
+    /// [`RenderObj::bone_controls`]'s, put on before each update.
+    live_tree: Option<HTree>,
     /// `ModeAnim.Frame` kept across `Set_Animation` (its `PrevFrame`).
     last_frame: f32,
     /// `Is_Hidden()`.
@@ -2481,6 +2625,10 @@ impl RenderObj {
             model_name: name.to_vec(),
             is_hlod,
             anim: None,
+            mode_interp: None,
+            mode_combo: None,
+            is_tree_valid: false,
+            live_tree: None,
             last_frame: 0.0,
             hidden: false,
             skeleton: None,
@@ -2496,6 +2644,9 @@ impl RenderObj {
     pub fn with_skeleton(mut self, skeleton: Option<Skeleton>) -> Self {
         self.sub_object_hidden = skeleton.as_ref().map_or_else(Vec::new, |k| k.sub_objects.iter().map(|s| s.hidden).collect());
         self.skeleton = skeleton.map(Arc::new);
+        // (#179) a new hierarchy: made again from it at the next update
+        self.live_tree = None;
+        self.is_tree_valid = false;
         self
     }
 
@@ -2527,45 +2678,242 @@ impl RenderObj {
         usize::try_from(boneindex).ok().and_then(|b| k.bones.get(b)).map_or(Matrix3D::IDENTITY, |b| b.transform)
     }
 
-    /// (#172) `Get_Bone_Transform(boneindex)` with the render object's transform `root` (root (B) of the module docs:
-    /// the drawable's transform as `doDrawModule` sets it): [`Skeleton::bone_transform`], the chain from `root` over
-    /// the scaled pivots in the base pose. Without a hierarchy (`RenderObjClass::Get_Bone_Transform`, or
-    /// `Animatable3DObjClass`'s without an `HTree`): `root` itself. ~~(no capture)~~ **Corrected 2026-11-13 (#174):**
-    /// with this render object's bone captures and controls ([`RenderObj::bone_controls`],
-    /// [`Skeleton::bone_transform_controlled`]), as `Base_Update` applies them: a bone under a captured turret follows
-    /// the turret's turn. `root` is the transform the caller has upstream's render object hold
-    /// (`Set_Transform(root)`): its own [`RenderObj::transform`] for the live bones, `Matrix3D(true).Scale(scale)` for
-    /// the bone particle systems' recalc (W3DModelDraw.cpp:2611-2617). The animation's pose is not applied (#174's gaps).
-    pub fn get_bone_transform(&self, root: &Matrix3D, boneindex: i32) -> Matrix3D {
-        if !self.has_htree() {
-            return *root;
+    /// (#179) `Set_Transform(m)` (`Animatable3DObjClass::Set_Transform`, animobj.cpp:347-351, after
+    /// `HLodClass::Set_Transform`, hlod.cpp:2222-2226): the transform, and the hierarchy no longer valid
+    /// (`Set_Hierarchy_Valid(false)`): the next bone query evaluates the pose again.
+    pub fn set_transform(&mut self, m: &Matrix3D) {
+        self.transform = *m;
+        if !plant(9802) {
+            self.is_tree_valid = false;
         }
-        self.skeleton.as_ref().expect("a hierarchy").bone_transform_controlled(root, boneindex, &self.bone_controls)
     }
 
-    /// (#174) `Get_Bone_Transform(boneindex)` under the render object's own transform ([`RenderObj::transform`]).
-    pub fn get_bone_transform_live(&self, boneindex: i32) -> Matrix3D {
-        let root = self.transform;
-        self.get_bone_transform(&root, boneindex)
+    /// (#179) `Is_Hierarchy_Valid()` (animobj.h:157).
+    pub fn is_hierarchy_valid(&self) -> bool {
+        self.is_tree_valid
+    }
+
+    /// (#179) The live hierarchy, made from the skeleton the first time (`new HTreeClass(*source)`: the pivots as the
+    /// asset source scaled them, their transforms the identity), with the render object's bone captures and controls on
+    /// its pivots (`Capture_Bone`/`Control_Bone`/`Release_Bone` wrote them to the pivots upstream). `None` without a
+    /// skeleton with bones (an HLOD whose source gave none, a mesh).
+    fn prepared_tree(&mut self) -> Option<&mut HTree> {
+        let k = self.skeleton.clone().filter(|k| !k.bones.is_empty())?;
+        let stale = self.live_tree.as_ref().is_none_or(|t| t.num_pivots as usize != k.bones.len()) || plant(9819);
+        if stale {
+            let pivots = k
+                .bones
+                .iter()
+                .enumerate()
+                .map(|(i, b)| {
+                    let parent = if i == 0 { None } else if plant(9698) { Some(0) } else { u32::try_from(b.parent_index).ok() };
+                    Pivot::new([0; W3D_NAME_LEN], parent, b.base, i as i32)
+                })
+                .collect();
+            let scale_factor = if plant(9813) { 1.0 } else { k.scale_factor };
+            self.live_tree = Some(HTree { name: [0; W3D_NAME_LEN], num_pivots: k.bones.len() as i32, pivots, scale_factor });
+        }
+        let tree = self.live_tree.as_mut().expect("made above");
+        for (i, p) in tree.pivots.iter_mut().enumerate() {
+            // (#174) the pivot's `IsCaptured`, `CapTransform`, `WorldSpaceTranslation` as the render object's
+            // `Capture_Bone`, `Control_Bone` and `Release_Bone` left them
+            let c = if plant(9751) { BoneControl::default() } else { self.bone_controls.get(&(i as i32)).copied().unwrap_or_default() };
+            p.is_captured = c.captured;
+            p.cap_transform = c.transform;
+            p.world_space_translation = c.world_space_translation;
+        }
+        Some(tree)
+    }
+
+    /// (#179) One of `HTreeClass`'s updates of the live hierarchy under `root` (nothing without one). (#172 plant 9694:
+    /// the chain from the identity, then the root put before each pivot.)
+    fn tree_update(&mut self, root: &Matrix3D, f: impl FnOnce(&mut HTree, &Matrix3D) -> W3dResult<()>) -> W3dResult<()> {
+        let Some(tree) = self.prepared_tree() else { return Ok(()) };
+        if plant(9694) {
+            let r = f(tree, &Matrix3D::IDENTITY);
+            for p in &mut tree.pivots {
+                p.transform = Matrix3D::multiply(root, &p.transform);
+            }
+            return r;
+        }
+        f(tree, root)
+    }
+
+    /// (#179) `Single_Anim_Progress()` (animobj.cpp:1048-1075) at sync time `now` (`WW3D::Get_Sync_Time()`): in
+    /// `SINGLE_ANIM`, the frame and direction moved on by the time since `LastSyncTime` (`Compute_Current_Frame`,
+    /// [`compute_current_frame`]: `float sync_time_diff = WW3D::Get_Sync_Time() - ModeAnim.LastSyncTime`, an unsigned
+    /// difference, so a sync time earlier than the last wraps), `PrevFrame` the old frame (or kept when the frame did not
+    /// move: "This function was somehow called twice per frame"), `LastSyncTime` now, and the hierarchy no longer valid.
+    /// Its callers skip it in `ANIM_MODE_MANUAL`.
+    fn single_anim_progress(&mut self, now: u32) {
+        let Some(a) = &mut self.anim else { return };
+        let oldprev = a.prev_frame;
+        a.prev_frame = a.frame;
+        let diff = if plant(9818) { (i64::from(now) - i64::from(a.last_sync_time)) as f32 } else { now.wrapping_sub(a.last_sync_time) as f32 };
+        let (f, d) = compute_current_frame(a.frame, a.motion.num_frames, a.motion.frame_rate, a.frame_rate_multiplier, a.anim_direction, diff, a.anim_mode);
+        a.frame = f;
+        a.anim_direction = d;
+        a.last_sync_time = now;
+        if a.frame == a.prev_frame && !plant(9814) {
+            // This function was somehow called twice per frame.
+            a.prev_frame = oldprev;
+        }
+        self.last_frame = a.frame;
+        // Force the heirarchy to be recalculated
+        if !plant(9806) {
+            self.is_tree_valid = false;
+        }
+    }
+
+    /// (#179) `Update_Sub_Object_Transforms()` (animobj.cpp:780-860, through `HLodClass`'s, hlod.cpp:3351-3388, whose
+    /// sub-object part is the renderer's) at sync time `now`: by the motion mode, `BASE_POSE` `Base_Update(Transform)`;
+    /// `SINGLE_ANIM` `Single_Anim_Progress()` unless `ANIM_MODE_MANUAL`, then the inline `Anim_Update(Transform, Motion,
+    /// Frame)` (animobj.h:256-268), which takes `HTreeClass`'s raw fast path (`Anim_Update(Transform, (HRawAnimClass *)
+    /// Motion, Frame)`: one integer frame, [`HTree::anim_update_raw`]) for a raw animation (`CLASSID_HRAWANIM`) and the
+    /// virtual one ([`HTree::anim_update`]) for the others; `DOUBLE_ANIM` `Blend_Update(Transform, Motion0, Frame0,
+    /// Motion1, Frame1, Percentage)`; `MULTIPLE_ANIM` `Combo_Update(Transform, AnimCombo)`; then the hierarchy is valid.
+    /// The embedded sounds that follow each update upstream (`AnimatedSoundMgrClass::Trigger_Sound`) are not translated:
+    /// a motion has embedded sounds only when the animated-sound manager named a bone for it, and the port has none.
+    /// A handle without data ([`AnimHandle::data`]): the base pose. Undefined upstream (a `NULL` motion of a blend or a
+    /// `NULL` combo dereferenced, or an evaluation the [`HTree`] updates report): the error, with the hierarchy valid and
+    /// its pivots as far as the update got.
+    pub fn update_sub_object_transforms(&mut self, now: u32) -> W3dResult<()> {
+        // `CompositeRenderObjClass::Update_Sub_Object_Transforms()`: `RenderObjClass`'s, nothing
+        let root = if plant(9810) { Matrix3D::IDENTITY } else { self.transform };
+        let result = if self.anim.is_some() {
+            if self.anim.as_ref().is_some_and(|a| a.anim_mode != AnimMode::Manual || plant(9804)) && !plant(9803) {
+                self.single_anim_progress(now);
+            }
+            let a = self.anim.as_ref().expect("SINGLE_ANIM");
+            let (data, frame) = (a.motion.data.clone(), a.frame);
+            match data {
+                None => self.tree_update(&root, |t, r| t.base_update(r)),
+                Some(d) => match &*d.motion {
+                    HAnim::Raw(raw) if !plant(9805) => self.tree_update(&root, |t, r| t.anim_update_raw(r, raw, frame)),
+                    m => self.tree_update(&root, |t, r| t.anim_update(r, m, &*d, frame)),
+                },
+            }
+        } else if let Some(i) = self.mode_interp.clone() {
+            match (&i.motion0, &i.motion1) {
+                (Some(m0), Some(m1)) => match (&m0.data, &m1.data) {
+                    (Some(d0), Some(d1)) => {
+                        let pct = if plant(9811) { 1.0 - i.percentage } else { i.percentage };
+                        let poses = PosesOf(&[&**d0, &**d1]);
+                        self.tree_update(&root, |t, r| t.blend_update(r, &d0.motion, i.frame0, &d1.motion, i.frame1, pct, &poses))
+                    }
+                    _ => self.tree_update(&root, |t, r| t.base_update(r)),
+                },
+                // `ModeInterp.Motion0->...` of a NULL motion (htree.cpp's Blend_Update reads its pivot count)
+                _ => Err(crate::formats::w3d::W3dUndefined::NullPointer.into()),
+            }
+        } else if let Some(c) = self.mode_combo.clone() {
+            if plant(9812) {
+                self.tree_update(&root, |t, r| t.base_update(r))
+            } else {
+                let motions = c.motions.clone();
+                let datas: Vec<&AnimData> = motions.iter().map(|d| &**d).collect();
+                let poses = PosesOf(&datas);
+                self.tree_update(&root, |t, r| t.combo_update(r, &c.combo, &poses, |&k: &usize| &*motions[k].motion))
+            }
+        } else {
+            self.tree_update(&root, |t, r| t.base_update(r))
+        };
+        self.is_tree_valid = true;
+        result
+    }
+
+    /// (#179) `Get_Bone_Transform(boneindex)` (animobj.cpp:658-675) at sync time `now`: `Validate_Transform()` (nothing:
+    /// the render object is in no container), then, with a hierarchy (an HLOD, `Animatable3DObjClass`), when it is not
+    /// valid `Update_Sub_Object_Transforms()` ([`RenderObj::update_sub_object_transforms`]: the animation moved on to `now`
+    /// unless `MANUAL`, and its pose evaluated under the render object's transform with the captured bones), and the
+    /// pivot's transform; while it is valid, the pose of the last update (a later query at a later sync time answers the
+    /// same pose until something invalidates it: `Set_Transform`, `Set_Animation`, `Control_Bone`, `Render`'s progress).
+    /// So the query **changes the animation state** as upstream's does (the frame, `PrevFrame`, `LastSyncTime`, the
+    /// direction of a ping-pong). Another render object (`RenderObjClass::Get_Bone_Transform`, rendobj.h): its
+    /// transform. A bone out of range (an upstream assertion) or an update undefined upstream: the transform.
+    pub fn get_bone_transform(&mut self, boneindex: i32, now: u32) -> Matrix3D {
+        let fallback = self.transform;
+        self.try_get_bone_transform(boneindex, now).unwrap_or(fallback)
+    }
+
+    /// (#179) [`RenderObj::get_bone_transform`] with what upstream leaves undefined as an error.
+    pub fn try_get_bone_transform(&mut self, boneindex: i32, now: u32) -> W3dResult<Matrix3D> {
+        if !self.is_hlod {
+            return Ok(self.transform);
+        }
+        // If our hierarchy isn't valid, we just need to evaluate our animation state.
+        if !self.is_tree_valid || plant(9801) {
+            self.update_sub_object_transforms(now)?;
+        }
+        match &self.live_tree {
+            Some(t) => t.get_transform(boneindex),
+            // an HLOD whose source gave no hierarchy (upstream's default one: pivot 0, the transform)
+            None => Ok(self.transform),
+        }
+    }
+
+    /// (#179) `Set_Transform(root)`, `Get_Bone_Transform(boneindex)`, `Set_Transform(original)`: how
+    /// `recalcBonesForClientParticleSystems` reads a bone "in modelspace, not world space" (W3DModelDraw.cpp:2611-2621,
+    /// and `validateCachedBones`, 672-702): the pose under `root`, the transform restored, and the hierarchy left not
+    /// valid by the restore.
+    pub fn get_bone_transform_under(&mut self, root: &Matrix3D, boneindex: i32, now: u32) -> Matrix3D {
+        let original_transform = self.transform;
+        self.set_transform(root);
+        let bone_transform = self.get_bone_transform(boneindex, now);
+        if plant(9816) {
+            self.transform = original_transform;
+        } else {
+            self.set_transform(&original_transform);
+        }
+        bone_transform
+    }
+
+    /// (#179) What [`RenderObj::get_bone_transform`] would answer at `now`, after `Set_Transform(root)` when `root` is
+    /// given, with nothing written: for a caller that may only read the render object (another drawable's, or a
+    /// `const` path of the port). Upstream's query writes the animation state it moves on and validates the tree; a
+    /// later query of this render object can then answer differently from upstream's (#179's gaps).
+    pub fn peek_bone_transform(&self, root: Option<&Matrix3D>, boneindex: i32, now: u32) -> Matrix3D {
+        let mut r = self.clone();
+        if let Some(root) = root {
+            r.set_transform(root);
+        }
+        r.get_bone_transform(boneindex, now)
     }
 
     /// `Capture_Bone(boneindex)` (`Animatable3DObjClass`: nothing without a hierarchy; a bone
-    /// out of range is an upstream assertion, ignored).
+    /// out of range is an upstream assertion, ignored). (#179) The hierarchy stays valid (upstream's does not invalidate
+    /// it: the capture shows at the next update).
     pub fn capture_bone(&mut self, boneindex: i32) {
         if self.has_htree() && self.skeleton.as_ref().is_some_and(|k| boneindex >= 0 && (boneindex as usize) < k.bones.len()) {
             self.bone_controls.entry(boneindex).or_default().captured = true;
         }
     }
 
-    /// `Control_Bone(bindex, objtm, world_space_translation = false)`.
-    pub fn control_bone(&mut self, bindex: i32, objtm: &Matrix3D) {
-        if self.has_htree() && self.skeleton.as_ref().is_some_and(|k| bindex >= 0 && (bindex as usize) < k.bones.len()) {
-            let c = self.bone_controls.entry(bindex).or_default();
-            c.transform = *objtm;
-            c.world_space_translation = false;
+    /// (#179) `Release_Bone(boneindex)` (animobj.cpp:710-715, htree.cpp:1016-1031: `IsCaptured = false`, the control kept;
+    /// the hierarchy stays valid).
+    pub fn release_bone(&mut self, boneindex: i32) {
+        if self.has_htree() && self.skeleton.as_ref().is_some_and(|k| boneindex >= 0 && (boneindex as usize) < k.bones.len()) && !plant(9817) {
+            self.bone_controls.entry(boneindex).or_default().captured = false;
         }
     }
 
+    /// `Control_Bone(bindex, objtm, world_space_translation = false)`.
+    pub fn control_bone(&mut self, bindex: i32, objtm: &Matrix3D) {
+        self.control_bone_world(bindex, objtm, false);
+    }
+
+    /// (#179) `Control_Bone(bindex, objtm, world_space_translation)` (animobj.cpp:752-765): the pivot's control, and
+    /// with a hierarchy (an HLOD) the hierarchy no longer valid.
+    pub fn control_bone_world(&mut self, bindex: i32, objtm: &Matrix3D, world_space_translation: bool) {
+        if self.has_htree() && self.skeleton.as_ref().is_some_and(|k| bindex >= 0 && (bindex as usize) < k.bones.len()) {
+            let c = self.bone_controls.entry(bindex).or_default();
+            c.transform = *objtm;
+            c.world_space_translation = world_space_translation;
+        }
+        if self.is_hlod && !plant(9807) {
+            self.is_tree_valid = false;
+        }
+    }
     /// `Get_Sub_Object_On_Bone(index, boneindex)`: the `index`th sub-object on the bone.
     pub fn get_sub_object_on_bone(&self, index: usize, boneindex: i32) -> Option<usize> {
         let k = self.skeleton.as_ref()?;
@@ -2613,11 +2961,14 @@ impl RenderObj {
     }
 
     /// `Set_Animation(motion, frame, mode)` at sync time `now` (nothing on a
-    /// render object that is not an HLOD).
+    /// render object that is not an HLOD). (#179) `Release()` of the previous mode, and the hierarchy no longer valid
+    /// (animobj.cpp:472-506); `None` is `BASE_POSE`.
     pub fn set_animation(&mut self, motion: Option<AnimHandle>, frame: f32, mode: AnimMode, now: u32) {
         if !self.is_hlod {
             return;
         }
+        self.mode_interp = None;
+        self.mode_combo = None;
         match motion {
             Some(motion) => {
                 let prev_frame = self.anim.as_ref().map_or(self.last_frame, |a| a.frame);
@@ -2627,28 +2978,76 @@ impl RenderObj {
             }
             None => self.anim = None,
         }
+        if !plant(9808) {
+            self.is_tree_valid = false;
+        }
     }
 
-    /// `Single_Anim_Progress()` at sync time `now` (what `Render` does
-    /// before it draws, unless the mode is `MANUAL`).
-    pub fn render(&mut self, now: u32) {
-        let Some(a) = &mut self.anim else { return };
-        if a.anim_mode == AnimMode::Manual {
+    /// (#179) `Set_Animation()` (animobj.cpp:452-457): `Release()`, `BASE_POSE`, the hierarchy no longer valid.
+    pub fn set_animation_base_pose(&mut self) {
+        if !self.is_hlod {
             return;
         }
-        let oldprev = a.prev_frame;
-        a.prev_frame = a.frame;
-        let diff = now.wrapping_sub(a.last_sync_time) as f32;
-        let (f, d) = compute_current_frame(a.frame, a.motion.num_frames, a.motion.frame_rate, a.frame_rate_multiplier, a.anim_direction, diff, a.anim_mode);
-        a.frame = f;
-        a.anim_direction = d;
-        a.last_sync_time = now;
-        if a.frame == a.prev_frame {
-            a.prev_frame = oldprev;
+        if !plant(9815) {
+            self.anim = None;
+            self.mode_interp = None;
+            self.mode_combo = None;
         }
-        self.last_frame = a.frame;
+        self.is_tree_valid = false;
     }
 
+    /// (#179) `Set_Animation(motion0, frame0, motion1, frame1, percentage)` (animobj.cpp:519-560): `DOUBLE_ANIM`, a blend
+    /// of two animations (each may be `None`, upstream's `NULL`), the hierarchy no longer valid.
+    pub fn set_animation_blend(&mut self, motion0: Option<AnimHandle>, frame0: f32, motion1: Option<AnimHandle>, frame1: f32, percentage: f32) {
+        if !self.is_hlod {
+            return;
+        }
+        let (prev_frame0, prev_frame1) = self.mode_interp.as_ref().map_or((0.0, 0.0), |i| (i.frame0, i.frame1));
+        if let Some(a) = &self.anim {
+            self.last_frame = a.frame;
+        }
+        self.anim = None;
+        self.mode_combo = None;
+        self.mode_interp = Some(ModeInterp { motion0, motion1, frame0, frame1, prev_frame0, prev_frame1, percentage });
+        self.is_tree_valid = false;
+    }
+
+    /// (#179) `Set_Animation(HAnimComboClass *anim_combo)` (animobj.cpp:572-597): `MULTIPLE_ANIM` (`None` is upstream's
+    /// `NULL` combo, which the next update dereferences: undefined), the hierarchy no longer valid.
+    pub fn set_animation_combo(&mut self, combo: Option<ModeCombo>) {
+        if !self.is_hlod {
+            return;
+        }
+        self.anim = None;
+        self.mode_interp = None;
+        self.mode_combo = combo;
+        self.is_tree_valid = false;
+    }
+
+    /// ~~`Single_Anim_Progress()` at sync time `now` (what `Render` does before it draws, unless the mode is `MANUAL`).~~
+    /// **Corrected 2026-11-13 (#179):** `Animatable3DObjClass::Render` (animobj.cpp:288-305, after `HLodClass::Render`'s
+    /// `Is_Not_Hidden_At_All()`, hlod.cpp:2146-2154) at sync time `now`: nothing for a render object that is not an HLOD
+    /// (no `HTree`) or that is hidden; `Single_Anim_Progress()` unless `MANUAL`; then, the hierarchy not valid,
+    /// `Update_Sub_Object_Transforms()` (which moves the animation on again at the same sync time: by nothing, except a
+    /// frame left on a wrap point). `Are_Sub_Object_Transforms_Dirty()` is not kept: every call that sets it
+    /// (`HLodClass::Set_Transform`) also invalidates the hierarchy, and the update clears both.
+    pub fn render(&mut self, now: u32) {
+        let _ = self.try_render(now);
+    }
+
+    /// (#179) [`RenderObj::render`] with what upstream leaves undefined as an error.
+    pub fn try_render(&mut self, now: u32) -> W3dResult<()> {
+        if !self.is_hlod || self.hidden {
+            return Ok(());
+        }
+        if self.anim.as_ref().is_some_and(|a| a.anim_mode != AnimMode::Manual) {
+            self.single_anim_progress(now);
+        }
+        if !self.is_tree_valid && !plant(9809) {
+            self.update_sub_object_transforms(now)?;
+        }
+        Ok(())
+    }
     /// `Is_Animation_Complete()`: on the last frame of a `ONCE`, or the
     /// first of a `ONCE_BACKWARDS`.
     pub fn is_animation_complete_hlod(&self) -> bool {
@@ -3171,7 +3570,7 @@ impl W3DModelDraw {
                     // (#174, W3DModelDraw.cpp:3150-3155) "set the transform for the new model to that we saved before, we do
                     // this so that the model transition is smooth"
                     if !plant(9754) {
-                        r.transform = transform;
+                        r.set_transform(&transform);
                     }
                     self.render_object = Some(r);
                     self.render_obj_serial = self.render_obj_serial.wrapping_add(1);
@@ -3429,7 +3828,7 @@ impl W3DModelDraw {
             let mut mtx = transform_mtx;
             self.adjust_transform_mtx(&mut mtx, facts.construction);
             if let Some(r) = &mut self.render_object {
-                r.transform = mtx;
+                r.set_transform(&mtx);
             }
         }
 
@@ -3437,12 +3836,11 @@ impl W3DModelDraw {
         // (#171, W3DModelDraw.cpp:2103-2107) the bone particle systems: made when the state changed, and moved to their
         // bones each draw when the module data says they follow animated bones
         if self.render_object.is_some() || !plant(9688) {
-            self.recalc_bones_for_client_particle_systems(env.particles.as_mut(), env.random);
+            self.recalc_bones_for_client_particle_systems(env.particles.as_mut(), env.random, env.sync_time);
         }
         if (self.data.particles_attached_to_animated_bones || plant(9686)) && !plant(9687) {
-            // (#174) the render object's transform, as just set
-            let transform = self.render_object.as_ref().map_or(facts.transform, |r| r.transform);
-            self.update_bones_for_client_particle_systems(&transform, env.particles.as_mut().map(|p| &mut *p.manager));
+            // (#174) the render object's transform, as just set (#179: its own, as upstream's call reads it)
+            self.update_bones_for_client_particle_systems(env.particles.as_mut().map(|p| &mut *p.manager), env.sync_time);
         }
         self.handle_client_recoil();
     }
@@ -3490,7 +3888,7 @@ impl W3DModelDraw {
         if self.render_object.is_some() {
             let mtx = self.reacted_transform(transform, construction);
             if let Some(r) = &mut self.render_object {
-                r.transform = mtx;
+                r.set_transform(&mtx);
             }
         }
     }
@@ -3771,9 +4169,9 @@ impl W3DModelDraw {
 
     /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`'s answer, whether it was handled
     /// (see [`W3DModelDraw::handle_weapon_fire_fx_at`] for where the effect plays).
-    pub fn handle_weapon_fire_fx(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool) -> bool {
+    pub fn handle_weapon_fire_fx(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, sync_time: u32) -> bool {
         // where it plays is not asked: any render object transform
-        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl).is_some()
+        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, sync_time).is_some()
     }
 
     /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`: the barrel's recoil started and its muzzle flash
@@ -3783,8 +4181,9 @@ impl W3DModelDraw {
     /// hidden. (#172) ~~`transform` is the render object's (the drawable's, as `doDrawModule` sets it)~~ **Corrected
     /// 2026-11-13 (#174):** the render object's own transform ([`RenderObj::transform`]): the FX bone is
     /// `Get_Bone_Transform(info.m_fxBone)` (W3DModelDraw.cpp:3727), the chain from it with the captured bones
-    /// ([`RenderObj::get_bone_transform_live`]).
-    pub fn handle_weapon_fire_fx_at(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool) -> Option<WeaponFireFxAt> {
+    /// ~~([`RenderObj::get_bone_transform_live`])~~ **Corrected 2026-11-13 (#179):** ([`RenderObj::get_bone_transform`] at
+    /// `sync_time`, `WW3D::Get_Sync_Time()`: the animation's current pose, which the query moves on).
+    pub fn handle_weapon_fire_fx_at(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, sync_time: u32) -> Option<WeaponFireFxAt> {
         let cur = self.get_cur_state()?;
         if !cur.barrels_valid() || wslot >= SLOTS {
             return None;
@@ -3799,14 +4198,21 @@ impl W3DModelDraw {
         let barrel = if specific_barrel_to_use < 0 || specific_barrel_to_use as usize >= wbvec.len() { 0 } else { specific_barrel_to_use as usize };
         let info = wbvec[barrel];
         if has_fxl && info.fx_bone != 0 {
-            if let Some(r) = &self.render_object {
-                // `m_renderObject->Get_Bone_Transform(info.m_fxBone)` unless hidden; the bone's base pose (the
-                // skeleton's), (#172) in the world: the chain from the render object's transform
-                let bone_transform = r.skeleton.as_ref().and_then(|k| k.bones.get(info.fx_bone as usize)).map(|b| {
+            if let Some(r) = &mut self.render_object {
+                // `m_renderObject->Get_Bone_Transform(info.m_fxBone)` unless hidden; ~~the bone's base pose (the
+                // skeleton's)~~ (#179) the animation's current pose, (#172) in the world: the chain from the render
+                // object's transform
+                let pristine = r.skeleton.as_ref().and_then(|k| k.bones.get(info.fx_bone as usize)).map(|b| b.transform);
+                // (#179) upstream asks the bone only when the render object is not hidden (or the drawable has no object:
+                // the port's firing drawables always have one), so a hidden one's animation state is not moved on: its
+                // answer here is read without writing (the caller plays at the logic object then)
+                let bone_transform = pristine.map(|b| {
                     if plant(9697) {
-                        b.transform
+                        b
+                    } else if r.hidden {
+                        r.peek_bone_transform(None, info.fx_bone, sync_time)
                     } else {
-                        r.get_bone_transform_live(info.fx_bone)
+                        r.get_bone_transform(info.fx_bone, sync_time)
                     }
                 });
                 handled = Some(WeaponFireFxAt { bone_transform, render_hidden: r.hidden });
@@ -3895,10 +4301,17 @@ impl W3DModelDraw {
     /// `doDrawModule` or `reactToTransformChange` set it) over the scaled pivots, with the captured bones,
     /// [`RenderObj::get_bone_transform`] (root (B) of the module docs). DANGER WARNING READ ME (upstream's): this must never touch the logic, and
     /// does not: it writes the client's particle systems only.
-    pub fn update_bones_for_client_particle_systems(&mut self, transform: &Matrix3D, particles: Option<&mut ParticleSystemManager>) -> bool {
+    ///
+    /// **Corrected 2026-11-13 (#179):** no `transform` argument: upstream reads the render object's own transform (its
+    /// `Set_Transform` is commented out, 2681-2688, 2719), and each bone is `Get_Bone_Transform(boneIndex)` at
+    /// `sync_time` ([`RenderObj::get_bone_transform`]): the animation's current pose, the first query moving the
+    /// animation on and validating the hierarchy, the next ones answering that pose ("just a little worried about state
+    /// changes", upstream's comment).
+    pub fn update_bones_for_client_particle_systems(&mut self, particles: Option<&mut ParticleSystemManager>, sync_time: u32) -> bool {
         // `drawable != NULL` always holds for a module of a drawable
         if self.cur_state.is_some() {
-            if let (Some(r), Some(manager)) = (&self.render_object, particles) {
+            if let (Some(r), Some(manager)) = (&mut self.render_object, particles) {
+                let transform = r.transform;
                 let first_bone = self.particle_system_ids.first().map_or(0, |t| t.bone_index);
                 for it in &self.particle_system_ids {
                     let bone_index = if plant(9677) { first_bone } else { it.bone_index };
@@ -3909,9 +4322,9 @@ impl W3DModelDraw {
                         let bone_transform = if plant(9676) {
                             r.get_bone_transform_scaled(bone_index)
                         } else if plant(9691) {
-                            Matrix3D::multiply(transform, &r.get_bone_transform_scaled(bone_index))
+                            Matrix3D::multiply(&transform, &r.get_bone_transform_scaled(bone_index))
                         } else {
-                            r.get_bone_transform(transform, bone_index)
+                            r.get_bone_transform(bone_index, sync_time)
                         };
                         let vpos = bone_transform.get_translation();
                         let pos = Coord3D { x: vpos.x, y: vpos.y, z: vpos.z };
@@ -3937,7 +4350,11 @@ impl W3DModelDraw {
     /// attached to the drawable, never saved (`setSaveable(FALSE)`: re-made after a load), stopped when the drawable is
     /// hidden or fully obscured by the shroud, and listed with its bone. The flag is then cleared. DANGER WARNING READ
     /// ME (upstream's): client only.
-    pub fn recalc_bones_for_client_particle_systems(&mut self, particles: Option<&mut DrawParticles<'_>>, random: &mut RandomValues) {
+    ///
+    /// (#179) The bone is read as upstream reads it, at `sync_time`: `Set_Transform(Scale(getScale()))`,
+    /// `Get_Bone_Transform`, `Set_Transform(original)` ([`RenderObj::get_bone_transform_under`]): the animation's
+    /// current pose, the animation moved on, and the hierarchy left not valid.
+    pub fn recalc_bones_for_client_particle_systems(&mut self, particles: Option<&mut DrawParticles<'_>>, random: &mut RandomValues, sync_time: u32) {
         if self.need_recalc_bone_particle_systems {
             // `drawable != NULL` always holds for a module of a drawable
             if let Some(cur) = self.cur_state.clone() {
@@ -3960,13 +4377,14 @@ impl W3DModelDraw {
                             // object's transform to the drawable's scale, reads the bone and restores it: ~~the skeleton
                             // as made~~ (#174) the chain from `Matrix3D(true).Scale(getScale())` with the render object's
                             // captured bones, e.g. the turret `handleClientTurretPositioning` just turned)
-                            let r = self.render_object.as_ref().expect("a render object");
+                            let scale = self.scale;
+                            let r = self.render_object.as_mut().expect("a render object");
                             let bone_transform = if plant(9759) {
                                 r.get_bone_transform_scaled(bone_index)
                             } else {
                                 let mut tmp = Matrix3D::IDENTITY;
-                                tmp.scale(self.scale);
-                                r.get_bone_transform(&tmp, bone_index)
+                                tmp.scale(scale);
+                                r.get_bone_transform_under(&tmp, bone_index, sync_time)
                             };
                             let vpos = bone_transform.get_translation();
                             rotation = bone_transform.get_z_rotation();
@@ -4071,18 +4489,34 @@ impl W3DModelDraw {
     /// from `world` over the scaled pivots, [`RenderObj::get_bone_transform`]): the animation's current pose is not
     /// applied (#165's gaps). **Corrected 2026-11-13 (#174):** `world` is the render object's transform the caller has it
     /// hold (its [`RenderObj::transform`], or [`W3DModelDraw::reacted_transform`] of the drawable's), and the chain
-    /// applies the render object's captured bones (the turret's turn, the recoil).
-    pub fn get_current_worldspace_client_bone_positions(&self, bone_name: &[u8], world: &Matrix3D) -> Option<Matrix3D> {
-        let r = self.render_object.as_ref()?;
-        let k = r.skeleton.as_ref()?;
+    /// applies the render object's captured bones (the turret's turn, the recoil). **Corrected 2026-11-13 (#179):** no
+    /// `world` argument: the render object's own transform (the caller puts it at the drawable's,
+    /// [`W3DModelDraw::react_to_transform_change`]), and the bone is `Get_Bone_Transform` at `sync_time`
+    /// ([`RenderObj::get_bone_transform`]): the animation's current pose, the query moving the animation on.
+    pub fn get_current_worldspace_client_bone_positions(&mut self, bone_name: &[u8], sync_time: u32) -> Option<Matrix3D> {
+        Self::worldspace_bone(self.render_object.as_mut()?, bone_name, sync_time)
+    }
+
+    /// (#179) [`W3DModelDraw::get_current_worldspace_client_bone_positions`] with the render object's transform put at
+    /// `world` (`reactToTransformChange`'s), nothing written: for another drawable's question (a laser's start bone,
+    /// [`crate::client::laser_update`]), which may only read it (#179's gaps).
+    pub fn peek_current_worldspace_client_bone_positions(&self, bone_name: &[u8], world: &Matrix3D, sync_time: u32) -> Option<Matrix3D> {
+        let mut r = self.render_object.clone()?;
+        r.set_transform(world);
+        Self::worldspace_bone(&mut r, bone_name, sync_time)
+    }
+
+    /// (#179) `getCurrentWorldspaceClientBonePositions`' body (W3DModelDraw.cpp:3557-3565) on the render object.
+    fn worldspace_bone(r: &mut RenderObj, bone_name: &[u8], sync_time: u32) -> Option<Matrix3D> {
+        let k = r.skeleton.clone()?;
         let bone_index = k.get_bone_index(bone_name);
         if bone_index == 0 {
             return None;
         }
         if plant(9696) {
-            return Some(Matrix3D::multiply(world, &k.bones[bone_index as usize].transform));
+            return Some(Matrix3D::multiply(&r.transform, &k.bones[bone_index as usize].transform));
         }
-        Some(r.get_bone_transform(world, bone_index))
+        Some(r.get_bone_transform(bone_index, sync_time))
     }
 
     /// (#174) `getCurrentBonePositions(boneNamePrefix, startIndex, positions, transforms, maxBones)`
@@ -4095,8 +4529,29 @@ impl W3DModelDraw {
     /// ends the list. Each bone is `Get_Bone_Transform(boneIndex)` (the chain from the render object's own transform with
     /// its captures, [`RenderObj::get_bone_transform_live`]) pre-multiplied by the inverse (`preMul`). With `positions`,
     /// each found bone's translation. Returns the count. A slot beyond the caller's array is upstream's write past it:
-    /// not made (the count still counts it).
-    pub fn get_current_bone_positions(&self, bone_name_prefix: &[u8], start_index: i32, positions: Option<&mut [Coord3D]>, transforms: Option<&mut [Matrix3D]>, max_bones: i32) -> i32 {
+    /// not made (the count still counts it). **Corrected 2026-11-13 (#179):** each bone at `sync_time`
+    /// ([`RenderObj::get_bone_transform`]): the animation's current pose, the first query moving the animation on (also
+    /// for a slot past the caller's array: upstream asks before it writes).
+    pub fn get_current_bone_positions(&mut self, bone_name_prefix: &[u8], start_index: i32, positions: Option<&mut [Coord3D]>, transforms: Option<&mut [Matrix3D]>, max_bones: i32, sync_time: u32) -> i32 {
+        let scale = self.scale;
+        match self.render_object.as_mut() {
+            Some(r) => Self::current_bone_positions(r, scale, bone_name_prefix, start_index, positions, transforms, max_bones, sync_time),
+            None => 0,
+        }
+    }
+
+    /// (#179) [`W3DModelDraw::get_current_bone_positions`] with nothing written to the render object: for a caller that
+    /// may only read the drawable (the FX lists' `doFxAtBones`, [`crate::client::client_fx`]; #179's gaps).
+    pub fn peek_current_bone_positions(&self, bone_name_prefix: &[u8], start_index: i32, positions: Option<&mut [Coord3D]>, transforms: Option<&mut [Matrix3D]>, max_bones: i32, sync_time: u32) -> i32 {
+        match self.render_object.clone() {
+            Some(mut r) => Self::current_bone_positions(&mut r, self.scale, bone_name_prefix, start_index, positions, transforms, max_bones, sync_time),
+            None => 0,
+        }
+    }
+
+    /// (#179) `getCurrentBonePositions`' body after its render-object test, on `r` with the drawable's scale `scale`.
+    #[allow(clippy::too_many_arguments)]
+    fn current_bone_positions(r: &mut RenderObj, scale: f32, bone_name_prefix: &[u8], start_index: i32, positions: Option<&mut [Coord3D]>, transforms: Option<&mut [Matrix3D]>, max_bones: i32, sync_time: u32) -> i32 {
         const MAX_BONE_GET: i32 = 64;
         let mut tmp_mtx = [Matrix3D::IDENTITY; MAX_BONE_GET as usize];
 
@@ -4107,13 +4562,11 @@ impl W3DModelDraw {
             None => &mut tmp_mtx,
         };
 
-        let Some(r) = &self.render_object else { return 0 };
-
         // ugh... kill the mtx so we get it in modelspace, not world space
         let original_transform = r.transform; // save the transform
         let mut inverse = original_transform.get_orthogonal_inverse();
         if !plant(9762) {
-            inverse.scale(self.scale);
+            inverse.scale(scale);
         }
 
         let mut pos_count: i32 = 0;
@@ -4130,8 +4583,9 @@ impl W3DModelDraw {
                 break;
             }
 
+            let bone = if plant(9764) { r.get_bone_transform_under(&Matrix3D::IDENTITY, bone_index, sync_time) } else { r.get_bone_transform(bone_index, sync_time) };
             if let Some(t) = usize::try_from(pos_count).ok().and_then(|p| transforms.get_mut(p)) {
-                *t = if plant(9764) { r.get_bone_transform(&Matrix3D::IDENTITY, bone_index) } else { r.get_bone_transform_live(bone_index) };
+                *t = bone;
                 if plant(9765) {
                     t.post_mul(&inverse);
                 } else {
@@ -4200,7 +4654,8 @@ impl W3DModelDraw {
     }
 
     /// The render's own step (`Animatable3DObjClass::Render`): advance the
-    /// animation to sync time `now`, unless hidden.
+    /// animation to sync time `now`, unless hidden (#179: and evaluate its pose when the hierarchy is not valid,
+    /// [`RenderObj::render`]).
     pub fn render(&mut self, now: u32) {
         if let Some(r) = &mut self.render_object {
             if !r.hidden {
@@ -4417,7 +4872,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             (!name.eq_ignore_ascii_case(b"missing")).then_some(true)
         }
         fn get_hanim(&mut self, name: &[u8]) -> Option<AnimHandle> {
-            self.anims.iter().find(|a| a.0.as_bytes().eq_ignore_ascii_case(name)).map(|a| AnimHandle { name: a.0.as_bytes().to_vec(), num_frames: a.1, frame_rate: a.2 })
+            self.anims.iter().find(|a| a.0.as_bytes().eq_ignore_ascii_case(name)).map(|a| AnimHandle { name: a.0.as_bytes().to_vec(), num_frames: a.1, frame_rate: a.2, data: None })
         }
     }
 
@@ -4858,7 +5313,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert!(hidden(&m)[MUZZLE]);
             assert_eq!(m.get_barrel_count(0), 1);
 
-            assert!(!m.handle_weapon_fire_fx(0, 0, false));
+            assert!(!m.handle_weapon_fire_fx(0, 0, false, 0));
             assert_eq!(m.weapon_recoil_info_vec[0][0], WeaponRecoilInfo { state: RecoilState::RecoilStart, shift: 0.0, recoil_rate: 2.0 });
             assert!(!hidden(&m)[MUZZLE]);
             let mut shifts = Vec::new();
@@ -4880,7 +5335,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert_eq!(idle_at, Some(50));
             assert_eq!(m.render_object.as_ref().unwrap().bone_controls[&3].transform, back);
             // with an FX list, the FX bone and a render object, it is handled
-            assert!(m.handle_weapon_fire_fx(0, 0, true));
+            assert!(m.handle_weapon_fire_fx(0, 0, true, 0));
         }
 
         /// (#172) The drawable's scale as upstream's render object carries it, on [`gunt`] (MUZZLEFX01 is four pivots
@@ -4912,13 +5367,13 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert_eq!((pristine.row[0][0], pristine.row[1][1], pristine.row[2][2]), (2.0, 2.0, 2.0));
             let mut world = Matrix3D::IDENTITY;
             world.set_translation(&Vector3::new(100.0, 50.0, 0.0));
-            let live = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", &world).unwrap();
+            let live = m.peek_current_worldspace_client_bone_positions(b"MUZZLEFX01", &world, 0).unwrap();
             assert!(near(live.get_translation(), [108.0, 50.0, 4.0]), "{:?}", live.get_translation());
             assert_eq!((live.row[0][0], live.row[1][1], live.row[2][2]), (1.0, 1.0, 1.0));
             // (#174) the FX bone is chained from the render object's own transform: `reactToTransformChange` puts it at the
             // drawable's (no instance scale)
             m.react_to_transform_change(&world, None);
-            let at = m.handle_weapon_fire_fx_at(0, 0, true).unwrap();
+            let at = m.handle_weapon_fire_fx_at(0, 0, true, 0).unwrap();
             assert_eq!(at, WeaponFireFxAt { bone_transform: Some(live), render_hidden: false });
             // (#174) the draw's render object transform is the drawable's scaled by the instance scale (W3DModelDraw.cpp:
             // 2045-2054, `m_instanceScale` = the template's 2): the live muzzle bone in the base pose is then the pristine
@@ -4936,11 +5391,12 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             let mut scaled = world;
             scaled.scale(2.0);
             assert_eq!((r.transform, r.object_scale), (scaled, 2.0));
-            let live2 = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", &r.transform).unwrap();
-            assert!(near(live2.get_translation(), [100.0, 62.0, 8.0]), "{:?}", live2.get_translation());
             let mut bare = r.clone();
+            let live2 = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", 0).unwrap();
+            assert!(near(live2.get_translation(), [100.0, 62.0, 8.0]), "{:?}", live2.get_translation());
             bare.bone_controls.clear();
-            let base = bare.get_bone_transform_live(bare.get_bone_index(b"MUZZLEFX01"));
+            let root = bare.transform;
+            let base = bare.peek_bone_transform(Some(&root), bare.get_bone_index(b"MUZZLEFX01"), 0);
             assert_eq!(base, Matrix3D::multiply(&world, &pristine));
             assert!(near(base.get_translation(), [116.0, 50.0, 8.0]), "{:?}", base.get_translation());
             // (#174) `getCurrentBonePositions` (DO_INV): `Get_Orthogonal_Inverse` of the render object's transform
@@ -4951,7 +5407,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             // transform is not its inverse. Upstream's, kept (at scale 1 the two agree).
             let mut t = [Matrix3D::IDENTITY; 2];
             let mut p = [Coord3D::default(); 2];
-            assert_eq!(m.get_current_bone_positions(b"MUZZLEFX", 1, Some(&mut p), Some(&mut t), 2), 1);
+            assert_eq!(m.get_current_bone_positions(b"MUZZLEFX", 1, Some(&mut p), Some(&mut t), 2, 0), 1);
             assert!(near(t[0].get_translation(), [200.0, 148.0, 32.0]), "{:?}", t[0]);
             assert!((t[0].row[1][0] - 8.0).abs() < 1e-5 && (t[0].row[2][2] - 8.0).abs() < 1e-5, "{:?}", t[0]);
             assert_eq!(p[0], Coord3D { x: t[0].row[0][3], y: t[0].row[1][3], z: t[0].row[2][3] });
@@ -4969,13 +5425,13 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             let r = m.render_object.as_mut().unwrap();
             r.capture_bone(turret);
             r.control_bone(turret, &quarter);
-            let turned = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", &m.render_object.as_ref().unwrap().transform).unwrap();
+            let turned = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", 0).unwrap();
             assert!(near(turned.get_translation(), [88.0, 50.0, 8.0]), "{:?}", turned.get_translation());
 
             let m = draw_scaled(&mut rig, 1.005);
             let pristine = m.get_cur_state().unwrap().bone_cache().pristine_bones[&b"muzzlefx01"[..]].mtx;
             assert!(near(pristine.get_translation(), [4.02, 0.0, 2.01]), "{:?}", pristine.get_translation());
-            let live = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", &Matrix3D::IDENTITY).unwrap();
+            let live = m.peek_current_worldspace_client_bone_positions(b"MUZZLEFX01", &Matrix3D::IDENTITY, 0).unwrap();
             assert_eq!(live.get_translation(), Vector3::new(4.0, 0.0, 2.0));
         }
 
@@ -5719,7 +6175,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
                 let mut root = Matrix3D::IDENTITY;
                 root.scale(scale);
                 tree.base_update(&root).unwrap();
-                Some(Skeleton { bones: Skeleton::bones_of(&tree), sub_objects: Vec::new() })
+                Some(Skeleton { bones: Skeleton::bones_of(&tree), sub_objects: Vec::new(), scale_factor: tree.scale_factor })
             }
         }
         let lines: &[(u32, &str, &str)] = &[
@@ -5772,7 +6228,9 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         assert!(!sys(&mgr, 1).is_stopped && !sys(&mgr, 3).is_stopped);
         m.set_fully_obscured_by_shroud(true, Some(&mut mgr));
         assert!(m.fully_obscured_by_shroud && sys(&mgr, 1).is_stopped);
-        assert!(m.update_bones_for_client_particle_systems(&Matrix3D::IDENTITY, Some(&mut mgr)));
+        // (#179) the render object's own transform, put at the identity
+        m.render_object.as_mut().unwrap().set_transform(&Matrix3D::IDENTITY);
+        assert!(m.update_bones_for_client_particle_systems(Some(&mut mgr), 0));
         let p = sys(&mgr, 1).get_position();
         assert_eq!((p.x, p.y, p.z), (2.0, 4.0, 6.0));
         let damaged = d.find_best_info(&flags(&[crate::common::model_state::MODELCONDITION_DAMAGED])).unwrap();
@@ -5794,5 +6252,60 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         m.particle_system_ids.push(ParticleSysTrackerType { id: 1, bone_index: 1 });
         m.stop_client_particle_systems(None);
         assert!(m.particle_system_ids.is_empty());
+    }
+    /// (#179) A render object's live bones follow its animation, as `Animatable3DObjClass::Get_Bone_Transform` poses
+    /// them. Two pivots (pivot 1 at (1, 0, 0) under the root), `hanim::tests::raw_anim` (pivot 1's X = 0, 10, 40 at
+    /// frames 0, 1, 2; 30 frames a second) under the portable `Float_To_Long`. Predictions (issue179_predictions.md):
+    /// LOOP from frame 0 at sync time 0: bone 1 at x = 1, the tree valid; asked again at 50 ms with nothing invalidating it,
+    /// the same pose and frame 0 (the cached pose); after `Set_Transform` at 50 ms, the frame moves to 1.5 (measured:
+    /// 1.5000001) and the raw
+    /// fast path reads frame 1 (truncated): x = 11 (the virtual `Anim_Update` would interpolate 25: x = 26); `MANUAL` at
+    /// frame 2 stays at x = 41 whatever the time; a blend of frames 0 and 2 at 0.25: x = 1 + 0.25 * 40 = 11; a combo of
+    /// the animation alone at frame 2, weight 1: x = 41; under `Scale(2)` the combo's bone at 2 * 41 = 82, and
+    /// `get_bone_transform_under` leaves the tree not valid and the transform restored.
+    #[test]
+    fn a_render_object_s_bones_follow_its_animation() {
+        use crate::formats::w3d::hanim_combo::HAnimCombo;
+        let raw = crate::formats::w3d::hanim::tests::raw_anim().with_frame_rounding(crate::ww::wwmath::FloatToLongMode::PortableTruncate);
+        let data = Arc::new(AnimData { motion: Arc::new(HAnim::Raw(raw)), poses: Vec::new() });
+        let handle = AnimHandle { name: b"SKL.WALK".to_vec(), num_frames: 3, frame_rate: 30.0, data: Some(data.clone()) };
+        let mut base = Matrix3D::IDENTITY;
+        base.translate(1.0, 0.0, 0.0);
+        let bone = |name: &[u8], parent, base| SkeletonBone { name: name.to_vec(), parent_index: parent, transform: Matrix3D::IDENTITY, base };
+        let k = Skeleton { bones: vec![bone(b"ROOT", 0, Matrix3D::IDENTITY), bone(b"B1", 0, base)], sub_objects: Vec::new(), scale_factor: 1.0 };
+        let mut r = RenderObj::new(b"SKL", true).with_skeleton(Some(k));
+        let x = |r: &mut RenderObj, now| r.get_bone_transform(1, now).get_translation().x;
+
+        r.set_animation(Some(handle.clone()), 0.0, AnimMode::Loop, 0);
+        assert!(!r.is_hierarchy_valid());
+        assert_eq!(x(&mut r, 0), 1.0);
+        assert!(r.is_hierarchy_valid());
+        assert_eq!((x(&mut r, 50), r.anim.as_ref().unwrap().frame), (1.0, 0.0));
+        r.set_transform(&Matrix3D::IDENTITY);
+        // ~~frame 1.5~~ **Corrected after the first run (a prediction miss):** `30 * 50 * 0.001f` is 1.5000001 in `float`
+        assert_eq!((x(&mut r, 50), r.anim.as_ref().unwrap().frame), (11.0, 30.0f32 * 1.0 * 1.0 * 50.0 * 0.001));
+        assert_eq!(r.anim.as_ref().unwrap().frame, 1.500_000_1);
+
+        r.set_animation(Some(handle.clone()), 2.0, AnimMode::Manual, 100);
+        r.set_transform(&Matrix3D::IDENTITY);
+        assert_eq!((x(&mut r, 1000), r.anim.as_ref().unwrap().frame), (41.0, 2.0));
+
+        r.set_animation_blend(Some(handle.clone()), 0.0, Some(handle.clone()), 2.0, 0.25);
+        assert!(r.anim.is_none());
+        assert_eq!(x(&mut r, 1000), 11.0);
+
+        let combo: HAnimCombo<usize> = HAnimCombo::with_anims(1);
+        combo.set_motion(0, Some(0)).unwrap();
+        combo.set_frame(0, 2.0).unwrap();
+        combo.set_weight(0, 1.0).unwrap();
+        r.set_animation_combo(Some(ModeCombo { combo: Arc::new(combo), motions: Arc::new(vec![data]) }));
+        assert_eq!(x(&mut r, 1000), 41.0);
+
+        let mut s2 = Matrix3D::IDENTITY;
+        s2.scale(2.0);
+        let t = r.get_bone_transform_under(&s2, 1, 1000);
+        assert_eq!(t.get_translation().x, 82.0);
+        assert!(!r.is_hierarchy_valid());
+        assert_eq!(r.transform, Matrix3D::IDENTITY);
     }
 }
