@@ -3983,8 +3983,10 @@ impl W3DModelDraw {
     ///   at `TreadDriveSpeedFraction` or more of it, every tread's U offset goes down by the rate,
     ///   wrapped into [0, 1). The rate is per draw, not per unit of speed ("tread scrolling speed
     ///   was not directly tied into tank velocity because it looked odd").
-    /// - Time frozen (`isTimeFrozen`, the script engine's freezes): the client has no frozen time
-    ///   yet; not checked.
+    /// - Time frozen (`isTimeFrozen`, the script engine's freezes): ~~the client has no frozen time
+    ///   yet;~~ not checked here. **Corrected 2026-11-13 (#182 item 3):** the client reads the World's
+    ///   freezes for `applyPhysicsXform` (`drawable_loco::PhysicsXformGates`), but this module's own
+    ///   `frozen` test (W3DTankDraw.cpp:312-313) is not translated yet.
     /// - Without an AI upstream dereferences null for the locomotor speed; here the treads do not
     ///   move then.
     /// - The values sent to the render object: the treads' offsets, as the sub-objects' material

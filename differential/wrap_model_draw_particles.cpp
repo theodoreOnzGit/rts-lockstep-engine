@@ -101,11 +101,15 @@
 **   Stand-ins: the drawable's `m_instance`, `m_instanceIsIdentity`, `getInstanceMatrix`, `isInstanceIdentity`
 **   (Drawable.h:400-402), `getDrawModules` (the case's module behind a recorder of the root it is handed),
 **   `calcPhysicsXform` (the case's answer and totals: the locomotor models are drawable_loco.rs's, not compared here),
-**   the object's `isDisabledByType` (never held), `TheGlobalData->m_showClientPhysics` (on) and the view's and script
-**   engine's time freezes (none). The drawable starts as `setInstanceMatrix(NULL)` with no physics. New ops: 11 the
+**   ~~the object's `isDisabledByType` (never held), `TheGlobalData->m_showClientPhysics` (on) and the view's and script
+**   engine's time freezes (none).~~ **Corrected 2026-11-13 (#182 item 3):** the object's `isDisabledByType`,
+**   `TheGlobalData->m_showClientPhysics`, the view's `isTimeFrozen` and `isCameraMovementFinished` and the script
+**   engine's `isTimeFrozenDebug` and `isTimeFrozenScript` are the case's words (op 13's words 6..11; a case starts not
+**   held, shown, not frozen, the camera finished). The drawable starts as `setInstanceMatrix(NULL)` with no physics. New ops: 11 the
 **   drawable's transform = the 12 words, then `Drawable::draw` from its root (recorded as [400, the root's 12 words]
 **   before the module's doDrawModule); 12 `setInstanceMatrix(a1 ? &words : NULL)`; 13 `calcPhysicsXform` answers a1
-**   with totals pitch, roll, yaw, z = words 2..5 for the next draws.
+**   with totals pitch, roll, yaw, z = words 2..5 for the next draws; (#182 item 3) and words 6..11 are the gates for
+**   them: held, showClientPhysics, isTimeFrozen, isCameraMovementFinished, isTimeFrozenDebug, isTimeFrozenScript.
 **   (#182, the instance matrices the logic's updates set) Cut verbatim too:
 **     mp_collapse_wait.inc  GameEngine/Source/GameLogic/Object/Update/StructureCollapseUpdate.cpp, the waiting shudder
 **                           from `shudder.Set(..., 0);` to `if (now >= m_collapseFrame)` (189-197);
@@ -190,31 +194,35 @@ public:
 	const GeometryInfo& getGeometryInfo() const { return m_geometryInfo; }
 	Bool testStatus( ObjectStatusTypes ) const { abort(); return FALSE; }
 	Bool isSignificantlyAboveTerrain() const { abort(); return FALSE; }
-	/* (#179 item 3) applyPhysicsXform's DISABLED_HELD test: never held here (the port's gate is
-	** physics_xform_facts', read from the World) */
-	Bool isDisabledByType( DisabledType ) const { return FALSE; }
+	/* (#179 item 3) applyPhysicsXform's DISABLED_HELD test: ~~never held here (the port's gate is
+	** physics_xform_facts', read from the World)~~ (#182 item 3) the case's word */
+	Bool m_held;
+	Bool isDisabledByType( DisabledType ) const { return m_held; }
 };
 Object g_object;
 Bool g_hasObject;
 
-/* (#179 item 3) what applyPhysicsXform reads besides the object: ShowClientPhysics (on), the tactical view's and the
-** script engine's time freezes (none: the port's client has no frozen time, drawable_loco.rs's module docs) */
+/* (#179 item 3) what applyPhysicsXform reads besides the object: ShowClientPhysics, the tactical view's and the
+** script engine's time freezes. ~~(on; none: the port's client has no frozen time, drawable_loco.rs's module docs)~~
+** (#182 item 3) the case's words (op 13) */
 struct GlobalData { Bool m_showClientPhysics; };
 GlobalData g_globalData = { TRUE };
 GlobalData *TheGlobalData = &g_globalData;
 struct View
 {
-	Bool isTimeFrozen() const { return FALSE; }
-	Bool isCameraMovementFinished() const { return TRUE; }
+	Bool m_frozen, m_finished;
+	Bool isTimeFrozen() const { return m_frozen; }
+	Bool isCameraMovementFinished() const { return m_finished; }
 };
-View g_view;
+View g_view = { FALSE, TRUE };
 View *TheTacticalView = &g_view;
 struct ScriptEngine
 {
-	Bool isTimeFrozenDebug() const { return FALSE; }
-	Bool isTimeFrozenScript() const { return FALSE; }
+	Bool m_debug, m_script;
+	Bool isTimeFrozenDebug() const { return m_debug; }
+	Bool isTimeFrozenScript() const { return m_script; }
 };
-ScriptEngine g_scriptEngine;
+ScriptEngine g_scriptEngine = { FALSE, FALSE };
 ScriptEngine *TheScriptEngine = &g_scriptEngine;
 /* the draw module list Drawable::draw walks: the case's W3DModelDraw behind a recorder of the root it is handed */
 class DrawModule;
@@ -741,6 +749,13 @@ int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 	g_drawable.setInstanceMatrix(NULL);
 	g_physicsHas = FALSE;
 	g_physicsInfo = Drawable::PhysicsXformInfo();
+	/* (#182 item 3) the gates open until op 13 says */
+	g_object.m_held = FALSE;
+	g_globalData.m_showClientPhysics = TRUE;
+	g_view.m_frozen = FALSE;
+	g_view.m_finished = TRUE;
+	g_scriptEngine.m_debug = FALSE;
+	g_scriptEngine.m_script = FALSE;
 	g_data.m_particlesAttachedToAnimatedBones = in[k++] != 0;
 	/* (#174) */
 	g_data.m_attachToDrawableBone = in[k++] ? "attachbone" : "";
@@ -856,6 +871,13 @@ int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 			g_physicsInfo.m_totalRoll = real(a[3]);
 			g_physicsInfo.m_totalYaw = real(a[4]);
 			g_physicsInfo.m_totalZ = real(a[5]);
+			/* (#182 item 3) applyPhysicsXform's gates for the next draws */
+			g_object.m_held = a[6] != 0;
+			g_globalData.m_showClientPhysics = a[7] != 0;
+			g_view.m_frozen = a[8] != 0;
+			g_view.m_finished = a[9] != 0;
+			g_scriptEngine.m_debug = a[10] != 0;
+			g_scriptEngine.m_script = a[11] != 0;
 			break;
 		case 14:
 			/* (#182) StructureCollapseUpdate's translation of phase a1 % 3 */

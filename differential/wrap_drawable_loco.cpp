@@ -10,7 +10,8 @@
 **                       destructor (185-216, to drawableIconIndexToName);
 **   dl_calc.inc         Drawable.cpp, `calcPhysicsXform`, `calcPhysicsXformThrust`, `calcPhysicsXformHoverOrWings`,
 **                       `calcPhysicsXformTreads`, `calcPhysicsXformWheels` and `calcPhysicsXformMotorcycle` (1414-2506, to
-**                       getAmbientSoundByDamage).
+**                       getAmbientSoundByDamage);
+**   dl_apply.inc        (#182 item 3) Drawable.cpp, `applyPhysicsXform` (1388-1410, to calcPhysicsXform).
 ** No edit. Compiled on stand-ins (namespace dl): the drawable (`m_locoInfo`, `getObject`, `getPosition`,
 ** `getUnitDirectionVector2D`, `getDrawableGeometryInfo`: the object's), the object (`getAIUpdateInterface`,
 ** `getPhysics`, `getLayer`, `isSignificantlyAboveTerrain`, `getGeometryInfo`, `getPosition`, `isKindOf`,
@@ -24,6 +25,11 @@
 ** `sqrtf` are the Rust's petir functions in the test binary, and the shim's math.h gives `fabs`, `sin`, `cos`, `sqrt`
 ** and `atan2` of a float MSVC's C semantics (the double functions). `sqr` is BaseType.h:143-147's template, written
 ** here (the shim's BaseType.h does not carry it), and `PI` BaseType.h:86's.
+** (#182 item 3) applyPhysicsXform's stand-ins: the object's `isDisabledByType` (the case's held word; `DISABLED_HELD` is
+** DisabledTypes.h's name, its value immaterial here), `TheGlobalData->m_showClientPhysics`, `TheTacticalView`'s
+** `isTimeFrozen` and `isCameraMovementFinished`, `TheScriptEngine`'s `isTimeFrozenDebug` and `isTimeFrozenScript` (each
+** the case's word), and a `Matrix3D` that records the calls made on it (`Translate` must be (0, 0, z): its x and y are
+** asserted 0; then z, and each `Rotate_*`'s angle, in call order).
 **
 ** Entry point (extern "C", tests/differential_drawable_loco.rs; floats travel as their bits):
 **   ref_drawable_loco_seq(in, nin, out, cap): in = [seed, frame count], then per frame 63 words:
@@ -40,7 +46,12 @@
 **      previous overlap (0 INVALID_ID, else 3)].
 **   InitRandom(seed) first. Each frame calls `calcPhysicsXform(info)` on a fresh PhysicsXformInfo and records 27 words:
 **   [answer, totalPitch, totalRoll, totalYaw, totalZ, m_locoInfo present, its 14 Reals (m_pitch .. m_pitchModulator in
-**   declaration order), m_wheelInfo's 5 Reals and 2 Ints (declaration order)]. Returns the word count. */
+**   declaration order), m_wheelInfo's 5 Reals and 2 Ints (declaration order)]. Returns the word count.
+**   (#182 item 3) ref_drawable_loco_apply_seq(in, nin, out, cap): the same, but each frame has 69 words, the 63 then
+**   [held, showClientPhysics, view isTimeFrozen, isCameraMovementFinished, isTimeFrozenDebug, isTimeFrozenScript], and
+**   calls `applyPhysicsXform(&mtx)` on a fresh recording Matrix3D (which calls the cut calcPhysicsXform past its gates).
+**   It records 31 words: [the number of calls on the matrix, then for the first 4 the call's kind (0 Translate, 1
+**   Rotate_Y, 2 Rotate_X, 3 Rotate_Z) and its value (zeros past the calls made)], then the 22 m_locoInfo words above. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,6 +86,8 @@ static inline Real wr(int w) { Real r; memcpy(&r, &w, 4); return r; }
 static inline int rw(Real r) { int w; memcpy(&w, &r, 4); return w; }
 
 enum KindOfType { KINDOF_SHRUBBERY, KINDOF_LOW_OVERLAPPABLE, KINDOF_INFANTRY };
+/* (#182 item 3) GameEngine/Include/Common/DisabledTypes.h's name applyPhysicsXform tests */
+enum DisabledType { DISABLED_HELD = 6 };
 typedef int PathfindLayerEnum;
 
 class Locomotor
@@ -164,6 +177,8 @@ public:
 	Coord3D pos;
 	Bool kinds[3];
 	BodyModuleInterface body;
+	Bool held;
+	Bool isDisabledByType(DisabledType) const { return held; }
 	AIUpdateInterface *getAIUpdateInterface() const { return ai; }
 	PhysicsBehavior *getPhysics() const { return physics; }
 	PathfindLayerEnum getLayer() const { return 0; }
@@ -172,6 +187,41 @@ public:
 	const Coord3D *getPosition() const { return &pos; }
 	Bool isKindOf(KindOfType k) const { return kinds[k]; }
 	BodyModuleInterface *getBodyModule() const { return (BodyModuleInterface *)&body; }
+};
+
+/* (#182 item 3) applyPhysicsXform's reads besides the drawable (see the header) */
+struct GlobalData { Bool m_showClientPhysics; };
+static GlobalData s_globalData = { TRUE };
+static GlobalData *TheGlobalData = &s_globalData;
+struct View
+{
+	Bool frozen, finished;
+	Bool isTimeFrozen() const { return frozen; }
+	Bool isCameraMovementFinished() const { return finished; }
+};
+static View s_view = { FALSE, TRUE };
+static View *TheTacticalView = &s_view;
+struct ScriptEngine
+{
+	Bool debug, script;
+	Bool isTimeFrozenDebug() const { return debug; }
+	Bool isTimeFrozenScript() const { return script; }
+};
+static ScriptEngine s_scriptEngine = { FALSE, FALSE };
+static ScriptEngine *TheScriptEngine = &s_scriptEngine;
+/* a Matrix3D that records the calls applyPhysicsXform makes on it */
+class Matrix3D
+{
+public:
+	int n;
+	int kind[4];
+	Real value[4];
+	Matrix3D() : n(0) { }
+	void put(int k, Real v) { if (n < 4) { kind[n] = k; value[n] = v; } ++n; }
+	void Translate(Real x, Real y, Real z) { if (x != 0.0f || y != 0.0f) abort(); put(0, z); }
+	void Rotate_Y(Real theta) { put(1, theta); }
+	void Rotate_X(Real theta) { put(2, theta); }
+	void Rotate_Z(Real theta) { put(3, theta); }
 };
 
 class TerrainLogic
@@ -214,25 +264,29 @@ public:
 	void calcPhysicsXformTreads(const Locomotor *locomotor, PhysicsXformInfo& info);
 	void calcPhysicsXformWheels(const Locomotor *locomotor, PhysicsXformInfo& info);
 	void calcPhysicsXformMotorcycle( const Locomotor *locomotor, PhysicsXformInfo& info );
+	void applyPhysicsXform(Matrix3D* mtx);
 };
 
 #include "dl_calc.inc"
+#include "dl_apply.inc"
 
 static Coord3D c3(const int *w) { Coord3D c; c.x = wr(w[0]); c.y = wr(w[1]); c.z = wr(w[2]); return c; }
 
 } /* namespace dl */
 
-extern "C" int ref_drawable_loco_seq(const int *in, int nin, int *out, int cap)
+/* both entry points: `apply` false calls calcPhysicsXform on 63-word frames, true applyPhysicsXform on 69-word ones */
+static int loco_seq(const int *in, int nin, int *out, int cap, bool apply)
 {
 	using namespace dl;
 	if (nin < 2)
 		return 0;
 	InitRandom((UnsignedInt)in[0]);
 	int frames = in[1];
+	const int stride = apply ? 69 : 63;
 	const int *p = in + 2;
 	int n = 0;
 	Drawable d;
-	for (int f = 0; f < frames && (p + 63) <= in + nin; ++f, p += 63)
+	for (int f = 0; f < frames && (p + stride) <= in + nin; ++f, p += stride)
 	{
 		int kind = p[0];
 		Locomotor loco;
@@ -279,15 +333,38 @@ extern "C" int ref_drawable_loco_seq(const int *in, int nin, int *out, int cap)
 		physics.cur = v[0] ? (ObjectID)2 : INVALID_ID;
 		physics.prev = v[11] ? (ObjectID)3 : INVALID_ID;
 
-		Drawable::PhysicsXformInfo info;
-		Bool answer = d.calcPhysicsXform(info);
-		if (n + 27 > cap)
-			break;
-		out[n++] = answer ? 1 : 0;
-		out[n++] = rw(info.m_totalPitch);
-		out[n++] = rw(info.m_totalRoll);
-		out[n++] = rw(info.m_totalYaw);
-		out[n++] = rw(info.m_totalZ);
+		if (apply)
+		{
+			const int *gw = p + 63;
+			obj.held = gw[0] != 0;
+			s_globalData.m_showClientPhysics = gw[1] != 0;
+			s_view.frozen = gw[2] != 0;
+			s_view.finished = gw[3] != 0;
+			s_scriptEngine.debug = gw[4] != 0;
+			s_scriptEngine.script = gw[5] != 0;
+			Matrix3D mtx;
+			d.applyPhysicsXform(&mtx);
+			if (n + 31 > cap)
+				break;
+			out[n++] = mtx.n;
+			for (int i = 0; i < 4; ++i)
+			{
+				out[n++] = i < mtx.n ? mtx.kind[i] : 0;
+				out[n++] = i < mtx.n ? rw(mtx.value[i]) : 0;
+			}
+		}
+		else
+		{
+			Drawable::PhysicsXformInfo info;
+			Bool answer = d.calcPhysicsXform(info);
+			if (n + 27 > cap)
+				break;
+			out[n++] = answer ? 1 : 0;
+			out[n++] = rw(info.m_totalPitch);
+			out[n++] = rw(info.m_totalRoll);
+			out[n++] = rw(info.m_totalYaw);
+			out[n++] = rw(info.m_totalZ);
+		}
 		const DrawableLocoInfo *li = d.m_locoInfo;
 		out[n++] = li ? 1 : 0;
 		Real r[14] = { 0 };
@@ -314,4 +391,15 @@ extern "C" int ref_drawable_loco_seq(const int *in, int nin, int *out, int cap)
 		out[n++] = wi[1];
 	}
 	return n;
+}
+
+extern "C" int ref_drawable_loco_seq(const int *in, int nin, int *out, int cap)
+{
+	return loco_seq(in, nin, out, cap, false);
+}
+
+/* (#182 item 3) */
+extern "C" int ref_drawable_loco_apply_seq(const int *in, int nin, int *out, int cap)
+{
+	return loco_seq(in, nin, out, cap, true);
 }

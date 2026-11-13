@@ -68,7 +68,9 @@
 //!   2026-11-06 (GitHub #44):** the client's particle systems exist, `crate::client::particle_sys`, but these draws do
 //!   not create theirs yet: `createEmitters`, `enableEmitters` and the speed multipliers are the remaining step). They
 //!   change nothing that is drawn here.
-//! - Time frozen is not checked (the client has none yet), as for the tank.
+//! - Time frozen is not checked ~~(the client has none yet)~~, as for the tank. **Corrected 2026-11-13 (#182 item 3):**
+//!   the client reads the World's freezes for `applyPhysicsXform` (`drawable_loco::PhysicsXformGates`); these modules'
+//!   own `frozen` tests (W3DTruckDraw.cpp:399-400, W3DTankTruckDraw.cpp:513-514) are not translated yet.
 //! - The tank truck's locomotor speed: without an AI upstream dereferences null; here its treads do not move then.
 
 use crate::common::random_value::RandomValues;

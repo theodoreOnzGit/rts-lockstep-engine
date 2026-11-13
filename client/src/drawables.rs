@@ -1597,6 +1597,74 @@ UniformAxialDamping = 1.0\n BounceAmount = 30\n AccelerationPitchLimit = 10\n De
         assert!(moved_tire);
     }
 
+    /// (#182 item 3) `applyPhysicsXform`'s time freeze in a real World: the drawn truck of
+    /// [`a_drawn_truck_spins_and_steers_its_wheels_without_changing_the_crcs`] drives for 30 frames, then a script's
+    /// `FREEZE_TIME` (`ScriptEngine::doFreezeTime`, the World's `m_freezeByScript`) holds for 10 draws, then
+    /// `doUnfreezeTime` and 10 more.
+    ///
+    /// *Predictions, written before the first run* (`issue182i3_predictions.md`): the logic's frame does not advance
+    /// while frozen; every frozen draw has no physics transform (upstream returns before `calcPhysicsXform`) and leaves
+    /// the drawable's `m_locoInfo` exactly as the last unfrozen draw left it; the first draw after the unfreeze has a
+    /// physics transform again, and from there on every draw has one. Observation only: whether the client random
+    /// state moves across a frozen draw (other draw modules may draw from it).
+    ///
+    /// *Results (2026-11-13):* the first build failed (`WorldDrawables` needs its device type in the closure). Then
+    /// every assertion held: the logic frame held, no physics transform and `m_locoInfo` unchanged on all 10 frozen
+    /// draws, physics on 10 of 10 draws after the unfreeze. The client random state did not move on any of the 10
+    /// frozen draws (the truck draw takes none here).
+    #[test]
+    fn a_script_time_freeze_stops_the_drawn_physics() {
+        let extra = format!("{GATE_WHEELS}{}", drawn("Runner", TRUCK_DRAW).replace("GateTreads", "GateWheels"));
+        let mut w = gate_map_world_with(&extra);
+        let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+        let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+        let truck = make(&mut w, b"DrawnRunner", team, at(40.0, 50.0));
+        w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
+        let mut art = MemoryDevice::new();
+        art.insert(b"Art/W3D/truckt.w3d", truck_model());
+        let mut d = WorldDrawables::new(Some(Art::new(FileSystem::new(art))));
+        let ev = w.take_client_events();
+        d.update(&mut w, &ev, 0);
+        let ai = w.find_object(truck).and_then(|o| o.ai).expect("the AI");
+        w.module_call(truck, ai, ModuleCall::AiMoveToPosition { pos: at(100.0, 150.0), command_source: 0 });
+        let mut t = 0u32;
+        let mut step = |w: &mut World, d: &mut WorldDrawables<MemoryDevice>| {
+            t += 33;
+            w.logic_update().expect("a frame");
+            let ev = w.take_client_events();
+            d.update(w, &ev, t);
+            let dr = &d.drawables.drawables[&truck];
+            (dr.physics_xform, dr.loco_info)
+        };
+        for _ in 0..30 {
+            step(&mut w, &mut d);
+        }
+        let (before, loco_before) = step(&mut w, &mut d);
+        assert!(before.is_some() && loco_before.is_some(), "driving: a physics transform");
+
+        w.script_engine.do_freeze_time();
+        let frame = w.frame();
+        let mut random_moved = 0;
+        for i in 0..10 {
+            let r0 = d.drawables.random.client;
+            let (x, loco) = step(&mut w, &mut d);
+            assert_eq!(w.frame(), frame, "the logic is frozen");
+            assert_eq!(x, None, "frozen draw {i}: no physics transform");
+            assert_eq!(loco, loco_before, "frozen draw {i}: m_locoInfo untouched");
+            random_moved += i32::from(d.drawables.random.client != r0);
+        }
+
+        w.script_engine.do_unfreeze_time();
+        let mut after = 0;
+        for _ in 0..10 {
+            let (x, _) = step(&mut w, &mut d);
+            after += i32::from(x.is_some());
+        }
+        println!("frozen draws whose client random state moved: {random_moved} of 10; unfrozen draws with physics: {after} of 10");
+        assert_eq!(after, 10, "the physics resumes");
+        assert!(w.frame() > frame);
+    }
+
     /// GitHub #42: the drawn gun of [`play_gun`] with its model read by range, the page's part played by the test. Before
     /// the fix, the module data's states were validated at frame 0 while `gunt.w3d` was being fetched, marked valid with
     /// no bones, and never looked at again: the remade drawable had no turret, recoil or muzzle-flash bones for good.

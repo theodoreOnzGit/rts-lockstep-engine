@@ -124,6 +124,63 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#182 item 3 (2026-11-13, GitHub #182): `applyPhysicsXform`'s gates, including the time freezes.**
+- **Read upstream first:** Drawable.cpp:1388-1410 returns before `calcPhysicsXform` when there is no object, it is
+  `DISABLED_HELD`, or `!m_showClientPhysics`; and then when `frozen = (TheTacticalView->isTimeFrozen() &&
+  !isCameraMovementFinished()) || isTimeFrozenDebug() || isTimeFrozenScript()`. So a frozen draw takes no client
+  random value, leaves `m_locoInfo` alone, and puts no physics on the draw's root (a fresh `transformMtx`). This is the
+  expression of GameLogic.cpp:3627 and GameClient.cpp:645. `isTimeFrozenDebug` is false without DebugWindow.dll
+  (ScriptEngine.cpp:8429-8448). `isTimeFrozenScript` is `m_freezeByScript`.
+- **Translated:** `drawable_loco::PhysicsXformGates` (`passes()` is upstream's expression, gate for gate);
+  `PhysicsXformGates::of(&World, id)`; `apply_physics_xform_gated` (the gates, then `calcPhysicsXform` only past them).
+  `PhysicsXformFacts.apply` is replaced by `gates`. ~~The time freezes were not checked ("the client has no frozen time
+  yet")~~ (drawable_loco.rs's module docs, struck through). The World's answers are read through the same `&self`
+  methods `GameLogic::update`'s freeze reads (`GameLogicHost` for `World`):
+  - the script engine's `m_freezeByScript` (or the cuts table's);
+  - the game loop's view and debug stand-ins.
+
+  So the drawable and the logic agree on "frozen". src/logic is unchanged.
+- **Verified:**
+  - `tests/differential_drawable_loco.rs`, a new test `the_apply_gates_match_upstream`: Drawable.cpp's
+    `applyPhysicsXform` cut verbatim (`dl_apply.inc`) on top of #182 item 2's `calcPhysicsXform`, with the six gates as
+    random words a frame and a recording `Matrix3D`. Over 20,000 sequences (610,152 frames: 296,472 applied, 131,246
+    gated before the freeze, 110,233 frozen) there were **0 mismatches**: 18,954,712 words, the client random state
+    equal in every sequence, max ULP 0. The existing test is unchanged: 0 over 607,059 frames, 16,430,593 words.
+  - `tests/differential_model_draw_particles.rs`: op 13 now also sets the gates. The port's op 11 goes through
+    `apply_physics_xform_gated`. Main 0 mismatches over 20,000 (408,214 steps, 46,222 systems, 76 NaN words). Any
+    scale 0 over 20,000 (409,378 steps, 45,645 systems, 2,857 NaN words, 145 NaN-payload-only). Both max ULP 0.
+  - Lib: `the_gates_are_upstreams_expression` (all 128 combinations; the calc is not called past a returning gate) and
+    `the_physics_gates_read_the_worlds_time_freezes` (a real World: `doFreezeTime`, the debug and view stand-ins,
+    `DISABLED_HELD`, no object). Lib 1,233 passed (1,231 before).
+  - Client: `a_script_time_freeze_stops_the_drawn_physics`. A drawn truck driving in a real World, `doFreezeTime` for 10
+    draws: the logic frame held, no physics transform, `m_locoInfo` unchanged, and the client random state unmoved on
+    10 of 10. After `doUnfreezeTime`, 10 of 10 draws have physics again. Client 102 passed (101 before).
+  - Gate (a) PASS, last CRC 0bf44067.
+- **Plants** 9916-9929. All 14 are caught; each is in the drawable_loco test's table. The counts are mismatching
+  sequences in the loco apply test and mismatching cases in the model_draw main test, both of 20,000.
+
+  | plant | loco apply test | model_draw main test |
+  |---|---|---|
+  | 9916 | 16,699 | 433 |
+  | 9917 | 13,517 | 158 |
+  | 9918 | 13,413 | 169 |
+  | 9919 | 9,538 | 64 |
+  | 9920 | 13,456 | 164 |
+  | 9921 | 17,535 | 0 (calc is a stand-in there) |
+  | 9922 | 13,503 | 189 |
+  | 9923 | 13,459 | 176 |
+  | 9924 | 0 (no object has no AI) | 359 |
+  | 9929 | 16,579 | 396 |
+
+  The World reads 9925-9928 are 0 in both differentials and caught by the lib World test only. The truth-table test
+  catches 9916-9924 and 9929.
+- **Not done (gaps):**
+  - The draw modules' own `frozen` tests (W3DTankDraw.cpp:312, W3DTruckDraw.cpp:399, W3DTankTruckDraw.cpp:513) are not
+    translated. Their docs are corrected.
+  - The client's view has no `cameraModFreezeTime` (the logic's script action is a cut).
+  - The World has two stand-ins for `TheTacticalView->isTimeFrozen()`: `reads.camera_*` (`run_logic_frame`) and
+    `cuts.game_loop.view_*` (`game_logic_update`). See docs/world-design.md's corrected row.
+
 **#182 item 2 (2026-11-13, GitHub #182): the drawable's client physics models against upstream; the motorcycle.**
 - **Translated:** `calcPhysicsXformMotorcycle` (Drawable.cpp:2214-2506, `DrawableLocoInfo::calc_motorcycle`), wired
   into the dispatch as upstream's `calcPhysicsXform` switch (`DrawableLocoInfo::calc_physics_xform`, which

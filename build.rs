@@ -3029,7 +3029,8 @@ mod differential {
             // GitHub #182 item 2: Drawable's client physics models (differential/wrap_drawable_loco.cpp, which lists the
             // cuts): Locomotor.h's LocomotorAppearance; PhysicsUpdate.h's PhysicsTurningType; Drawable.h's TWheelInfo,
             // DrawableLocoInfo and PhysicsXformInfo; Drawable.cpp's DrawableLocoInfo constructor and destructor, and
-            // calcPhysicsXform with its Thrust, HoverOrWings, Treads, Wheels and Motorcycle models. No text is edited.
+            // calcPhysicsXform with its Thrust, HoverOrWings, Treads, Wheels and Motorcycle models; (#182 item 3)
+            // applyPhysicsXform. No text is edited.
             // Each anchor must occur once. Linked before upstream_gameengine (InitRandom, GetGameClientRandomValue(Real),
             // Sin), which it calls.
             {
@@ -3060,6 +3061,8 @@ mod differential {
                         "dl_calc.inc",
                         piece(&dr, "Drawable.cpp", "Bool Drawable::calcPhysicsXform(PhysicsXformInfo& info)", ("const AudioEventRTS& Drawable::getAmbientSoundByDamage(BodyDamageType dt)", false)),
                     ),
+                    // GitHub #182 item 3: applyPhysicsXform, its gates and its call of calcPhysicsXform
+                    ("dl_apply.inc", piece(&dr, "Drawable.cpp", "void Drawable::applyPhysicsXform(Matrix3D* mtx)", ("Bool Drawable::calcPhysicsXform(PhysicsXformInfo& info)", false))),
                 ];
                 let gen = out_dir.join("drawable_loco_gen");
                 std::fs::create_dir_all(&gen).expect("create drawable_loco_gen");

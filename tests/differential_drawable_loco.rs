@@ -5,7 +5,7 @@
 // https://github.com/electronicarts/CnC_Generals_Zero_Hour, commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameClient/Drawable.cpp (DrawableLocoInfo::DrawableLocoInfo, calcPhysicsXform,
 //   calcPhysicsXformThrust, calcPhysicsXformHoverOrWings, calcPhysicsXformTreads, calcPhysicsXformWheels,
-//   calcPhysicsXformMotorcycle)
+//   calcPhysicsXformMotorcycle; applyPhysicsXform, GitHub #182 item 3)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/Drawable.h (TWheelInfo, DrawableLocoInfo, PhysicsXformInfo)
 //
 // Original copyright notice of those files:
@@ -74,6 +74,47 @@
 //!   left offset to the right) was not caught, and cannot be: the ground block, which upstream runs in the air too,
 //!   copies it again in the same call; it was replaced by the airborne branch's height test inverted.
 //!
+//! # #182 item 3 (2026-11-13): `applyPhysicsXform`'s gates
+//!
+//! A second test, `the_apply_gates_match_upstream`, runs the cut `applyPhysicsXform` (Drawable.cpp:1388-1410), which
+//! calls the cut `calcPhysicsXform` past its gates. Its frames are the same generator's 63 words plus six gate words:
+//! held 1 in 10, `ShowClientPhysics` off 1 in 10, the view's `isTimeFrozen` 1 in 5 with `isCameraMovementFinished` 1 in
+//! 2, `isTimeFrozenDebug` 1 in 20, `isTimeFrozenScript` 1 in 10. The C++ records the calls made on a recording
+//! `Matrix3D` (their count, and the first four's kind and value). The port runs
+//! [`apply_physics_xform_gated`] with `DrawableLocoInfo::calc_physics_xform` (the composition
+//! `Drawable::apply_physics_xform` makes, the drawable's hidden test aside). The port's totals are written as the four
+//! calls upstream would make (`Translate` z, `Rotate_Y` pitch, `Rotate_X` -roll, `Rotate_Z` yaw), and none without
+//! totals. Compared every frame: those 9 words and the 22 `m_locoInfo` words; and the client random state at the end
+//! (a gate that returns skips `calcPhysicsXform` and its draws). The transform's own order is
+//! `differential_model_draw_particles`' (op 11), not this test's. 20,000 sequences, own seed.
+//!
+//! Predicted (`issue182i3_predictions.md`, before any run): 0 mismatches; the existing test's numbers unchanged.
+//!
+//! - **First build:** the wrapper's `DisabledType` was declared after the `Object` stand-in that names it; moved.
+//! - **First run (2026-11-13):** **0 mismatches** over 20,000 sequences: 610,152 frames (296,472 applied, 131,246 gated
+//!   before the freeze, 110,233 frozen), 18,954,712 words, max ULP 0; 373,725 words NaN on both sides, 67,247 with
+//!   different payloads. The client random state was equal in every sequence. The existing test was unchanged
+//!   (607,059 frames, 476,504 answered, 16,430,593 words, 0 mismatches).
+//! - **Plants**, mismatching sequences of 20,000:
+//!
+//!   | plant | mismatching sequences | of which the random state differs |
+//!   |---|---|---|
+//!   | 9916 | 16,699 | 3,420 |
+//!   | 9917 | 13,517 | |
+//!   | 9918 | 13,413 | |
+//!   | 9919 | 9,538 | |
+//!   | 9920 | 13,456 | |
+//!   | 9921 | 17,535 | 5,018 |
+//!   | 9922 | 13,503 | |
+//!   | 9923 | 13,459 | |
+//!   | 9929 | 16,579 | |
+//!
+//!   9924 gave 0, as predicted: without an object there is no AI. 9925-9928 gave 0 here, as predicted: they are World
+//!   reads, which the lib test catches. **10 of the 10 catchable here are caught.**
+//! - **Prediction misses:** 9918 (predicted 5,000-12,000) and 9920 (6,000-13,000) came in a little above my ranges.
+//!   The view's and the script's freezes each hold on 1 in 10 frames, and a sequence averages 30 frames, so most
+//!   sequences meet one; I underestimated that.
+//!
 //! # Planted bugs
 //!
 //! `L9_PLANT=<id>` (the run prints `PLANTED` and passes when caught):
@@ -105,11 +146,24 @@
 //! | 9913 | motorcycle: the height added in the air too |
 //! | 9914 | motorcycle: the airborne rear wheel's height test inverted |
 //! | 9915 | dispatch: `LOCO_WINGS` has no model |
+//! | 9916 | (#182 item 3) the gates without the time freezes (the port before item 3) |
+//! | 9917 | the view's freeze without `!isCameraMovementFinished()` |
+//! | 9918 | the view's freeze ignored |
+//! | 9919 | `isTimeFrozenDebug` ignored |
+//! | 9920 | `isTimeFrozenScript` ignored |
+//! | 9921 | a frozen draw still runs `calcPhysicsXform` (only the transform skipped) |
+//! | 9922 | `DISABLED_HELD` ignored |
+//! | 9923 | `ShowClientPhysics` ignored |
+//! | 9924 | the no-object test dropped (not catchable here: no object has no AI, so `calcPhysicsXform` answers false) |
+//! | 9929 | `frozen = view && (debug \|\| script)` |
+//!
+//! 9925-9928 are the World reads (`PhysicsXformGates::of`), caught by the lib test
+//! `the_physics_gates_read_the_worlds_time_freezes`, not here.
 
 mod support;
 
 use petir::Real;
-use rts_lockstep_engine::client::drawable_loco::{DrawableLocoInfo, LocoFacts, OverlapFacts, PhysicsXformFacts, XformObjectFacts};
+use rts_lockstep_engine::client::drawable_loco::{apply_physics_xform_gated, DrawableLocoInfo, LocoFacts, OverlapFacts, PhysicsXformFacts, PhysicsXformGates, XformObjectFacts};
 use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::random_value::RandomValues;
 use rts_lockstep_engine::differential as cpp;
@@ -119,6 +173,9 @@ use support::{Check, Gen};
 /// Words per frame (see the wrapper) and per recorded frame.
 const IN_WORDS: usize = 63;
 const OUT_WORDS: usize = 27;
+/// (#182 item 3) `ref_drawable_loco_apply_seq`'s words per frame in and out.
+const APPLY_IN_WORDS: usize = 69;
+const APPLY_OUT_WORDS: usize = 31;
 const SEQUENCES: usize = 20_000;
 
 fn planted() -> bool {
@@ -319,7 +376,7 @@ fn facts(p: &[i32]) -> PhysicsXformFacts {
         overlap: if v[0] != 0 { OverlapFacts::of(c3(&v[1..]), bf(v[4]), bf(v[5]), [v[6] != 0, v[7] != 0, v[8] != 0], (v[9] != 0, v[10] != 0)) } else { None },
         had_previous_overlap: v[11] != 0,
     });
-    PhysicsXformFacts { apply: true, locomotor, object }
+    PhysicsXformFacts { gates: PhysicsXformGates::OPEN, locomotor, object }
 }
 
 /// The port's run of one sequence: its 27 words a frame and the client stream's state at the end.
@@ -332,6 +389,75 @@ fn port(input: &[i32]) -> (Vec<i32>, [u32; 6]) {
         out.push(i32::from(info.is_some()));
         let i = info.unwrap_or_default();
         out.extend([i.total_pitch, i.total_roll, i.total_yaw, i.total_z].map(fb));
+        loco_words(&slot, &mut out);
+    }
+    (out, random.client)
+}
+
+/// (#182 item 3) The six gate words: held, `ShowClientPhysics`, the view's `isTimeFrozen` and
+/// `isCameraMovementFinished`, `isTimeFrozenDebug`, `isTimeFrozenScript`.
+fn gate_words(g: &mut Gen) -> [i32; 6] {
+    [
+        i32::from(g.below(10) == 0),
+        i32::from(g.below(10) != 0),
+        i32::from(g.below(5) == 0),
+        i32::from(g.below(2) == 0),
+        i32::from(g.below(20) == 0),
+        i32::from(g.below(10) == 0),
+    ]
+}
+
+/// (#182 item 3) A sequence for `ref_drawable_loco_apply_seq`: [seed, frame count, frames of 69 words].
+fn apply_sequence(g: &mut Gen) -> Vec<i32> {
+    let frames = 1 + g.below(60) as usize;
+    let mut input = vec![g.u32() as i32, frames as i32];
+    let mut loco = template(g);
+    let radii = [g.uniform(1.0, 20.0), g.uniform(1.0, 15.0), g.uniform(1.0, 25.0)];
+    for _ in 0..frames {
+        if g.below(100) < 3 {
+            loco = template(g);
+        }
+        input.extend(frame(g, &loco, radii));
+        input.extend(gate_words(g));
+    }
+    input
+}
+
+/// (#182 item 3) The port's gates for one 69-word frame: the object as the kind word has it, then the six words.
+fn gates(p: &[i32]) -> PhysicsXformGates {
+    let w = &p[IN_WORDS..];
+    PhysicsXformGates {
+        has_object: p[0] >= 1,
+        held: w[0] != 0,
+        show_client_physics: w[1] != 0,
+        view_time_frozen: w[2] != 0,
+        view_camera_movement_finished: w[3] != 0,
+        time_frozen_debug: w[4] != 0,
+        time_frozen_script: w[5] != 0,
+    }
+}
+
+/// (#182 item 3) The port's `applyPhysicsXform` run of one sequence: 31 words a frame (the matrix's calls as upstream's
+/// would be made with the port's totals, then `m_locoInfo`) and the client stream's state at the end.
+fn port_apply(input: &[i32]) -> (Vec<i32>, [u32; 6]) {
+    let mut random = RandomValues::new(input[0] as u32);
+    let mut slot: Option<DrawableLocoInfo> = None;
+    let mut out = Vec::new();
+    for p in input[2..].chunks(APPLY_IN_WORDS) {
+        let f = PhysicsXformFacts { gates: gates(p), ..facts(&p[..IN_WORDS]) };
+        let info = apply_physics_xform_gated(&f.gates, || DrawableLocoInfo::calc_physics_xform(&mut slot, &f, &mut random));
+        match info {
+            Some(i) => out.extend([4, 0, fb(i.total_z), 1, fb(i.total_pitch), 2, fb(-i.total_roll), 3, fb(i.total_yaw)]),
+            None => out.extend([0; 9]),
+        }
+        loco_words(&slot, &mut out);
+    }
+    (out, random.client)
+}
+
+/// The 22 `m_locoInfo` words: present, its 14 `Real`s, its wheel info's 5 `Real`s and 2 `Int`s.
+fn loco_words(slot: &Option<DrawableLocoInfo>, out: &mut Vec<i32>) {
+    {
         out.push(i32::from(slot.is_some()));
         let li = slot.unwrap_or(DrawableLocoInfo {
             wobble: 0.0,
@@ -361,7 +487,6 @@ fn port(input: &[i32]) -> (Vec<i32>, [u32; 6]) {
         out.push(w.frames_airborne_counter);
         out.push(w.frames_airborne);
     }
-    (out, random.client)
 }
 
 /// The C++ run: its words and the client stream's state at the end.
@@ -447,6 +572,82 @@ fn the_physics_models_match_upstream() {
             println!("  field {name:<24} mismatching words {:>8}  first mismatch of a sequence {:>6}", by_field[i], first_field[i]);
         }
     }
+    if planted() {
+        check.finish_planted();
+    } else {
+        check.finish();
+    }
+}
+
+/// (#182 item 3) The C++ `applyPhysicsXform` run: its words and the client stream's state at the end.
+fn reference_apply(input: &[i32]) -> (Vec<i32>, [u32; 6]) {
+    let frames = input[1] as usize;
+    let mut out = vec![0i32; frames * APPLY_OUT_WORDS];
+    let n = unsafe { cpp::ref_drawable_loco_apply_seq(input.as_ptr(), input.len() as i32, out.as_mut_ptr(), out.len() as i32) };
+    out.truncate(n as usize);
+    let mut state = [0u32; 6];
+    unsafe { cpp::ref_get_state(1, state.as_mut_ptr()) };
+    (out, state)
+}
+
+/// (#182 item 3) `applyPhysicsXform`'s gates against upstream's; see the module docs.
+#[test]
+fn the_apply_gates_match_upstream() {
+    let _lock = cpp::GLOBAL_RNG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = Gen::new(0x182_0003);
+    let mut check = Check::new("Drawable applyPhysicsXform gates");
+    let (mut frames, mut applied, mut gated, mut frozen, mut nan_words) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut bad_seqs, mut random_bad, mut matrix_bad, mut loco_bad) = (0u64, 0u64, 0u64, 0u64);
+    for case in 0..SEQUENCES {
+        let input = apply_sequence(&mut g);
+        for p in input[2..].chunks(APPLY_IN_WORDS) {
+            let gt = gates(p);
+            let early = !gt.has_object || gt.held || !gt.show_client_physics;
+            let fz = (gt.view_time_frozen && !gt.view_camera_movement_finished) || gt.time_frozen_debug || gt.time_frozen_script;
+            gated += u64::from(early);
+            frozen += u64::from(!early && fz);
+        }
+        let (r, rs) = port_apply(&input);
+        let (c, cs) = reference_apply(&input);
+        let before = check.mismatches;
+        check.eq(r.len(), c.len(), || format!("case {case}: word count"));
+        for (k, (a, b)) in r.iter().zip(&c).enumerate() {
+            let field = k % APPLY_OUT_WORDS;
+            let fr = k / APPLY_OUT_WORDS;
+            if field == 0 {
+                frames += 1;
+                applied += u64::from(*b == 4);
+            }
+            let m0 = check.mismatches;
+            // the calls' count and kinds, `m_locoInfo`'s presence and its Ints compare as words; the rest as floats
+            if (field < 9 && field % 2 == 1) || field == 0 || field == 9 || field >= 29 {
+                check.eq(*a, *b, || format!("case {case} frame {fr} word {field}"));
+            } else {
+                if bf(*a).is_nan() && bf(*b).is_nan() {
+                    nan_words += 1;
+                }
+                let name = if field < 9 { ["z", "pitch", "-roll", "yaw"][(field - 1) / 2] } else { FIELDS[field - 9 + 5] };
+                check.f32(bf(*a), bf(*b), || format!("case {case} frame {fr} {name}"));
+            }
+            if check.mismatches > m0 {
+                if field < 9 {
+                    matrix_bad += 1;
+                } else {
+                    loco_bad += 1;
+                }
+            }
+        }
+        let m0 = check.mismatches;
+        check.eq(rs, cs, || format!("case {case}: the client random state"));
+        if check.mismatches > m0 {
+            random_bad += 1;
+        }
+        if check.mismatches > before {
+            bad_seqs += 1;
+        }
+    }
+    println!("sequences {SEQUENCES}, frames {frames}, applied {applied}, gated before the freeze {gated}, frozen {frozen}, NaN words {nan_words}");
+    println!("mismatching sequences {bad_seqs} (random state differs in {random_bad}); words: matrix {matrix_bad}, m_locoInfo {loco_bad}");
     if planted() {
         check.finish_planted();
     } else {

@@ -213,6 +213,33 @@
 //!   tests `the_logic_s_instance_matrices_reach_the_draw_root` and `the_logic_s_set_instance_matrix_reaches_the_drawable`.
 //!   **13 of 13 caught.**
 //!
+//! # #182 item 3 (2026-11-13): `applyPhysicsXform`'s gates
+//!
+//! Op 13's words 6..11 are now also the gates for the draws after it: held 1 in 10, `ShowClientPhysics` off 1 in 10,
+//! the view's `isTimeFrozen` 1 in 5 with `isCameraMovementFinished` 1 in 2, `isTimeFrozenDebug` 1 in 20,
+//! `isTimeFrozenScript` 1 in 10 (the wrapper's stand-ins answer them; a case starts with every gate open). The port's
+//! op 11 now goes through [`apply_physics_xform_gated`] with those gates and the header's object, and the stand-in
+//! answer, instead of the test's own `has_object` test. The stream changes (op 13 draws six more words), so the step
+//! and system counts are new numbers. `calcPhysicsXform` is a stand-in here, so the order of the freeze and the
+//! models' random draws is `differential_drawable_loco`'s to check (plant 9921 is not catchable here).
+//!
+//! Predicted (`issue182i3_predictions.md`, before any run): 0 mismatches in both tests.
+//!
+//! - **First run (2026-11-13):** main **0 mismatches** over 20,000 (408,214 steps, 46,222 systems, 76 NaN words, max
+//!   ULP 0). Any scale **0** over 20,000 (409,378 steps, 45,645 systems, 2,857 NaN words, 145 NaN-payload-only, max
+//!   ULP 0).
+//! - **Plants**, mismatching cases of 20,000:
+//!
+//!   | plant | 9916 | 9917 | 9918 | 9919 | 9920 | 9922 | 9923 | 9924 | 9929 |
+//!   |---|---|---|---|---|---|---|---|---|---|
+//!   | cases | 433 | 158 | 169 | 64 | 164 | 189 | 176 | 359 | 396 |
+//!
+//!   9921 gave 0, as predicted: `calcPhysicsXform` is a stand-in here. 9925-9928 gave 0, as predicted: they are World
+//!   reads. **9 of the 9 catchable here are caught.**
+//! - **Prediction miss:** I predicted 500-10,000 cases a plant, and the counts are about 10 times lower. Op 13 is only 2 %
+//!   of steps, so only about a third of the cases ever set a gate, and a draw (op 11) has to follow with a closed gate
+//!   and a true answer.
+//!
 //! # Planted bugs
 //!
 //! `L9_PLANT=<id>` (the run prints `MEASURED` lines and fails on purpose):
@@ -297,13 +324,14 @@
 //! | 9881 | (#182) `apply_events` ignores `DrawableFloatTilt` (lib test) |
 //! | 9882 | (#182) `apply_events` ignores `DrawableSetInstanceMatrix` (lib test) |
 //! | 9883 | (#182) the collapse's final zero resets the matrix to the identity, flagged |
+//! | 9916-9924, 9929 | (#182 item 3) `applyPhysicsXform`'s gates (`differential_drawable_loco.rs` has the table) |
 
 mod support;
 
 use std::sync::Arc;
 
 use rts_lockstep_engine::client::drawable::Drawable;
-use rts_lockstep_engine::client::drawable_loco::PhysicsXformInfo;
+use rts_lockstep_engine::client::drawable_loco::{apply_physics_xform_gated, PhysicsXformGates, PhysicsXformInfo};
 use rts_lockstep_engine::client::particle_sys::ParticleSystemManager;
 use rts_lockstep_engine::client::w3d_model_draw::{scale_render_obj_hierarchy, AnimHandle, DrawEnv, DrawFacts, DrawParticles, Skeleton, StateRef, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource};
 use rts_lockstep_engine::formats::w3d::htree::{HTree, Pivot};
@@ -567,6 +595,14 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
                     s[2 + i] = b(if any_scale && g.below(10) == 0 { g.mixed() } else { g.uniform(lo, hi) });
                 }
             }
+            // (#182 item 3) the gates: held, ShowClientPhysics, isTimeFrozen, isCameraMovementFinished,
+            // isTimeFrozenDebug, isTimeFrozenScript
+            s[6] = i32::from(g.below(10) == 0);
+            s[7] = i32::from(g.below(10) != 0);
+            s[8] = i32::from(g.below(5) == 0);
+            s[9] = i32::from(g.below(2) == 0);
+            s[10] = i32::from(g.below(20) == 0);
+            s[11] = i32::from(g.below(10) == 0);
         }
         if op == 1 || op == 2 || op == 7 || op == 11 {
             let odd = if any_scale {
@@ -770,6 +806,8 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
     // (#179 item 3) the drawable (its instance matrix and physics totals) and the case's `calcPhysicsXform` answer
     let mut d = Drawable::bare(1, b"T".to_vec());
     let mut physics: Option<PhysicsXformInfo> = None;
+    // (#182 item 3) applyPhysicsXform's gates: open until op 13 sets them (the object is the header's)
+    let mut gates = PhysicsXformGates { has_object, ..PhysicsXformGates::OPEN };
     let mut m = {
         let mut env = DrawEnv { assets: &mut models, random: &mut random, sync_time: 0, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
         W3DModelDraw::new_scaled(data.clone(), 0, false, false, scale, Arc::new(Vec::new()), &mut env).expect("an idle state")
@@ -845,10 +883,11 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
             9 => m.scale = r(s[2]),
             11 => {
                 // (#179 item 3) `Drawable::draw`: `applyPhysicsXform`'s totals are the drawable's for this draw
-                // (`Drawable::apply_physics_xform`: none without an object, `physics_xform_facts`' `apply`), then the root
+                // (~~`Drawable::apply_physics_xform`: none without an object, `physics_xform_facts`' `apply`~~ (#182
+                // item 3) `apply_physics_xform_gated`, as `Drawable::apply_physics_xform` calls it), then the root
                 // (`Drawable::draw_transform_mtx`) handed to `doDrawModule` as `ClientDrawables::draw` hands it
                 let world = matrix(&s[2..]);
-                d.physics_xform = if has_object { physics } else { None };
+                d.physics_xform = apply_physics_xform_gated(&gates, || physics);
                 let root = d.draw_transform_mtx(&world);
                 out.push(400);
                 for row in 0..3 {
@@ -901,6 +940,15 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
             }
             13 => {
                 physics = (s[1] != 0).then_some(PhysicsXformInfo { total_pitch: r(s[2]), total_roll: r(s[3]), total_yaw: r(s[4]), total_z: r(s[5]) });
+                gates = PhysicsXformGates {
+                    has_object,
+                    held: s[6] != 0,
+                    show_client_physics: s[7] != 0,
+                    view_time_frozen: s[8] != 0,
+                    view_camera_movement_finished: s[9] != 0,
+                    time_frozen_debug: s[10] != 0,
+                    time_frozen_script: s[11] != 0,
+                };
             }
             10 => {
                 let mut pos = [Coord3D::default(); 64];

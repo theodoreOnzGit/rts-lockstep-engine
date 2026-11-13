@@ -1973,6 +1973,53 @@ mod tests {
         }
     }
 
+    /// (#182 item 3) `applyPhysicsXform`'s gates read from a real World ([`PhysicsXformGates::of`]): the gate's object
+    /// with every gate open; a `FREEZE_TIME` (`ScriptEngine::doFreezeTime`) freezes it, `doUnfreezeTime` lets it go;
+    /// then each of the World's other stand-ins (the debug window, the view frozen with its camera still moving, which
+    /// a finished camera does not freeze), `DISABLED_HELD`, and an id with no object.
+    ///
+    /// *Predictions, written before the first run* (`issue182i3_predictions.md`): all hold. Plants 9925 (the script
+    /// engine's freeze not read), 9926 (debug), 9927 (view), 9928 (held) each fail it.
+    ///
+    /// *Results (2026-11-13), first run:* all held. Plants 9925, 9926, 9927 and 9928 each fail it, as predicted; so do
+    /// 9916-9920, 9922, 9924 and 9929 (the gates themselves). 9921 (the call order) and 9923 (`ShowClientPhysics`, never
+    /// off in the gate's World) do not: the truth-table test and the differentials catch those.
+    #[test]
+    fn the_physics_gates_read_the_worlds_time_freezes() {
+        use crate::client::drawable_loco::{physics_xform_facts, PhysicsXformGates};
+        let (mut w, mut c, id) = gate_with_a_transition_module();
+        assert_eq!(PhysicsXformGates::of(&w, id), PhysicsXformGates::OPEN);
+        assert!(physics_xform_facts(&w, id).gates.passes());
+
+        w.script_engine.do_freeze_time();
+        let g = PhysicsXformGates::of(&w, id);
+        assert!(g.time_frozen_script && !g.passes(), "a script froze time: {g:?}");
+        assert_eq!(physics_xform_facts(&w, id).gates, g);
+        c.draw(&w, &mut NoAssets, 33);
+        assert!(c.drawables[&id].physics_xform.is_none());
+        w.script_engine.do_unfreeze_time();
+        assert!(PhysicsXformGates::of(&w, id).passes());
+
+        w.cuts.game_loop.script_time_frozen_debug = true;
+        assert!(!PhysicsXformGates::of(&w, id).passes(), "the debug window paused");
+        w.cuts.game_loop.script_time_frozen_debug = false;
+
+        w.cuts.game_loop.view_time_frozen = true;
+        assert!(PhysicsXformGates::of(&w, id).passes(), "the camera's movement is finished");
+        w.cuts.game_loop.view_camera_movement_finished = false;
+        assert!(!PhysicsXformGates::of(&w, id).passes(), "frozen for the camera's movement");
+        w.cuts.game_loop.view_time_frozen = false;
+        assert!(PhysicsXformGates::of(&w, id).passes());
+        w.cuts.game_loop.view_camera_movement_finished = true;
+
+        w.set_disabled(id, crate::common::disabled_types::DISABLED_HELD);
+        let g = PhysicsXformGates::of(&w, id);
+        assert!(g.held && !g.passes(), "{g:?}");
+
+        let g = PhysicsXformGates::of(&w, crate::common::game_type::INVALID_ID);
+        assert!(!g.has_object && !g.passes());
+    }
+
     /// GitHub #45, `Drawable::draw`'s early return for `m_hidden` and `m_hiddenByStealth`.
     ///
     /// *Predictions, written before the first run:* ~~the gate world has a local player~~ (missed: it has none; the

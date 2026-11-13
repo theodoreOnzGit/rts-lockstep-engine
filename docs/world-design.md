@@ -177,7 +177,7 @@ onto the world queue in order. `Money::deposit/withdraw` and
 |---|---|
 | water grid height and transform; raw map height | logic-owned already: `TerrainVisualState` (layer 6) |
 | terrain tile for placement (`BuildAssistant` -> `getTerrainTile`) | logic-owned map data (the tile table is in the map, layer 6); no client call |
-| `isTimeFrozen`, `isCameraMovementFinished`, tactical-view position, view filter | `world.reads.camera_*`. Headless default: not frozen, finished, origin, no filter. A client feeds them at the start of the logic frame. |
+| `isTimeFrozen`, `isCameraMovementFinished`, tactical-view position, view filter | `world.reads.camera_*`. Headless default: not frozen, finished, origin, no filter. A client feeds them at the start of the logic frame. **Corrected 2026-11-13 (#182 item 3):** ~~`world.reads.camera_*`~~ for `isTimeFrozen` and `isCameraMovementFinished` that holds only for `World::run_logic_frame`. The full `GameLogic::update` (`game_logic_update` through `GameLogicHost` for `World`), the script conditions and `GameLogicDispatch` read `cuts.game_loop.view_time_frozen` and `view_camera_movement_finished` (the same defaults). Nothing keeps the two in step. The client's `applyPhysicsXform` reads the second (`drawable_loco::PhysicsXformGates::of`). |
 | `getAudioLengthMS` | `world.reads.audio_length_ms` (name -> ms), filled from the audio files at load, the same on every peer; unknown = 0 |
 | `hasMusicTrackCompleted` | `world.reads.music_track_completions`; headless: never |
 | local selection (`getAllSelectedDrawables`, `getFirstSelectedDrawable`, `getFrameSelectionChanged`, `getSelectCount`) | `world.reads.local_selection` (object ids) and `frame_selection_changed`; headless: none |

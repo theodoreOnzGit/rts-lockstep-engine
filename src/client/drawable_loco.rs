@@ -5,7 +5,8 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/Drawable.cpp
 //   (DrawableLocoInfo::DrawableLocoInfo, Drawable::applyPhysicsXform, calcPhysicsXform,
 //   calcPhysicsXformThrust, calcPhysicsXformHoverOrWings, calcPhysicsXformTreads,
-//   calcPhysicsXformWheels; GitHub #41; calcPhysicsXformMotorcycle, GitHub #182 item 2)
+//   calcPhysicsXformWheels; GitHub #41; calcPhysicsXformMotorcycle, GitHub #182 item 2; applyPhysicsXform's gates,
+//   GitHub #182 item 3)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/Drawable.h
 //   (TWheelInfo, DrawableLocoInfo, PhysicsXformInfo, getWheelInfo)
 //
@@ -26,8 +27,11 @@
 //! # As upstream reads it
 //!
 //! - **`Drawable::draw`** calls `applyPhysicsXform(&transformMtx)` before the draw modules' `doDrawModule`: nothing
-//!   without an object, when it is `DISABLED_HELD`, or without `TheGlobalData->m_showClientPhysics`; otherwise
-//!   `calcPhysicsXform` by the current locomotor's appearance, and, when one ran, the drawable's transform translated
+//!   without an object, when it is `DISABLED_HELD`, or without `TheGlobalData->m_showClientPhysics`; (**#182 item 3**)
+//!   nothing either while time is frozen (`TheTacticalView->isTimeFrozen() && !isCameraMovementFinished()`, or the
+//!   script engine's `isTimeFrozenDebug()` or `isTimeFrozenScript()`: [`PhysicsXformGates::passes`]), and then
+//!   `calcPhysicsXform` is not called at all, so a frozen draw takes no client random value and leaves `m_locoInfo` as
+//!   it was ([`apply_physics_xform_gated`]); otherwise `calcPhysicsXform` by the current locomotor's appearance, and, when one ran, the drawable's transform translated
 //!   by the total Z, then turned about Y by the pitch, about X by minus the roll and about Z by the yaw
 //!   ([`PhysicsXformInfo::apply`]). A hidden drawable is not drawn at all (`m_hidden`), so none of this runs.
 //! - **`calcPhysicsXform`**: without an AI or a current locomotor, nothing; `LOCO_WHEELS_FOUR`, `LOCO_TREADS`,
@@ -69,7 +73,14 @@
 //!   normal (`World::peek_layer_height_and_normal`), the height above the terrain
 //!   (`World::peek_is_significantly_above_terrain`), and for the treads the overlapped object and its body's crushed
 //!   flags (`World::peek_crushed`). Nothing is written and no cache is filled.
-//! - **Time frozen** (`isTimeFrozen`, the script engine's freezes): the client has no frozen time yet; not checked.
+//! - ~~**Time frozen** (`isTimeFrozen`, the script engine's freezes): the client has no frozen time yet; not checked.~~
+//!   **Corrected 2026-11-13 (#182 item 3):** checked, as upstream orders it (after the object, held and
+//!   `ShowClientPhysics` tests, before `calcPhysicsXform`). The answers are the World's own stand-ins for
+//!   `TheTacticalView` and `TheScriptEngine`, read through the `&self` methods the logic's `GameLogic::update` freeze
+//!   reads ([`PhysicsXformGates::of`]): the script engine's `m_freezeByScript` (`FREEZE_TIME`), and the game loop's
+//!   view and debug answers (stand-ins: not frozen, camera finished, no debug window, as a release build without
+//!   DebugWindow.dll answers). The client's own view has no `cameraModFreezeTime` yet (the logic's script action is a
+//!   cut), so the view's freeze only holds when the World's stand-in is set.
 //! - ~~`calcPhysicsXformMotorcycle` (`LOCO_MOTORCYCLE`) is not translated: no transform for it yet.~~ **Corrected
 //!   2026-11-13 (#182 item 2):** translated ([`DrawableLocoInfo::calc_motorcycle`]) and dispatched.
 //! - ~~The hover model's `atan2`, `sqrt`, `sin` and `cos` take float arguments, so they are the C++ `float` overloads
@@ -327,29 +338,124 @@ pub struct XformObjectFacts {
     pub had_previous_overlap: bool,
 }
 
+/// (#182 item 3) What `applyPhysicsXform` tests before it calls `calcPhysicsXform` (Drawable.cpp:1390-1400).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PhysicsXformGates {
+    /// `getObject() != NULL`.
+    pub has_object: bool,
+    /// `obj->isDisabledByType( DISABLED_HELD )`.
+    pub held: bool,
+    /// `TheGlobalData->m_showClientPhysics` (`TRUE` by default, GlobalData.cpp:817).
+    pub show_client_physics: bool,
+    /// `TheTacticalView->isTimeFrozen()` (W3DView: `m_freezeTimeForCameraMovement`).
+    pub view_time_frozen: bool,
+    /// `TheTacticalView->isCameraMovementFinished()`.
+    pub view_camera_movement_finished: bool,
+    /// `TheScriptEngine->isTimeFrozenDebug()` (false without DebugWindow.dll).
+    pub time_frozen_debug: bool,
+    /// `TheScriptEngine->isTimeFrozenScript()` (`m_freezeByScript`).
+    pub time_frozen_script: bool,
+}
+
+impl PhysicsXformGates {
+    /// Every gate open: an object, not held, `ShowClientPhysics`, not frozen.
+    pub const OPEN: PhysicsXformGates = PhysicsXformGates {
+        has_object: true,
+        held: false,
+        show_client_physics: true,
+        view_time_frozen: false,
+        view_camera_movement_finished: true,
+        time_frozen_debug: false,
+        time_frozen_script: false,
+    };
+
+    /// `applyPhysicsXform`'s early returns, in upstream's text:
+    ///
+    /// ```text
+    /// if( !obj || obj->isDisabledByType( DISABLED_HELD ) || !TheGlobalData->m_showClientPhysics ) return;
+    /// Bool frozen = TheTacticalView->isTimeFrozen() && !TheTacticalView->isCameraMovementFinished();
+    /// frozen = frozen || TheScriptEngine->isTimeFrozenDebug() || TheScriptEngine->isTimeFrozenScript();
+    /// if (frozen) return;
+    /// ```
+    ///
+    /// True when none of them returns.
+    pub fn passes(&self) -> bool {
+        if (!self.has_object && !plant(9924)) || (self.held && !plant(9922)) || (!self.show_client_physics && !plant(9923)) {
+            return false;
+        }
+        if plant(9916) {
+            return true;
+        }
+        let view = if plant(9918) {
+            false
+        } else if plant(9917) {
+            self.view_time_frozen
+        } else {
+            self.view_time_frozen && !self.view_camera_movement_finished
+        };
+        let debug = self.time_frozen_debug && !plant(9919);
+        let script = self.time_frozen_script && !plant(9920);
+        let frozen = if plant(9929) { view && (debug || script) } else { view || debug || script };
+        !frozen
+    }
+
+    /// The gates for object `id`, read with `&World`: the object and its `DISABLED_HELD`, the global data's
+    /// `ShowClientPhysics`, and the World's answers for `TheTacticalView` and `TheScriptEngine`. Those are the `&self`
+    /// methods that `GameLogic::update`'s own freeze reads (`GameLogicHost` for `World`), so the client and the logic
+    /// agree on whether time is frozen. Nothing is written.
+    pub fn of(w: &World, id: ObjectId) -> PhysicsXformGates {
+        use crate::logic::world::game_logic_update::GameLogicHost;
+        let o = w.find_object(id);
+        PhysicsXformGates {
+            has_object: o.is_some(),
+            held: o.is_some_and(|o| o.is_disabled_by_type(DISABLED_HELD)) && !plant(9928),
+            show_client_physics: w.statics.global_data.the_global_data().is_none_or(|g| g.show_client_physics),
+            view_time_frozen: w.u_view_time_frozen() && !plant(9927),
+            view_camera_movement_finished: w.u_view_camera_movement_finished(),
+            time_frozen_debug: w.u_script_time_frozen_debug() && !plant(9926),
+            time_frozen_script: if plant(9925) { w.cuts.game_loop.script_time_frozen_script } else { w.u_script_time_frozen_script() },
+        }
+    }
+}
+
+/// (#182 item 3) `applyPhysicsXform`'s order: the gates ([`PhysicsXformGates::passes`]) and then `calcPhysicsXform`
+/// (`calc`). When a gate returns, `calc` is not called, so there are no client random draws and no `m_locoInfo`
+/// update. The answer is the totals to put on the draw's `transformMtx`, or `None` (upstream's `mtx` untouched).
+pub fn apply_physics_xform_gated(gates: &PhysicsXformGates, calc: impl FnOnce() -> Option<PhysicsXformInfo>) -> Option<PhysicsXformInfo> {
+    if !gates.passes() {
+        if plant(9921) {
+            // the planted order: the freeze stops only the transform
+            let _ = calc();
+        }
+        return None;
+    }
+    calc()
+}
+
 /// What `applyPhysicsXform` and `calcPhysicsXform` read of the logic for one drawable.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PhysicsXformFacts {
-    /// There is an object, it is not `DISABLED_HELD`, and `TheGlobalData->m_showClientPhysics`.
-    pub apply: bool,
+    /// ~~There is an object, it is not `DISABLED_HELD`, and `TheGlobalData->m_showClientPhysics`.~~ **Corrected
+    /// 2026-11-13 (#182 item 3):** `apply` is replaced by these gates, which include the time freezes.
+    pub gates: PhysicsXformGates,
     /// `ai->getCurLocomotor()`'s; `None` without an AI or a current locomotor.
     pub locomotor: Option<LocoFacts>,
     /// `None` without physics (each model returns before it changes anything).
     pub object: Option<XformObjectFacts>,
 }
 
-/// What [`Drawable::apply_physics_xform`] reads of object `id`, all with `&World`: the object's fields and its
+/// What [`Drawable::apply_physics_xform`] reads of object `id`, all with `&World`: (#182 item 3) the gates
+/// ([`PhysicsXformGates::of`]), the object's fields and its
 /// thing's position and direction (`Thing::peek_unit_direction_vector_2d`, the cache not filled), the AI's current
 /// locomotor ([`World::ai_peek`]), the physics module's fields ([`World::physics_peek`] and `PhysicsBehavior::peek_*`),
 /// the terrain ([`World::peek_layer_height_and_normal`]), the height above it
 /// ([`World::peek_is_significantly_above_terrain`]), `getCurLocomotorSpeed` ([`World::peek_cur_locomotor_speed`]),
 /// and the overlapped object with its body's crushed flags ([`World::peek_crushed`]). Nothing is written.
 pub fn physics_xform_facts(w: &World, id: ObjectId) -> PhysicsXformFacts {
+    let gates = PhysicsXformGates::of(w, id);
     let Some(o) = w.find_object(id) else {
-        return PhysicsXformFacts { apply: false, locomotor: None, object: None };
+        return PhysicsXformFacts { gates, locomotor: None, object: None };
     };
-    let show = w.statics.global_data.the_global_data().is_none_or(|g| g.show_client_physics);
-    let apply = show && !o.is_disabled_by_type(DISABLED_HELD);
     let locomotor = w.ai_peek(id).and_then(|ai| ai.get_cur_locomotor()).map(LocoFacts::of);
     let object = w.physics_peek(id).map(|p| {
         let pos = *o.thing.position();
@@ -386,7 +492,7 @@ pub fn physics_xform_facts(w: &World, id: ObjectId) -> PhysicsXformFacts {
             had_previous_overlap: previous != INVALID_ID,
         }
     });
-    PhysicsXformFacts { apply, locomotor, object }
+    PhysicsXformFacts { gates, locomotor, object }
 }
 
 /// `PhysicsTurningType::TURN_NEGATIVE`, `TURN_POSITIVE`.
@@ -1082,9 +1188,15 @@ impl Drawable {
     /// `applyPhysicsXform(&transformMtx)` as `Drawable::draw` calls it (see the module docs): this draw's totals kept in
     /// [`Drawable::physics_xform`] (for the client to put on the drawn model, [`PhysicsXformInfo::apply`]; **#179 item
     /// 3:** and put on the draw's root by [`Drawable::draw_transform_mtx`], as upstream puts them on `transformMtx`),
-    /// `None` when none applies (no object, held, `ShowClientPhysics` off, the drawable hidden, or no model ran).
+    /// `None` when none applies (no object, held, `ShowClientPhysics` off, (#182 item 3) time frozen, the drawable
+    /// hidden, or no model ran). A gate that returns skips `calcPhysicsXform` ([`apply_physics_xform_gated`]).
     pub fn apply_physics_xform(&mut self, facts: &PhysicsXformFacts, random: &mut RandomValues) {
-        self.physics_xform = if !facts.apply || self.hidden { None } else { self.calc_physics_xform(facts, random) };
+        self.physics_xform = if self.hidden {
+            None
+        } else {
+            let slot = &mut self.loco_info;
+            apply_physics_xform_gated(&facts.gates, || DrawableLocoInfo::calc_physics_xform(slot, facts, random))
+        };
     }
 
     /// `getWheelInfo()`: `m_locoInfo`'s wheel info, `None` until a physics model made it.
@@ -1154,6 +1266,46 @@ mod tests {
         Drawable::for_tests()
     }
 
+    /// (#182 item 3) `applyPhysicsXform`'s gates against upstream's expression written out here, over all 128
+    /// combinations; and a gate that returns does not call `calcPhysicsXform`.
+    ///
+    /// *Predictions, written before the first run* (`issue182i3_predictions.md`): 128 of 128 agree; 3 of the 128
+    /// pass (has object, not held, shown, not debug, not script, and the view not frozen or its camera finished: 3 of
+    /// the 4 view pairs); a returning gate leaves the closure uncalled.
+    ///
+    /// *Results (2026-11-13), first run:* all held (128 of 128, 3 passing). Plants 9916-9924 and 9929 each fail it;
+    /// 9925-9928 (the World reads) do not, as predicted: `the_physics_gates_read_the_worlds_time_freezes` catches them.
+    #[test]
+    fn the_gates_are_upstreams_expression() {
+        let mut passing = 0;
+        for bits in 0..128u32 {
+            let b = |i: u32| bits & (1 << i) != 0;
+            let g = PhysicsXformGates {
+                has_object: b(0),
+                held: b(1),
+                show_client_physics: b(2),
+                view_time_frozen: b(3),
+                view_camera_movement_finished: b(4),
+                time_frozen_debug: b(5),
+                time_frozen_script: b(6),
+            };
+            let early = !g.has_object || g.held || !g.show_client_physics;
+            let frozen = (g.view_time_frozen && !g.view_camera_movement_finished) || g.time_frozen_debug || g.time_frozen_script;
+            let want = !early && !frozen;
+            assert_eq!(g.passes(), want, "{g:?}");
+            passing += i32::from(want);
+            let mut called = false;
+            let got = apply_physics_xform_gated(&g, || {
+                called = true;
+                Some(PhysicsXformInfo { total_z: 1.0, ..Default::default() })
+            });
+            assert_eq!(called, want, "calcPhysicsXform is called only past the gates: {g:?}");
+            assert_eq!(got.is_some(), want);
+        }
+        assert_eq!(passing, 3);
+        assert!(PhysicsXformGates::OPEN.passes());
+    }
+
     /// *Predictions, written before the first run* (`WobbleRate` 0.1, `MaxWobble` 0.25, `MinWobble` -0.25, `ThrustRoll`
     /// 0.05): the pitch and yaw climb 0.1, then 0.05 a draw once within two rates of the maximum (0.1, 0.15, 0.2, 0.25),
     /// the wobble turning to -1 on the fourth draw; the fifth goes down by 0.1; the roll grows by 0.05 a draw; the
@@ -1163,7 +1315,7 @@ mod tests {
     #[test]
     fn thrust_wobbles_and_rolls() {
         let l = LocoFacts { wobble_rate: 0.1, max_wobble: 0.25, min_wobble: -0.25, thrust_roll: 0.05, ..loco(LocomotorAppearance::LocoThrust) };
-        let facts = PhysicsXformFacts { apply: true, locomotor: Some(l), object: None };
+        let facts = PhysicsXformFacts { gates: PhysicsXformGates::OPEN, locomotor: Some(l), object: None };
         let mut d = drawable();
         let mut random = RandomValues::new(0);
         assert!(d.loco_info.is_none());
@@ -1192,7 +1344,7 @@ mod tests {
         let l = LocoFacts { forward_vel_coef: 0.1, rudder_correction_degree: 0.1, rudder_correction_rate: 0.5, ..loco(LocomotorAppearance::LocoHover) };
         let mut d = drawable();
         let mut random = RandomValues::new(0);
-        let f = PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(object(2.0, true)) };
+        let f = PhysicsXformFacts { gates: PhysicsXformGates::OPEN, locomotor: Some(l), object: Some(object(2.0, true)) };
         let a = d.calc_physics_xform(&f, &mut random).unwrap();
         let b = d.calc_physics_xform(&f, &mut random).unwrap();
         assert_eq!(a.total_pitch, 0.0);
@@ -1209,7 +1361,7 @@ mod tests {
         let mut e = drawable();
         assert_eq!(e.calc_physics_xform(&none, &mut random), Some(PhysicsXformInfo::default()));
         assert_eq!(e.calc_physics_xform(&PhysicsXformFacts { locomotor: None, ..f }, &mut random), None);
-        e.apply_physics_xform(&PhysicsXformFacts { apply: false, ..f }, &mut random);
+        e.apply_physics_xform(&PhysicsXformFacts { gates: PhysicsXformGates { held: true, ..PhysicsXformGates::OPEN }, ..f }, &mut random);
         assert_eq!(e.physics_xform, None);
         e.hidden = true;
         e.apply_physics_xform(&f, &mut random);
@@ -1233,13 +1385,13 @@ mod tests {
         let mut expect = random.clone();
         expect.game_client_random_value_real(0.0, 0.0);
         expect.game_client_random_value_real(0.0, 0.0);
-        let a = d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
+        let a = d.calc_physics_xform(&PhysicsXformFacts { gates: PhysicsXformGates::OPEN, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
         assert_eq!(format!("{random:?}"), format!("{expect:?}"));
         assert_eq!(a.total_z, 1.5);
         assert!((d.loco_info.unwrap().overlap_z - 2.8).abs() < 1e-6);
         let mut o2 = object(0.0, false);
         o2.had_previous_overlap = true;
-        let b = d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(o2) }, &mut random).unwrap();
+        let b = d.calc_physics_xform(&PhysicsXformFacts { gates: PhysicsXformGates::OPEN, locomotor: Some(l), object: Some(o2) }, &mut random).unwrap();
         assert!((b.total_z - 1.4).abs() < 1e-6);
         assert_eq!(d.loco_info.unwrap().pitch_rate, PI / 128.0);
         assert_eq!(b.total_pitch, PI / 128.0);
@@ -1262,7 +1414,7 @@ mod tests {
         d.loco_info = Some(DrawableLocoInfo { pitch: 0.3, roll: 0.7, ..Default::default() });
         let mut random = RandomValues::new(0);
         let o = object(0.0, false);
-        let a = d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(o) }, &mut random).expect("a motorcycle model");
+        let a = d.calc_physics_xform(&PhysicsXformFacts { gates: PhysicsXformGates::OPEN, locomotor: Some(l), object: Some(o) }, &mut random).expect("a motorcycle model");
         let ph = 5.0 * trig::sin(0.3);
         assert_eq!(a.total_roll, 0.0);
         assert_eq!(a.total_pitch, 0.3);
@@ -1273,7 +1425,7 @@ mod tests {
         let mut up = o;
         up.airborne = true;
         up.position.z = 3.0;
-        let b = d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(up) }, &mut random).unwrap();
+        let b = d.calc_physics_xform(&PhysicsXformFacts { gates: PhysicsXformGates::OPEN, locomotor: Some(l), object: Some(up) }, &mut random).unwrap();
         assert_eq!(b.total_z, 0.0);
         assert_eq!(b.total_roll, 0.0);
         let w = d.get_wheel_info().unwrap();
@@ -1296,19 +1448,19 @@ mod tests {
         let mut random = RandomValues::new(0);
         let mut o = object(0.0, false);
         o.airborne = true;
-        let a = d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
+        let a = d.calc_physics_xform(&PhysicsXformFacts { gates: PhysicsXformGates::OPEN, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
         let want = (f64::from(fabs(5.0 * trig::sin(0.2f32))) / 4.0 + f64::from(fabs(5.0 * trig::sin(0.1f32))) / 4.0) as f32;
         assert_eq!(a.total_z, want);
         assert_eq!((a.total_pitch, a.total_roll), (0.0, 0.0));
         assert_eq!(d.get_wheel_info().unwrap().frames_airborne_counter, 1);
         o.airborne = false;
         o.turning = TURN_POSITIVE;
-        d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
+        d.calc_physics_xform(&PhysicsXformFacts { gates: PhysicsXformGates::OPEN, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
         let w = d.get_wheel_info().unwrap();
         assert!((w.wheel_angle - 0.05).abs() < 1e-7, "{}", w.wheel_angle);
         assert_eq!((w.frames_airborne, w.frames_airborne_counter), (1, 0));
         o.forward_speed_2d = -1.0;
-        d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
+        d.calc_physics_xform(&PhysicsXformFacts { gates: PhysicsXformGates::OPEN, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
         assert!((d.get_wheel_info().unwrap().wheel_angle + 0.005).abs() < 1e-7);
     }
 

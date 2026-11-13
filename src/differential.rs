@@ -3668,6 +3668,9 @@ extern "C" {
     // words): calcPhysicsXform and its Thrust, HoverOrWings, Treads, Wheels and Motorcycle models, verbatim, over a
     // sequence of frames.
     pub fn ref_drawable_loco_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+    /// GitHub #182 item 3: applyPhysicsXform verbatim (its gates as the case's words, then calcPhysicsXform), 69 words a
+    /// frame in, 31 out.
+    pub fn ref_drawable_loco_apply_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
     // GitHub #175: the logic's bone and launch-offset questions (differential/wrap_logic_bones.cpp, which documents the
     // words): Drawable's getPristineBonePositions, getProjectileLaunchOffset and getBarrelCount over W3DModelDraw's,
