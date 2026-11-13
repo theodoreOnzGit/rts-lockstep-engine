@@ -3024,6 +3024,125 @@ mod differential {
                     .include(ww.join("WWLib"))
                     .file(dif.join("wrap_model_draw_particles.cpp"));
                 mb.compile("upstream_model_draw_particles");
+
+                // GitHub #181 item 7: W3DModelDraw's draw sequence with an animated render object
+                // (differential/wrap_model_draw_anim.cpp, which lists the cuts): NameKeyGenerator.h's NameKeyType;
+                // GameType.h's ObjectID, DrawableID and WeaponSlotType; GameCommon.h's frame constants and
+                // WhichTurretType; W3DModelDraw.cpp's turretNamesDiffer; W3DModelDraw.h's WeaponRecoilInfo; W3DModelDraw.cpp's
+                // maintain-frame flags, NO_NEXT_DURATION, testFlagBit, the constructor's initialisation,
+                // isAnimationComplete and adjustAnimSpeedToMovementSpeed, doDrawModule, getCurrentAnimFraction to
+                // getCurAnimDistanceCovered, handleClientRecoil, setModelState's head and tail, setPauseAnimation;
+                // ParticleSys.cpp's wind defaults and the constructor's wind draws. It also
+                // includes the cuts above (model_draw_particles_gen) and #179's Animatable3DObjClass cuts
+                // (w3d_animobj_gen), and is compiled in the W3D libraries' setting (the real HTreeClass and
+                // HRawAnimClass of upstream_w3d). No text is edited; each anchor must occur once.
+                println!("cargo:rerun-if-changed=differential/wrap_model_draw_anim.cpp");
+                let game_type = read_upstream(ge.join("Include/Common/GameType.h"));
+                let game_common = read_upstream(ge.join("Include/Common/GameCommon.h"));
+                let name_key = read_upstream(ge.join("Include/Common/NameKeyGenerator.h"));
+                let anim_files = [
+                    ("ma_name_key.inc", piece(&name_key, "NameKeyGenerator.h", "enum NameKeyType\n{", Some(("/** A bucket entry for the name key generator */", false)))),
+                    ("ma_which_turret.inc", piece(&game_common, "GameCommon.h", "enum WhichTurretType\n{", Some(("\tMAX_TURRETS\n};", true)))),
+                    (
+                        "ma_turret_differ.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "static Bool turretNamesDiffer(const ModelConditionInfo* a, const ModelConditionInfo* b)",
+                            Some(("/** Change the model for this drawable. If color is non-zero", false)),
+                        ),
+                    ),
+                    (
+                        "ma_ids.inc",
+                        piece(&game_type, "GameType.h", "enum ObjectID\n{", Some(("/// A unique, generic \"identifier\" used to identify player specified formations.", false))),
+                    ),
+                    ("ma_wslot.inc", piece(&game_type, "GameType.h", "enum WeaponSlotType\n{", Some(("\tWEAPONSLOT_COUNT\t// keep last\n};", true)))),
+                    (
+                        "ma_frames.inc",
+                        piece(&game_common, "GameCommon.h", "enum\n{\n\tLOGICFRAMES_PER_SECOND = 30,", Some(("const Real LOGICFRAMES_PER_SECONDS_REAL", false))),
+                    ),
+                    ("ma_recoil_info.inc", piece(&md_h, "W3DModelDraw.h", "\tstruct WeaponRecoilInfo\n", Some(("\tstruct ParticleSysTrackerType\n", false)))),
+                    (
+                        "ma_maintain.inc",
+                        piece(&md, "W3DModelDraw.cpp", "static const Int ALL_MAINTAIN_FRAME_FLAGS =", Some(("/** @todo: Move this to some kind of INI file*/", false))),
+                    ),
+                    (
+                        "ma_no_next.inc",
+                        piece(&md, "W3DModelDraw.cpp", "const UnsignedInt NO_NEXT_DURATION = 0xffffffff;", Some(("const UnsignedInt NO_NEXT_DURATION = 0xffffffff;", true))),
+                    ),
+                    (
+                        "ma_test_flag.inc",
+                        piece(&md, "W3DModelDraw.cpp", "inline Bool testFlagBit(Int flags, Int bit)", Some(("\treturn (flags & (1<<bit)) != 0;\n}", true))),
+                    ),
+                    (
+                        "ma_ctor.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "\tm_animationMode = RenderObjClass::ANIM_MODE_LOOP;\n",
+                            Some(("\t// only validate the current time-of-day and weather conditions by default.\n", false)),
+                        ),
+                    ),
+                    (
+                        "ma_anim_complete.inc",
+                        piece(&md, "W3DModelDraw.cpp", "static Bool isAnimationComplete(RenderObjClass* r)", Some(("void W3DModelDraw::adjustTransformMtx(Matrix3D& mtx) const", false))),
+                    ),
+                    (
+                        "ma_draw.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "void W3DModelDraw::doDrawModule(const Matrix3D* transformMtx)",
+                            Some(("const ModelConditionInfo* W3DModelDraw::findTransitionForSig(TransitionSig sig) const", false)),
+                        ),
+                    ),
+                    ("ma_anim.inc", piece(&md, "W3DModelDraw.cpp", "Real W3DModelDraw::getCurrentAnimFraction() const", Some(("static void doHideShowBoneSubObjs(", false)))),
+                    ("ma_recoil.inc", piece(&md, "W3DModelDraw.cpp", "void W3DModelDraw::handleClientRecoil()", Some(("void W3DModelDraw::recalcBonesForClientParticleSystems()", false)))),
+                    (
+                        "ma_sms_head.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "\t// get this here, before we change anything... we'll need it to pass to adjustAnimation (srj)\n",
+                            Some(("\t// and always hide muzzle flashes", false)),
+                        ),
+                    ),
+                    (
+                        "ma_sms_tail.inc",
+                        piece(&md, "W3DModelDraw.cpp", "\tconst ModelConditionInfo* prevState = m_curState;", Some(("\tadjustAnimation(prevState, prevAnimFraction);\n", true))),
+                    ),
+                    ("ma_pause.inc", piece(&md, "W3DModelDraw.cpp", "void W3DModelDraw::setPauseAnimation(Bool pauseAnim)", Some(("#ifdef ALLOW_ANIM_INQUIRIES", false)))),
+                    // ParticleSys.cpp: ParticleSystemInfo()'s wind defaults, and the constructor's wind members with their
+                    // client random values
+                    (
+                        "ma_wind_defaults.inc",
+                        piece(&psys, "ParticleSys.cpp", "\tm_windMotionStartAngleMin = 0.0f;\n", Some(("\tm_windMotionEndAngle = m_windMotionEndAngleMin;\n", true))),
+                    ),
+                    (
+                        "ma_wind_draw.inc",
+                        piece(
+                            &psys,
+                            "ParticleSys.cpp",
+                            "\tm_windMotionStartAngleMin = sysTemplate->m_windMotionStartAngleMin;\n",
+                            Some(("\tm_windAngle = GameClientRandomValueReal( m_windMotionStartAngle, m_windMotionEndAngle );\n", true)),
+                        ),
+                    ),
+                ];
+                let anim_gen = out_dir.join("model_draw_anim_gen");
+                std::fs::create_dir_all(&anim_gen).expect("create model_draw_anim_gen");
+                let anim_head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_model_draw_anim.cpp) */\n";
+                for (name, body) in anim_files {
+                    std::fs::write(anim_gen.join(name), format!("{anim_head}{body}\n")).expect("write a model draw anim cut");
+                }
+                let mut ab = cc::Build::new();
+                w3d_build(&mut ab, true);
+                ab.include(ww.join("WWSaveLoad"))
+                    .include(&animobj_gen)
+                    .include(&gen)
+                    .include(&anim_gen)
+                    .define("StringClass", Some("ShimStringClass"))
+                    .file(dif.join("wrap_model_draw_anim.cpp"));
+                ab.compile("upstream_model_draw_anim");
             }
 
             // GitHub #182 item 2: Drawable's client physics models (differential/wrap_drawable_loco.cpp, which lists the

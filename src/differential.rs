@@ -3663,6 +3663,11 @@ extern "C" {
     /// GitHub #182: which of the two client random values the compiled `shudder.Set(...)` gives x (0 the first drawn,
     /// 1 the second; C++ leaves the argument order unspecified).
     pub fn ref_mdp_shudder_order() -> c_int;
+    /// GitHub #181 item 7: W3DModelDraw's draw sequence with an animated render object (differential/
+    /// wrap_model_draw_anim.cpp, which documents the words): doDrawModule, setModelState's animation, setPauseAnimation,
+    /// adjustAnimation and the bone particle systems over the real hierarchy, raw animations and Animatable3DObjClass,
+    /// verbatim, over sequences. `file` is a W3D file (one hierarchy, then raw animations); -1 when a loader refuses it.
+    pub fn ref_model_draw_anim_seq(file: *const std::os::raw::c_char, flen: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
     // GitHub #182 item 2: Drawable's client physics models (differential/wrap_drawable_loco.cpp, which documents the
     // words): calcPhysicsXform and its Thrust, HoverOrWings, Treads, Wheels and Motorcycle models, verbatim, over a

@@ -2708,6 +2708,18 @@ impl RenderObj {
         self.is_tree_valid
     }
 
+    /// (#181 item 7) Each pivot's `HTree->Get_Transform(i)` as it stands, without an update: the live hierarchy's
+    /// transforms of the last update; before the first one, the identity for each of the skeleton's bones (upstream's
+    /// `new HTreeClass(*source)` copies the loaded tree, whose pivots' `Transform` is the identity, `PivotClass()`).
+    /// Empty without a skeleton.
+    pub fn live_pivot_transforms(&self) -> Vec<Matrix3D> {
+        match (&self.live_tree, &self.skeleton) {
+            (Some(t), _) => t.pivots.iter().map(|p| p.transform).collect(),
+            (None, Some(k)) => vec![Matrix3D::IDENTITY; k.bones.len()],
+            (None, None) => Vec::new(),
+        }
+    }
+
     /// (#179) The live hierarchy, made from the skeleton the first time (`new HTreeClass(*source)`: the pivots as the
     /// asset source scaled them, their transforms the identity), with the render object's bone captures and controls on
     /// its pivots (`Capture_Bone`/`Control_Bone`/`Release_Bone` wrote them to the pivots upstream). `None` without a
@@ -2768,7 +2780,9 @@ impl RenderObj {
         let (f, d) = compute_current_frame(a.frame, a.motion.num_frames, a.motion.frame_rate, a.frame_rate_multiplier, a.anim_direction, diff, a.anim_mode);
         a.frame = f;
         a.anim_direction = d;
-        a.last_sync_time = now;
+        if !plant(9970) {
+            a.last_sync_time = now;
+        }
         if a.frame == a.prev_frame && !plant(9814) {
             // This function was somehow called twice per frame.
             a.prev_frame = oldprev;
@@ -2984,7 +2998,7 @@ impl RenderObj {
         self.mode_combo = None;
         match motion {
             Some(motion) => {
-                let prev_frame = self.anim.as_ref().map_or(self.last_frame, |a| a.frame);
+                let prev_frame = if plant(9972) { frame } else { self.anim.as_ref().map_or(self.last_frame, |a| a.frame) };
                 let anim_direction = if anim_mode_index(mode) < anim_mode_index(AnimMode::LoopBackwards) { 1.0 } else { -1.0 };
                 self.anim = Some(ModeAnim { motion, frame, prev_frame, last_sync_time: now, frame_rate_multiplier: 1.0, anim_direction, anim_mode: mode });
                 self.last_frame = frame;
@@ -3053,7 +3067,7 @@ impl RenderObj {
         if !self.is_hlod || self.hidden {
             return Ok(());
         }
-        if self.anim.as_ref().is_some_and(|a| a.anim_mode != AnimMode::Manual) {
+        if self.anim.as_ref().is_some_and(|a| a.anim_mode != AnimMode::Manual || plant(9969)) {
             self.single_anim_progress(now);
         }
         if !self.is_tree_valid && !plant(9809) {
@@ -3503,6 +3517,17 @@ impl W3DModelDraw {
         self.which_anim_in_cur_state
     }
 
+    /// (#181 item 7) `m_pauseAnimation`: whether [`W3DModelDraw::set_pause_animation`] last paused the animation
+    /// (`nukeCurrentRender` clears it).
+    pub fn pause_animation(&self) -> bool {
+        self.pause_animation
+    }
+
+    /// (#181 item 7) `m_animationMode`: the mode a paused animation resumes in (`ANIM_MODE_LOOP` as made).
+    pub fn animation_mode(&self) -> AnimMode {
+        self.animation_mode
+    }
+
     /// The name of the animation playing (the render object's), if any.
     pub fn current_animation(&self) -> Option<&AnimHandle> {
         self.render_object.as_ref().and_then(|r| r.anim.as_ref()).map(|a| &a.motion)
@@ -3540,7 +3565,9 @@ impl W3DModelDraw {
     /// (#174) and its `xform`: the old render object's transform (`Get_Transform()`), or without one the drawable's
     /// ([`W3DModelDraw::drawable_transform`]).
     fn nuke_current_render(&mut self) -> Matrix3D {
-        self.pause_animation = false;
+        if !plant(9963) {
+            self.pause_animation = false;
+        }
         // save the transform for the new model
         let xform = match &self.render_object {
             Some(r) => r.transform,
@@ -3639,7 +3666,11 @@ impl W3DModelDraw {
         self.adjust_animation(prev_state.as_ref(), prev_anim_fraction, env);
     }
 
-    /// `getCurrentAnimFraction()`.
+    /// `getCurrentAnimFraction()`. (#181 item 7) Upstream (W3DModelDraw.cpp:2127-2148) does not test what
+    /// `Peek_Animation_And_Info` answers: a render object that plays no animation (`BASE_POSE`, e.g. a state without
+    /// animations, or one whose animation is not found) leaves its `framenum` and `numFrames` uninitialised, and they are
+    /// read: undefined. The port answers -1 there (no fraction: `MAINTAIN_FRAME_ACROSS_STATES` keeps no frame);
+    /// `tests/differential_model_draw_anim.rs` ends a case at such a `setModelState`.
     pub fn get_current_anim_fraction(&self) -> f32 {
         let Some(cur) = self.get_cur_state() else { return -1.0 };
         if !is_any_maintain_frame_flag_set(cur.flags) {
@@ -3655,6 +3686,8 @@ impl W3DModelDraw {
             0.0
         } else if a.frame >= num_frames as f32 {
             1.0
+        } else if plant(9974) {
+            a.frame / num_frames as f32
         } else {
             a.frame / (num_frames as f32 - 1.0)
         }
@@ -3667,7 +3700,7 @@ impl W3DModelDraw {
         let cur = data.state(&cur_ref);
         let num_anims = cur.animations.len() as i32;
         if num_anims > 0 {
-            if num_anims == 1 {
+            if num_anims == 1 || plant(9957) {
                 self.which_anim_in_cur_state = 0;
             } else if prev_state == Some(&cur_ref) {
                 // select an idle anim different than the currently playing one
@@ -3682,11 +3715,11 @@ impl W3DModelDraw {
             let anim_handle = anim_info.get_anim_handle(env.assets);
             if let (Some(r), Some(h)) = (&mut self.render_object, anim_handle) {
                 let mut start_frame = 0;
-                if cur.mode == AnimMode::OnceBackwards || cur.mode == AnimMode::LoopBackwards {
+                if (cur.mode == AnimMode::OnceBackwards || cur.mode == AnimMode::LoopBackwards) && !plant(9959) {
                     start_frame = h.num_frames - 1;
                 }
                 let prev = prev_state.map(|p| data.state(p));
-                if test_flag_bit(cur.flags, RANDOMIZE_START_FRAME) {
+                if test_flag_bit(cur.flags, RANDOMIZE_START_FRAME) && !plant(9958) {
                     start_frame = env.random.game_client_random_value(0, h.num_frames - 1);
                 } else if test_flag_bit(cur.flags, START_FRAME_FIRST) {
                     start_frame = 0;
@@ -3700,12 +3733,16 @@ impl W3DModelDraw {
                         && is_common_maintain_frame_flag_set(cur.flags, p.flags)
                         && prev_anim_fraction >= 0.0
                     {
-                        start_frame = real_to_int(prev_anim_fraction * h.num_frames as f32 - 1.0);
+                        start_frame = if plant(9960) { real_to_int(prev_anim_fraction * h.num_frames as f32) } else { real_to_int(prev_anim_fraction * h.num_frames as f32 - 1.0) };
                     }
                 }
                 r.set_animation(Some(h), start_frame as f32, cur.mode, env.sync_time);
-                if r.is_hlod {
-                    let factor = env.random.game_client_random_value_real(cur.anim_min_speed_factor, cur.anim_max_speed_factor);
+                if r.is_hlod && !plant(9956) {
+                    let factor = if plant(9973) {
+                        env.random.game_client_random_value_real(cur.anim_max_speed_factor, cur.anim_min_speed_factor)
+                    } else {
+                        env.random.game_client_random_value_real(cur.anim_min_speed_factor, cur.anim_max_speed_factor)
+                    };
                     r.set_animation_frame_rate_multiplier(factor);
                 }
             }
@@ -3723,7 +3760,7 @@ impl W3DModelDraw {
         let Some(a) = &mut r.anim else { return false };
         let natural_duration_in_msec = a.motion.num_frames as f32 * 1000.0 / a.motion.frame_rate;
         if natural_duration_in_msec > 0.0 && desired_duration_in_msec > 0.0 {
-            a.frame_rate_multiplier = natural_duration_in_msec / desired_duration_in_msec;
+            a.frame_rate_multiplier = if plant(9968) { desired_duration_in_msec / natural_duration_in_msec } else { natural_duration_in_msec / desired_duration_in_msec };
             return true;
         }
         false
@@ -3743,7 +3780,7 @@ impl W3DModelDraw {
         if dist > 0.0 {
             if let Some(speed) = speed {
                 if speed > 0.0 {
-                    let desired_duration_in_msec = dist / speed * MSEC_PER_LOGICFRAME_REAL;
+                    let desired_duration_in_msec = if plant(9967) { dist / speed } else { dist / speed * MSEC_PER_LOGICFRAME_REAL };
                     self.set_cur_anim_duration_in_msec(desired_duration_in_msec);
                 }
             }
@@ -3800,10 +3837,12 @@ impl W3DModelDraw {
         }
         if let Some(a) = r.anim.clone() {
             if self.pause_animation {
-                self.animation_mode = a.anim_mode;
+                if !plant(9961) {
+                    self.animation_mode = a.anim_mode;
+                }
                 r.set_animation(Some(a.motion), a.frame, AnimMode::Manual, now);
             } else {
-                r.set_animation(Some(a.motion), a.frame, self.animation_mode, now);
+                r.set_animation(Some(a.motion), a.frame, if plant(9962) { AnimMode::Loop } else { self.animation_mode }, now);
             }
         }
     }
@@ -3843,7 +3882,7 @@ impl W3DModelDraw {
             }
         }
 
-        if is_animation_complete(self.render_object.as_ref()) {
+        if is_animation_complete(self.render_object.as_ref()) && !plant(9964) {
             if self.cur_state.is_some() {
                 if let Some(next_state) = self.next_state.take() {
                     let next_duration = self.next_state_anim_loop_duration;
@@ -3860,8 +3899,8 @@ impl W3DModelDraw {
                     let cur = data.state(&cur_ref);
                     if cur.animations[self.which_anim_in_cur_state as usize].is_idle_anim {
                         // (yes, that's right: pass curState for prevState)
-                        self.adjust_animation(Some(&cur_ref), -1.0, env);
-                    } else if test_flag_bit(cur.flags, RESTART_ANIM_WHEN_COMPLETE) {
+                        self.adjust_animation(if plant(9965) { None } else { Some(&cur_ref) }, -1.0, env);
+                    } else if test_flag_bit(cur.flags, RESTART_ANIM_WHEN_COMPLETE) || plant(9975) {
                         self.adjust_animation(Some(&cur_ref), -1.0, env);
                     }
                 }
@@ -3880,12 +3919,15 @@ impl W3DModelDraw {
         }
 
         self.handle_client_turret_positioning(&facts.turrets);
+        if plant(9966) && self.data.particles_attached_to_animated_bones {
+            self.update_bones_for_client_particle_systems(env.particles.as_mut().map(|p| &mut *p.manager), env.sync_time);
+        }
         // (#171, W3DModelDraw.cpp:2103-2107) the bone particle systems: made when the state changed, and moved to their
         // bones each draw when the module data says they follow animated bones
         if self.render_object.is_some() || !plant(9688) {
             self.recalc_bones_for_client_particle_systems(env.particles.as_mut(), env.random, env.sync_time);
         }
-        if (self.data.particles_attached_to_animated_bones || plant(9686)) && !plant(9687) {
+        if (self.data.particles_attached_to_animated_bones || plant(9686)) && !plant(9687) && !plant(9966) {
             // (#174) the render object's transform, as just set (#179: its own, as upstream's call reads it)
             self.update_bones_for_client_particle_systems(env.particles.as_mut().map(|p| &mut *p.manager), env.sync_time);
         }
@@ -4382,6 +4424,8 @@ impl W3DModelDraw {
                             r.get_bone_transform_scaled(bone_index)
                         } else if plant(9691) {
                             Matrix3D::multiply(&transform, &r.get_bone_transform_scaled(bone_index))
+                        } else if plant(9971) {
+                            r.peek_bone_transform(None, bone_index, sync_time)
                         } else {
                             r.get_bone_transform(bone_index, sync_time)
                         };
@@ -5161,7 +5205,10 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         let mult = m.render_object.as_ref().unwrap().anim.as_ref().unwrap().frame_rate_multiplier;
         assert!((mult - 3.0).abs() < 1e-5, "{mult}");
         let paused = DrawFacts { should_animate_with_power: false, ..FACTS };
+        // (#181 item 7) the mode a pause keeps to resume in
+        assert_eq!((m.pause_animation(), m.animation_mode()), (false, AnimMode::Loop));
         m.do_draw_module(&paused, &mut env);
+        assert_eq!((m.pause_animation(), m.animation_mode()), (true, AnimMode::Loop));
         assert_eq!(m.render_object.as_ref().unwrap().anim.as_ref().unwrap().anim_mode, AnimMode::Manual);
         m.render(500);
         assert_eq!(anim(&m).1, 0.0);
@@ -6372,12 +6419,15 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         let bone = |name: &[u8], parent, base| SkeletonBone { name: name.to_vec(), parent_index: parent, transform: Matrix3D::IDENTITY, base };
         let k = Skeleton { bones: vec![bone(b"ROOT", 0, Matrix3D::IDENTITY), bone(b"B1", 0, base)], sub_objects: Vec::new(), scale_factor: 1.0 };
         let mut r = RenderObj::new(b"SKL", true).with_skeleton(Some(k));
+        // (#181 item 7) before the first update, the copied hierarchy's identities
+        assert_eq!(r.live_pivot_transforms(), vec![Matrix3D::IDENTITY; 2]);
         let x = |r: &mut RenderObj, now| r.get_bone_transform(1, now).get_translation().x;
 
         r.set_animation(Some(handle.clone()), 0.0, AnimMode::Loop, 0);
         assert!(!r.is_hierarchy_valid());
         assert_eq!(x(&mut r, 0), 1.0);
         assert!(r.is_hierarchy_valid());
+        assert_eq!(r.live_pivot_transforms()[1].get_translation().x, 1.0);
         assert_eq!((x(&mut r, 50), r.anim.as_ref().unwrap().frame), (1.0, 0.0));
         r.set_transform(&Matrix3D::IDENTITY);
         // ~~frame 1.5~~ **Corrected after the first run (a prediction miss):** `30 * 50 * 0.001f` is 1.5000001 in `float`

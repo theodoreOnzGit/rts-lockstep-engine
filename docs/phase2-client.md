@@ -124,6 +124,41 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#181 item 7 (2026-11-13, GitHub #181): `W3DModelDraw`'s draw sequence with an animated render object.**
+- **Upstream** (W3DModelDraw.cpp:2040-2112, animobj.cpp): at one sync time, `doDrawModule` pauses or resumes the
+  animation, restarts a completed idle or `RESTART_ANIM_WHEN_COMPLETE` animation (`adjustAnimation`: client random values
+  for the animation, `RANDOMSTART` and the speed factor), sets the speed from the movement, and sets the render object's
+  transform (the hierarchy no longer valid). Then `recalcBonesForClientParticleSystems`'s `Get_Bone_Transform` under
+  the drawable's scale runs `Update_Sub_Object_Transforms`: `Single_Anim_Progress` moves the animation on to the sync
+  time and the pose is evaluated; the restore invalidates it. `updateBonesForClientParticleSystems` progresses again (by
+  nothing) and places each system at its bone in the evaluated pose; `handleClientRecoil` follows; the scene's `Render`
+  later progresses and evaluates again. Outside a logic time (the port's client draws there) `turretNamesDiffer` is
+  true, so every state change makes the render object again.
+- **New test:** `tests/differential_model_draw_anim.rs` with `differential/wrap_model_draw_anim.cpp`: the REAL
+  `HTreeClass` and `HRawAnimClass` (loaded from a generated W3D file by upstream's loaders), #179's verbatim
+  `Animatable3DObjClass`, `doDrawModule`, `adjustAnimation`, `setPauseAnimation`, `getCurrentAnimFraction`,
+  `handleClientRecoil`, `turretNamesDiffer`, setModelState's head and tail, ParticleSystem's wind draws and #171's bone
+  particle cuts, all verbatim (build.rs, each anchor asserted once); the real `GetGameClientRandomValue(Real)`.
+  Compared after every step: the module, the trackers, the particle systems' local transforms, the render object's
+  animation state (`Frame`, `PrevFrame`, `LastSyncTime`, direction, multiplier, mode), its transform, every live
+  pivot's transform, and the client random state.
+- **Results:** 20,000 cases, 573,806 steps, 143,926 draws (99,680 with an animation playing), 55,365 particle systems,
+  220,148 client random values: **0 mismatches**, max ULP 0. 1,704 cases end at a `setModelState` that is undefined
+  upstream (below). Plants 9956-9975: 20 of 20 caught (268 - 13,839 cases each; the test's header has the table).
+- **Defects:** none in the port. Three in the wrapper, fixed (the particle manager stand-in drew no wind angles; the
+  render object kept for the same model; the generator broke `parseConditionState`'s idle-animation rules).
+- **Undefined upstream, found:** `getCurrentAnimFraction` does not test `Peek_Animation_And_Info`'s answer, so a
+  maintain-frame state whose render object plays no animation reads uninitialised `framenum`/`numFrames` (88 of the
+  first 20,000 cases differed there). The port answers -1 (documented on `get_current_anim_fraction`).
+- **Other runs:** lib 1,235 passed; `differential_model_draw_particles` main and any scale 0 over 20,000 each (the
+  #182 item 3 numbers); client 102 passed; gate (a) PASS, last CRC 0bf44067. `src/logic` unchanged.
+- **Port changes:** no behaviour; accessors `W3DModelDraw::pause_animation`, `animation_mode` and
+  `RenderObj::live_pivot_transforms` (reached by the new test and two lib tests); the plants.
+- **Not done (gaps):** a logic-time `setModelState` (`validateCachedBones` posing the live render object, the turrets
+  and barrels valid), so `handleWeaponFireFX`'s FX bone and a real recoil are not in the sequence (a bone query and
+  captures between draws stand in); compressed and morph animations; blends and combos; transition states and
+  `m_nextState`; turret positioning.
+
 **#184 item 1 (2026-11-13, GitHub #184): the tank, truck and tank truck draws' own time freezes.**
 - **Upstream:** W3DTankDraw.cpp:312-315 tests `frozen` (Drawable.cpp:1397-1400's expression) first and returns before
   the tread search, the debris, the tread offsets, `m_lastDirection` and the base class's `doDrawModule`.
@@ -340,8 +375,9 @@ first frame.** The logic's change is described in `docs/phase1-porting-graph.md`
   rounding only (largest 3.8e-6 of max(|value|, 1))~~ **Corrected 2026-11-12 (#172):** that compared the port with a
   stand-in that shared its mistaken picture of the scale (see #172); 30 of 30 planted bugs (9661-9690) caught. Lib 1213, client 100,
   gate (a) 0bf44067, clippy and web build clean.
-- **Not yet** (#171's gaps): the bone transform is the skeleton's base pose (no animation, no turret captures; #166 item
-  3); ~~at a drawable scale that is not a power of two the port's bone (`world * (Scale * bone)`) rounds differently from
+- **Not yet** (#171's gaps): ~~the bone transform is the skeleton's base pose (no animation, no turret captures; #166 item
+  3)~~ **Corrected 2026-11-13 (#181 item 7):** the bones are the render object's animated pose (#179) with its captured
+  bones (#174), and their sequence with the animation is compared with upstream's (`tests/differential_model_draw_anim.rs`); ~~at a drawable scale that is not a power of two the port's bone (`world * (Scale * bone)`) rounds differently from
   upstream's~~ **Corrected 2026-11-12 (#172):** not a rounding nor a design decision but a translation defect, fixed in
   #172; the object-less drawables' systems attach to no drawable.
 
