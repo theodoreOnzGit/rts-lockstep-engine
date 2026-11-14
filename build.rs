@@ -3044,8 +3044,11 @@ mod differential {
                 // setMuzzleFlashHidden, handleClientTurretPositioning, rebuildWeaponRecoilInfo, handleWeaponFireFX; and
                 // #175's logic_bones_gen cuts (isValidTimeToCalcLogicStuff, PristineBoneInfo, TurretInfo, WeaponBarrelInfo,
                 // the m_validStuff bits, addPublicBone, testFlagBit to loadAnimations, rendobj.cpp's
-                // Get_Sub_Object_By_Name), included, not cut again: compiled after #175's block. No text is edited; each
-                // anchor must occur once.
+                // Get_Sub_Object_By_Name), included, not cut again: compiled after #175's block. (#181 item 7c) W3DModelDraw.cpp's
+                // setModelState head to the transition lookup, findTransitionForSig, setAnimationLoopDuration and
+                // setAnimationCompletionTime, W3DAnimationInfo's functions, doHideShowBoneSubObjs, doHideShowSubObjs,
+                // showSubObject, updateSubObjects; W3DModelDraw.h's TransitionSig helpers, W3DAnimationInfo and TransitionMap.
+                // No text is edited; each anchor must occur once.
                 println!("cargo:rerun-if-changed=differential/wrap_model_draw_anim.cpp");
                 let game_type = read_upstream(ge.join("Include/Common/GameType.h"));
                 let game_common = read_upstream(ge.join("Include/Common/GameCommon.h"));
@@ -3193,6 +3196,81 @@ mod differential {
                         piece(&md, "W3DModelDraw.cpp", "\tconst ModelConditionInfo* prevState = m_curState;", Some(("\tadjustAnimation(prevState, prevAnimFraction);\n", true))),
                     ),
                     ("ma_pause.inc", piece(&md, "W3DModelDraw.cpp", "void W3DModelDraw::setPauseAnimation(Bool pauseAnim)", Some(("#ifdef ALLOW_ANIM_INQUIRIES", false)))),
+                    // (#181 item 7c) the transition states: setModelState's head (the early return, allow-to-finish, the
+                    // transition lookup), findTransitionForSig, setAnimationLoopDuration and setAnimationCompletionTime, the
+                    // TransitionSig helpers and TransitionMap (W3DModelDraw.h), W3DAnimationInfo (the class and its
+                    // functions: m_naturalDurationInMsec filled by getAnimHandle); the show/hide sub-object lists:
+                    // doHideShowBoneSubObjs, doHideShowSubObjs, showSubObject, updateSubObjects
+                    (
+                        "ma_sms_pre.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "const ModelConditionInfo* nextState = NULL;\n",
+                            Some(("\t// get this here, before we change anything... we'll need it to pass to adjustAnimation (srj)\n", false)),
+                        ),
+                    ),
+                    (
+                        "ma_find_trans.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "const ModelConditionInfo* W3DModelDraw::findTransitionForSig(TransitionSig sig) const",
+                            Some(("Real W3DModelDraw::getCurrentAnimFraction() const", false)),
+                        ),
+                    ),
+                    (
+                        "ma_hide_show_bone.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "static void doHideShowBoneSubObjs(",
+                            Some(("void ModelConditionInfo::WeaponBarrelInfo::setMuzzleFlashHidden(RenderObjClass *fullObject, Bool hide) const", false)),
+                        ),
+                    ),
+                    (
+                        "ma_hide_show.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "void W3DModelDraw::doHideShowSubObjs(const std::vector<ModelConditionInfo::HideShowSubObjInfo>* vec)",
+                            Some(("void W3DModelDraw::stopClientParticleSystems()", false)),
+                        ),
+                    ),
+                    (
+                        "ma_show_sub.inc",
+                        piece(&md, "W3DModelDraw.cpp", "void W3DModelDraw::showSubObject( const AsciiString& name, Bool show )", Some(("static void parseWeaponBoneName(INI* ini", false))),
+                    ),
+                    ("ma_update_subs.inc", piece(&md, "W3DModelDraw.cpp", "void W3DModelDraw::updateSubObjects()", Some(("/** CRC */", false)))),
+                    (
+                        "ma_durations.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "void W3DModelDraw::setAnimationLoopDuration(UnsignedInt numFrames)",
+                            Some(("void W3DModelDraw::setAnimationFrame( int frame )", false)),
+                        ),
+                    ),
+                    (
+                        "ma_anim_info.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "W3DAnimationInfo::W3DAnimationInfo(const AsciiString& name, Bool isIdle, Real distanceCovered) :",
+                            Some(("void ModelConditionInfo::preloadAssets( TimeOfDay timeOfDay, Real scale )", false)),
+                        ),
+                    ),
+                    ("ma_anim_info_h.inc", piece(&md_h, "W3DModelDraw.h", "class W3DAnimationInfo\n", Some(("typedef std::vector<W3DAnimationInfo>", false)))),
+                    ("ma_trans_sig.inc", piece(&md_h, "W3DModelDraw.h", "typedef UnsignedInt64 TransitionSig;", Some(("// please do not define RETAIN_ANIM_HANDLES", false)))),
+                    (
+                        "ma_trans_map.inc",
+                        piece(
+                            &md_h,
+                            "W3DModelDraw.h",
+                            "typedef std::map< TransitionSig, ModelConditionInfo, std::less<TransitionSig> > TransitionMap;",
+                            Some(("typedef std::map< TransitionSig, ModelConditionInfo, std::less<TransitionSig> > TransitionMap;", true)),
+                        ),
+                    ),
                     // ParticleSys.cpp: ParticleSystemInfo()'s wind defaults, and the constructor's wind members with their
                     // client random values
                     (

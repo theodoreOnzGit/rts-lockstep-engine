@@ -8,7 +8,9 @@
 //   adjustAnimSpeedToMovementSpeed, isAnimationComplete, handleClientRecoil, the bone particle systems, and setModelState's
 //   head and tail; #181 item 7b: setModelState's middle, validateStuff, validateCachedBones, validateTurretInfo,
 //   validateWeaponBarrelInfo, findPristineBone, nukeCurrentRender, hideAllHeadlights, hideAllMuzzleFlashes,
-//   setMuzzleFlashHidden, rebuildWeaponRecoilInfo, handleClientTurretPositioning, handleWeaponFireFX) over GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/animobj.cpp (Animatable3DObjClass), htree.cpp and
+//   setMuzzleFlashHidden, rebuildWeaponRecoilInfo, handleClientTurretPositioning, handleWeaponFireFX; #181 item 7c:
+//   setModelState's transition head, findTransitionForSig, setAnimationLoopDuration, setAnimationCompletionTime,
+//   W3DAnimationInfo, doHideShowBoneSubObjs, doHideShowSubObjs, showSubObject, updateSubObjects, findSingleSubObj) over GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/animobj.cpp (Animatable3DObjClass), htree.cpp and
 //   hrawanim.cpp
 //
 // Original copyright notice of those files:
@@ -144,9 +146,63 @@
 //! - Prediction misses: the defects did not show in a run (fixed first); 9988 (11) and 9994 (16) are weaker than the
 //!   100 predicted; 1,052 undefined barrels, inside the 100-1,000 predicted only just above it.
 //!
+//! # #181 item 7c: transition states and the show/hide sub-object lists
+//!
+//! What upstream does (W3DModelDraw.cpp): `setModelState` returns at once for the current state with nothing pending,
+//! or for the pending state; a new state whose `WaitForStateToFinishIfPossible` key is the current state's
+//! `TransitionKey`, while the render object's animation is not complete, only becomes pending (`m_nextState`); else, when
+//! both states have a `TransitionKey` and a `TransitionState <current key> <new key>` exists (`findTransitionForSig`),
+//! that TransitionState becomes current and the requested one pending. `doDrawModule` switches to the pending state
+//! when the animation completes (`isAnimationComplete`: true without a render object), restoring a pending duration
+//! (`m_nextStateAnimLoopDuration`) with `setAnimationLoopDuration`; `setAnimationCompletionTime` splits a duration
+//! between a TransitionState and its pending state by their first animations' natural durations
+//! (`W3DAnimationInfo::m_naturalDurationInMsec`, -1 until `getAnimHandle` first finds the animation). Each state change
+//! applies the state's `ShowSubObject`/`HideSubObject` list (`doHideShowSubObjs`: the sub-object by name, exact or after
+//! its first `.`, hidden or shown with every sub-object whose bone descends from its bone, `doHideShowBoneSubObjs`), then
+//! the drawable's own `showSubObject` list (`updateSubObjects`). `validateCachedBones` finds a public bone that is no
+//! pivot's as a sub-object (`findSingleSubObj`), reading the **live** sub-object's `Get_Transform`, whose
+//! `Validate_Transform` has the HLOD update its sub-objects (evaluating its hierarchy) when their transforms are dirty.
+//!
+//! Methodology added: sub-objects named `SKEL.GUN`, `SKEL.GUN01`, `SKEL.GUN02`, `SKEL.DOOR` (1 in 2) besides `SUBk` and
+//! `HEADLIGHTk`, and `GUN`/`DOOR` among the public, turret and weapon bone names; each state's `TransitionKey` (`k0`..`k2`,
+//! no line 1 in 4: a ConditionState keeps the default state's), `WaitForStateToFinishIfPossible` (1 in 3) and 0-2
+//! `ShowSubObject`/`HideSubObject` lines of one or two names; 0-3 `TransitionState`s (two different keys, a model,
+//! `ONCE` or `ONCE_BACKWARDS`, flags, speeds, 0-2 animations, show/hide lines). Ops (now from 112): 16
+//! `setAnimationLoopDuration`, 17 `setAnimationCompletionTime` (3 each), 18 `showSubObject` (a name, lower-cased 1 in 2,
+//! shown 1 in 2; 4), 19 `updateSubObjects` (2). Compared besides: the current and pending states, the pending duration,
+//! the `showSubObject` list, and every TransitionState's caches. The wrapper's render object now keeps its sub-objects'
+//! transforms as upstream's HLOD does (the dirty bit, `HLodClass::Update_Sub_Object_Transforms`, the sub-objects'
+//! `Validate_Transform`); the test's asset source poses its skeleton as upstream's render object does (animobj.h's `Anim_Update`, the raw
+//! fast path); `W3dFiles::skeleton` still takes the virtual update, pending the owner (#181 item 13).
+//!
+//! Predictions (`issue181i7c_predictions.md`, before any run): 0 mismatches for transitions and lists; the live
+//! sub-object matrices equal to the posed skeleton's in nearly every case (0-50 of 20,000), the port changed to read live
+//! anyway; plants 9996-10015 caught, the findSingleSubObj one perhaps not.
+//!
+//! Results (2026-11-14):
+//!
+//! - **First build:** one wrapper error (`isAnimationComplete` used before its definition: declared). **First run:**
+//!   SIGSEGV, the wrapper's `WEAPON_NAMES` not extended (fixed). Then 300 cases: 0 mismatches.
+//! - **Gated run** (20,000; the port already reading the live sub-objects): 2,350 cases ended where upstream is undefined
+//!   (1,570 at a `setModelState`, 780 at a fire's barrel), 559,091 steps, 110,682 draws (77,069 animated), 12,869 steps
+//!   in a TransitionState, 37,183 with a pending state, 239,749 with a `showSubObject` list, 11,005 pristine bones found as
+//!   sub-objects: **0 mismatches**, max ULP 0.
+//! - **The sub-object question, measured:** plant 10013 (the port's old read of the posed skeleton) differs in 299 of
+//!   20,000 cases. Of those, 298 are the live hierarchy not evaluated (upstream's sub-object `Get_Transform` evaluates it;
+//!   the live pivots then differ) and 1 is the matrix itself, 2 ULP in one entry: the old `W3dFiles::skeleton` posed by
+//!   the virtual `Anim_Update`, upstream's render object by animobj.h's fast path. **Both are port defects.** The first is fixed
+//!   (`find_single_sub_obj` reads the live render object). The second is not: `W3dFiles::skeleton` feeds the logic's
+//!   art bones (#175), so its switch to the fast path waits for the owner (#181 item 13). **A prediction
+//!   miss:** the matrices agreed as predicted (1 case), but the hierarchy's evaluation was not foreseen.
+//! - **Plants 9996-10015**, mismatching cases of 20,000: 9996 1,797; 9997 1,290; 9998 1,692; 9999 1,290; 10000 408; 10001
+//!   5; 10002 46; 10003 256; 10004 257; 10005 8,836; 10006 302; 10007 2,462; 10008 851; 10009 526; 10010 277; 10011 1,138;
+//!   10012 4,085; 10013 286; 10014 659; 10015 1,478. **20 of 20 caught.** 10010 first caught 0 (every `showSubObject` of a
+//!   name had one spelling; the op now lower-cases 1 in 2). Weak: 10001 (5) and 10002 (46).
+//!
 //! # Planted bugs
 //!
-//! `L9_PLANT=<id>` (the run prints `MEASURED` and fails on purpose):
+//! `L9_PLANT=<id>` (the run prints `MEASURED` and fails on purpose; with `MODEL_DRAW_ANIM_DEBUG` set it also prints the
+//! first differing cases):
 //!
 //! | id | planted bug |
 //! |---|---|
@@ -190,6 +246,26 @@
 //! | 9993 | `handleWeaponFireFX` does not show the muzzle flash |
 //! | 9994 | `validateWeaponBarrelInfo` drops the shared-FX-bone special case |
 //! | 9995 | `setModelState` does not call `hideAllHeadlights` |
+//! | 9996 | `setModelState` never lets a state wait for the current one to finish (allow-to-finish) |
+//! | 9997 | `setModelState` does not look up a TransitionState |
+//! | 9998 | `findTransitionForSig` swaps the two keys |
+//! | 9999 | `setModelState` does not keep the requested state pending after a TransitionState |
+//! | 10000 | `doDrawModule` does not switch to the pending state when the animation completes |
+//! | 10001 | `doDrawModule` does not restore the pending duration |
+//! | 10002 | `setAnimationLoopDuration` keeps the pending duration |
+//! | 10003 | `setAnimationCompletionTime` never splits the duration over a TransitionState |
+//! | 10004 | `setAnimationCompletionTime`'s pending duration is the whole duration |
+//! | 10005 | `setAnimationLoopDuration` floors the milliseconds (`ceilf` upstream) |
+//! | 10006 | `setModelState`'s early return ignores a request for the pending state |
+//! | 10007 | `doHideShowSubObjs` shows every listed sub-object (the hide flag ignored) |
+//! | 10008 | `doHideShowSubObjs` leaves the sub-objects on child bones alone (`doHideShowBoneSubObjs` skipped) |
+//! | 10009 | `doHideShowSubObjs` does not apply the `showSubObject` list (`updateSubObjects`) |
+//! | 10010 | `showSubObject` compares names with case |
+//! | 10011 | `showSubObject` always adds (a listed name not updated) |
+//! | 10012 | `Get_Sub_Object_By_Name` without the suffix match (after the first `.`) |
+//! | 10013 | `findSingleSubObj` reads the asset source's posed skeleton (the port's old read: no live evaluation) |
+//! | 10014 | `findSingleSubObj`'s numbered names (`gun01`..) not looked for |
+//! | 10015 | `doHideShowBoneSubObjs` counts a sub-object on the bone itself as its child |
 
 mod support;
 
@@ -197,7 +273,7 @@ use std::sync::Arc;
 
 use rts_lockstep_engine::client::particle_sys::ParticleSystemManager;
 use rts_lockstep_engine::client::w3d_model_draw::{
-    anim_mode_index, is_any_maintain_frame_flag_set, scale_render_obj_hierarchy, AnimData, AnimHandle, DrawEnv, DrawFacts, DrawParticles, Skeleton, SkeletonSubObject, StateRef, W3DModelDraw,
+    anim_mode_index, is_animation_complete, is_any_maintain_frame_flag_set, scale_render_obj_hierarchy, AnimData, AnimHandle, DrawEnv, DrawFacts, DrawParticles, Skeleton, SkeletonSubObject, StateRef, W3DModelDraw,
     W3DModelDrawModuleData, W3dAssetSource, THE_ANIM_MODE_NAMES,
 };
 use rts_lockstep_engine::common::model_state::{ModelConditionFlags, MODEL_CONDITION_NAMES};
@@ -262,12 +338,27 @@ const MISSING_ANIM: i32 = 99;
 /// The #181 item 7 header, then (#181 item 7b) the recoil numbers, the sub-objects, the standard and extra public
 /// bones, and each state's turrets and weapon bones.
 const HEADER_7: usize = 6 + 4 + 1 + 4 * (5 + 1 + 3 * 3 + 1 + 3 * 2);
-const HEADER: usize = HEADER_7 + 4 + 1 + 4 * 3 + 3 + 3 + 4 * (1 + MAX_TURRETS * 4 + 3 * 4);
+const HEADER_7B: usize = HEADER_7 + 4 + 1 + 4 * 3 + 3 + 3 + 4 * (1 + MAX_TURRETS * 4 + 3 * 4);
+/// (#181 item 7c) Then the sub-objects' name codes, each state's transition keys and show/hide lines, and the
+/// TransitionStates.
+const HEADER: usize = HEADER_7B + 4 + 4 * (2 + HS_WORDS) + 1 + 3 * (8 + 2 * 2 + HS_WORDS);
+/// A state's ShowSubObject/HideSubObject lines: a count (0..2), then 2 x (hide, name, name or `NO_NAME`).
+const HS_WORDS: usize = 1 + 2 * 3;
 const STEP: usize = 14;
 const MAX_TURRETS: usize = 2;
 /// (#181 item 7b) The wrapper's `WEAPON_NAMES`: turret, weapon and public bone names (`NO_LINE`: the line not written).
-const WEAPON_NAMES: [&str; 9] = ["TURRET", "PITCH", "BARREL", "MUZZLE", "FX", "B1", "B3", "NOSUCH", "None"];
-const NO_LINE: i32 = 9;
+/// (#181 item 7c) `GUN` and `DOOR` added (sub-objects' names, no pivot's); ~~`NO_LINE` 9~~ now 11.
+const WEAPON_NAMES: [&str; 11] = ["TURRET", "PITCH", "BARREL", "MUZZLE", "FX", "B1", "B3", "NOSUCH", "None", "GUN", "DOOR"];
+const NO_LINE: i32 = 11;
+/// (#181 item 7c) The wrapper's `SUB_NAMES`: a sub-object's name after `SKEL.` by its name code (0: `SUBk` or
+/// `HEADLIGHTk`, as before).
+const SUB_NAMES: [&str; 5] = ["", "GUN", "GUN01", "GUN02", "DOOR"];
+/// (#181 item 7c) The wrapper's `HS_NAMES`: the names of ShowSubObject/HideSubObject lines and of `showSubObject`
+/// (`NO_NAME`: no second token, or an empty name).
+const HS_NAMES: [&str; 10] = ["sub0", "SUB1", "skel.sub2", "HEADLIGHT3", "gun", "GUN01", "door", "nosuch", "None", ""];
+const NO_NAME: i32 = 9;
+/// (#181 item 7c) The wrapper's `KEY_NAMES`: TransitionKey, WaitForStateToFinishIfPossible and TransitionState keys.
+const KEY_NAMES: [&str; 3] = ["k0", "k1", "k2"];
 /// The pivots' names other than `B<i>`: turrets, barrels, muzzle flashes and FX bones, numbered or not.
 const PIVOT_NAMES: [&str; 12] = ["TURRET", "PITCH", "BARREL", "BARREL01", "BARREL02", "MUZZLE", "MUZZLE01", "MUZZLE02", "FX", "FX01", "FX02", "B3"];
 const SLOT_NAMES: [&str; 3] = ["PRIMARY", "SECONDARY", "TERTIARY"];
@@ -525,7 +616,7 @@ fn random_case(g: &mut Gen) -> (Vec<u8>, Vec<i32>) {
     for _ in 0..2 {
         w.push(g.below(3) as i32);
         for _ in 0..2 {
-            w.push(g.below(9) as i32);
+            w.push(g.below(11) as i32);
         }
     }
     // each state: its own turrets (the default state always), 2 x (angle bone, pitch bone, art angle, art pitch); its
@@ -533,8 +624,8 @@ fn random_case(g: &mut Gen) -> (Vec<u8>, Vec<i32>) {
     for _ in 0..4 {
         w.push(i32::from(g.below(2) == 0));
         for _ in 0..MAX_TURRETS {
-            w.push(if g.below(3) == 0 { g.below(9) as i32 } else { [0, 1, 8][g.below(3) as usize] });
-            w.push(if g.below(3) == 0 { g.below(9) as i32 } else { [0, 1, 8][g.below(3) as usize] });
+            w.push(if g.below(3) == 0 { g.below(11) as i32 } else { [0, 1, 8][g.below(3) as usize] });
+            w.push(if g.below(3) == 0 { g.below(11) as i32 } else { [0, 1, 8][g.below(3) as usize] });
             w.push(b(ART_DEGREES[g.below(6) as usize]));
             w.push(b(ART_DEGREES[g.below(6) as usize]));
         }
@@ -542,16 +633,63 @@ fn random_case(g: &mut Gen) -> (Vec<u8>, Vec<i32>) {
             for f in 0..4 {
                 w.push(match g.below(4) {
                     0 | 1 => NO_LINE,
-                    _ if g.below(4) == 0 => g.below(9) as i32,
+                    _ if g.below(4) == 0 => g.below(11) as i32,
                     _ => [4, 2, 3, 2][f],
                 });
             }
         }
     }
+    assert_eq!(w.len(), HEADER_7B);
+    // (#181 item 7c) the sub-objects' name codes (0 1 in 2)
+    for _ in 0..4 {
+        w.push(if g.below(2) == 0 { 0 } else { 1 + g.below(4) as i32 });
+    }
+    let hide_show = |g: &mut Gen, w: &mut Vec<i32>| {
+        w.push(g.below(3) as i32);
+        for _ in 0..2 {
+            w.push(g.below(2) as i32);
+            w.push(g.below(9) as i32);
+            w.push(if g.below(2) == 0 { NO_NAME } else { g.below(9) as i32 });
+        }
+    };
+    // each state's TransitionKey (no line 1 in 4), WaitForStateToFinishIfPossible (a line 1 in 3), show/hide lines
+    for _ in 0..4 {
+        w.push(if g.below(4) == 0 { -1 } else { g.below(3) as i32 });
+        w.push(if g.below(3) == 0 { g.below(3) as i32 } else { -1 });
+        hide_show(g, &mut w);
+    }
+    // the TransitionStates (0..3): two different keys, a model, `ONCE` or `ONCE_BACKWARDS` (parseConditionState's rule),
+    // flags, speeds, 0..2 Animation lines (at least one when the default state's are idle: a copied idle animation is
+    // refused), show/hide lines
+    w.push(g.below(4) as i32);
+    for _ in 0..3 {
+        let src = g.below(3);
+        w.push(src as i32);
+        w.push(((src + 1 + g.below(2)) % 3) as i32);
+        w.push(if g.below(8) == 0 { 3 } else { g.below(3) as i32 });
+        w.push([2, 5][g.below(2) as usize]);
+        let mut flags = 0i32;
+        for bit in FLAG_BITS {
+            if g.below(6) == 0 {
+                flags |= 1 << bit;
+            }
+        }
+        w.push(flags);
+        w.push(b(SPEEDS[g.below(6) as usize]));
+        w.push(b(SPEEDS[g.below(6) as usize]));
+        let na = g.below(3);
+        w.push(if default_idle && na == 0 { 1 } else { na as i32 });
+        for _ in 0..2 {
+            w.push(if g.below(12) == 0 { MISSING_ANIM } else { g.below(nanims) as i32 });
+            w.push(b(DISTANCES[g.below(4) as usize]));
+        }
+        hide_show(g, &mut w);
+    }
     assert_eq!(w.len(), HEADER);
     for _ in 0..1 + g.below(60) {
         let mut s = [0i32; STEP];
-        let op = match g.below(100) {
+        // (#181 item 7c) ops 16-19 from 100 of 112
+        let op = match g.below(112) {
             0..=3 => 0,
             4..=9 => 13,
             10..=31 => 1,
@@ -567,7 +705,11 @@ fn random_case(g: &mut Gen) -> (Vec<u8>, Vec<i32>) {
             77..=78 => 11,
             79..=82 => 12,
             83..=95 => 14,
-            _ => 15,
+            96..=99 => 15,
+            100..=102 => 16,
+            103..=105 => 17,
+            106..=109 => 18,
+            _ => 19,
         };
         s[0] = op;
         s[1] = match op {
@@ -611,6 +753,11 @@ fn random_case(g: &mut Gen) -> (Vec<u8>, Vec<i32>) {
                 s[2..].copy_from_slice(&matrix_words(&m));
             }
             10 => s[2] = b([1.0f32, 0.5, 2.0, 1.005][g.below(4) as usize]),
+            // (#181 item 7c) showSubObject: shown 1 in 2, the name lower-cased 1 in 2
+            18 => {
+                s[2] = g.below(2) as i32;
+                s[3] = g.below(2) as i32;
+            }
             _ => {}
         }
         w.extend(s);
@@ -623,8 +770,9 @@ fn random_case(g: &mut Gen) -> (Vec<u8>, Vec<i32>) {
 struct Assets {
     tree: HTree,
     anims: Vec<Arc<AnimData>>,
-    /// (#181 item 7b) The models' sub-objects (bone, hidden as made, a headlight), the wrapper's `g_subs`.
-    subs: Vec<(i32, bool, bool)>,
+    /// (#181 item 7b) The models' sub-objects (bone, hidden as made, a headlight), the wrapper's `g_subs`; (#181 item 7c)
+    /// and the name code (`SUB_NAMES`).
+    subs: Vec<(i32, bool, bool, i32)>,
 }
 
 impl Assets {
@@ -643,27 +791,38 @@ impl W3dAssetSource for Assets {
         Some(AnimHandle { name: a.motion.name().to_vec(), num_frames: a.motion.get_num_frames(), frame_rate: get_frame_rate(&a.motion), data: Some(a.clone()) })
     }
     /// The render object's hierarchy as `Create_Render_Obj(name, scale, color)` makes it (`scale_render_obj_hierarchy`),
-    /// posed by `Base_Update` under `Matrix3D(true).Scale(scale)`. (#181 item 7b) The pose asked is not applied: the
+    /// posed by `Base_Update` under `Matrix3D(true).Scale(scale)`. ~~(#181 item 7b) The pose asked is not applied: the
     /// port's `validateCachedBones` reads the bones of the live render object it is given (the only kind this test
-    /// makes); only the sub-objects are read from here, and no requested name is a sub-object's. The sub-objects are the
-    /// wrapper's: `SKEL.SUBk` or `SKEL.HEADLIGHTk` on a bone (modulo the pivot count), hidden as made or not.
-    fn skeleton(&mut self, name: &[u8], _pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
+    /// makes); only the sub-objects are read from here, and no requested name is a sub-object's.~~ **Corrected
+    /// 2026-11-14 (#181 item 7c):** posed as upstream's render object made for the purpose poses it: the asked
+    /// animation's `HTree::anim_update_animobj` at the asked frame (animobj.h's `Anim_Update`; `W3dFiles::skeleton`
+    /// still takes the virtual `HTree::anim_update`, pending the owner, #181 item 13; with that path here, 1 case of 20,000 differed by 2 ULP under plant
+    /// 10013), else `Base_Update`; each sub-object's transform its bone's (`Skeleton::of`). Requested names are now sub-objects' too; the port reads the live render object's (plant 10013
+    /// reads these). The sub-objects are the wrapper's: `SKEL.SUBk` or `SKEL.HEADLIGHTk`, or (#181 item 7c) `SKEL.` and a
+    /// `SUB_NAMES` entry, on a bone (modulo the pivot count), hidden as made or not.
+    fn skeleton(&mut self, name: &[u8], pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
         self.create_render_obj(name)?;
         let mut tree = self.tree.clone();
         scale_render_obj_hierarchy(&mut tree, scale);
         let mut root = Matrix3D::IDENTITY;
         root.scale(scale);
-        tree.base_update(&root).expect("parents come first");
+        match pose.and_then(|(a, frame)| self.anim_index(a).map(|i| (i, frame))) {
+            Some((i, frame)) => {
+                let a = self.anims[i].clone();
+                tree.anim_update_animobj(&root, &a.motion, &*a, frame).expect("parents come first");
+            }
+            None => tree.base_update(&root).expect("parents come first"),
+        }
         let n = tree.num_pivots;
         let sub_objects = self
             .subs
             .iter()
             .enumerate()
-            .map(|(k, &(bone, hidden, headlight))| SkeletonSubObject {
-                name: format!("SKEL.{}{k}", if headlight { "HEADLIGHT" } else { "SUB" }).into_bytes(),
+            .map(|(k, &(bone, hidden, headlight, code))| SkeletonSubObject {
+                name: if code > 0 { format!("SKEL.{}", SUB_NAMES[code as usize]) } else { format!("SKEL.{}{k}", if headlight { "HEADLIGHT" } else { "SUB" }) }.into_bytes(),
                 bone_index: bone % n,
                 hidden,
-                transform: Matrix3D::IDENTITY,
+                transform: tree.get_transform(bone % n).expect("a pivot"),
                 linear_offset_materials: 0,
             })
             .collect();
@@ -688,7 +847,7 @@ fn push_matrix(out: &mut Vec<i32>, m: &Matrix3D) {
 }
 
 /// The wrapper's `state()`.
-fn state_words(out: &mut Vec<i32>, m: &W3DModelDraw, mgr: &ParticleSystemManager, states: &[usize], assets: &Assets, random: &RandomValues) {
+fn state_words(out: &mut Vec<i32>, m: &W3DModelDraw, mgr: &ParticleSystemManager, states: &[usize], transitions: &[(usize, usize)], assets: &Assets, random: &RandomValues) {
     let si = match m.cur_state_ref() {
         Some(StateRef::Normal(i)) => states.iter().position(|s| s == i).map_or(-1, |p| p as i32),
         _ => -1,
@@ -760,7 +919,33 @@ fn state_words(out: &mut Vec<i32>, m: &W3DModelDraw, mgr: &ParticleSystemManager
         }
     }
     for &i in states {
-        let st = m.data.state(&StateRef::Normal(i));
+        caches_words(out, m.data.state(&StateRef::Normal(i)));
+    }
+    // (#181 item 7c) the current and the pending state (`state_code`), `m_nextStateAnimLoopDuration`, the showSubObject
+    // list, then each of the case's TransitionStates' caches
+    let code = |s: Option<&StateRef>| match s {
+        None => -1,
+        Some(StateRef::Normal(i)) => states.iter().position(|s| s == i).map_or(-2, |p| p as i32),
+        Some(StateRef::Transition((a, bb))) => {
+            let key = |k: &[u8]| KEY_NAMES.iter().position(|n| n.as_bytes() == k).expect("a case key") as i32;
+            10 + 3 * key(a) + key(bb)
+        }
+    };
+    out.extend([code(m.cur_state_ref()), code(m.next_state_ref()), m.next_state_anim_loop_duration() as i32, m.sub_object_vec.len() as i32]);
+    for it in &m.sub_object_vec {
+        out.push(it.sub_obj_name.len() as i32);
+        out.extend(it.sub_obj_name.iter().map(|&ch| i32::from(ch)));
+        out.push(i32::from(it.hide));
+    }
+    for &(a, bb) in transitions {
+        caches_words(out, m.data.state(&StateRef::Transition((KEY_NAMES[a].as_bytes().to_vec(), KEY_NAMES[bb].as_bytes().to_vec()))));
+    }
+    out.extend(random.client.map(|x| x as i32));
+}
+
+/// A state's caches (the wrapper's `caches`).
+fn caches_words(out: &mut Vec<i32>, st: &rts_lockstep_engine::client::w3d_model_draw::ModelConditionInfo) {
+    {
         out.push(i32::from(st.pristine_bones_valid()) | i32::from(st.turrets_valid()) << 1 | i32::from(st.barrels_valid()) << 3);
         let c = st.bone_cache();
         out.push(c.pristine_bones.len() as i32);
@@ -782,7 +967,6 @@ fn state_words(out: &mut Vec<i32>, m: &W3DModelDraw, mgr: &ParticleSystemManager
             out.push(i32::from(c.has_recoil_bones_or_muzzle_flashes[w]));
         }
     }
-    out.extend(random.client.map(|x| x as i32));
 }
 
 thread_local! {
@@ -803,6 +987,13 @@ static FIRES_HANDLED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU6
 /// (#181 item 7b) Draws whose state had valid turrets with a bone, and valid barrels with a recoil bone or muzzle flash.
 static TURRET_DRAWS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static RECOIL_DRAWS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// (#181 item 7c) Steps after which the current state is a TransitionState, after which a state is pending
+/// (`m_nextState`), after which the showSubObject list is not empty; and pristine bones found as sub-objects (a
+/// `GUN`/`DOOR` name), counted where a state's bones become valid.
+static TRANSITION_STEPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static PENDING_STEPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SUB_LIST_STEPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SUB_OBJ_BONES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// The client random values the last Rust case drew (the generator's counter word moved on).
 static RANDOM_DRAWN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// The last Rust case's draws with an animation playing (the render object in `SINGLE_ANIM` when `doDrawModule` ran).
@@ -887,7 +1078,7 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
     for k in 0..4 {
         let (bone, hidden, headlight) = (next(), next() != 0, next() != 0);
         if k < nsubs {
-            assets.subs.push((bone, hidden, headlight));
+            assets.subs.push((bone, hidden, headlight, 0));
         }
     }
     let mut standard = Vec::new();
@@ -924,9 +1115,64 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
             }
         }
     }
+    // (#181 item 7c) the sub-objects' name codes, each state's TransitionKey, WaitForStateToFinishIfPossible and
+    // ShowSubObject/HideSubObject lines, then the TransitionStates (see the wrapper)
+    for i in 0..4 {
+        let code = next();
+        if let Some(sub) = assets.subs.get_mut(i) {
+            sub.3 = code;
+        }
+    }
+    let hide_show_lines = |next: &mut dyn FnMut() -> i32, out: &mut Vec<ClientLine>| {
+        let n = next();
+        for i in 0..2 {
+            let (hide, a, bb) = (next() != 0, next(), next());
+            if i < n {
+                let names = if bb == NO_NAME { HS_NAMES[a as usize].to_string() } else { format!("{} {}", HS_NAMES[a as usize], HS_NAMES[bb as usize]) };
+                out.push(line(1, if hide { "HideSubObject" } else { "ShowSubObject" }, &names));
+            }
+        }
+    };
+    for sl in state_lines.iter_mut() {
+        let (tk, allow) = (next(), next());
+        if tk >= 0 {
+            sl.push(line(1, "TransitionKey", KEY_NAMES[tk as usize]));
+        }
+        if allow >= 0 {
+            sl.push(line(1, "WaitForStateToFinishIfPossible", KEY_NAMES[allow as usize]));
+        }
+        hide_show_lines(&mut next, sl);
+    }
+    let mut transitions = Vec::new();
+    let mut transition_lines = Vec::new();
+    let nt = next() as usize;
+    for t in 0..3 {
+        let (src, dst, model, mode, fl, lo, hi, na) = (next(), next(), next() as usize, next() as usize, next(), r(next()), r(next()), next() as usize);
+        let mut tl = vec![
+            line(0, "TransitionState", &format!("{} {}", KEY_NAMES[src as usize], KEY_NAMES[dst as usize])),
+            line(1, "Model", MODEL_NAMES[model]),
+            line(1, "AnimationMode", THE_ANIM_MODE_NAMES[mode]),
+        ];
+        let set: Vec<&str> = (0..10).filter(|&i| fl & (1 << i) != 0).map(|i| AC_BITS_NAMES[i]).collect();
+        tl.push(line(1, "Flags", &if set.is_empty() { "NONE".to_string() } else { set.join(" ") }));
+        tl.push(line(1, "AnimationSpeedFactorRange", &format!("{lo:?} {hi:?}")));
+        for ai in 0..2 {
+            let (a, dist) = (next(), r(next()));
+            if ai < na {
+                let name = if a == MISSING_ANIM { "SKEL.NOSUCH".to_string() } else { names[a as usize].clone() };
+                tl.push(line(1, "Animation", &format!("{name} {dist:?}")));
+            }
+        }
+        hide_show_lines(&mut next, &mut tl);
+        if t < nt {
+            transitions.push((src as usize, dst as usize));
+            transition_lines.extend(tl);
+        }
+    }
     for sl in state_lines.into_iter().take(nstates) {
         lines.extend(sl);
     }
+    lines.extend(transition_lines);
     let standard_public_bones: Arc<Vec<Vec<u8>>> = Arc::new(standard.iter().map(|n| n.as_bytes().to_vec()).collect());
     let block = ClientModuleData { module_tag_name_key: Default::default(), lines };
     BLOCK.with(|t| *t.borrow_mut() = String::from_utf8_lossy(&rts_lockstep_engine::client::w3d_model_draw::client_block_text(&block)).into_owned());
@@ -949,14 +1195,29 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
     let mut has_ai = false;
     let mut ai_turrets: [Option<(f32, f32)>; MAX_TURRETS] = [None, None];
     let mut drawable_tf = Matrix3D::IDENTITY;
-    state_words(&mut out, &m, &mgr, &states, &assets, &random);
+    state_words(&mut out, &m, &mgr, &states, &transitions, &assets, &random);
     for s in w[k..].chunks_exact(STEP) {
         match s[0] {
             0 | 13 => {
                 let new_state = StateRef::Normal(states[(s[1] as u32 % nstates as u32) as usize]);
                 // `getCurrentAnimFraction` reads uninitialised locals upstream when the render object plays no animation
-                // (`Peek_Animation_And_Info` answers NULL) under a maintain-frame state: undefined, the case ends there
-                let undefined = m.cur_state_ref().is_some_and(|c| *c != new_state)
+                // (`Peek_Animation_And_Info` answers NULL) under a maintain-frame state: undefined, the case ends there.
+                // (#181 item 7c) Only when setModelState gets past its early returns (the current or the pending state; a
+                // state allowed to wait for the current one to finish).
+                let reaches = match m.cur_state_ref() {
+                    None => true,
+                    Some(cur) => {
+                        let next = m.next_state_ref();
+                        let (ns, cs) = (data.state(&new_state), data.state(cur));
+                        !((*cur == new_state && next.is_none()) || next == Some(&new_state))
+                            && !(new_state != *cur
+                                && !ns.allow_to_finish_key.is_empty()
+                                && ns.allow_to_finish_key == cs.transition_key
+                                && m.render_object.is_some()
+                                && !is_animation_complete(m.render_object.as_ref()))
+                    }
+                };
+                let undefined = reaches
                     && m.get_cur_state().is_some_and(|c| is_any_maintain_frame_flag_set(c.flags))
                     && m.render_object.as_ref().is_some_and(|ro| ro.anim.is_none());
                 if undefined {
@@ -1084,10 +1345,30 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
                     *slot = (s[3 + 3 * t] != 0).then(|| (r(s[4 + 3 * t]), r(s[5 + 3 * t])));
                 }
             }
+            // (#181 item 7c) the logic's durations; showSubObject; updateSubObjects
+            16 => m.set_animation_loop_duration(s[1] as u32),
+            17 => m.set_animation_completion_time(s[1] as u32),
+            18 => {
+                let name = HS_NAMES[(s[1] as u32 % 10) as usize];
+                m.show_sub_object(if s[3] != 0 { name.to_ascii_lowercase() } else { name.to_string() }.as_bytes(), s[2] != 0);
+            }
+            19 => m.update_sub_objects(),
             op => panic!("op {op}"),
         }
-        state_words(&mut out, &m, &mgr, &states, &assets, &random);
+        state_words(&mut out, &m, &mgr, &states, &transitions, &assets, &random);
         STEP_ENDS.with(|e| e.borrow_mut().push(out.len()));
+        let count = |a: &std::sync::atomic::AtomicU64, yes: bool| {
+            a.fetch_add(u64::from(yes), std::sync::atomic::Ordering::Relaxed);
+        };
+        count(&TRANSITION_STEPS, matches!(m.cur_state_ref(), Some(StateRef::Transition(_))));
+        count(&PENDING_STEPS, m.next_state_ref().is_some());
+        count(&SUB_LIST_STEPS, !m.sub_object_vec.is_empty());
+        if matches!(s[0], 0 | 1 | 13) {
+            if let Some(c) = m.get_cur_state() {
+                let n = c.bone_cache().pristine_bones.keys().filter(|k| k.starts_with(b"gun") || k.starts_with(b"door")).count();
+                SUB_OBJ_BONES.fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
     }
     SYSTEMS_MADE.store(u64::from(mgr.unique_system_id), std::sync::atomic::Ordering::Relaxed);
     RANDOM_DRAWN.store(u64::from(random.client[5].wrapping_sub(counter0)), std::sync::atomic::Ordering::Relaxed);
@@ -1131,7 +1412,7 @@ fn compare(name: &str, seed: u64, n: u64) -> (Check, [u64; 6]) {
                 }
             }
             let at = rust.iter().zip(&cc).position(|(a, bb)| a != bb).unwrap_or(rust.len().min(cc.len()));
-            if !planted() && c.mismatches < 4 {
+            if (!planted() || std::env::var("MODEL_DRAW_ANIM_DEBUG").is_ok()) && c.mismatches < 4 {
                 let step = STEP_ENDS.with(|e| e.borrow().iter().position(|&end| end > at));
                 let ops: Vec<(i32, i32)> = w[HEADER..].chunks_exact(STEP).map(|s| (s[0], s[1])).collect();
                 println!("case {k}: first difference in step {step:?} of {:?}", ops);
@@ -1169,7 +1450,7 @@ fn the_animated_draw_sequence_matches_upstream() {
     let (c, [steps, draws, animated, systems, drawn, max_ulp]) = compare("W3DModelDraw animated draw sequence", 0x181_0007, cases());
     let ld = |a: &std::sync::atomic::AtomicU64| a.load(std::sync::atomic::Ordering::Relaxed);
     println!(
-        "W3DModelDraw animated: {} cases ({} ended where upstream is undefined: {} at a setModelState, {} at a fire's barrel), {steps} steps, {draws} draws ({animated} with an animation playing, {} with turret bones, {} with recoil bones or muzzle flashes), {} fires handled, {systems} particle systems made, {drawn} client random values drawn; max ULP among differing finite words {max_ulp}",
+        "W3DModelDraw animated: {} cases ({} ended where upstream is undefined: {} at a setModelState, {} at a fire's barrel), {steps} steps, {draws} draws ({animated} with an animation playing, {} with turret bones, {} with recoil bones or muzzle flashes), {} fires handled, {systems} particle systems made, {drawn} client random values drawn; (#181 item 7c) {} steps in a TransitionState, {} with a pending state, {} with a showSubObject list, {} sub-object bones counted; max ULP among differing finite words {max_ulp}",
         cases(),
         ld(&UNDEFINED) + ld(&UNDEFINED_BARREL),
         ld(&UNDEFINED),
@@ -1177,6 +1458,10 @@ fn the_animated_draw_sequence_matches_upstream() {
         ld(&TURRET_DRAWS),
         ld(&RECOIL_DRAWS),
         ld(&FIRES_HANDLED),
+        ld(&TRANSITION_STEPS),
+        ld(&PENDING_STEPS),
+        ld(&SUB_LIST_STEPS),
+        ld(&SUB_OBJ_BONES),
     );
     if planted() {
         c.report();

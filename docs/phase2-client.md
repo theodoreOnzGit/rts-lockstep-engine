@@ -124,6 +124,48 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#181 item 7c (2026-11-14, GitHub #181): transition states and the show/hide sub-object lists.**
+- **Upstream** (W3DModelDraw.cpp): `setModelState` (2911-2995) returns for the current state with nothing pending or
+  for the pending state; a state whose `WaitForStateToFinishIfPossible` key is the current state's `TransitionKey`
+  waits (`m_nextState`) while the animation is not complete; a `TransitionState <current key> <new key>`
+  (`findTransitionForSig`, 2115-2125) becomes current with the requested state pending. `doDrawModule` (2056-2071)
+  switches to the pending state when the animation completes and restores `m_nextStateAnimLoopDuration` with
+  `setAnimationLoopDuration`; `setAnimationCompletionTime` (3797-3819) splits a duration by the two states' first
+  animations' natural durations (`W3DAnimationInfo`, -1 until `getAnimHandle` first finds the animation). Each state
+  change applies the state's `ShowSubObject`/`HideSubObject` list (`doHideShowSubObjs`, `doHideShowBoneSubObjs`), then
+  the drawable's `showSubObject` list (`updateSubObjects`). `validateCachedBones`' `findSingleSubObj` (460-489) reads the
+  **live** sub-object's `Get_Transform`: `Validate_Transform` (rendobj.cpp:464-491) has the HLOD update its sub-objects
+  (`HLodClass::Update_Sub_Object_Transforms`, hlod.cpp:3351-3387, which evaluates its hierarchy) when their transforms
+  are dirty, as validateCachedBones' `Set_Transform` left them.
+- **Extended test:** `tests/differential_model_draw_anim.rs` / `differential/wrap_model_draw_anim.cpp`: new verbatim
+  cuts (setModelState's head to the transition lookup, `findTransitionForSig`, `setAnimationLoopDuration` and
+  `setAnimationCompletionTime`, `W3DAnimationInfo`'s class and functions, `doHideShowBoneSubObjs`, `doHideShowSubObjs`,
+  `showSubObject`, `updateSubObjects`, W3DModelDraw.h's `TransitionSig` helpers and `TransitionMap`); the wrapper's
+  render object keeps its sub-objects' transforms as upstream's HLOD does (dirty bit, `Update_Sub_Object_Transforms`,
+  `Validate_Transform`). Generated: sub-objects named like public bones (`GUN`, `GUN01`.., `DOOR`), transition keys,
+  wait-to-finish keys, show/hide lines, 0-3 TransitionStates; ops for the two durations, `showSubObject` and
+  `updateSubObjects`. Compared besides: the current and pending states, the pending duration, the `showSubObject` list
+  and every TransitionState's caches.
+- **Results:** 20,000 cases (2,350 ended where upstream is undefined: 1,570 at a `setModelState`, 780 at a fire's
+  barrel), 559,091 steps, 110,682 draws, 12,869 steps in a TransitionState, 37,183 with a pending state, 239,749 with a
+  `showSubObject` list, 11,005 pristine bones found as sub-objects: **0 mismatches**, max ULP 0. Plants 9996-10015: 20
+  of 20 caught (5 - 8,836 cases each; the table is in the test's header).
+- **Defects found and fixed (port):** (1) `find_single_sub_obj` read the asset source's posed skeleton, not the live
+  render object: the live hierarchy was not evaluated when a public bone was found only as a sub-object (plant 10013,
+  the old read: 299 of 20,000 differ, 298 of them the live pivots); now it reads the live render object. (2, found, not
+  fixed) `W3dFiles::skeleton` posed by the virtual `Anim_Update` (`RenderModel::update`), upstream's render object by
+  animobj.h's fast path, under a doc claim that the two agree at integer frames: measured 2 ULP apart in one matrix
+  entry (1 of 20,000 with the test's source posing that way, 0 on the fast path). The claim is struck through, but
+  the switch to `update_render_obj` is **not** made: `W3dFiles::skeleton` feeds the logic's art bones (#175), so it
+  waits for the owner's decision (#181 item 13). The test's own asset source takes the fast path, as upstream's
+  render object does; so this test does not measure `W3dFiles::skeleton`'s path. Also `setAnimationLoopDuration`'s `.ceil()` method syntax is `petir::Real::ceil` (no numeric change).
+- **Other runs:** lib 1,236 passed; `differential_model_draw_particles` 0 / 0; `differential_tank_truck_draw` 0;
+  `differential_logic_bones` 0 / 0; client 102 passed; gate (a) PASS, last CRC 0bf44067. `src/logic` unchanged.
+- **Not done (gaps):** the port keeps no per-sub-object transform or dirty bit (equal to upstream's only where
+  validateCachedBones reads them, the one caller); the virtual vs fast path difference's cause is not isolated and other
+  `RenderModel::update` callers are not audited; `doHideShowProjectileObjects`; more than one LOD; the module data's
+  transition validation for the time of day; plants 10001 (5) and 10002 (46) are weak.
+
 **#181 item 7b (2026-11-13, GitHub #181): the logic-time state change, the turrets, the fire and the recoil.**
 - **Upstream** (W3DModelDraw.cpp): inside the logic's update `setModelState` makes the render object again (the model
   differs, or `turretNamesDiffer` while either state is not `TURRETS_VALID`) and `validateStuff`s the new state on it:
@@ -157,8 +199,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   0 over 20,000 twice; `differential_tank_truck_draw` 0; `differential_logic_bones` 0 over 20,000 twice; client 102 passed;
   gate (a) PASS, last CRC 0bf44067. `src/logic` unchanged.
 - **Not done (gaps):** `validateCachedBones`' restore of an old animation (unreachable from `setModelState`, upstream as
-  here); `validateStuff(NULL)` paths (`differential_logic_bones`'s); sub-objects found by name; show/hide lists; more
-  than one LOD; the drawable's own recoil (`m_locoInfo`).
+  here); `validateStuff(NULL)` paths (`differential_logic_bones`'s); ~~sub-objects found by name; show/hide lists;~~
+  (**Corrected 2026-11-14 (#181 item 7c):** done, above) more than one LOD; the drawable's own recoil (`m_locoInfo`).
 
 **#181 item 7 (2026-11-13, GitHub #181): `W3DModelDraw`'s draw sequence with an animated render object.**
 - **Upstream** (W3DModelDraw.cpp:2040-2112, animobj.cpp): at one sync time, `doDrawModule` pauses or resumes the
@@ -193,7 +235,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Not done (gaps):** ~~a logic-time `setModelState` (`validateCachedBones` posing the live render object, the turrets
   and barrels valid), so `handleWeaponFireFX`'s FX bone and a real recoil are not in the sequence (a bone query and
   captures between draws stand in);~~ **Corrected 2026-11-13 (#181 item 7b):** done, above; compressed and morph
-  animations; blends and combos; transition states and `m_nextState`; ~~turret positioning~~ (done in #181 item 7b).
+  animations; blends and combos; ~~transition states and `m_nextState`~~ (done in #181 item 7c); ~~turret
+  positioning~~ (done in #181 item 7b).
 
 **#184 item 1 (2026-11-13, GitHub #184): the tank, truck and tank truck draws' own time freezes.**
 - **Upstream:** W3DTankDraw.cpp:312-315 tests `frozen` (Drawable.cpp:1397-1400's expression) first and returns before

@@ -118,6 +118,34 @@
 ** ([620, x, y, z, the 12 words], wrap_ai.cpp's stand-in's data; nothing without a list). doHideShowSubObjs has nothing to
 ** do (no ShowSubObject lines, no showSubObject calls: it aborts otherwise).
 **
+** (#181 item 7c) Cut besides (OUT_DIR/model_draw_anim_gen):
+**   ma_sms_pre.inc        W3DModelDraw.cpp, setModelState from `const ModelConditionInfo* nextState = NULL;` to the
+**                         head: the early returns (the current or pending state), allow-to-finish, the transition lookup;
+**   ma_find_trans.inc     W3DModelDraw.cpp, `findTransitionForSig` (2115-2125);
+**   ma_hide_show_bone.inc W3DModelDraw.cpp, `doHideShowBoneSubObjs` (2271-2304);
+**   ma_hide_show.inc      W3DModelDraw.cpp, `doHideShowSubObjs` (2342-2383);
+**   ma_show_sub.inc       W3DModelDraw.cpp, `showSubObject` (1308-1330);
+**   ma_update_subs.inc    W3DModelDraw.cpp, `updateSubObjects` (3978-4009);
+**   ma_durations.inc      W3DModelDraw.cpp, `setAnimationLoopDuration` and `setAnimationCompletionTime` (3772-3819);
+**   ma_anim_info.inc      W3DModelDraw.cpp, W3DAnimationInfo's constructors, assignment, getAnimHandle, destructor
+**                         (296-384: m_naturalDurationInMsec -1 until the animation is first found);
+**   ma_anim_info_h.inc    W3DModelDraw.h, `class W3DAnimationInfo` (96-120);
+**   ma_trans_sig.inc      W3DModelDraw.h, TransitionSig, NO_TRANSITION, buildTransitionSig, recoverSrc/DstState;
+**   ma_trans_map.inc      W3DModelDraw.h:272, `TransitionMap`.
+** Stand-ins added: HLodClass (Set_Transform/Set_Position mark the sub-objects' transforms dirty, hlod.cpp:2222-2245;
+** Update_Sub_Object_Transforms evaluates the hierarchy and gives each sub-object its bone's transform, 3351-3387, one
+** LOD) and MeshStandIn (a sub-object: RenderObjClass's Set_Transform, no update); the render objects' container, dirty
+** bit and Validate_Transform (rendobj.cpp:464-491, IsTransformIdentity not read), so findSingleSubObj's Get_Transform
+** reads the live sub-object as upstream's; Get_HTree; W3DAssetManager::Get_HAnim; the states' TransitionKey,
+** WaitForStateToFinishIfPossible, show/hide lists and the TransitionStates as the INI parse leaves them (a ConditionState
+** and a TransitionState copy the default state; a TransitionState's keys cleared). After the header above come: 4
+** sub-object name codes (0 as before, 1..4 `SKEL.` + SUB_NAMES), 4 states x (TransitionKey code or -1, wait-to-finish
+** code or -1, show/hide count 0..2, 2 x (hide, name, name or 9)), the TransitionState count (0..3) and 3 x (key, key,
+** model, mode, flags, min speed, max speed, animation count 0..2, 2 x (animation, distance), show/hide lines). Ops
+** 16 setAnimationLoopDuration(a1), 17 setAnimationCompletionTime(a1), 18 showSubObject(HS_NAMES[a1 % 10], lower-cased
+** when word 3, shown when word 2), 19 updateSubObjects. Records added before the client random state: the current and
+** pending state codes (state_code), m_nextStateAnimLoopDuration, the showSubObject list, each TransitionState's caches.
+**
 ** Entry point (extern "C", tests/differential_model_draw_anim.rs; floats travel as their bits):
 **   ref_model_draw_anim_seq(file, flen, in, nin, out, cap): file = the W3D file (one hierarchy, then raw animations);
 **   in = [seed, sync time, drawable id, scale, particlesAttachedToAnimatedBones, animationsRequirePower,
@@ -196,6 +224,7 @@ void ref_get_state(int which, unsigned int *out6);
 /* wrap_base_type.cpp */
 int ref_fast_float2long_round(float f);
 float ref_fast_float_trunc(float f);
+float ref_fast_float_floor(float f);
 }
 
 /* wrap_w3d.cpp's lookup hook */
@@ -210,6 +239,8 @@ extern HTreeClass *(*g_w3d_htree_hook)(const char *);
 #define DEBUG_CRASH(m)
 /* BaseType.h:231 */
 #define REAL_TO_INT(x) ((Int)(ref_fast_float2long_round(ref_fast_float_trunc(x))))
+/* (#181 item 7c) BaseType.h:244, on the same transcriptions */
+#define REAL_TO_INT_FLOOR(x) (ref_fast_float2long_round(ref_fast_float_floor(x)))
 /* (#181 item 7b) W3DModelDraw.cpp's logging, compiled out as upstream builds it (DEBUG_CRC not defined), as
 ** wrap_logic_bones.cpp has it */
 #define BONEPOS_LOG(x) {}
@@ -348,16 +379,42 @@ public:
 	Matrix3D Transform;
 	bool Hidden;
 	float ObjectScale;
-	CompositeRenderObjClass() : Transform(true), Hidden(false), ObjectScale(1.0f) {}
+	/* (#181 item 7c) RenderObjClass's Container (the HLOD a sub-object is in, NULL for the HLOD) and its
+	** SUBOBJ_TRANSFORMS_DIRTY bit (rendobj.h:494-495) */
+	CompositeRenderObjClass *Container;
+	bool SubObjTransformsDirty;
+	CompositeRenderObjClass() : Transform(true), Hidden(false), ObjectScale(1.0f), Container(NULL), SubObjTransformsDirty(false) {}
+	virtual ~CompositeRenderObjClass() {}
 	/* RenderObjClass's Set_Collision_Type and the user data are not read here */
 	int Class_ID(void) const { return CLASSID_HLOD; }
-	void Set_Transform(const Matrix3D &m) { Transform = m; }
-	void Set_Position(const Vector3 &v) { Transform.Set_Translation(v); }
-	void Update_Sub_Object_Transforms(void) {}
-	void Validate_Transform(void) const {}
-	const Matrix3D &Get_Transform(void) const { return Transform; }
+	/* (#181 item 7c) virtual, as RenderObjClass's: HLodClass's (below) also marks its sub-objects' transforms dirty */
+	virtual void Set_Transform(const Matrix3D &m) { Transform = m; }
+	virtual void Set_Position(const Vector3 &v) { Transform.Set_Translation(v); }
+	/* RenderObjClass::Update_Sub_Object_Transforms (rendobj.cpp:777-779): nothing; virtual */
+	virtual void Update_Sub_Object_Transforms(void) {}
+	/* (#181 item 7c) RenderObjClass::Validate_Transform (rendobj.cpp:464-491) as there (IsTransformIdentity is not read
+	** here): a sub-object whose containers say their sub-objects' transforms are dirty has the outermost one update them
+	** (HLodClass::Update_Sub_Object_Transforms: the hierarchy evaluated, each sub-object given its bone's transform) */
+	void Validate_Transform(void) const
+	{
+		CompositeRenderObjClass *con = Container;
+		bool dirty = false;
+		if (con != NULL) {
+			dirty = con->Are_Sub_Object_Transforms_Dirty();
+			while (con->Container != NULL) {
+				dirty |= con->Are_Sub_Object_Transforms_Dirty();
+				con = con->Container;
+			}
+			if (dirty) {
+				con->Update_Sub_Object_Transforms();
+			}
+		}
+	}
+	/* rendobj.h:617-621 */
+	const Matrix3D &Get_Transform(void) const { Validate_Transform(); return Transform; }
 	int Is_Not_Hidden_At_All(void) { return !Hidden; }
-	bool Are_Sub_Object_Transforms_Dirty(void) { return false; }
+	void Set_Sub_Object_Transforms_Dirty(bool onoff) { SubObjTransformsDirty = onoff; }
+	bool Are_Sub_Object_Transforms_Dirty(void) { return SubObjTransformsDirty; }
 	/* RenderObjClass's hidden bit and rendobj.h:454 */
 	void Set_Hidden(int onoff) { Hidden = onoff != 0; }
 	int Is_Hidden(void) const { return Hidden ? 1 : 0; }
@@ -370,7 +427,7 @@ public:
 	Animatable3DObjClass(const HTreeClass *source, float scale);
 	/* (#181 item 7b) a sub-object of an HLOD (a mesh: no hierarchy, plays no animation): its name, as made hidden or not */
 	Animatable3DObjClass(const char *name, bool hidden);
-	~Animatable3DObjClass(void)
+	virtual ~Animatable3DObjClass(void)
 	{
 		Release();
 		if (HTree) delete HTree;
@@ -385,6 +442,8 @@ public:
 	std::vector<Animatable3DObjClass *> Subs;
 	std::vector<int> SubBones;
 	const char *Get_Name(void) const { return Name.c_str(); }
+	/* (#181 item 7c) animobj.h:112 */
+	const HTreeClass *Get_HTree(void) const { return HTree; }
 	int Get_Num_Sub_Objects(void) const { return (int)Subs.size(); }
 	/* HLodClass::Get_Sub_Object (Add_Ref'd) */
 	Animatable3DObjClass *Get_Sub_Object(int index) const
@@ -492,8 +551,46 @@ Animatable3DObjClass::Animatable3DObjClass(const char *name, bool hidden) : Refs
 	Name = name;
 	Hidden = hidden;
 }
-typedef Animatable3DObjClass HLodClass;
 typedef Animatable3DObjClass RenderObjClass;
+/* (#181 item 7c) HLodClass's overrides that keep its sub-objects' transforms (hlod.cpp): Set_Transform and Set_Position
+** mark them dirty (2222-2245); Update_Sub_Object_Transforms (3351-3387) evaluates the hierarchy (animobj.cpp's) and puts
+** each sub-object's bone transform into it, then clears the bit (one LOD, no additional models; Set_Animation_Hidden is
+** not read here) */
+class HLodClass : public Animatable3DObjClass
+{
+public:
+	HLodClass(const HTreeClass *source, float scale) : Animatable3DObjClass(source, scale) {}
+	void Set_Transform(const Matrix3D &m)
+	{
+		Animatable3DObjClass::Set_Transform(m);
+		Set_Sub_Object_Transforms_Dirty(true);
+	}
+	void Set_Position(const Vector3 &v)
+	{
+		Animatable3DObjClass::Set_Position(v);
+		Set_Sub_Object_Transforms_Dirty(true);
+	}
+	void Update_Sub_Object_Transforms(void)
+	{
+		Animatable3DObjClass::Update_Sub_Object_Transforms();
+		for (int model = 0; model < (int)Subs.size(); model++) {
+			RenderObjClass *robj = Subs[model];
+			int bone = SubBones[model];
+			robj->Set_Transform(HTree->Get_Transform(bone));
+			robj->Update_Sub_Object_Transforms();
+		}
+		Set_Sub_Object_Transforms_Dirty(false);
+	}
+};
+/* (#181 item 7c) a sub-object (MeshClass): RenderObjClass's Set_Transform and Update_Sub_Object_Transforms (nothing) */
+class MeshStandIn : public Animatable3DObjClass
+{
+public:
+	MeshStandIn(const char *name, bool hidden) : Animatable3DObjClass(name, hidden) {}
+	void Set_Transform(const Matrix3D &m) { CompositeRenderObjClass::Set_Transform(m); }
+	void Set_Position(const Vector3 &v) { CompositeRenderObjClass::Set_Position(v); }
+	void Update_Sub_Object_Transforms(void) {}
+};
 #include "lb_get_sub_object.inc"
 
 /* ---- the loaded file ---- */
@@ -506,10 +603,11 @@ HTreeClass *find_tree(const char *name)
 }
 
 /* (#181 item 7b) the models' sub-objects (the same on M0..M2): each a mesh on a bone, hidden as made or not, named
-** `SKEL.SUBk` or `SKEL.HEADLIGHTk` */
-struct SubSpec { int bone; bool hidden; bool headlight; };
+** `SKEL.SUBk` or `SKEL.HEADLIGHTk`; (#181 item 7c) or, by its name code (1..4), `SKEL.` and one of SUB_NAMES */
+struct SubSpec { int bone; bool hidden; bool headlight; int name; };
 std::vector<SubSpec> g_subs;
 const char *const MODEL_NAMES[] = { "M0", "M1", "M2" };
+const char *const SUB_NAMES[] = { "", "GUN", "GUN01", "GUN02", "DOOR" };
 /* W3DAssetManager::Create_Render_Obj(name, scale, color): the case's HLOD M0..M2 (any case; see the header), else NULL */
 class W3DAssetManager
 {
@@ -518,15 +616,33 @@ public:
 	{
 		for (int m = 0; m < 3; ++m)
 			if (strcasecmp(name, MODEL_NAMES[m]) == 0) {
-				RenderObjClass *r = new RenderObjClass(g_tree, scale);
+				RenderObjClass *r = new HLodClass(g_tree, scale);
 				r->Name = MODEL_NAMES[m];
 				for (size_t k = 0; k < g_subs.size(); ++k) {
 					char n[40];
-					snprintf(n, sizeof(n), "SKEL.%s%d", g_subs[k].headlight ? "HEADLIGHT" : "SUB", (int)k);
-					r->Subs.push_back(new RenderObjClass(n, g_subs[k].hidden));
+					if (g_subs[k].name > 0)
+						snprintf(n, sizeof(n), "SKEL.%s", SUB_NAMES[g_subs[k].name]);
+					else
+						snprintf(n, sizeof(n), "SKEL.%s%d", g_subs[k].headlight ? "HEADLIGHT" : "SUB", (int)k);
+					RenderObjClass *sub = new MeshStandIn(n, g_subs[k].hidden);
+					/* HLodClass's constructor from its prototype: each LOD model's container is the HLOD (hlod.cpp:1273), and
+					** the sub-objects' transforms are dirty as made (1311) */
+					sub->Container = r;
+					r->Subs.push_back(sub);
 					r->SubBones.push_back(g_subs[k].bone % r->HTree->Num_Pivots());
 				}
+				r->Set_Sub_Object_Transforms_Dirty(true);
 				return r;
+			}
+		return NULL;
+	}
+	/* (#181 item 7c) WW3DAssetManager::Get_HAnim: the loaded animation of that name (case ignored), Add_Ref'd, else NULL */
+	HAnimClass *Get_HAnim(const char *name)
+	{
+		for (size_t i = 0; i < g_anims.size(); ++i)
+			if (strcasecmp(g_anims[i]->Get_Name(), name) == 0) {
+				g_anims[i]->Add_Ref();
+				return g_anims[i];
 			}
 		return NULL;
 	}
@@ -769,25 +885,12 @@ public:
 };
 
 /* ---- the module data and its states ---- */
-/* W3DAnimationInfo: the animation by name through the asset manager (Get_HAnim: Add_Ref'd), its idle flag and distance */
-class W3DAnimationInfo
-{
-public:
-	AsciiString m_name;
-	Bool m_isIdleAnim;
-	Real m_distanceCovered;
-	HAnimClass *getAnimHandle() const
-	{
-		for (size_t i = 0; i < g_anims.size(); ++i)
-			if (strcasecmp(g_anims[i]->Get_Name(), m_name.str()) == 0) {
-				g_anims[i]->Add_Ref();
-				return g_anims[i];
-			}
-		return NULL;
-	}
-	Bool isIdleAnim() const { return m_isIdleAnim; }
-	Real getDistanceCovered() const { return m_distanceCovered; }
-};
+/* ~~W3DAnimationInfo: the animation by name through the asset manager (Get_HAnim: Add_Ref'd), its idle flag and
+** distance~~ (#181 item 7c: cut, W3DModelDraw.h's class and W3DModelDraw.cpp's functions, with m_naturalDurationInMsec,
+** -1 until getAnimHandle first finds the animation; and the TransitionSig helpers) */
+#include "ma_trans_sig.inc"
+#include "ma_anim_info_h.inc"
+#include "ma_anim_info.inc"
 struct ParticleSysBoneInfo
 {
 	AsciiString boneName;
@@ -817,6 +920,11 @@ struct ModelConditionInfo
 	mutable WeaponBarrelInfoVec m_weaponBarrelInfoVec[WEAPONSLOT_COUNT];
 	mutable Bool m_hasRecoilBonesOrMuzzleFlashes[WEAPONSLOT_COUNT];
 	mutable Byte m_validStuff;
+	/* (#181 item 7c) W3DModelDraw.h:216-222: TransitionKey, WaitForStateToFinishIfPossible (NAMEKEY_INVALID for none),
+	** and a TransitionState's signature (NO_TRANSITION for a condition state) */
+	NameKeyType m_transitionKey;
+	NameKeyType m_allowToFinishKey;
+	TransitionSig m_transitionSig;
 #include "lb_valid_enum.inc"
 	void addPublicBone(const AsciiString& boneName) const;
 	void validateStuff(RenderObjClass* robj, Real scale, const std::vector<AsciiString>& extraPublicBones) const;
@@ -837,9 +945,13 @@ GlobalData *TheGlobalData = &g_global;
 #include "lb_bones.inc"
 #include "ma_mf_hidden.inc"
 #include "ma_turret_differ.inc"
+/* (#181 item 7c) W3DModelDraw.h:272 */
+#include "ma_trans_map.inc"
 class W3DModelDrawModuleData
 {
 public:
+	/* (#181 item 7c) the TransitionState blocks by signature */
+	mutable TransitionMap m_transitionMap;
 	Bool m_animationsRequirePower;
 	Bool m_particlesAttachedToAnimatedBones;
 	AsciiString m_attachToDrawableBone;
@@ -850,8 +962,14 @@ public:
 	const Vector3* getAttachToDrawableBoneOffset(const Drawable* draw) const;
 };
 W3DModelDrawModuleData g_data;
+/* (#181 item 7c) the case's TransitionStates, in the order written: their keys' codes and signature */
+struct TransSpec { int src; int dst; TransitionSig sig; };
+std::vector<TransSpec> g_trans;
 #include "mp_attach_offset.inc"
 
+/* (#181 item 7c) ma_anim_complete.inc's, declared for setModelState's head (upstream defines it before, at 1955; here
+** the member functions written in the class come first) */
+static Bool isAnimationComplete(RenderObjClass* r);
 class W3DModelDraw
 {
 public:
@@ -876,6 +994,8 @@ public:
 	Bool m_needRecalcBoneParticleSystems;
 	Bool m_fullyObscuredByShroud;
 	ParticleSystemIDVec m_particleSystemIDs;
+	/* (#181 item 7c) W3DModelDraw.h's m_subObjectVec: showSubObject's list */
+	std::vector<ModelConditionInfo::HideShowSubObjInfo> m_subObjectVec;
 
 	W3DModelDraw()
 	{
@@ -912,18 +1032,21 @@ public:
 	Bool handleWeaponFireFX(WeaponSlotType wslot, Int specificBarrelToUse, const FXList* fxl, Real weaponSpeed, const Coord3D* victimPos, Real damageRadius);
 	/* W3DModelDraw.h:435 */
 	virtual void onRenderObjRecreated(void){};
-	/* doHideShowSubObjs (W3DModelDraw.cpp:2342-2378): the states have no ShowSubObject/HideSubObject lines and nothing
-	** calls showSubObject here (m_subObjectVec empty): nothing to do */
-	void doHideShowSubObjs(const std::vector<ModelConditionInfo::HideShowSubObjInfo>* vec)
-	{
-		if (!m_renderObject) return;
-		if (!vec->empty()) abort();
-	}
-	/* reached only with a next state, which no state here makes (no transition keys) */
-	void setAnimationLoopDuration(UnsignedInt) { abort(); }
+	/* ~~doHideShowSubObjs (W3DModelDraw.cpp:2342-2378): the states have no ShowSubObject/HideSubObject lines and nothing
+	** calls showSubObject here (m_subObjectVec empty): nothing to do~~ (#181 item 7c: cut, with showSubObject and
+	** updateSubObjects) */
+	void doHideShowSubObjs(const std::vector<ModelConditionInfo::HideShowSubObjInfo>* vec);
+	void showSubObject(const AsciiString& name, Bool show);
+	void updateSubObjects();
+	/* ~~reached only with a next state, which no state here makes (no transition keys)~~ (#181 item 7c: cut, with
+	** setAnimationCompletionTime and findTransitionForSig) */
+	void setAnimationLoopDuration(UnsignedInt numFrames);
+	void setAnimationCompletionTime(UnsignedInt numFrames);
+	const ModelConditionInfo* findTransitionForSig(TransitionSig sig) const;
 
-	/* setModelState: the early return for the current state (no next state: the states have no transition keys), then
-	** the cuts: the head, the middle to the first branch's doHideShowSubObjs (hideAllMuzzleFlashes, the model test with
+	/* setModelState: ~~the early return for the current state (no next state: the states have no transition keys), then
+	** the cuts:~~ (#181 item 7c) the cuts: the early returns (the current or pending state; allow-to-finish) and the
+	** transition lookup (ma_sms_pre), the head, the middle to the first branch's doHideShowSubObjs (hideAllMuzzleFlashes, the model test with
 	** turretNamesDiffer, nukeCurrentRender, Create_Render_Obj, validateStuff, rebuildWeaponRecoilInfo), the first branch's
 	** end (W3DModelDraw.cpp:3047-3157, not cut: the garrison flags (debug), the tracks (no TrackMarks), the shadow (no
 	** shadow type), the collision types and the scene's Add_Render_Object (not read here), then as cut: hidden for a
@@ -931,9 +1054,7 @@ public:
 	** the tail (cut) */
 	void setModelState( const ModelConditionInfo *newState )
 	{
-		const ModelConditionInfo* nextState = NULL;
-		if (m_curState != NULL && newState == m_curState && m_nextState == NULL)
-			return;
+#include "ma_sms_pre.inc"
 #include "ma_sms_head.inc"
 #include "ma_sms_mid.inc"
 			if( m_renderObject )
@@ -1004,8 +1125,38 @@ public:
 			for (size_t i = 0; i < m_weaponRecoilInfoVec[w].size(); ++i)
 				rec({(int)m_weaponRecoilInfoVec[w][i].m_state, bits(m_weaponRecoilInfoVec[w][i].m_shift), bits(m_weaponRecoilInfoVec[w][i].m_recoilRate)});
 		}
-		for (int i = 0; i < g_nstates; ++i) {
-			const ModelConditionInfo &st = g_states[i];
+		for (int i = 0; i < g_nstates; ++i) caches(g_states[i]);
+		/* (#181 item 7c) the current and the pending state (state_code), m_nextStateAnimLoopDuration, the showSubObject
+		** list (name length, characters, hide), then each of the case's TransitionStates' caches (its map entry) */
+		rec({state_code(m_curState), state_code(m_nextState), (int)m_nextStateAnimLoopDuration, (int)m_subObjectVec.size()});
+		for (size_t i = 0; i < m_subObjectVec.size(); ++i) {
+			const std::string &n = m_subObjectVec[i].subObjName.s;
+			rec({(int)n.size()});
+			for (size_t c = 0; c < n.size(); ++c) rec({(int)(unsigned char)n[c]});
+			rec({m_subObjectVec[i].hide ? 1 : 0});
+		}
+		for (size_t t = 0; t < g_trans.size(); ++t) caches(g_data.m_transitionMap.find(g_trans[t].sig)->second);
+		unsigned int seed[6];
+		ref_get_state(1, seed);
+		for (int i = 0; i < 6; ++i) rec({(int)seed[i]});
+	}
+
+	/* (#181 item 7c) a state as recorded: -1 none, a condition state's index, a TransitionState 10 + 3 x its first key's
+	** code + its second's */
+	static int state_code(const ModelConditionInfo *st)
+	{
+		if (st == NULL) return -1;
+		for (int i = 0; i < 4; ++i)
+			if (st == &g_states[i]) return i;
+		for (size_t t = 0; t < g_trans.size(); ++t)
+			if (st == &g_data.m_transitionMap.find(g_trans[t].sig)->second) return 10 + 3 * g_trans[t].src + g_trans[t].dst;
+		return -2;
+	}
+
+	/* a state's caches (see the header) */
+	static void caches(const ModelConditionInfo &st)
+	{
+		{
 			rec({st.m_validStuff & (ModelConditionInfo::PRISTINE_BONES_VALID | ModelConditionInfo::TURRETS_VALID | ModelConditionInfo::BARRELS_VALID)});
 			std::vector<std::pair<std::string, PristineBoneInfo> > bones;
 			for (PristineBoneInfoMap::const_iterator it = st.m_pristineBones.begin(); it != st.m_pristineBones.end(); ++it) {
@@ -1033,9 +1184,6 @@ public:
 				rec({st.m_hasRecoilBonesOrMuzzleFlashes[w] ? 1 : 0});
 			}
 		}
-		unsigned int seed[6];
-		ref_get_state(1, seed);
-		for (int i = 0; i < 6; ++i) rec({(int)seed[i]});
 	}
 };
 #include "ma_anim_complete.inc"
@@ -1048,6 +1196,13 @@ public:
 #include "ma_headlights.inc"
 #include "ma_rebuild_recoil.inc"
 #include "ma_fire_fx.inc"
+/* (#181 item 7c) */
+#include "ma_find_trans.inc"
+#include "ma_hide_show_bone.inc"
+#include "ma_hide_show.inc"
+#include "ma_show_sub.inc"
+#include "ma_update_subs.inc"
+#include "ma_durations.inc"
 #include "mp_start_stop.inc"
 #include "mp_shroud.inc"
 #include "mp_stop.inc"
@@ -1126,9 +1281,10 @@ void free_all()
 }
 
 const char *const BONE_NAMES[] = { "B1", "b2", "B3", "b4", "B5", "RootTransform", "nosuchbone" };
-/* (#181 item 7b) the turrets', weapons' and public bones' names (as the INI writes them; 9 is "no line") */
-const char *const WEAPON_NAMES[] = { "TURRET", "PITCH", "BARREL", "MUZZLE", "FX", "B1", "B3", "NOSUCH", "None" };
-const int NO_LINE = 9;
+/* (#181 item 7b) the turrets', weapons' and public bones' names (as the INI writes them; ~~9~~ (#181 item 7c) 11 is "no
+** line"); (#181 item 7c) GUN and DOOR added: sub-objects' names (SUB_NAMES), no pivot's */
+const char *const WEAPON_NAMES[] = { "TURRET", "PITCH", "BARREL", "MUZZLE", "FX", "B1", "B3", "NOSUCH", "None", "GUN", "DOOR" };
+const int NO_LINE = 11;
 
 /* (#181 item 7b) the INI parse of a turret or weapon bone (parseBoneNameKey, parseWeaponBoneName, W3DModelDraw.cpp:
 ** 1335-1397): lower-cased, `None` an invalid key (cleared for a weapon), addPublicBone of it */
@@ -1149,6 +1305,51 @@ void parse_weapon_name(ModelConditionInfo &st, AsciiString &dst, int code)
 		dst.clear();
 	st.addPublicBone(dst);
 }
+
+/* (#181 item 7c) the sub-object names of ShowSubObject/HideSubObject lines and showSubObject calls (as written; 9: no
+** token, or an empty name) */
+const char *const HS_NAMES[] = { "sub0", "SUB1", "skel.sub2", "HEADLIGHT3", "gun", "GUN01", "door", "nosuch", "None", "" };
+const int NO_NAME = 9;
+const char *const KEY_NAMES[] = { "k0", "k1", "k2" };
+/* parseShowHideSubObject (W3DModelDraw.cpp:1270-1305) of a line of one or two names: lower-cased; a first `None` clears
+** the list; each name already listed (case ignored) has its flag set, else is added */
+void parse_hide_show(std::vector<ModelConditionInfo::HideShowSubObjInfo> &vec, bool hide, int a, int b)
+{
+	const char *tokens[2] = { HS_NAMES[a], HS_NAMES[b] };
+	int k = 0;
+	AsciiString subObjName = tokens[k++];
+	subObjName.toLower();
+	if (subObjName.isNone()) {
+		vec.clear();
+		return;
+	}
+	while (subObjName.isNotEmpty()) {
+		Bool found = false;
+		for (size_t i = 0; i < vec.size(); ++i)
+			if (strcasecmp(vec[i].subObjName.str(), subObjName.str()) == 0) {
+				vec[i].hide = hide;
+				found = true;
+			}
+		if (!found) {
+			ModelConditionInfo::HideShowSubObjInfo info;
+			info.subObjName = subObjName;
+			info.hide = hide;
+			vec.push_back(info);
+		}
+		subObjName = k < 2 ? tokens[k++] : "";
+		subObjName.toLower();
+	}
+}
+/* a state's ShowSubObject/HideSubObject lines: a count (0..2), then 2 x (hide, name, name) */
+void read_hide_show(std::vector<ModelConditionInfo::HideShowSubObjInfo> &vec, const int *in, int &k)
+{
+	int n = in[k++];
+	for (int i = 0; i < 2; ++i) {
+		int hide = in[k++], a = in[k++], b = in[k++];
+		if (i < n) parse_hide_show(vec, hide != 0, a, b);
+	}
+}
+NameKeyType key_of(int code) { return code < 0 ? NAMEKEY_INVALID : NAMEKEY(KEY_NAMES[code]); }
 
 } /* namespace mda */
 
@@ -1214,10 +1415,10 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 			int idle = in[k++];
 			Real dist = real(in[k++]);
 			if (a >= na) continue;
-			W3DAnimationInfo info;
-			info.m_name = ai < (int)g_anims.size() ? g_anims[ai]->Get_Name() : "SKEL.NOSUCH";
-			info.m_isIdleAnim = idle != 0;
-			info.m_distanceCovered = dist;
+			/* parseAnimation (W3DModelDraw.cpp:1233-1267): the name lower-cased */
+			AsciiString animName = ai < (int)g_anims.size() ? g_anims[ai]->Get_Name() : "SKEL.NOSUCH";
+			animName.toLower();
+			W3DAnimationInfo info(animName, idle != 0, dist);
 			st.m_animations.push_back(info);
 		}
 		/* parseConditionState (W3DModelDraw.cpp:1470-1480): a ConditionState starts as a copy of the default state; its
@@ -1318,6 +1519,64 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 				if (c[f] != NO_LINE) parse_weapon_name(st, *dst[f], c[f]);
 		}
 	}
+	/* (#181 item 7c) the sub-objects' name codes; each state's TransitionKey and WaitForStateToFinishIfPossible (a key
+	** code, -1 no line) and its ShowSubObject/HideSubObject lines (a ConditionState copies the default state's keys and
+	** list, and its own lines replace a key or apply to the copied list); then the TransitionStates (a count 0..3, each
+	** its two keys, model, mode, flags, speeds, 0..2 Animation lines and its show/hide lines: parseConditionState's
+	** PARSE_TRANSITION copies the default state, clears both keys and sets the signature, 1491-1515) */
+	for (int i = 0; i < 4; ++i) {
+		int code = in[k++];
+		if (i < (int)g_subs.size()) g_subs[i].name = code;
+	}
+	for (int si = 0; si < 4; ++si) {
+		ModelConditionInfo &st = g_states[si];
+		st.m_transitionSig = NO_TRANSITION;
+		st.m_transitionKey = si > 0 ? g_states[0].m_transitionKey : NAMEKEY_INVALID;
+		st.m_allowToFinishKey = si > 0 ? g_states[0].m_allowToFinishKey : NAMEKEY_INVALID;
+		st.m_hideShowVec.clear();
+		if (si > 0) st.m_hideShowVec = g_states[0].m_hideShowVec;
+		int tk = in[k++], allow = in[k++];
+		if (tk >= 0) st.m_transitionKey = key_of(tk);
+		if (allow >= 0) st.m_allowToFinishKey = key_of(allow);
+		read_hide_show(st.m_hideShowVec, in, k);
+	}
+	g_data.m_transitionMap.clear();
+	g_trans.clear();
+	{
+		int nt = in[k++];
+		for (int t = 0; t < 3; ++t) {
+			int src = in[k++], dst = in[k++];
+			ModelConditionInfo st = g_states[0];
+			st.m_transitionKey = NAMEKEY_INVALID;
+			st.m_allowToFinishKey = NAMEKEY_INVALID;
+			st.model = in[k++];
+			st.m_mode = in[k++];
+			st.m_flags = in[k++];
+			st.m_animMinSpeedFactor = real(in[k++]);
+			st.m_animMaxSpeedFactor = real(in[k++]);
+			int na = in[k++];
+			if (na > 0) st.m_animations.clear();
+			for (int a = 0; a < 2; ++a) {
+				int ai = in[k++];
+				Real dist = real(in[k++]);
+				if (a >= na) continue;
+				AsciiString animName = ai < (int)g_anims.size() ? g_anims[ai]->Get_Name() : "SKEL.NOSUCH";
+				animName.toLower();
+				st.m_animations.push_back(W3DAnimationInfo(animName, FALSE, dist));
+			}
+			st.m_modelName = st.model < 3 ? MODEL_NAMES[st.model] : "";
+			st.m_modelName.toLower();
+			read_hide_show(st.m_hideShowVec, in, k);
+			if (t >= nt) continue;
+			TransSpec ts;
+			ts.src = src;
+			ts.dst = dst;
+			ts.sig = buildTransitionSig(key_of(src), key_of(dst));
+			st.m_transitionSig = ts.sig;
+			g_data.m_transitionMap[ts.sig] = st;
+			g_trans.push_back(ts);
+		}
+	}
 	W3DModelDraw *draw = new W3DModelDraw();
 	draw->state();
 	for (int st = k; st + 13 < nin; st += 14) {
@@ -1331,7 +1590,18 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 			const ModelConditionInfo *ns = &g_states[(unsigned)a[1] % (unsigned)nstates];
 			float fr, mult;
 			int mo, nf;
-			if (draw->m_curState != NULL && ns != draw->m_curState && isAnyMaintainFrameFlagSet(draw->m_curState->m_flags) &&
+			/* (#181 item 7c) only when setModelState gets past its early returns (the current or pending state; a state
+			** allowed to wait for the current one to finish) */
+			const ModelConditionInfo *cs = draw->m_curState;
+			Bool reaches = TRUE;
+			if (cs != NULL) {
+				if ((cs == ns && draw->m_nextState == NULL) || draw->m_nextState == ns)
+					reaches = FALSE;
+				else if (ns != cs && ns->m_allowToFinishKey != NAMEKEY_INVALID && ns->m_allowToFinishKey == cs->m_transitionKey &&
+					draw->m_renderObject && !isAnimationComplete(draw->m_renderObject))
+					reaches = FALSE;
+			}
+			if (reaches && cs != NULL && isAnyMaintainFrameFlagSet(cs->m_flags) &&
 				draw->m_renderObject != NULL && draw->m_renderObject->Peek_Animation_And_Info(fr, nf, mo, mult) == NULL) {
 				rec({700});
 				goto done;
@@ -1424,6 +1694,18 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 				g_ai.m_pitch[t] = real(a[5 + 3 * t]);
 			}
 			break;
+		/* (#181 item 7c) the logic's Drawable::setAnimationLoopDuration and setAnimationCompletionTime (frames a1); a
+		** showSubObject(name a1 % 10, lower-cased when word 3, show word 2) as SubObjectsUpgrade and DeliverPayloadAIUpdate
+		** call it; updateSubObjects */
+		case 16: draw->setAnimationLoopDuration((UnsignedInt)a[1]); break;
+		case 17: draw->setAnimationCompletionTime((UnsignedInt)a[1]); break;
+		case 18: {
+			AsciiString name = HS_NAMES[(unsigned)a[1] % 10u];
+			if (a[3]) name.toLower();
+			draw->showSubObject(name, a[2] != 0);
+			break;
+		}
+		case 19: draw->updateSubObjects(); break;
 		default: abort();
 		}
 		draw->state();

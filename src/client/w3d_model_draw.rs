@@ -787,7 +787,9 @@ impl ModelConditionInfo {
     /// read from its own hierarchy (the first read evaluating it, captured bones included, and leaving its pivots in
     /// that pose), the transform restored, then the animation it had, if any (without one it stays on the pose's
     /// animation in `MANUAL`). Without one, the asset source's posed skeleton ([`W3dAssetSource::skeleton`]) is
-    /// upstream's render object made for the purpose. The sub-objects are always the posed skeleton's (gaps).
+    /// upstream's render object made for the purpose. ~~The sub-objects are always the posed skeleton's (gaps).~~
+    /// **Corrected 2026-11-14 (#181 item 7c):** the sub-objects found by name are the given render object's too (their
+    /// live `Get_Transform`, [`find_single_sub_obj`]); the posed skeleton's only without one.
     ///
     /// **Files still being fetched** (GitHub #42; new, not upstream's, whose reads never wait):
     /// when the asset source answered a question of this validation "none for now"
@@ -1058,9 +1060,28 @@ fn find_single_bone(sk: Option<&Skeleton>, live: Option<(&mut RenderObj, u32)>, 
 
 /// `findSingleSubObj(robj, boneName, mtx, boneIndex)`: the sub-object by name, its transform
 /// and its bone.
-fn find_single_sub_obj(sk: Option<&Skeleton>, bone_name: &[u8]) -> Option<PristineBoneInfo> {
+///
+/// (#181 item 7c) With `live` (the render object `validateCachedBones` was given, and the sync time), the sub-object is
+/// that render object's (`robj->Get_Sub_Object_By_Name(boneName)`, W3DModelDraw.cpp:460-489) and its transform is the
+/// live sub-object's `Get_Transform()`: `RenderObjClass::Validate_Transform` (rendobj.cpp:464-491) finds its HLOD's
+/// sub-object transforms dirty (validateCachedBones' `Set_Transform(Matrix3D(true).Scale(scale))` set the bit, hlod.cpp:
+/// 2222-2226) and runs `HLodClass::Update_Sub_Object_Transforms` (3351-3387): the hierarchy evaluated in the pose
+/// validateCachedBones set, and each sub-object given `HTree->Get_Transform(bone)`. Here: the live render object's
+/// [`RenderObj::get_bone_transform`] of the sub-object's bone, which evaluates its hierarchy when it is not valid. The
+/// port keeps no dirty bit: inside validateCachedBones the bit and the hierarchy's validity go together (both set by
+/// that `Set_Transform`, both cleared by the first evaluation), so the two agree there, the only caller with a live
+/// render object. ~~(#181 item 7b) the sub-objects are always the posed skeleton's~~ **Corrected 2026-11-14 (#181 item
+/// 7c):** read live, as upstream's. Without `live` (`tossRobj`, a render object made for the purpose and posed): the
+/// asset source's posed skeleton, as before.
+fn find_single_sub_obj(sk: Option<&Skeleton>, live: Option<(&mut RenderObj, u32)>, bone_name: &[u8]) -> Option<PristineBoneInfo> {
     if is_none(bone_name) || bone_name.is_empty() {
         return None;
+    }
+    if let Some((r, now)) = live.filter(|_| !plant(10013)) {
+        let k = r.skeleton.clone()?;
+        let i = k.get_sub_object_by_name(bone_name)?;
+        let bone_index = k.sub_objects[i].bone_index;
+        return Some(PristineBoneInfo { mtx: r.get_bone_transform(bone_index, now), bone_index });
     }
     let sk = sk?;
     let i = sk.get_sub_object_by_name(bone_name)?;
@@ -1070,8 +1091,8 @@ fn find_single_sub_obj(sk: Option<&Skeleton>, bone_name: &[u8]) -> Option<Pristi
 
 /// `doSingleBoneName(robj, boneName, map)`: the bone and its numbered variants as bones, or
 /// else as sub-objects, into the map by lower-cased name. (#181 item 7b) The bones are `live`'s when it is given
-/// ([`find_single_bone`]); the sub-objects are always the posed skeleton's (gaps: upstream reads the live sub-objects'
-/// `Get_Transform`).
+/// ([`find_single_bone`]); ~~the sub-objects are always the posed skeleton's (gaps: upstream reads the live sub-objects'
+/// `Get_Transform`)~~ **Corrected 2026-11-14 (#181 item 7c):** so are the sub-objects ([`find_single_sub_obj`]).
 fn do_single_bone_name(sk: Option<&Skeleton>, mut live: Option<(&mut RenderObj, u32)>, bone_name: &[u8], map: &mut BTreeMap<Vec<u8>, PristineBoneInfo>) -> bool {
     let mut found_as_bone = false;
     let mut found_as_sub_obj = false;
@@ -1096,13 +1117,13 @@ fn do_single_bone_name(sk: Option<&Skeleton>, mut live: Option<(&mut RenderObj, 
         }
     }
     if !found_as_bone && !plant(9743) {
-        if let Some(info) = find_single_sub_obj(sk, &tmp_name) {
+        if let Some(info) = find_single_sub_obj(sk, live.as_mut().map(|(r, now)| (&mut **r, *now)), &tmp_name) {
             map.insert(tmp_name.clone(), info);
             found_as_sub_obj = true;
         }
-        for i in 1..=99 {
+        for i in (1..=99).filter(|_| !plant(10014)) {
             let tmp = numbered(i);
-            match find_single_sub_obj(sk, &tmp) {
+            match find_single_sub_obj(sk, live.as_mut().map(|(r, now)| (&mut **r, *now)), &tmp) {
                 Some(info) => {
                     map.insert(tmp, info);
                     found_as_sub_obj = true;
@@ -2460,6 +2481,9 @@ impl Skeleton {
         if let Some(i) = self.sub_objects.iter().position(|s| s.name.eq_ignore_ascii_case(name)) {
             return Some(i);
         }
+        if plant(10012) {
+            return None;
+        }
         self.sub_objects.iter().position(|s| {
             let suffix = match s.name.iter().position(|&c| c == b'.') {
                 Some(d) => &s.name[d + 1..],
@@ -2515,11 +2539,20 @@ impl<D: LocalDevice> W3dAssetSource for W3dFiles<'_, D> {
     }
     /// The render model as drawn ([`RenderModel::create`]), ~~posed~~ **Corrected 2026-11-12 (#172):** its
     /// hierarchy scaled as `Create_Render_Obj(name, scale, color)` scales it ([`scale_render_obj_hierarchy`]), then
-    /// posed by `Anim_Update` (or `Base_Update`) under the scaled identity, as `Validate_Transform` poses it. (#180) The
+    /// posed by `Anim_Update` (or `Base_Update`) under the scaled identity, as `Validate_Transform` poses it. (#180) ~~The
     /// `Anim_Update` is the virtual one ([`RenderModel::update`]), where upstream's render object takes animobj.h's inline
     /// one (the raw fast path for a raw animation, [`RenderModel::update_render_obj`]); kept, because this feeds the
     /// logic's art bones (#175) and its callers ask only integer frames (0 or `NumFrames - 1`), where the two agree bit
-    /// for bit under the default `Float_To_Long` (the lib test `integer_frames_agree_on_both_paths_in_win32`).
+    /// for bit under the default `Float_To_Long` (the lib test `integer_frames_agree_on_both_paths_in_win32`).~~
+    /// **Corrected 2026-11-14 (#181 item 7c):** the two do not always agree at an integer frame: with the test's source
+    /// posing as this one did, `tests/differential_model_draw_anim.rs` measured a sub-object's matrix 2 ULP away from
+    /// upstream's render object's in 1 case of 20,000 (and 0 once the source took the fast path; the lib test's two-pivot
+    /// animations do not reach the difference). So the `Anim_Update` is now animobj.h's, as upstream's render object made
+    /// for the purpose (`tossRobj`) evaluates it ([`RenderModel::update_render_obj`]: the raw fast path for a raw
+    /// animation, the virtual update for the others). ~~So the `Anim_Update` is now animobj.h's~~ **Corrected
+    /// 2026-11-14 (#181 item 7c):** the switch is **not** made here: this feeds the logic's art bones (#175), so whether
+    /// to take the fast path is the owner's decision (#181 item 13). Until then the virtual update stays, and the 2 ULP
+    /// difference measured above remains a known disagreement with upstream's render object.
     fn skeleton(&mut self, name: &[u8], pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
         let mut m = RenderModel::create(self.assets, self.fs, name).ok()??;
         if let Some(tree) = m.htree.as_mut() {
@@ -3545,6 +3578,12 @@ impl W3DModelDraw {
         self.next_state.as_ref()
     }
 
+    /// (#181 item 7c) `m_nextStateAnimLoopDuration`: the frames [`W3DModelDraw::set_animation_completion_time`] left for
+    /// the pending state, which `doDrawModule` gives it when it becomes current; `NO_NEXT_DURATION` (`u32::MAX`) for none.
+    pub fn next_state_anim_loop_duration(&self) -> u32 {
+        self.next_state_anim_loop_duration
+    }
+
     /// `m_whichAnimInCurState`.
     pub fn which_anim_in_cur_state(&self) -> i32 {
         self.which_anim_in_cur_state
@@ -3573,7 +3612,8 @@ impl W3DModelDraw {
 
     /// `findTransitionForSig(sig)`.
     pub fn find_transition_for_sig(&self, sig: &TransitionSig) -> Option<StateRef> {
-        self.data.transition_map.contains_key(sig).then(|| StateRef::Transition(sig.clone()))
+        let sig = if plant(9998) { (sig.1.clone(), sig.0.clone()) } else { sig.clone() };
+        self.data.transition_map.contains_key(&sig).then(|| StateRef::Transition(sig))
     }
 
     /// `replaceModelConditionState(c)`.
@@ -3615,7 +3655,7 @@ impl W3DModelDraw {
         let mut new_state = new_state;
         let mut next_state = None;
         if let Some(cur) = self.cur_state.clone() {
-            if (cur == new_state && self.next_state.is_none()) || self.next_state.as_ref() == Some(&new_state) {
+            if (cur == new_state && self.next_state.is_none()) || (self.next_state.as_ref() == Some(&new_state) && !plant(10006)) {
                 // he's already got one, you see
                 return;
             }
@@ -3623,6 +3663,7 @@ impl W3DModelDraw {
             let ns = data.state(&new_state);
             let cs = data.state(&cur);
             if new_state != cur
+                && !plant(9996)
                 && !ns.allow_to_finish_key.is_empty()
                 && ns.allow_to_finish_key == cs.transition_key
                 && self.render_object.is_some()
@@ -3631,7 +3672,7 @@ impl W3DModelDraw {
                 self.next_state = Some(new_state);
                 self.next_state_anim_loop_duration = NO_NEXT_DURATION;
                 return;
-            } else if new_state != cur && !cs.transition_key.is_empty() && !ns.transition_key.is_empty() {
+            } else if new_state != cur && !cs.transition_key.is_empty() && !ns.transition_key.is_empty() && !plant(9997) {
                 let sig = (cs.transition_key.clone(), ns.transition_key.clone());
                 if let Some(trans) = self.find_transition_for_sig(&sig) {
                     next_state = Some(new_state);
@@ -3698,7 +3739,7 @@ impl W3DModelDraw {
 
         let prev_state = self.cur_state.take();
         self.cur_state = Some(new_state);
-        self.next_state = next_state;
+        self.next_state = if plant(9999) { None } else { next_state };
         self.next_state_anim_loop_duration = NO_NEXT_DURATION;
         self.adjust_animation(prev_state.as_ref(), prev_anim_fraction, env);
     }
@@ -3824,10 +3865,16 @@ impl W3DModelDraw {
         }
     }
 
-    /// `setAnimationLoopDuration(numFrames)`.
+    /// `setAnimationLoopDuration(numFrames)` (W3DModelDraw.cpp:3772-3790; `NO_DURATIONS_ON_TRANSITIONS` is never
+    /// defined): the pending duration dropped, and the current animation timed to `ceilf(numFrames *
+    /// MSEC_PER_LOGICFRAME_REAL)` ms. (#181 item 7c) `ceilf` is `petir::Real::ceil` (it was `f32::ceil`, method syntax:
+    /// the same bits, `ceilf` being exact).
     pub fn set_animation_loop_duration(&mut self, num_frames: u32) {
-        self.next_state_anim_loop_duration = NO_NEXT_DURATION;
-        let desired_duration_in_msec = (num_frames as f32 * MSEC_PER_LOGICFRAME_REAL).ceil();
+        if !plant(10002) {
+            self.next_state_anim_loop_duration = NO_NEXT_DURATION;
+        }
+        let ms = num_frames as f32 * MSEC_PER_LOGICFRAME_REAL;
+        let desired_duration_in_msec = if plant(10005) { petir::Real::floor(ms) } else { petir::Real::ceil(ms) };
         self.set_cur_anim_duration_in_msec(desired_duration_in_msec);
     }
 
@@ -3837,12 +3884,12 @@ impl W3DModelDraw {
         let cur = self.cur_state.as_ref().map(|s| data.state(s));
         let next = self.next_state.as_ref().map(|s| data.state(s));
         if let (Some(c), Some(n)) = (cur, next) {
-            if c.transition_sig.is_some() && !c.animations.is_empty() && n.transition_sig.is_none() && !n.animations.is_empty() {
+            if c.transition_sig.is_some() && !c.animations.is_empty() && n.transition_sig.is_none() && !n.animations.is_empty() && !plant(10003) {
                 let t1 = c.animations[0].get_natural_duration_in_msec();
                 let t2 = n.animations[0].get_natural_duration_in_msec();
                 let trans_time = real_to_int_floor((num_frames as f32 * t1) / (t1 + t2)) as u32;
                 self.set_animation_loop_duration(trans_time);
-                self.next_state_anim_loop_duration = num_frames.wrapping_sub(trans_time);
+                self.next_state_anim_loop_duration = if plant(10004) { num_frames } else { num_frames.wrapping_sub(trans_time) };
                 return;
             }
         }
@@ -3921,11 +3968,11 @@ impl W3DModelDraw {
 
         if is_animation_complete(self.render_object.as_ref()) && !plant(9964) {
             if self.cur_state.is_some() {
-                if let Some(next_state) = self.next_state.take() {
+                if let Some(next_state) = if plant(10000) { None } else { self.next_state.take() } {
                     let next_duration = self.next_state_anim_loop_duration;
                     self.next_state_anim_loop_duration = NO_NEXT_DURATION;
                     self.set_model_state(next_state, env);
-                    if next_duration != NO_NEXT_DURATION {
+                    if next_duration != NO_NEXT_DURATION && !plant(10001) {
                         self.set_animation_loop_duration(next_duration);
                     }
                 }
@@ -4387,10 +4434,10 @@ impl W3DModelDraw {
     pub fn do_hide_show_sub_objs(&mut self, vec: &[HideShowSubObjInfo]) {
         let Some(r) = &mut self.render_object else { return };
         for it in vec {
-            Self::hide_show_one(r, &it.sub_obj_name, it.hide);
+            Self::hide_show_one(r, &it.sub_obj_name, it.hide && !plant(10007));
         }
         // This is really important as it allows a person to override modelcondition show/hide objects.
-        if !self.sub_object_vec.is_empty() {
+        if !self.sub_object_vec.is_empty() && !plant(10009) {
             self.update_sub_objects();
         }
     }
@@ -4400,7 +4447,7 @@ impl W3DModelDraw {
         let Some(k) = r.skeleton.clone() else { return };
         let Some(obj_index) = k.get_sub_object_by_name(name) else { return };
         r.set_sub_object_hidden(obj_index, hide);
-        if r.has_htree() {
+        if r.has_htree() && !plant(10008) {
             // get the bone of this subobject so we can hide all other child objects that use this bone as a parent.
             let bone_idx = k.sub_objects[obj_index].bone_index;
             Self::do_hide_show_bone_sub_objs(hide, bone_idx, r, &k);
@@ -4412,7 +4459,7 @@ impl W3DModelDraw {
     /// at bone 0, after testing it: with `bone_idx` 0, every sub-object not on bone 0 matches.
     fn do_hide_show_bone_sub_objs(state: bool, bone_idx: i32, r: &mut RenderObj, k: &Skeleton) {
         for (i, s) in k.sub_objects.iter().enumerate() {
-            let mut is_child = false;
+            let mut is_child = plant(10015) && s.bone_index == bone_idx;
             let mut parent_bone_index = s.bone_index;
             let mut steps = 0;
             while parent_bone_index != 0 && steps <= k.bones.len() {
@@ -4774,7 +4821,7 @@ impl W3DModelDraw {
         }
         let mut found = false;
         for it in &mut self.sub_object_vec {
-            if it.sub_obj_name.eq_ignore_ascii_case(name) {
+            if (if plant(10010) { it.sub_obj_name == name } else { it.sub_obj_name.eq_ignore_ascii_case(name) }) && !plant(10011) {
                 it.hide = !show;
                 found = true;
             }
