@@ -2402,7 +2402,7 @@ fn draw_particles(
     let g = &mut *game;
     let mut quads = crate::particles::particle_quads(&g.models.drawables.fx.particles, right.to_array(), up.to_array());
     // the W3D models' emitters (#49), in the same batches
-    let w3d = crate::particles::emitter_quads(g.models.instances(), crate::particles::point_tables(), right.to_array(), up.to_array());
+    let w3d = crate::particles::emitter_quads(g.models.emitter_models(), crate::particles::point_tables(), right.to_array(), up.to_array());
     crate::particles::merge_batches(&mut quads, w3d);
     // the laser beams' lines (#168), in the same batches
     let clock = g.models_clock;

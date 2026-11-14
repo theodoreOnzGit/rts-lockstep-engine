@@ -127,6 +127,57 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#65 batch c (2026-11-14, GitHub #65): an HLOD's emitters in the scene, their release, and the buffers they leave
+drawing.**
+- **Upstream read first:** hlod.cpp (`Remove_Sub_Object`, `Notify_Added`, `Notify_Removed`, `Free`,
+  `Update_Obj_Space_Bounding_Volumes`), hlod.h, scene.cpp/.h (`SimpleSceneClass::Register`, `Add_Render_Object`,
+  `Remove_Render_Object`, `Customized_Render`, `Post_Render_Processing`; `SceneClass::Render`), part_emt.cpp (the
+  destructor's `Emitter_Is_Dead`, `Notify_Removed`, `On_Frame_Update`), part_buf.cpp (`On_Frame_Update`,
+  `Emitter_Is_Dead`, `Is_Complete`), rendobj.cpp (`Remove`, `Set_Container`), multilist (`Internal_Add`: at the head,
+  once), W3DScene.cpp, W3DModelDraw.cpp (`nukeCurrentRender`), W3DMouse.cpp, W3DAssetManager.cpp and every
+  `Create_Render_Obj` in the game code.
+- **What Zero Hour does:** the world scene, `RTS3DScene`, replaces `SceneClass::Render` and **never calls
+  `Post_Render_Processing`**: a complete `RemoveOnComplete` emitter registers for release every frame (listed once, with
+  a reference) and is never removed from its HLOD. The release runs only in `RTS2DScene` and `RTS3DInterfaceScene` (W3D
+  cursors: reachable only if a cursor model is an HLOD with a capped emitter, which depends on the game's data; the
+  client makes no W3D cursors). **The reachable orphan path is the drawable's model going** (`nukeCurrentRender`:
+  `Remove_Render_Object`, then the release): `HLodClass::Notify_Removed` stops the emitters; `Free` releases them; one
+  in the release list lives on, held, its buffer keeping its emitter (and never completing); any other is destroyed and
+  its buffer is dead-emitter. Either way the buffer stays in the scene drawing its particles until they age out, and is
+  never released in the world (a leak upstream: it stays, drawing nothing, until the scene goes).
+- **The scene's order** (found by the differential, see below): the update list adds at its head and does not reach
+  what is added during its loop, so the emitters run last and in reverse sub-object order, the buffers first, in the
+  order they joined (later first; joined in the same frame, in sub-object order), and a buffer is neither updated nor
+  drawn in its emitter's first frame (added after the visibility check). ~~Each emitter ran its own frame, then its
+  buffer's~~ **Corrected 2026-11-14 (#65, batch c):** `RenderModel::update_emitters` now runs that order; a release
+  registered by the frame's completing burst now happens in that frame, not the next.
+- **Translated** (engine crate, `formats::w3d::render`): `SceneKind` (world: no processing; simple: processing),
+  `RenderModel::remove_sub_object` (`HLodClass::Remove_Sub_Object`), `post_render_processing`
+  (`SimpleSceneClass::Post_Render_Processing`: unlink head first, then `Release_Head`), `remove_from_scene`
+  (`Notify_Removed` and `Free`), `release_list`, `orphans` (`OrphanBuffer`: `Orphaned::Held` or `Orphaned::Dead`,
+  its `On_Frame_Update` and `Render`), `EmitterSub::id`, `in_release_list`, `buffer_joined`. **Not translated:**
+  `Update_Obj_Space_Bounding_Volumes` and `Update_Sub_Object_Bits` (nothing reads the HLOD's bounds or bits here; the
+  base pose the first leaves on the hierarchy is undone by its `Set_Hierarchy_Valid(false)` before the next read).
+- **Client** (`rts_client::drawables`): a model whose drawable goes or whose model changes is taken out with
+  `remove_from_scene`; what is left keeps drawing (`WorldDrawables::emitter_models`, `particles::emitter_quads` draws
+  the orphans); the world's post-render processing is called and does nothing. **New (not upstream):** a drained
+  orphan (`OrphanBuffer::is_drained`) is dropped, where upstream keeps it, drawing nothing, for the scene's life.
+- **Compared with the compiled upstream** (`tests/differential_hlod_release.rs`, `differential/wrap_hlod_release.cpp`;
+  build.rs cuts hlod.h's `ModelNodeClass`/`ModelArrayClass`, hlod.cpp's three functions and scene.cpp's five,
+  verbatim; `shim_w3d/hlod_release_prelude.h` has the list, scene and HLOD stand-ins; `part_prelude.h`'s scene
+  functions are now virtual and its `RenderObjClass` has a container, `Remove` and `On_Frame_Update` as rendobj's):
+  1 to 4 emitters in an HLOD (LOD and additional models), the world or a simple scene, frames, the HLOD's removal,
+  `Enable_Remove_On_Complete`, `Set_Hidden`. First run: 4 of 300 mismatching (buffer order, above); then **20,000
+  sequences, 0 mismatching**, 130,199,808 words, 716,734 frames, 7,886,557 points drawn (1,505,725 by orphans),
+  24,240 releases processed, 13,945 HLODs removed (4,705 emitters held). **Plants 10136-10146: 11 of 11 caught**
+  (weakest 10141, 276).
+- **Non-HLOD emitters** (an emitter prototype as a top-level render object): no game code makes one (W3DParticleSys and
+  the FX lists use the game's own particle systems; no `ParticleEmitterClass` in GameEngineDevice but commented-out
+  recolouring); reachable only if the INI or a map names an emitter as a model (W3DModelDraw, W3DDebrisDraw,
+  W3DDefaultDraw, ghost objects, props, trees, W3D cursors). Not checked against the game's data (not here); not
+  translated.
+- **Results:** lib 1,250 passed (1 new: `released_emitters_leave_their_buffers_drawing`; `an_hlod_emitter_emits_on_its_bone` corrected: the first frame draws nothing); client 102 passed (`a_drawn_model_s_emitter_draws_particles_without_changing_the_crcs` extended: the runner destroyed, its buffer draws 10 quads falling to 0 over 28 frames, then is dropped; CRCs equal); `differential_hlod_release` 20,000, 0 mismatching; `differential_w3d` 40 passed; `differential_part_lod` 20,000, 0 mismatching (unchanged after the prelude change); `differential_segline` 20,000, 0; `differential_model_draw_particles`, `_drawable_loco`, `_tank_truck_draw`, `_model_draw_anim`, `_attach_cache`, `_particle_sys` 0 mismatches; gate (a) PASS, 300 frames, last CRC 0bf44067; `src/logic` unchanged.
+
 **#65 batch b (2026-11-14, GitHub #65): the particle buffer's predictive LOD, and the emitters' hiding, release and
 removal.**
 - **Upstream read first:** part_buf.cpp (`Prepare_LOD`, `Increment_LOD`, `Decrement_LOD`, `Get_Cost`, `Get_Value`,
@@ -159,8 +210,10 @@ removal.**
   was drawn), **0 mismatching** (the first run: 5, a NaN's sign bit, now compared NaN-equal); 71,210 frames drawn with
   a threshold of 1 to 15; 4,288 sequences end at upstream undefined. 20 of 20 plants caught (10116-10135; the weakest,
   a screen size equal to the area counting as smaller, in 78).
-- **Not yet:** non-HLOD emitters; the HLOD's release of a complete emitter (`Remove_Sub_Object`) and its orphaned
-  buffer in `RenderModel`; the scene side of LOD (`Visibility_Check`'s call, the optimizer), dead in Zero Hour.
+- **Not yet:** non-HLOD emitters; ~~the HLOD's release of a complete emitter (`Remove_Sub_Object`) and its orphaned
+  buffer in `RenderModel`~~ **Corrected 2026-11-14 (#65, batch c):** translated (`RenderModel::remove_sub_object`,
+  `post_render_processing`, `remove_from_scene`, `orphans`; see batch c); the scene side of LOD (`Visibility_Check`'s
+  call, the optimizer), dead in Zero Hour.
 - **Results:** lib 1,249 passed (2 new); client 102 passed; `differential_w3d` 40 passed (section 16: 2,261 of 3,000 runs compared, 0 mismatches, as before); `differential_segline` 20,000, 0 mismatching; `differential_model_draw_particles`, `_drawable_loco`, `_tank_truck_draw`, `_model_draw_anim`, `_attach_cache` 0 mismatches; gate (a) PASS, 300 frames, last CRC 0bf44067; `src/logic` unchanged.
 
 **#65 (2026-11-14, GitHub #65, after #49): the W3D emitters' line renderer, `SegLineRendererClass`.**

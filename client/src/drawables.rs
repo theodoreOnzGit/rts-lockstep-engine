@@ -38,7 +38,7 @@ use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::formats::w3d::assetmgr::{AssetManager, W3dFileFactory};
 use rts_lockstep_engine::formats::w3d::part_buf::Ww3dClock;
 use rts_lockstep_engine::formats::w3d::part_emt::ParticleRandom;
-use rts_lockstep_engine::formats::w3d::render::RenderModel;
+use rts_lockstep_engine::formats::w3d::render::{RenderModel, SceneKind};
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
@@ -172,6 +172,9 @@ pub struct WorldDrawables<D: LocalDevice> {
     pub particle_random: ParticleRandom,
     /// The WW3D clock of the last draw (frame time and count for the emitters, #49).
     pub particle_clock: Option<Ww3dClock>,
+    /// (#65 batch c) What is left in the scene of the models taken out of it (`RenderModel::remove_from_scene`: a
+    /// drawable gone, or its model changed): their emitters' buffers, still drawing their particles until they drain.
+    removed: Vec<RenderModel>,
 }
 
 impl<D: LocalDevice> WorldDrawables<D> {
@@ -186,6 +189,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
             remade: 0,
             particle_random: ParticleRandom::default(),
             particle_clock: None,
+            removed: Vec::new(),
         }
     }
 
@@ -290,6 +294,20 @@ impl<D: LocalDevice> WorldDrawables<D> {
                 }
             }
         }
+        // (#65 batch c) the removed models' orphaned buffers, then the world scene's post-render processing, which
+        // upstream never runs (`RTS3DScene::Render`): a release request stays listed
+        for m in self.removed.iter_mut() {
+            m.update_emitters(&Matrix3D::IDENTITY, &clock, &mut self.particle_random);
+        }
+        for m in self.instances.values_mut().map(|(_, m)| m).chain(self.removed.iter_mut()) {
+            m.post_render_processing(SceneKind::World);
+        }
+        // New (not upstream): a drained buffer is dropped. Upstream keeps it in the world scene, drawing nothing and
+        // never released, until the scene goes; here it would only grow the list.
+        for m in self.removed.iter_mut() {
+            m.orphans.retain(|o| !o.is_drained());
+        }
+        self.removed.retain(|m| !m.orphans.is_empty());
     }
 
     /// #148: the scene `pickDrawable` casts at (`RTS3DScene`'s render list, `rts_lockstep_engine::client::pick_drawable`):
@@ -395,6 +413,23 @@ impl<D: LocalDevice> WorldDrawables<D> {
     /// The posed models, for drawing their particles (#49).
     pub fn instances(&self) -> impl Iterator<Item = &RenderModel> {
         self.instances.values().map(|(_, m)| m)
+    }
+
+    /// (#65 batch c) The models whose emitters draw: the posed ones, then what is left of the removed ones (their
+    /// orphaned buffers).
+    pub fn emitter_models(&self) -> impl Iterator<Item = &RenderModel> {
+        self.instances().chain(self.removed.iter())
+    }
+
+    /// (#65 batch c) An object's model taken out of the scene (`W3DModelDraw::nukeCurrentRender`:
+    /// `Remove_Render_Object`, then the release), its emitters' buffers kept drawing ([`RenderModel::remove_from_scene`]).
+    fn retire(instances: &mut BTreeMap<ObjectId, (Vec<u8>, RenderModel)>, removed: &mut Vec<RenderModel>, id: ObjectId) {
+        if let Some((_, m)) = instances.remove(&id) {
+            let rest = m.remove_from_scene();
+            if !rest.orphans.is_empty() {
+                removed.push(rest);
+            }
+        }
     }
 
     /// The waiting names whose files have arrived are dropped; if any was, each drawable with a module lacking its
@@ -507,15 +542,19 @@ impl<D: LocalDevice> WorldDrawables<D> {
     /// ([`RenderModel::update_render_obj`], #180: a raw animation at one integer frame, as upstream's render object).
     fn pose(&mut self) {
         let Some(art) = &mut self.art else { return };
-        self.instances.retain(|id, _| self.drawables.drawables.contains_key(id));
+        // ~~retained~~ (#65 batch c) the models of drawables gone are retired
+        let gone: Vec<ObjectId> = self.instances.keys().filter(|id| !self.drawables.drawables.contains_key(id)).copied().collect();
+        for id in gone {
+            Self::retire(&mut self.instances, &mut self.removed, id);
+        }
         let ids: Vec<ObjectId> = self.drawables.drawables.keys().copied().collect();
         for id in ids {
             let Some(c) = Self::choice_in(&self.drawables, id) else {
-                self.instances.remove(&id);
+                Self::retire(&mut self.instances, &mut self.removed, id);
                 continue;
             };
             if self.instances.get(&id).is_none_or(|(n, _)| *n != c.model) {
-                self.instances.remove(&id);
+                Self::retire(&mut self.instances, &mut self.removed, id);
                 if self.missing.contains_key(&c.model) {
                     continue;
                 }
@@ -556,7 +595,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
             };
             if let Err(e) = posed {
                 self.missing.insert(c.model.clone(), format!("posing: {e}"));
-                self.instances.remove(&id);
+                Self::retire(&mut self.instances, &mut self.removed, id);
             }
         }
     }
@@ -1424,10 +1463,32 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
                 }
                 crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
             }
-            (crcs, counts, trails, low, batch)
+            // (#65 batch c) the runner destroyed: its model leaves the scene, its emitter's buffer stays drawing
+            let mut after = Vec::new();
+            if drawn_client {
+                w.destroy_object(runner);
+                for f in 121..=165u32 {
+                    w.logic_update().expect("a frame");
+                    let ev = w.take_client_events();
+                    d.update(&mut w, &ev, f * 33);
+                    let q = crate::particles::emitter_quads(d.emitter_models(), crate::particles::point_tables(), [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+                    let quads: usize = q.values().map(|b| b.len()).sum();
+                    after.push((d.instance(runner).is_some(), d.emitter_models().count(), quads));
+                }
+            }
+            (crcs, counts, trails, low, batch, after)
         };
         let (plain, ..) = play(false);
-        let (crcs, counts, trails, low, batch) = play(true);
+        let (crcs, counts, trails, low, batch, after) = play(true);
+        println!("after the runner's destruction (instance, models drawing, quads): {after:?}");
+        // (#65 batch c) *Predictions, written before the first run:* from the frame the drawable goes, no instance and
+        // one model drawing (what is left of it), with 9 to 11 quads at first, falling as the particles age out (none is
+        // added: the emitter is destroyed, its buffer dead); within about a second (31 frames) none, and the remains
+        // dropped (no model drawing).
+        assert!(after.iter().all(|a| !a.0), "{after:?}");
+        assert!(after[0].1 == 1 && (9..=11).contains(&after[0].2), "{after:?}");
+        assert!(after.windows(2).all(|w| w[1].2 <= w[0].2), "{after:?}");
+        assert_eq!(after.last().map(|a| (a.1, a.2)), Some((0, 0)), "{after:?}");
         println!("counts {counts:?} trails {trails} low {low} batch {batch:?}");
         assert_eq!(crcs, plain);
         assert!(counts[3..].iter().all(|&n| n > 0), "{counts:?}");

@@ -164,7 +164,8 @@ fn ribbon(b: &mut QuadBatch, points: &[[f32; 3]], colors: &[[f32; 4]], width: f3
 }
 
 /// The W3D emitters' particles (GitHub #49), in batches keyed as [`particle_quads`]'s (texture, blend), to merge with
-/// them: what each emitter's buffer handed its renderer at the last draw (`RenderModel::update_emitters`). **New** (the
+/// them: what each emitter's buffer handed its renderer at the last draw (`RenderModel::update_emitters`), and (#65 batch
+/// c) each buffer an emitter left in the scene (`RenderModel::orphans`). **New** (the
 /// DirectX 8 device is replaced): triangle and quad particles as `PointGroupClass` builds them (its vertex tables,
 /// [`PointTables`], facing the camera; the frame's cell of the texture, `frame & mask` in rows of `1 << log2`);
 /// line-mode runs and line-group lines as camera-facing ribbons of the line's width or the particle's size (upstream's
@@ -181,10 +182,12 @@ pub fn emitter_quads<'a>(
     use rts_lockstep_engine::formats::w3d::part_buf::ParticleDraw;
     let mut out: BTreeMap<(Vec<u8>, Blend), QuadBatch> = BTreeMap::new();
     for m in models {
-        for e in &m.emitters {
-            let (Some(d), Some(em)) = (&e.draw, &e.emitter) else { continue };
-            let blend = emitter_blend(em.buffer.shader);
-            let tex = em.buffer.texture.clone().unwrap_or_default().to_ascii_lowercase();
+        // (#65 batch c) the emitters' buffers, then the buffers they left drawing (`RenderModel::orphans`)
+        let live = m.emitters.iter().filter_map(|e| Some((e.draw.as_ref()?, &e.emitter.as_ref()?.buffer)));
+        let left = m.orphans.iter().filter_map(|o| Some((o.draw.as_ref()?, o.buffer())));
+        for (d, buffer) in live.chain(left) {
+            let blend = emitter_blend(buffer.shader);
+            let tex = buffer.texture.clone().unwrap_or_default().to_ascii_lowercase();
             let rgba = |c: rts_lockstep_engine::ww::vector4::Vector4| match blend {
                 Blend::Add => [c.x, c.y, c.z, 1.0],
                 Blend::Alpha => [c.x, c.y, c.z, c.w],

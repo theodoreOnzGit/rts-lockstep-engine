@@ -4473,6 +4473,9 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
                 sub_objects: Vec::new(),
                 not_drawn: Vec::new(),
                 emitters: Vec::new(),
+                orphans: Vec::new(),
+                release_list: Vec::new(),
+                updates: 0,
             };
             m.update_render_obj(&rts_lockstep_engine::ww::matrix3d::Matrix3D::IDENTITY, Some((&w.anims[a].0, &*w, frame)))?;
             log_eval_tree(log, m.htree.as_ref().expect("made with one"))?;

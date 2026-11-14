@@ -36,6 +36,14 @@
 **     rendobj.h's: DEFAULT_BITS is not visible, and Is_Not_Hidden_At_All
 **     tests IS_NOT_HIDDEN | IS_NOT_ANIMATION_HIDDEN only (the stand-in tested
 **     Visible too, as the Rust did, so the differential could not see it).
+**     (#65, batch c) SceneClass's Add_Render_Object, Remove_Render_Object,
+**     Register and Unregister are virtual, as scene.h declares them (the
+**     bodies here stay the default; shim_w3d/hlod_release_prelude.h's
+**     SimpleSceneClass overrides them with scene.cpp's); RenderObjClass has
+**     its container (Get_Container, Set_Container: rendobj.cpp's), the
+**     default Remove_Sub_Object (rendobj.h: 0), the default On_Frame_Update
+**     (rendobj.h: nothing) and rendobj.cpp's Remove for a
+**     contained object (Container->Remove_Sub_Object(this)).
 **   - PointGroupClass, SegLineRendererClass, LineGroupClass: the setters
 **     store their argument; Render records what was set (the wrapper logs
 **     it); the line renderer's getters answer from the stored line
@@ -104,10 +112,11 @@ class SceneClass
 {
 public:
 	enum RegType { ON_FRAME_UPDATE = 0, LIGHT, RELEASE };
-	void Register(RenderObjClass *obj, RegType for_what) { if (for_what == RELEASE) { g_part_release_count++; ref_part_lod_note_release(obj); } }
-	void Unregister(RenderObjClass *, RegType) {}
-	void Add_Render_Object(RenderObjClass *obj);
-	void Remove_Render_Object(RenderObjClass *obj);
+	virtual ~SceneClass(void) {}
+	virtual void Register(RenderObjClass *obj, RegType for_what) { if (for_what == RELEASE) { g_part_release_count++; ref_part_lod_note_release(obj); } }
+	virtual void Unregister(RenderObjClass *, RegType) {}
+	virtual void Add_Render_Object(RenderObjClass *obj);
+	virtual void Remove_Render_Object(RenderObjClass *obj);
 };
 
 class WW3D
@@ -131,8 +140,8 @@ public:
 	static const float AT_MIN_LOD;
 	static const float AT_MAX_LOD;
 
-	RenderObjClass(void) : Transform(1), Scene(NULL), BVValid(false), Visible(0), Hidden(0), AnimHidden(0), ForceVisible(0) {}
-	RenderObjClass(const RenderObjClass &src) : RefCountClass(src), Transform(src.Transform), Scene(NULL), BVValid(false), Visible(src.Visible),
+	RenderObjClass(void) : Transform(1), Scene(NULL), Container(NULL), BVValid(false), Visible(0), Hidden(0), AnimHidden(0), ForceVisible(0) {}
+	RenderObjClass(const RenderObjClass &src) : RefCountClass(src), Transform(src.Transform), Scene(NULL), Container(NULL), BVValid(false), Visible(src.Visible),
 		Hidden(src.Hidden), AnimHidden(src.AnimHidden), ForceVisible(src.ForceVisible) {}
 	RenderObjClass &operator=(const RenderObjClass &) { return *this; }
 	virtual ~RenderObjClass(void) {}
@@ -140,8 +149,25 @@ public:
 	virtual void Notify_Added(SceneClass *scene) { Scene = scene; }
 	virtual void Notify_Removed(SceneClass *) { Scene = NULL; }
 	void Add(SceneClass *scene) { Scene = scene; Scene->Add_Render_Object(this); }
-	/* rendobj.cpp's Remove for a top-level object (no container) */
-	void Remove(void) { if (Scene != NULL) { Scene->Remove_Render_Object(this); return; } }
+	/* ~~rendobj.cpp's Remove for a top-level object (no container)~~ (#65 batch c) rendobj.cpp's Remove */
+	void Remove(void)
+	{
+		if (Container == NULL) {
+			if (Scene != NULL) {
+				Scene->Remove_Render_Object(this);
+				return;
+			}
+		} else {
+			Container->Remove_Sub_Object(this);
+			return;
+		}
+	}
+	/* rendobj.h / rendobj.cpp */
+	RenderObjClass *Get_Container(void) const { return Container; }
+	virtual void Set_Container(RenderObjClass *con) { Container = con; }
+	virtual int Remove_Sub_Object(RenderObjClass *) { return 0; }
+	/* rendobj.h (#65 batch c: the scene's update loop calls it through the base) */
+	virtual void On_Frame_Update(void) {}
 	bool Is_In_Scene(void) const { return Scene != NULL; }
 
 	const Matrix3D &Get_Transform(void) const { return Transform; }
@@ -191,6 +217,7 @@ public:
 
 	Matrix3D Transform;
 	SceneClass *Scene;
+	RenderObjClass *Container;
 	mutable SphereClass CachedBoundingSphere;
 	mutable AABoxClass CachedBoundingBox;
 	mutable bool BVValid;

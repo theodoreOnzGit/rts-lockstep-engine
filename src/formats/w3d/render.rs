@@ -4,7 +4,13 @@
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/hlod.cpp
 //   (HLodClass::HLodClass(const HLodDefClass &): the sub-objects of each LOD
-//   and the aggregates, bound to their bones)
+//   and the aggregates, bound to their bones; #65 batch c: Remove_Sub_Object,
+//   Notify_Removed, Free's release of the sub-objects)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/scene.cpp
+//   (#65 batch c: SimpleSceneClass::Register's RELEASE list, Customized_Render's
+//   update loop order, Post_Render_Processing)
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DScene.cpp
+//   (#65 batch c: RTS3DScene::Render, which never calls Post_Render_Processing)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/animobj.cpp
 //   (Animatable3DObjClass: Compute_Current_Frame, the hierarchy update a
 //   render does, the bone transforms its sub-objects take)
@@ -78,6 +84,18 @@
 //!   ([`RenderModel::emitters`]), bound to their bones, and run by
 //!   [`RenderModel::update_emitters`]; a bone's visibility
 //!   (`Set_Animation_Hidden` from the hierarchy) does not stop them yet.
+//! - **(#65 batch c) The scene's side of the emitters** is kept with the
+//!   model: the order the scene's update list runs them in, their release
+//!   requests ([`RenderModel::release_list`]), the release itself in a scene
+//!   that processes it ([`RenderModel::post_render_processing`],
+//!   [`SceneKind`]), and the buffers an emitter leaves drawing in the scene
+//!   when it is released or its HLOD is removed ([`RenderModel::orphans`],
+//!   [`RenderModel::remove_from_scene`]). The HLOD's bounding volumes and
+//!   sub-object bits (`Update_Obj_Space_Bounding_Volumes`,
+//!   `Update_Sub_Object_Bits`, which `Remove_Sub_Object` calls) are not
+//!   kept: nothing here reads them (the client does not cull), and the base
+//!   pose `Update_Obj_Space_Bounding_Volumes` leaves on the hierarchy is
+//!   undone by its `Set_Hierarchy_Valid(false)` before the next read.
 //! - A hierarchy that cannot be found poses every bone at the root
 //!   (upstream's `Animatable3DObjClass` makes a one-pivot default tree, on
 //!   which only bone 0 is defined).
@@ -141,6 +159,114 @@ pub struct RenderModel {
     pub not_drawn: Vec<(Vec<u8>, String)>,
     /// The particle emitters among the sub-objects (#49), on their bones.
     pub emitters: Vec<EmitterSub>,
+    /// (#65 batch c) The buffers this HLOD's emitters left in the scene (released or removed with the HLOD), still
+    /// drawing their particles, in sub-object order.
+    pub orphans: Vec<OrphanBuffer>,
+    /// (#65 batch c) The scene's `ReleaseList` as far as this model's objects are in it: the ids ([`EmitterSub::id`]) of
+    /// the emitters and orphaned buffers registered for release, head first (`Add` puts an object at the head, once).
+    pub release_list: Vec<u32>,
+    /// (#65 batch c) How many times [`RenderModel::update_emitters`] has run (stamps [`EmitterSub::buffer_joined`]).
+    pub updates: u32,
+}
+
+/// (#65 batch c) The scene a model is in, for what its objects' release requests do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SceneKind {
+    /// `RTS3DScene`, the world: its `Render` replaces `SceneClass::Render` ("Made virtual so we can override -MW") and
+    /// never calls `Post_Render_Processing`, so a release request is listed and never processed.
+    World,
+    /// A `SimpleSceneClass` drawn through `SceneClass::Render` (`RTS2DScene`, `RTS3DInterfaceScene`: the W3D cursors),
+    /// which runs `Post_Render_Processing` after every render.
+    Simple,
+}
+
+/// (#65 batch c) What keeps an orphaned buffer's emitter, if anything.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Orphaned {
+    /// The emitter is out of its HLOD and stopped (`Notify_Removed`) but alive: the scene's release list holds a
+    /// reference to it. Its buffer keeps its `Emitter` pointer, so it never completes while the emitter lives.
+    Held(super::part_emt::ParticleEmitter),
+    /// The emitter is destroyed (`~ParticleEmitterClass`: `Buffer->Emitter_Is_Dead()`): the buffer alone, kept by the
+    /// scene.
+    Dead(super::part_buf::ParticleBuffer),
+}
+
+/// (#65 batch c) A particle buffer still in the scene after its emitter left its HLOD.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrphanBuffer {
+    /// The emitter's [`EmitterSub::id`].
+    pub id: u32,
+    pub name: Vec<u8>,
+    pub obj: Orphaned,
+    /// Its [`EmitterSub::buffer_joined`].
+    pub buffer_joined: u32,
+    /// In the scene's release list: the emitter for [`Orphaned::Held`] (always), the buffer for [`Orphaned::Dead`]
+    /// (`ParticleBufferClass::On_Frame_Update` registers a complete buffer).
+    pub in_release_list: bool,
+    /// What it drew at the last update.
+    pub draw: Option<super::part_buf::ParticleDraw>,
+    /// Why it stopped: an input upstream is undefined on.
+    pub failed: Option<String>,
+}
+
+impl OrphanBuffer {
+    /// The buffer.
+    pub fn buffer(&self) -> &super::part_buf::ParticleBuffer {
+        match &self.obj {
+            Orphaned::Held(e) => &e.buffer,
+            Orphaned::Dead(b) => b,
+        }
+    }
+
+    /// `ParticleBufferClass::On_Frame_Update()`: with its (stopped) emitter, `Emitter->Emit()`, which emits nothing and
+    /// takes the transform as the previous one; then whether it is complete (`IsEmitterDead` and no particles), in
+    /// which case it registers for release. Returns whether this added it to the release list.
+    fn on_frame_update(&mut self, clock: &super::part_buf::Ww3dClock, rng: &mut super::part_emt::ParticleRandom) -> bool {
+        let complete = match &mut self.obj {
+            Orphaned::Held(e) => match e.buffer_on_frame_update(clock, rng) {
+                Ok(c) => c,
+                Err(err) => {
+                    self.failed = Some(format!("{err}"));
+                    false
+                }
+            },
+            Orphaned::Dead(b) => b.on_frame_update(),
+        };
+        if complete && !self.in_release_list && !crate::logic::modules::plant(10136) {
+            self.in_release_list = true;
+            return true;
+        }
+        false
+    }
+
+    /// `ParticleBufferClass::Render`: its emitter's position and stopped state while it has one.
+    fn render(&mut self, clock: &super::part_buf::Ww3dClock) {
+        let r = match &mut self.obj {
+            Orphaned::Held(e) => {
+                let at = (e.get_position(), e.is_stopped());
+                e.buffer.render(clock, Some(at))
+            }
+            Orphaned::Dead(b) => b.render(clock, None),
+        };
+        match r {
+            Ok(d) => self.draw = Some(d),
+            Err(err) => {
+                self.failed = Some(format!("{err}"));
+                self.draw = None;
+            }
+        }
+    }
+
+    /// Whether it can never draw a particle again: no particles left and no emitter that could emit (a dead emitter's
+    /// buffer complete, or a held emitter's stopped one empty). **New** (not upstream): the client's test for dropping it
+    /// (see [`SceneKind::World`]: upstream keeps such a buffer in the world scene, drawing nothing, until the scene
+    /// goes).
+    pub fn is_drained(&self) -> bool {
+        match &self.obj {
+            Orphaned::Held(e) => e.is_stopped() && e.buffer.get_particle_count() == 0,
+            Orphaned::Dead(b) => b.is_complete(),
+        }
+    }
 }
 
 /// A particle emitter bound to a bone of a [`RenderModel`] (#49).
@@ -158,6 +284,14 @@ pub struct EmitterSub {
     pub draw: Option<super::part_buf::ParticleDraw>,
     /// Why it stopped: an input upstream is undefined on.
     pub failed: Option<String>,
+    /// (#65 batch c) Which emitter it is: its place among the HLOD's emitters when made (the order the scene's lists
+    /// put its buffer in; [`OrphanBuffer::id`] keeps it).
+    pub id: u32,
+    /// (#65 batch c) Registered for release and in the scene's release list.
+    pub in_release_list: bool,
+    /// (#65 batch c) The update ([`RenderModel::updates`]) in which its buffer joined the scene (its place in the
+    /// scene's update list: a later one is nearer the head).
+    pub buffer_joined: u32,
 }
 
 impl RenderModel {
@@ -180,12 +314,24 @@ impl RenderModel {
                     sub_objects: vec![SubObject { name: name.to_vec(), bone_index: 0, hidden, model, uv_offset: None }],
                     not_drawn: Vec::new(),
                     emitters: Vec::new(),
+                    orphans: Vec::new(),
+                    release_list: Vec::new(),
+                    updates: 0,
                 }))
             }
             Prototype::HLod(def) => {
                 let htree = am.get_htree(fs, &def.hierarchy_tree_name)?.cloned();
-                let mut out =
-                    RenderModel { name: name.to_vec(), is_hlod: true, htree, sub_objects: Vec::new(), not_drawn: Vec::new(), emitters: Vec::new() };
+                let mut out = RenderModel {
+                    name: name.to_vec(),
+                    is_hlod: true,
+                    htree,
+                    sub_objects: Vec::new(),
+                    not_drawn: Vec::new(),
+                    emitters: Vec::new(),
+                    orphans: Vec::new(),
+                    release_list: Vec::new(),
+                    updates: 0,
+                };
                 let mut subs = Vec::new();
                 if let Some(top) = def.lods.last() {
                     subs.extend(top.sub_objects.iter().cloned());
@@ -200,7 +346,18 @@ impl RenderModel {
                             out.sub_objects.push(SubObject { name: sub_name, bone_index: s.bone_index, hidden, model, uv_offset: None });
                         }
                         Some(Prototype::ParticleEmitter(def)) => {
-                            out.emitters.push(EmitterSub { name: sub_name, bone_index: s.bone_index, def, emitter: None, draw: None, failed: None });
+                            let id = out.emitters.len() as u32;
+                            out.emitters.push(EmitterSub {
+                                name: sub_name,
+                                bone_index: s.bone_index,
+                                def,
+                                emitter: None,
+                                draw: None,
+                                failed: None,
+                                id,
+                                in_release_list: false,
+                                buffer_joined: 0,
+                            });
                         }
                         Some(other) => {
                             let why = format!("a {} prototype, not a mesh", prototype_kind(&other));
@@ -298,13 +455,28 @@ impl RenderModel {
     /// One frame of the particle emitters at the clock (#49): each emitter
     /// takes its bone's transform under `world` (`HLodClass` updating its
     /// sub-objects' transforms; the particles live in the world, so the
-    /// object's own transform is part of it) and runs a frame
-    /// ([`super::part_emt::ParticleEmitter::frame`]). The first time, the
-    /// emitter is made, added to the scene and shown, which starts it
-    /// (`Notify_Added`, `Set_Hidden(false)`). An emitter upstream is
+    /// object's own transform is part of it) and runs a frame. The first
+    /// time, the emitter is made, added to the scene and shown, which starts
+    /// it (`Notify_Added`, `Set_Hidden(false)`). An emitter upstream is
     /// undefined on stops, with the reason in [`EmitterSub::failed`].
+    ///
+    /// ~~Each emitter runs its frame in turn ([`super::part_emt::ParticleEmitter::frame`]: its `On_Frame_Update`, its
+    /// buffer's, its buffer's `Render`).~~ **Corrected 2026-11-14 (#65, batch c):** the frame runs in the scene's order
+    /// (scene.cpp `SimpleSceneClass::Customized_Render`, W3DScene.cpp `RTS3DScene::Customized_Render`): visibility is
+    /// checked first, then every object of the update list has its `On_Frame_Update`, then the visible ones render. The
+    /// update list adds at its head (multilist.cpp `Internal_Add`) and an object added during the loop is not reached,
+    /// so the HLOD's emitters (added by `HLodClass::Notify_Added` in sub-object order) run last and in reverse, and the
+    /// buffers (each added by its emitter's first active `On_Frame_Update`, after the emitters) run first, from the frame
+    /// after: those added later first, those added in the same frame in sub-object order. A buffer added this frame is neither updated (no `Emit`) nor drawn
+    /// (its visible bit is `DEFAULT_BITS`'s, clear, and the visibility check has run): its draw is `None`. The
+    /// orphaned buffers ([`Self::orphans`]) run with the buffers, by id. A release request (`Scene->Register(this,
+    /// RELEASE)`) puts the emitter or orphan at the head of [`Self::release_list`] unless it is listed already; the
+    /// release is [`Self::post_render_processing`]'s. Every buffer in the scene is taken as visible (the client does not
+    /// cull).
     pub fn update_emitters(&mut self, world: &Matrix3D, clock: &super::part_buf::Ww3dClock, rng: &mut super::part_emt::ParticleRandom) {
         use super::part_emt::ParticleEmitter;
+        // the transforms; the emitters made and added the first time; which buffers are in the update list already
+        let mut updating = vec![false; self.emitters.len()];
         for i in 0..self.emitters.len() {
             if self.emitters[i].failed.is_some() {
                 continue;
@@ -328,14 +500,221 @@ impl RenderModel {
             }
             let em = e.emitter.as_mut().expect("made above");
             em.set_transform(tm);
-            match em.frame(clock, rng) {
-                Ok(d) => e.draw = d,
+            updating[i] = em.buffer_in_scene;
+        }
+        self.updates = self.updates.wrapping_add(1);
+        // the update list: first the buffers (the emitters' and the orphans'), each `On_Frame_Update`, in the list's
+        // order: those that joined later first, those that joined in the same update in sub-object order (their
+        // emitters ran in reverse, each putting its buffer at the head)
+        let mut buffers: Vec<(std::cmp::Reverse<u32>, u32, bool, usize)> = Vec::new();
+        for (i, e) in self.emitters.iter().enumerate() {
+            if updating[i] && e.failed.is_none() {
+                buffers.push((std::cmp::Reverse(e.buffer_joined), e.id, false, i));
+            }
+        }
+        for (k, o) in self.orphans.iter().enumerate() {
+            if o.failed.is_none() {
+                buffers.push((std::cmp::Reverse(o.buffer_joined), o.id, true, k));
+            }
+        }
+        buffers.sort();
+        if crate::logic::modules::plant(10137) {
+            buffers.reverse();
+        }
+        for &(_, id, orphan, k) in &buffers {
+            if orphan {
+                if self.orphans[k].on_frame_update(clock, rng) {
+                    Self::register_release(&mut self.release_list, id);
+                }
+            } else {
+                let e = &mut self.emitters[k];
+                let em = e.emitter.as_mut().expect("updating");
+                // (never complete while it has its emitter)
+                if let Err(err) = em.buffer_on_frame_update(clock, rng) {
+                    e.failed = Some(format!("{err}"));
+                    e.draw = None;
+                }
+            }
+        }
+        // then the emitters, last added first: each `On_Frame_Update` (the first puts its buffer in the scene)
+        let order: Vec<usize> = if crate::logic::modules::plant(10138) { (0..self.emitters.len()).collect() } else { (0..self.emitters.len()).rev().collect() };
+        for i in order {
+            let e = &mut self.emitters[i];
+            if e.failed.is_some() {
+                continue;
+            }
+            let em = e.emitter.as_mut().expect("made above");
+            let joined = em.buffer_in_scene;
+            let release = em.on_frame_update();
+            if !joined && em.buffer_in_scene {
+                e.buffer_joined = self.updates;
+            }
+            if release && (!e.in_release_list || crate::logic::modules::plant(10139)) {
+                e.in_release_list = true;
+                Self::register_release(&mut self.release_list, e.id);
+            }
+        }
+        // the render: the buffers that were in the scene before the visibility check
+        for (i, e) in self.emitters.iter_mut().enumerate() {
+            if e.failed.is_some() {
+                continue;
+            }
+            let em = e.emitter.as_mut().expect("made above");
+            if !(updating[i] || crate::logic::modules::plant(10140)) || !em.buffer_in_scene {
+                e.draw = None;
+                continue;
+            }
+            let at = (em.get_position(), em.is_stopped());
+            match em.buffer.render(clock, Some(at)) {
+                Ok(d) => e.draw = Some(d),
                 Err(err) => {
                     e.failed = Some(format!("{err}"));
                     e.draw = None;
                 }
             }
         }
+        for o in self.orphans.iter_mut() {
+            if o.failed.is_none() {
+                o.render(clock);
+            }
+        }
+    }
+
+    /// `SimpleSceneClass::Register(obj, RELEASE)`: `ReleaseList.Add(obj)`, at the head (the caller checks it is not
+    /// listed: `Add`'s once-only test).
+    fn register_release(list: &mut Vec<u32>, id: u32) {
+        if crate::logic::modules::plant(10145) {
+            list.push(id);
+        } else {
+            list.insert(0, id);
+        }
+    }
+
+    /// (#65 batch c) `HLodClass::Remove_Sub_Object(removeme)` for the emitter at `index` (`None`, upstream's 0, when
+    /// there is none): it leaves the sub-object list (`Lod[lod].Delete(model)` or `AdditionalModels.Delete(model)`: the
+    /// top LOD and the aggregates are both current here), loses its container, and, the HLOD being in the scene,
+    /// `Notify_Removed` (the emitter stops; its buffer stays in the scene). The HLOD's reference is released
+    /// (`Release_Ref`): the emitter is returned to the caller, who holds the other reference (the release list's) or
+    /// destroys it. `Update_Sub_Object_Bits` and `Update_Obj_Space_Bounding_Volumes` are not kept (see the module docs).
+    pub fn remove_sub_object(&mut self, index: usize) -> Option<EmitterSub> {
+        if index >= self.emitters.len() {
+            return None;
+        }
+        let mut e = self.emitters.remove(index);
+        if let Some(em) = e.emitter.as_mut() {
+            em.notify_removed();
+        }
+        Some(e)
+    }
+
+    /// (#65 batch c) An emitter destroyed (`~ParticleEmitterClass`): `Buffer->Emitter_Is_Dead()`; its buffer, if the scene
+    /// has it, stays as an orphan (in id order); otherwise it goes with the emitter.
+    fn destroy_emitter(&mut self, id: u32, name: Vec<u8>, joined: u32, em: super::part_emt::ParticleEmitter) {
+        if !em.buffer_in_scene && !crate::logic::modules::plant(10146) {
+            return;
+        }
+        let o = OrphanBuffer { id, name, obj: Orphaned::Dead(em.into_buffer()), buffer_joined: joined, in_release_list: false, draw: None, failed: None };
+        let at = self.orphans.partition_point(|x| x.id < id);
+        self.orphans.insert(at, o);
+    }
+
+    /// (#65 batch c) The scene's `Post_Render_Processing` for this model's objects. In a [`SceneKind::Simple`] scene,
+    /// `SimpleSceneClass::Post_Render_Processing`: first each listed object, head first, is unlinked (an emitter still
+    /// in the HLOD by [`Self::remove_sub_object`]; an object with no container by `Remove()`: a dead emitter's buffer
+    /// leaves the scene, a held emitter, already out of the scene, is untouched), then the list is released head first
+    /// (`Release_Head`): a released emitter is destroyed (its buffer orphaned, [`Orphaned::Dead`]), a removed buffer
+    /// goes. Returns the ids processed, in order. In the world ([`SceneKind::World`]) nothing: `RTS3DScene::Render`
+    /// never calls it, and the list keeps its entries.
+    pub fn post_render_processing(&mut self, scene: SceneKind) -> Vec<u32> {
+        if scene == SceneKind::World && !crate::logic::modules::plant(10142) {
+            return Vec::new();
+        }
+        let list = std::mem::take(&mut self.release_list);
+        // first pass: unlinked from the HLOD or the scene
+        let mut released: Vec<EmitterSub> = Vec::new();
+        let mut removed: Vec<u32> = Vec::new();
+        for &id in &list {
+            if let Some(i) = self.emitters.iter().position(|e| e.id == id) {
+                if let Some(e) = self.remove_sub_object(i) {
+                    released.push(e);
+                }
+            } else if let Some(o) = self.orphans.iter().find(|o| o.id == id) {
+                if matches!(o.obj, Orphaned::Dead(_)) {
+                    removed.push(id);
+                }
+            }
+        }
+        if !crate::logic::modules::plant(10143) {
+            self.orphans.retain(|o| !removed.contains(&o.id));
+        }
+        // second pass: the list's references released
+        for &id in &list {
+            if let Some(k) = released.iter().position(|e| e.id == id) {
+                let e = released.remove(k);
+                if let Some(em) = e.emitter {
+                    self.destroy_emitter(e.id, e.name, e.buffer_joined, em);
+                }
+            } else if let Some(k) = self.orphans.iter().position(|o| o.id == id && matches!(o.obj, Orphaned::Held(_))) {
+                let o = self.orphans.remove(k);
+                if let Orphaned::Held(em) = o.obj {
+                    self.destroy_emitter(o.id, o.name, o.buffer_joined, em);
+                }
+            } else if let Some(o) = self.orphans.iter_mut().find(|o| o.id == id) {
+                // a dead buffer the scene keeps (a planted run): delisted
+                o.in_release_list = false;
+            }
+        }
+        list
+    }
+
+    /// (#65 batch c) The model taken out of the scene and let go, as `W3DModelDraw::nukeCurrentRender` does
+    /// (`Remove_Render_Object(m_renderObject)`, then `REF_PTR_RELEASE`): `HLodClass::Notify_Removed` stops each current
+    /// sub-object (the emitters, `Notify_Removed`), then the HLOD's destruction (`Free`) clears each one's container and
+    /// releases it: an emitter in the scene's release list lives on, held by it ([`Orphaned::Held`]); any other is
+    /// destroyed and its buffer, if the scene has it, orphaned ([`Orphaned::Dead`]). What is left is a model with no
+    /// meshes, hierarchy or emitters: its orphaned buffers and release list, which go on drawing and being processed
+    /// through [`Self::update_emitters`] and [`Self::post_render_processing`].
+    pub fn remove_from_scene(self) -> RenderModel {
+        let mut rest = RenderModel {
+            name: self.name,
+            is_hlod: self.is_hlod,
+            htree: None,
+            sub_objects: Vec::new(),
+            not_drawn: Vec::new(),
+            emitters: Vec::new(),
+            orphans: self.orphans,
+            release_list: self.release_list,
+            updates: self.updates,
+        };
+        let mut emitters = self.emitters;
+        // HLodClass::Notify_Removed
+        for e in emitters.iter_mut() {
+            if let Some(em) = e.emitter.as_mut() {
+                if !crate::logic::modules::plant(10141) {
+                    em.notify_removed();
+                }
+            }
+        }
+        // HLodClass::Free
+        for e in emitters {
+            let (Some(em), None) = (e.emitter, &e.failed) else { continue };
+            if e.in_release_list && !crate::logic::modules::plant(10144) {
+                let o = OrphanBuffer {
+                    id: e.id,
+                    name: e.name,
+                    obj: Orphaned::Held(em),
+                    buffer_joined: e.buffer_joined,
+                    in_release_list: true,
+                    draw: None,
+                    failed: None,
+                };
+                let at = rest.orphans.partition_point(|x| x.id < o.id);
+                rest.orphans.insert(at, o);
+            } else {
+                rest.destroy_emitter(e.id, e.name, e.buffer_joined, em);
+            }
+        }
+        rest
     }
 
     /// `Get_Deformed_Vertices(dst_vert, dst_norm)` of skin `i` (vertices and
@@ -670,7 +1049,9 @@ mod tests {
     ///
     /// Predicted before the run: the HLOD keeps the emitter (not in
     /// `not_drawn`) on bone 1; the first update (sync 0) makes and starts
-    /// it and draws an empty point group (quads); 250 ms later two bursts
+    /// it and draws an empty point group (quads) (**Corrected 2026-11-14, #65
+    /// batch c:** draws nothing, `None`: see `update_emitters`; predicted so
+    /// in issue65c P5, held); 250 ms later two bursts
     /// of one (period 100 ms) are drawn, stamped 100 and 200, rising at 10
     /// units a second (+-1) from within 0.5 of (10, 0, 5): x within 10 +-
     /// 0.7, z between 5 and 7.5; their alpha (opacity 1 fading to 0 over
@@ -697,10 +1078,10 @@ mod tests {
         let mut rng = super::super::part_emt::ParticleRandom::default();
         use super::super::part_buf::{ParticleDraw, Ww3dClock};
         model.update_emitters(&world, &Ww3dClock::default(), &mut rng);
-        match &model.emitters[0].draw {
-            Some(ParticleDraw::Points(p)) => assert!(p.quads && p.points.is_empty()),
-            d => panic!("{d:?} {:?}", model.emitters[0].failed),
-        }
+        // ~~the first update draws an empty point group~~ Corrected 2026-11-14 (#65, batch c): the buffer joins the
+        // scene during the update loop, after the visibility check, so it is not drawn in its first frame
+        assert_eq!(model.emitters[0].draw, None, "{:?}", model.emitters[0].failed);
+        assert!(model.emitters[0].emitter.as_ref().unwrap().buffer_in_scene);
         model.update_emitters(&world, &Ww3dClock { sync_time: 250, frame_time: 250, frame_count: 1 }, &mut rng);
         match &model.emitters[0].draw {
             Some(ParticleDraw::Points(p)) => {
@@ -711,6 +1092,77 @@ mod tests {
                 }
             }
             d => panic!("{d:?}"),
+        }
+    }
+
+    /// (#65 batch c) Two emitters (`PUFF`, 10 a second, bursts of 1, 1 s lifetimes) in an HLOD; the first given one
+    /// particle to emit (so it completes in the 250 ms frame).
+    fn two_puffs() -> RenderModel {
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let mut f = htree_w3d(b"ROBOT", &[PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident }]);
+        f.extend(EmitterSpec::puff(b"PUFF").to_w3d());
+        f.extend(hlod_w3d(b"ROBOT", b"ROBOT", &[(b"PUFF", 0), (b"PUFF", 0)]));
+        let fs = fs_with(&[("Art/W3D/robot.w3d", f)]);
+        let mut am = AssetManager::new_game(W3dFileFactory::default());
+        RenderModel::create(&mut am, &fs, b"ROBOT").unwrap().unwrap()
+    }
+
+    /// (#65 batch c) *Predictions, written before the first run (issue65c):* in a simple scene, the capped emitter
+    /// completes in the 250 ms frame and registers for release in that same frame (buffers run before emitters); the
+    /// scene's post-render processing takes it out of the HLOD (the other stays) and leaves its buffer orphaned, dead,
+    /// drawing its one particle until it ages out (emitted at 100 ms, gone by 1,500 ms), then registering and being
+    /// removed at the next processing. In the world nothing is processed: the request stays listed once however many
+    /// frames repeat it; removing the HLOD leaves the listed emitter held (alive) and the other's buffer dead, both
+    /// drawing until drained.
+    #[test]
+    fn released_emitters_leave_their_buffers_drawing() {
+        use super::super::part_buf::Ww3dClock;
+        let c = |t: u32, dt: u32, n: u32| Ww3dClock { sync_time: t, frame_time: dt, frame_count: n };
+        let points = |d: &Option<super::super::part_buf::ParticleDraw>| match d {
+            Some(super::super::part_buf::ParticleDraw::Points(p)) => p.points.len(),
+            d => panic!("{d:?}"),
+        };
+        for scene in [SceneKind::Simple, SceneKind::World] {
+            let mut model = two_puffs();
+            assert_eq!(model.emitters.iter().map(|e| e.id).collect::<Vec<_>>(), vec![0, 1]);
+            let mut rng = super::super::part_emt::ParticleRandom::default();
+            model.update_emitters(&Matrix3D::IDENTITY, &c(0, 0, 0), &mut rng);
+            assert!(model.emitters.iter().all(|e| e.draw.is_none()));
+            model.emitters[0].emitter.as_mut().unwrap().particles_left = 1;
+            model.update_emitters(&Matrix3D::IDENTITY, &c(250, 250, 1), &mut rng);
+            assert_eq!((points(&model.emitters[0].draw), points(&model.emitters[1].draw)), (1, 2));
+            assert_eq!(model.release_list, vec![0]);
+            if scene == SceneKind::World {
+                assert_eq!(model.post_render_processing(scene), Vec::<u32>::new());
+                model.update_emitters(&Matrix3D::IDENTITY, &c(300, 50, 2), &mut rng);
+                assert_eq!((model.release_list.clone(), model.emitters.len()), (vec![0], 2), "listed once, never processed");
+                let mut rest = model.remove_from_scene();
+                assert!(rest.emitters.is_empty() && rest.sub_objects.is_empty());
+                assert!(matches!(rest.orphans[0].obj, Orphaned::Held(_)) && matches!(rest.orphans[1].obj, Orphaned::Dead(_)));
+                rest.update_emitters(&Matrix3D::IDENTITY, &c(500, 200, 3), &mut rng);
+                assert_eq!((points(&rest.orphans[0].draw), points(&rest.orphans[1].draw)), (1, 2));
+                rest.update_emitters(&Matrix3D::IDENTITY, &c(1500, 1000, 4), &mut rng);
+                assert!(rest.orphans.iter().all(|o| o.is_drained()), "{:?}", rest.orphans.iter().map(|o| o.buffer().get_particle_count()).collect::<Vec<_>>());
+                rest.update_emitters(&Matrix3D::IDENTITY, &c(1600, 100, 5), &mut rng);
+                assert_eq!(rest.release_list, vec![1, 0], "the dead buffer registers; the held emitter stays listed");
+                assert_eq!(rest.post_render_processing(scene), Vec::<u32>::new());
+                assert_eq!(rest.orphans.len(), 2, "the world keeps them");
+                continue;
+            }
+            assert_eq!(model.post_render_processing(scene), vec![0]);
+            assert_eq!(model.emitters.iter().map(|e| e.id).collect::<Vec<_>>(), vec![1]);
+            assert_eq!(model.orphans.len(), 1);
+            assert!(matches!(model.orphans[0].obj, Orphaned::Dead(_)) && !model.orphans[0].is_drained());
+            assert!(model.release_list.is_empty());
+            model.update_emitters(&Matrix3D::IDENTITY, &c(500, 250, 2), &mut rng);
+            assert_eq!(points(&model.orphans[0].draw), 1);
+            model.update_emitters(&Matrix3D::IDENTITY, &c(1500, 1000, 3), &mut rng);
+            assert_eq!(points(&model.orphans[0].draw), 0);
+            assert!(model.orphans[0].is_drained() && model.release_list.is_empty());
+            model.update_emitters(&Matrix3D::IDENTITY, &c(1600, 100, 4), &mut rng);
+            assert_eq!(model.release_list, vec![0]);
+            assert_eq!(model.post_render_processing(scene), vec![0]);
+            assert!(model.orphans.is_empty() && model.remove_sub_object(5).is_none());
         }
     }
 

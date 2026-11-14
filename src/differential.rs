@@ -3663,6 +3663,11 @@ extern "C" {
     // (differential/wrap_part_lod.cpp, which documents the words): part_buf.cpp and part_emt.cpp compiled verbatim.
     pub fn ref_part_lod_seq(input: *const c_uint, nin: c_int, out: *mut c_uint, cap: c_int) -> c_int;
 
+    // GitHub #65 (batch c): an HLOD's emitters in a scene over frames, their release and the buffers they leave
+    // (differential/wrap_hlod_release.cpp, which documents the words): hlod.cpp's Remove_Sub_Object, Notify_Added and
+    // Notify_Removed, scene.cpp's SimpleSceneClass list functions and Post_Render_Processing, compiled verbatim.
+    pub fn ref_hlod_release_seq(input: *const c_uint, nin: c_int, out: *mut c_uint, cap: c_int) -> c_int;
+
     // GitHub #171: W3DModelDraw's bone particle systems (differential/wrap_model_draw_particles.cpp, which documents the
     // words): recalcBonesForClientParticleSystems, updateBonesForClientParticleSystems, stopClientParticleSystems,
     // doStartOrStopParticleSys, setHidden, setFullyObscuredByShroud and the parts of setModelState and doDrawModule that

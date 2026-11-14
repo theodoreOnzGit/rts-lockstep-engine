@@ -999,7 +999,7 @@ mod tests {
         let h = 0.3f32;
         let mut root = build_matrix3d(&Quaternion::new(0.0, 0.0, crate::ww::wwmath::sin(h), crate::ww::wwmath::cos(h)));
         root.set_translation(&Vector3::new(3.0, -1.0, 2.0));
-        let model = |t: HTree| RenderModel { name: b"SKL".to_vec(), is_hlod: true, htree: Some(t), sub_objects: Vec::new(), not_drawn: Vec::new(), emitters: Vec::new() };
+        let model = |t: HTree| RenderModel { name: b"SKL".to_vec(), is_hlod: true, htree: Some(t), sub_objects: Vec::new(), not_drawn: Vec::new(), emitters: Vec::new(), orphans: Vec::new(), release_list: Vec::new(), updates: 0 };
         for (f, virtual_differs) in [(0.4f32, true), (1.6, true), (2.5, true), (2.6, true), (1.0, false)] {
             let mut drawn = model(two_pivots());
             drawn.update_render_obj(&root, Some((&anim, &NoPoses, f))).unwrap();
