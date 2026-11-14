@@ -1387,6 +1387,35 @@ mod differential {
             for (name, body) in files {
                 std::fs::write(animobj_gen.join(name), format!("{head}{body}\n")).expect("write an animobj cut");
             }
+            // GitHub #181 item 3: AnimatedSoundMgrClass (WW3D2/animatedsoundmgr.h, .cpp), SoundLibraryBridgeClass
+            // (soundlibrarybridge.h) and strtrim (WWLib/trim.cpp, which StringClass::Trim calls), for the render
+            // objects' embedded sounds (ops 53-58). Each anchor once; one edit, asserted once: Build_List_From_String's
+            // second loop reuses the `entry` its first loop declared (MSVC 6's for-scope), so the second loop declares it.
+            let asm_h = read_upstream(w3d.join("animatedsoundmgr.h"));
+            let asm_cpp = read_upstream(w3d.join("animatedsoundmgr.cpp"));
+            let bridge_h = read_upstream(w3d.join("soundlibrarybridge.h"));
+            let trim_cpp = read_upstream(ww.join("WWLib/trim.cpp"));
+            let mut asm_body = cut(
+                &asm_cpp,
+                "animatedsoundmgr.cpp",
+                "HashTemplateClass<StringClass, AnimatedSoundMgrClass::ANIM_SOUND_LIST *>\tAnimatedSoundMgrClass::AnimationNameHash;",
+                "void AnimatedSoundMgrClass::Set_Sound_Library(SoundLibraryBridgeClass* library)\n{\n\tSoundLibrary = library;\n}",
+                true,
+            );
+            let scope_from = "\t\t\tfor (entry = buffer;";
+            assert_eq!(asm_body.matches(scope_from).count(), 1, "animatedsoundmgr.cpp: the for-scope edit must apply once");
+            asm_body = asm_body.replace(scope_from, "\t\t\tfor (const char *entry = buffer;");
+            let asm_files = [
+                // the class (animatedsoundmgr.h:64-128), without the header's forward declarations
+                ("asm_class.inc", cut(&asm_h, "animatedsoundmgr.h", "class AnimatedSoundMgrClass\n{", "#endif //__ANIMATEDSOUNDMGR_H", false)),
+                // the statics, Get_INI, Build_List_From_String, Is_In_Param_List and every member (animatedsoundmgr.cpp:58-565)
+                ("asm_body.inc", asm_body),
+                ("asm_bridge.inc", cut(&bridge_h, "soundlibrarybridge.h", "class SoundLibraryBridgeClass {", "#endif //SOUNDLIBRARYBRIDGE_H", false)),
+                ("asm_strtrim.inc", cut(&trim_cpp, "trim.cpp", "char* strtrim(char* buffer)", "wchar_t* wcstrim(wchar_t* buffer)", false)),
+            ];
+            for (name, body) in asm_files {
+                std::fs::write(animobj_gen.join(name), format!("{head}{body}\n")).expect("write an animated-sound cut");
+            }
         }
         let mut evb = cc::Build::new();
         w3d_build(&mut evb, true);

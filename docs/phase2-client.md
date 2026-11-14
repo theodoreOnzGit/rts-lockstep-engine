@@ -127,6 +127,41 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#181 item 3, #163 item 2 (2026-11-14): the embedded animation sounds (`AnimatedSoundMgrClass`), and the union's reads
+(#181 item 5).**
+- **Upstream:** WW3D2/animatedsoundmgr.cpp/.h, soundlibrarybridge.h, animobj.cpp's three `Set_Animation`s
+  (`Get_Embedded_Sound_Name`, `Set_Embedded_Sound_Bone_Index` on the shared `HAnimClass`) and `Update_Sub_Object_Transforms`
+  (804-847: `Trigger_Sound` after each mode's update, its answer the new previous frame), hanim.h, ww3d.cpp:312, WWLib's
+  trim.cpp, hashtemplate.h, wwstring.h. `WW3D::Init` calls `Initialize()`, which reads `w3danimsound.ini`; **no Zero Hour
+  code calls `Set_Sound_Library`** (grep of GeneralsMD/Code: its definition only), so `Trigger_Sound` returns `old_frame`
+  at its first line and **the observable effect in Zero Hour is nil**: no sound plays, `PrevFrame` is written back
+  unchanged, and only `HTree->Get_Transform(bone)` is evaluated. Whether the archives hold `w3danimsound.ini` is not
+  checked (no game files here). No random value is drawn on any of these paths.
+- **Port:** `formats::w3d::animatedsoundmgr` (new): `initialize`, `shutdown`, `get_embedded_sound_name`,
+  `find_sound_list`, `trigger_sound`, `set_sound_library`, `build_list_from_string`, `is_in_param_list`, `strtrim`, `atoi`;
+  process-wide statics as upstream's; a recording `SoundLibraryBridge` (no Zero Hour code implements one). `AnimData`
+  carries `EmbeddedSoundBoneIndex`. `RenderObj` calls the manager where upstream does
+  (`set_embedded_sound_bone`, `trigger_embedded_sounds`). The frame crossing is translated exactly: `old < frame && new >=
+  frame`, no wrap and no direction (a loop back or a backwards animation passes nothing).
+- **#181 item 5:** `RenderObj::last_frame` became `mode_union` (`ModeUnion`: the union's bytes as the object last left a
+  mode, with the pointer width: 4 shipped, 8 in the harness). Two port defects fixed with it: a blend's `PrevFrame0/1`
+  (was the previous blend's frames or 0; upstream reads the union, e.g. the single's `PrevFrame` and `AnimMode`'s bits),
+  and a single after a blend (was the frame before the blend; upstream 0, `Motion1` nulled by `Release()`).
+- **Differential:** build.rs cuts animatedsoundmgr.h's class, the whole of animatedsoundmgr.cpp after its includes,
+  soundlibrarybridge.h's class and trim.cpp's `strtrim`, each anchor asserted once, with one edit asserted once (the
+  MSVC for-scope `entry` of `Build_List_From_String`). `wrap_w3d_eval.cpp` compiles them on an `INIClass` stand-in and
+  a recorder; ops 53-58. Test `embedded_sounds_match_upstream` (generator `sound_script`).
+- **Predicted** (`issue181i3_predictions.md`): mismatches at first, 1-3 rounds of fixes. **Result:** 0 mismatches from
+  the first run (a miss). 20,000 files, 557,858 of 738,455 ops compared, 17,333 sound calls (7,188 stop, 3,101 2D, 7,044
+  3D), **0 mismatches, max ULP 0**. The rest of `differential_w3d` unchanged (39 tests, 0 mismatches);
+  `differential_model_draw_anim` 20,000, 0; lib 1,241 passed; client 102 passed; gate (a) PASS, last CRC `0bf44067`.
+- **Plants** 10056-10075: 20 of 20 caught (counts in the test's doc comment); 10065 crashes the C++ past 150 cases (12 of
+  150), 10063 is caught by the lib tests.
+- **Not done (gaps):** `INIClass` is not translated (`initialize` takes parsed sections) and nothing in the client loads
+  the table; the bone index lives on `AnimData`, so separately made handles do not share it; a non-NULL pointer read as a
+  float is taken as 0.0; the 32-bit union layout is lib-tested only; duplicate section names, `atoi` overflow and a bridge
+  to the client's audio are not done.
+
 **#18 (2026-11-14, GitHub #18, #181 item 6): `Animatable3DObjClass` in `MULTIPLE_ANIM` against upstream; the combo
 kept as the caller's pointer.**
 - **Found first:** `HTreeClass::Combo_Update` and hanim.cpp's combo classes were already translated and compared in
@@ -163,7 +198,8 @@ kept as the caller's pointer.**
   10044 (frozen entries) 10 of 100; 10045 (keeps the blend) 3 of 40; and 9812 (base pose for the combo), now
   reachable, 4 of 15. **11 of 11 caught.**
 - **Not done (gaps):** a `NULL` combo, which the port keeps as `BASE_POSE` where upstream stays in `MULTIPLE_ANIM`
-  (undefined at the next update), is not compared; the embedded sounds (#163 item 2); no game code makes a combo
+  (undefined at the next update), is not compared; the embedded sounds (#163 item 2) ~~;~~ **Corrected 2026-11-14 (#181
+  item 3):** (translated and compared since, see #181 item 3 above); no game code makes a combo
   (#163 item 1; `RenderModel::update_combo` is still unused, and the logic's art bones are untouched).
 
 **#179 items 4 and 5 (2026-11-14, GitHub #179, #182 item 4): the attach-offset cache's first filler (measured, not

@@ -28,6 +28,7 @@
 //! `Err` an input on which upstream is undefined.
 
 pub mod agg_def;
+pub mod animatedsoundmgr;
 pub mod assetmgr;
 pub mod boxrobj;
 pub mod collect;

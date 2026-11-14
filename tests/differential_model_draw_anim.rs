@@ -1003,7 +1003,7 @@ static ANIMATED_DRAWS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU
 fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
     STEP_ENDS.with(|e| e.borrow_mut().clear());
     let (tree, anims) = rust_load(file);
-    let mut assets = Assets { tree, anims: anims.into_iter().map(|a| Arc::new(AnimData { motion: Arc::new(a), poses: Vec::new() })).collect(), subs: Vec::new() };
+    let mut assets = Assets { tree, anims: anims.into_iter().map(|a| Arc::new(AnimData { motion: Arc::new(a), poses: Vec::new(), embedded_sound_bone_index: Default::default() })).collect(), subs: Vec::new() };
     let mut k = 0;
     let mut next = || {
         k += 1;

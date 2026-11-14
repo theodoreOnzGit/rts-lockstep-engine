@@ -3857,6 +3857,8 @@ struct EvalWorld {
     /// it was made: upstream's union overlaps it), and `WW3D::Get_Sync_Time()` (op 41)
     robjs: Vec<(md::RenderObj, bool)>,
     now: u32,
+    /// (#181 item 3) whether op 55 has run: every op then ends with the sounds it recorded
+    sound_log: bool,
     /// (#179) the animations as the render objects share them (one object each, as upstream's `HAnimClass`: their
     /// channels' caches carry over from one render object's evaluation to another's), made on first use
     anim_datas: Vec<std::sync::Arc<md::AnimData>>,
@@ -3874,7 +3876,7 @@ impl PoseLookup for EvalWorld {
 /// with `mode`'s `Float_To_Long` (#19).
 fn rust_eval_load(data: &[u8], mode: FloatToLongMode) -> W3dResult<(Log, EvalWorld)> {
     let mut log = vec![b'L'];
-    let mut w = EvalWorld { trees: Vec::new(), anims: Vec::new(), combos: Vec::new(), maps: Vec::new(), datas: Vec::new(), robjs: Vec::new(), now: 0, anim_datas: Vec::new() };
+    let mut w = EvalWorld { trees: Vec::new(), anims: Vec::new(), combos: Vec::new(), maps: Vec::new(), datas: Vec::new(), robjs: Vec::new(), now: 0, anim_datas: Vec::new(), sound_log: false };
     let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
     while c.open_chunk()? {
         let trees = &w.trees;
@@ -4046,6 +4048,8 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
         }
         12..=31 => rust_combo_op(w, r, log, op)?,
         40..=49 | 51 | 52 => rust_robj_op(w, r, log, op)?,
+        // (#181 item 3) the embedded sounds
+        53..=58 => rust_sound_op(w, r, log, op)?,
         // (#180) the client's drawn pose: `RenderModel::update_render_obj` on a copy of the tree, under the identity
         // (the render object's `Transform`); the loaded tree is not changed
         50 => {
@@ -4064,6 +4068,113 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
             log_eval_tree(log, m.htree.as_ref().expect("made with one"))?;
         }
         _ => unreachable!(),
+    }
+    // (#181 item 3) once op 55 has run, every op ends with the sounds recorded during it (the wrapper's)
+    let calls = asm::take_recorded_calls();
+    for c in &calls {
+        let k = match c {
+            asm::SoundLibraryCall::Stop { .. } => 0,
+            asm::SoundLibraryCall::Play2D { .. } => 1,
+            asm::SoundLibraryCall::Play3D { .. } => 2,
+        };
+        SOUND_CALLS[k].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    if w.sound_log {
+        p32(log, calls.len() as u32);
+        for c in &calls {
+            let (kind, name, tm) = match c {
+                asm::SoundLibraryCall::Stop { name } => (1u8, name, None),
+                asm::SoundLibraryCall::Play2D { name } => (2, name, None),
+                asm::SoundLibraryCall::Play3D { name, tm } => (3, name, Some(tm)),
+            };
+            log.push(kind);
+            p32(log, name.len() as u32);
+            log.extend_from_slice(name);
+            if let Some(tm) = tm {
+                log_m(log, tm);
+            }
+        }
+    }
+    Ok(())
+}
+
+use rts_lockstep_engine::formats::w3d::animatedsoundmgr as asm;
+
+/// (#181 item 3) The recorded calls the Rust made (stop, 2D, 3D), for the test's report.
+static SOUND_CALLS: [std::sync::atomic::AtomicU64; 3] =
+    [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)];
+
+/// (#181 item 3) A script string (the wrapper's `rd_string`): its length, then a word per byte.
+fn rd_string(r: &mut ScriptReader<'_>) -> Vec<u8> {
+    let n = r.u();
+    (0..n).map(|_| r.u() as u8).collect()
+}
+
+fn w_string(s: &mut Vec<u8>, v: &[u8]) {
+    w32(s, v.len() as u32);
+    for &b in v {
+        w32(s, u32::from(b));
+    }
+}
+
+/// (#181 item 3) The embedded sounds' ops (53-58, see `ref_w3d_eval`) on `formats::w3d::animatedsoundmgr` and the
+/// port's `RenderObj`.
+fn rust_sound_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: u8) -> W3dResult<()> {
+    match op {
+        53 => {
+            let avail = r.u() != 0;
+            let nsec = r.u();
+            let mut ini = Vec::new();
+            for _ in 0..nsec {
+                let section = rd_string(r);
+                let ne = r.u();
+                let entries = (0..ne).map(|_| (rd_string(r), rd_string(r))).collect();
+                ini.push(asm::IniSection { section, entries });
+            }
+            asm::initialize(avail.then_some(&ini[..]))?;
+        }
+        54 => {
+            robj_anim_datas(w);
+            for (a, d) in w.anims.iter().zip(&w.anim_datas) {
+                match asm::get_embedded_sound_name(Some(a.0.name())) {
+                    None => log.push(0),
+                    Some(n) => {
+                        log.push(1);
+                        p32(log, n.len() as u32);
+                        log.extend_from_slice(&n);
+                    }
+                }
+                p32(log, d.get_embedded_sound_bone_index() as u32);
+            }
+        }
+        55 => {
+            asm::set_sound_library((r.u() != 0).then_some(asm::SoundLibraryBridge::Recorder));
+            w.sound_log = true;
+        }
+        56 => asm::shutdown(),
+        57 => {
+            let a = r.u() as i32;
+            let (o, n) = (r.f(), r.f());
+            let m = r.m();
+            let name = (a >= 0).then(|| w.anims[a as usize].0.name().to_vec());
+            p32(log, asm::trigger_sound(name.as_deref(), o, n, &m).to_bits());
+        }
+        _ => {
+            let ro = &w.robjs[r.u() as usize].0;
+            let (mode, f) = if let Some(a) = &ro.anim {
+                (2u8, [a.frame, a.prev_frame, 0.0, 0.0])
+            } else if let Some(i) = &ro.mode_interp {
+                (3, [i.frame0, i.frame1, i.prev_frame0, i.prev_frame1])
+            } else if ro.mode_combo.is_some() {
+                (4, [0.0; 4])
+            } else {
+                (1, [0.0; 4])
+            };
+            log.push(mode);
+            for v in f {
+                p32(log, v.to_bits());
+            }
+        }
     }
     Ok(())
 }
@@ -4236,6 +4347,23 @@ fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
             // (#18)
             51 => 2,
             52 => 1,
+            // (#181 item 3)
+            53 => {
+                let mut r = ScriptReader { s: script, i: i + 1 };
+                r.u();
+                let nsec = r.u();
+                for _ in 0..nsec {
+                    rd_string(&mut r);
+                    let ne = r.u();
+                    for _ in 0..2 * ne {
+                        rd_string(&mut r);
+                    }
+                }
+                (r.i - i - 1) / 4
+            }
+            54 | 56 => 0,
+            55 | 58 => 1,
+            57 => 3 + 12,
             _ => unreachable!(),
         };
         v.push((i, i + 1 + 4 * words));
@@ -4272,7 +4400,7 @@ fn robj_anim_datas(w: &mut EvalWorld) {
     if w.anim_datas.is_empty() {
         let shared: Vec<std::sync::Arc<HAnim>> = w.anims.iter().map(|(x, _)| std::sync::Arc::new(x.clone())).collect();
         let poses: Vec<std::sync::Arc<HAnim>> = shared.iter().zip(&w.anims).filter(|(_, (_, k))| *k != 2).map(|(x, _)| x.clone()).collect();
-        w.anim_datas = shared.iter().map(|m| std::sync::Arc::new(md::AnimData { motion: m.clone(), poses: poses.clone() })).collect();
+        w.anim_datas = shared.iter().map(|m| std::sync::Arc::new(md::AnimData { motion: m.clone(), poses: poses.clone(), embedded_sound_bone_index: Default::default() })).collect();
     }
 }
 
@@ -4335,7 +4463,8 @@ fn rust_robj_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: 
             let mut tree = w.trees[t].clone();
             md::scale_render_obj_hierarchy(&mut tree, scale);
             let k = md::Skeleton { bones: md::Skeleton::bones_of(&tree), sub_objects: Vec::new(), scale_factor: tree.scale_factor };
-            w.robjs.push((md::RenderObj::new(b"R", true).with_skeleton(Some(k)), true));
+            // (#181 item 5) the union laid out for the harness's 8-byte pointers (a 64-bit build)
+            w.robjs.push((md::RenderObj::new(b"R", true).with_skeleton(Some(k)).with_union_pointer_bytes(8), true));
             let (ro, clean) = w.robjs.last().expect("pushed");
             log_robj(log, ro, *clean);
         }
@@ -5470,6 +5599,301 @@ fn animatable_combo_bones_match_upstream() {
     eval_cases(FloatToLongMode::PortableTruncate, 0x18_C0B0, n, "W3D render objects' combos (animobj.cpp MULTIPLE_ANIM)", animobj_combo_script);
 }
 
+/// (#181 item 3) A sound table for op 53: some of the file's animations (their names in mixed case) and other names,
+/// each section with a `BoneName` now and then (a pivot's name in any case, `root`, or one the hierarchy lacks) and 0 to
+/// 5 sounds `<frame>,<name>[,<more>]`: frames around the animation's (signs, spaces, trailing letters), names with
+/// white space for `strtrim`'s quirk, empty, or containing `STOP` or `2D` (which only a later parameter counts), and
+/// later parameters `2D`, `STOP`, `x2Dy`, `stop`, `2d`, empty ones. A wild script
+/// (odd cases) also gives a value of one parameter or none now and then (undefined upstream: the script stops there).
+fn sound_ini(g: &mut Gn, w: &EvalWorld, s: &mut Vec<u8>) {
+    s.push(53);
+    w32(s, u32::from(g.below(12) != 0));
+    let mut names: Vec<Vec<u8>> = Vec::new();
+    for (a, _) in &w.anims {
+        if g.below(4) != 0 {
+            let n: Vec<u8> = a.name().iter().map(|&c| if g.coin() { c.to_ascii_lowercase() } else { c }).collect();
+            names.push(n);
+        }
+    }
+    for k in 0..g.below(3) {
+        names.push(format!("OTHER.X{k}").into_bytes());
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    names.retain(|n| seen.insert(n.to_ascii_uppercase()));
+    w32(s, names.len() as u32);
+    let pivot_names: Vec<Vec<u8>> = w.trees.iter().flat_map(|t| t.pivots.iter().map(|p| p.name.iter().take_while(|&&c| c != 0).copied().collect::<Vec<u8>>())).collect();
+    for n in names {
+        w_string(s, &n);
+        let nf = w.anims.iter().find(|(a, _)| a.name().eq_ignore_ascii_case(&n)).map_or(10, |(a, _)| a.get_num_frames());
+        let mut entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+        if g.below(3) == 0 {
+            let b = match g.below(6) {
+                0 => b"root".to_vec(),
+                1 => b"NOPE".to_vec(),
+                _ if !pivot_names.is_empty() => {
+                    let p = pivot_names[g.below(pivot_names.len() as u32) as usize].clone();
+                    if g.coin() { p.to_ascii_lowercase() } else { p }
+                }
+                _ => b"root".to_vec(),
+            };
+            entries.push((b"BoneName".to_vec(), b));
+        }
+        for k in 0..g.below(6) {
+            let frame = (g.below(nf.clamp(1, 60) as u32 + 5) as i32) - 2;
+            let fs = match g.below(10) {
+                0 => format!(" {frame}"),
+                1 => format!("+{frame}"),
+                2 => format!("{frame}x"),
+                3 => format!("{}", -(frame.abs())),
+                _ => format!("{frame}"),
+            };
+            const NAMES: [&str; 11] = ["step", "clank", " boom ", "  a ", "x", "  ab  ", " \tq", "LongerName_01", "", "STOPPER", "x2D"];
+            let name = NAMES[g.below(11) as usize];
+            let mut v = format!("{fs},{name}");
+            const MORE: [&str; 9] = ["2D", "STOP", "x2Dy", "stop", "", "3", "2d", " STOP ", "2D STOP"];
+            // an empty name ends the value with its comma (one parameter: undefined) unless a parameter follows
+            for _ in 0..g.below(4).max(u32::from(name.is_empty())) {
+                v.push(',');
+                v.push_str(MORE[g.below(9) as usize]);
+            }
+            if !g.clean && g.below(25) == 0 {
+                v = if g.coin() { format!("{frame}") } else { String::new() };
+            }
+            let name = if g.below(15) == 0 { b"bonename".to_vec() } else { format!("S{k}").into_bytes() };
+            if !entries.iter().any(|(e, _)| *e == name) {
+                entries.push((name, v.into_bytes()));
+            }
+        }
+        if g.below(4) == 0 && entries.len() > 1 {
+            entries.rotate_left(1);
+        }
+        w32(s, entries.len() as u32);
+        for (e, v) in entries {
+            w_string(s, &e);
+            w_string(s, &v);
+        }
+    }
+}
+
+/// (#181 item 3) A script of the embedded sounds (ops 53-58 with the render-object and combo ops): the manager shut
+/// down and the sound library set (the recorder, or 1 in 7 `NULL`: Zero Hour's), a table loaded ([`sound_ini`]), then
+/// in any order: render objects ([`animobj_script`]'s hierarchies), sync times moving on (mostly forward), single
+/// animations in every mode (frames from [`ev_frame`]), blends, combos of 1 to 3 entries (frames, previous frames,
+/// motions changed after `Set_Animation(combo)`), bone queries, `Render`, every bone, the modes' frames (op 58), the
+/// table's bone names (op 54), direct `Trigger_Sound` calls at any frames (NaN, negative, halves), and now and then a
+/// second load (ignored while lists are loaded), a shutdown or a library change. A render object whose blend was left by
+/// `Set_Animation(NULL, ...)` (no `Release()`: `ModeInterp.Motion1` still set) is not given a single animation again:
+/// its `PrevFrame` would be that pointer's bits (see `md::ModeUnion`).
+fn sound_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    let mut s = Vec::new();
+    let na = w.anims.len() as u32;
+    let ok: Vec<u32> = (0..w.trees.len() as u32).filter(|&t| robj_ok(&w.trees[t as usize])).collect();
+    if na == 0 || ok.is_empty() {
+        return s;
+    }
+    s.push(56);
+    s.push(55);
+    w32(&mut s, u32::from(g.below(7) != 0));
+    sound_ini(g, w, &mut s);
+    // per render object: its pivots, its mode (1 base, 2 single, 3 blend, 4 combo), and whether it may not have a
+    // single animation again
+    let mut robjs: Vec<(u32, u8, bool)> = Vec::new();
+    let mut ncombos = 0u32;
+    let mut combo_sizes: Vec<u32> = Vec::new();
+    let mut now = g.below(1000);
+    s.push(41);
+    w32(&mut s, now);
+    let frame_any = |g: &mut Gn| -> f32 {
+        match g.below(10) {
+            0 => f32::NAN,
+            1 => -(g.below(4) as f32),
+            2 => g.below(30) as f32 + 0.5,
+            3 => g.g.uniform(-2.0, 40.0),
+            _ => g.below(30) as f32,
+        }
+    };
+    for _ in 0..1 + g.below(60) {
+        if robjs.is_empty() || g.below(14) == 0 {
+            let t = ok[g.below(ok.len() as u32) as usize];
+            s.push(40);
+            w32(&mut s, t);
+            w32(&mut s, if g.below(3) == 0 { 2.0f32 } else { 1.0 }.to_bits());
+            robjs.push((w.trees[t as usize].num_pivots as u32, 1, false));
+            continue;
+        }
+        let ri = g.below(robjs.len() as u32);
+        let (npiv, mode, stuck) = robjs[ri as usize];
+        let anim = |g: &mut Gn| g.below(na);
+        match g.below(100) {
+            0..=14 => {
+                now = match g.below(8) {
+                    0 => now,
+                    1..=4 => now.wrapping_add(g.below(80)),
+                    5 | 6 => now.wrapping_add(33),
+                    _ => now.wrapping_add(100 + g.below(1000)),
+                };
+                s.push(41);
+                w32(&mut s, now);
+            }
+            15..=29 => {
+                let a = if g.below(12) == 0 { u32::MAX } else { anim(g) };
+                if a != u32::MAX && stuck {
+                    continue;
+                }
+                s.push(42);
+                w32(&mut s, ri);
+                w32(&mut s, a);
+                let nf = if a == u32::MAX { 10 } else { w.anims[a as usize].0.get_num_frames() };
+                w32(&mut s, ev_frame(g, nf).to_bits());
+                w32(&mut s, g.below(6));
+                let r = &mut robjs[ri as usize];
+                if a == u32::MAX {
+                    r.2 |= mode == 3;
+                    r.1 = 1;
+                } else {
+                    r.1 = 2;
+                }
+            }
+            30..=37 => {
+                s.push(44);
+                w32(&mut s, ri);
+                for _ in 0..2 {
+                    let a = anim(g);
+                    w32(&mut s, a);
+                    w32(&mut s, ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits());
+                }
+                w32(&mut s, if g.coin() { 0.5f32 } else { g.g.uniform(0.0, 1.0) }.to_bits());
+                robjs[ri as usize].1 = 3;
+            }
+            38..=45 => {
+                // a combo: made, or one of its entries changed
+                if ncombos == 0 || g.below(3) == 0 {
+                    let n = 1 + g.below(3);
+                    s.push(12);
+                    w32(&mut s, n);
+                    for i in 0..n {
+                        let a = anim(g);
+                        s.push(13);
+                        w32(&mut s, ncombos);
+                        w32(&mut s, i);
+                        w32(&mut s, a);
+                        s.push(14);
+                        w32(&mut s, ncombos);
+                        w32(&mut s, i);
+                        w32(&mut s, ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits());
+                    }
+                    combo_sizes.push(n);
+                    ncombos += 1;
+                } else {
+                    let c = g.below(ncombos);
+                    let i = g.below(combo_sizes[c as usize]);
+                    let op = [13u8, 14, 14, 15][g.below(4) as usize];
+                    s.push(op);
+                    w32(&mut s, c);
+                    w32(&mut s, i);
+                    if op == 13 {
+                        w32(&mut s, anim(g));
+                    } else {
+                        w32(&mut s, frame_any(g).to_bits());
+                    }
+                }
+            }
+            46..=50 => {
+                if ncombos == 0 {
+                    continue;
+                }
+                s.push(51);
+                w32(&mut s, ri);
+                w32(&mut s, g.below(ncombos));
+                robjs[ri as usize].1 = 4;
+            }
+            51..=67 => {
+                s.push(45);
+                w32(&mut s, ri);
+                w32(&mut s, g.below(npiv));
+            }
+            68..=77 => {
+                s.push(48);
+                w32(&mut s, ri);
+                w32(&mut s, u32::from(g.below(8) == 0));
+            }
+            78..=80 => {
+                s.push(52);
+                w32(&mut s, ri);
+            }
+            81..=86 => {
+                if ncombos > 0 && g.coin() {
+                    s.push(30);
+                    w32(&mut s, g.below(ncombos));
+                } else {
+                    s.push(58);
+                    w32(&mut s, ri);
+                }
+            }
+            87..=88 => s.push(54),
+            89..=94 => {
+                s.push(57);
+                w32(&mut s, if g.below(10) == 0 { u32::MAX } else { anim(g) });
+                w32(&mut s, frame_any(g).to_bits());
+                w32(&mut s, frame_any(g).to_bits());
+                ev_matrix(g, &mut s);
+            }
+            95 | 96 => sound_ini(g, w, &mut s),
+            97 => s.push(56),
+            98 => {
+                s.push(55);
+                w32(&mut s, u32::from(g.below(4) != 0));
+            }
+            _ => {
+                s.push(43);
+                w32(&mut s, ri);
+                robjs[ri as usize].1 = 1;
+            }
+        }
+    }
+    s
+}
+
+/// GitHub #181 item 3, #163 item 2: the embedded animation sounds. `AnimatedSoundMgrClass` (WW3D2/animatedsoundmgr.cpp
+/// and .h, `SoundLibraryBridgeClass` and WWLib's `strtrim`, cut verbatim into `wrap_w3d_eval.cpp`, on a recording sound
+/// library and an `INIClass` stand-in holding the script's sections) and `Animatable3DObjClass`'s calls of it (the
+/// three `Set_Animation`s' `Get_Embedded_Sound_Name`, `Update_Sub_Object_Transforms`' `Trigger_Sound` in `SINGLE_ANIM`,
+/// `DOUBLE_ANIM` and `MULTIPLE_ANIM`, all in the verbatim animobj.cpp cuts), against `formats::w3d::animatedsoundmgr`
+/// and the port's `RenderObj`, over section 13's random files with [`sound_script`]'s scripts. Compared as raw bits
+/// after every op: every recorded call (its kind, name and matrix), the render objects' state (`put_robj`), the modes'
+/// frames and previous frames (op 58: the union's reads, the 64-bit layout on both sides), each animation's bone name
+/// and `EmbeddedSoundBoneIndex` (op 54), `Trigger_Sound`'s answer (op 57) and the combos' previous frames (op 30's).
+///
+/// Predictions (`issue181i3_predictions.md`, before the first run): mismatches on the first full run, 1-3 rounds of fixes
+/// (strtrim, the union's first blend, the shared bone index). **Results (2026-11-14):** the first run (500 cases) and every
+/// run since, 0 mismatches (a prediction miss: none of the expected fixes was needed). Full run: 20,000 files, 20,000 run
+/// (9,367 tame scripts to the end), 557,858 of 738,455 ops compared (53: 11,715; 54: 11,164; 55: 24,124; 56: 7,678; 57:
+/// 22,687; 58: 22,793; 42: 55,999; 44: 30,346; 45: 62,513; 51: 36,892), 17,333 sound calls compared (7,188 stops, 3,101
+/// 2D, 7,044 3D), **0 mismatches, max ULP 0**. Scripts stopped where upstream is undefined: 5,996 (op 53: a value of one
+/// parameter 1,206, an empty value 1,282; the rest the evaluations' as [`animatable_bones_match_upstream`]'s, with
+/// `IndexOutOfRange` also from an animation's bone index set by a render object of a larger hierarchy).
+///
+/// Planted bugs (mismatching files of 20,000): 10056 `old <= frame` 2,179; 10057 `new > frame` 1,034; 10058 the answer
+/// never the fired frame 3,129; 10059 `STOP` played 3,269; 10060 the name counted as a parameter 1,037; 10061 `strtrim`
+/// without its `*source` test 1,009; 10062 empty entries dropped 893; 10064 re-initialised while loaded 1,768; 10066 the
+/// blend's second motion given no bone 1,260; 10067 a combo entry's previous frame not set 303; 10068 `PrevFrame` not set
+/// 1,591; 10069 the blend's previous frames from the previous blend (the old port) 1,112; 10070 the 4-byte union layout
+/// 1,518; 10071 the sound at bone 0 373; 10072 no `SoundLibrary == NULL` return 568; 10073 `atoi` ignores `-` 3,075;
+/// 10074 `Shutdown` keeps the hash 4,629; 10075 `2D`/`STOP` by equality 2,881; 10065 (`BoneName` without case) stops the
+/// Rust from predicting the C++'s undefined parse, which then crashes: 12 of 150. 10063 (no `strupr`) is not reachable
+/// here (the generated animations' names are upper case): caught by the lib tests of `animatedsoundmgr`. 20 of 20.
+#[test]
+fn embedded_sounds_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let n = std::env::var("W3D_SOUND_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
+    eval_cases(FloatToLongMode::PortableTruncate, 0x181_3A5D, n, "W3D embedded animation sounds (animatedsoundmgr.cpp)", sound_script);
+    let c: Vec<u64> = SOUND_CALLS.iter().map(|a| a.load(std::sync::atomic::Ordering::Relaxed)).collect();
+    println!("sound calls compared (stop, 2D, 3D): {c:?}");
+    asm::shutdown();
+    asm::set_sound_library(None);
+    asm::take_recorded_calls();
+}
+
 /// GitHub #180: the scripts of [`drawn_pose_matches_upstream`], only op 50 (the client's drawn pose): up to 40 poses,
 /// each of a hierarchy a render object can have ([`robj_ok`]), with an animation (a raw one two times in three when
 /// the file has one) at a frame that is fractional two times in three (between 0 and `NumFrames + 1`) and otherwise
@@ -5730,6 +6154,10 @@ fn eval_cases(mode: FloatToLongMode, seed: u64, cases: usize, label: &str, scrip
     let mut per_op = [0u64; 64];
     for case in 0..cases {
         g.clean = case % 2 == 0;
+        // (#181 item 3) the animated-sound manager as the wrapper leaves it after each script
+        asm::shutdown();
+        asm::set_sound_library(None);
+        asm::take_recorded_calls();
         let data = ev_file(&mut g);
         let (mut log, mut w) = match rust_eval_load(&data, mode) {
             Ok(x) => x,

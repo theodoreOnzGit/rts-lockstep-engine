@@ -255,10 +255,15 @@ impl RenderModel {
     /// `Combo_Update(Transform, ModeCombo.AnimCombo)`, after
     /// `HLodClass::Set_Animation(HAnimComboClass *)`; #162): the combo's
     /// pose under `root`. Nothing without a hierarchy. `motion` resolves a
-    /// combo entry's animation handle. The embedded-sound triggering that
+    /// combo entry's animation handle. ~~The embedded-sound triggering that
     /// follows upstream is not translated (no animation of the game's
     /// combos has embedded sounds: no game code makes a combo, see
-    /// [`super::hanim_combo`]).
+    /// [`super::hanim_combo`]).~~ **Corrected 2026-11-14 (#181 item 3):**
+    /// the embedded-sound triggering that follows upstream is translated
+    /// on the render object (`client::w3d_model_draw::RenderObj::
+    /// update_sub_object_transforms`, through [`super::animatedsoundmgr`]),
+    /// not here: this pose is the drawn model's, and no game code makes a
+    /// combo (see [`super::hanim_combo`]).
     pub fn update_combo<'w, P: super::hmorphanim::PoseLookup, M: Clone>(
         &mut self,
         root: &Matrix3D,

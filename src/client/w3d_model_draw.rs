@@ -300,6 +300,7 @@ use crate::common::model_state::{ModelConditionFlags, ModelConditionNames, MODEL
 use crate::common::random_value::RandomValues;
 use crate::common::sparse_match_finder::{SparseMatchFinder, SparseMatchable};
 use crate::common::thing_template::{ClientModuleData, CLIENT_NESTED_BLOCKS};
+use crate::formats::w3d::animatedsoundmgr;
 use crate::formats::w3d::assetmgr::{AssetManager, HAnim, Prototype};
 use crate::formats::w3d::hanim_combo::{HAnimCombo, HAnimComboRef};
 use crate::formats::w3d::hmorphanim::PoseLookup;
@@ -2229,6 +2230,38 @@ pub struct AnimHandle {
 pub struct AnimData {
     pub motion: Arc<HAnim>,
     pub poses: Vec<Arc<HAnim>>,
+    /// (#181 item 3) `HAnimClass::EmbeddedSoundBoneIndex` (hanim.h:120-125): the bone the animation's embedded sounds
+    /// play at, which `Set_Animation` sets on the animation itself (so every render object sharing it sees the last
+    /// one set, as upstream's shared `HAnimClass` does); [`EMBEDDED_SOUND_BONE_INDEX_NOT_SET`] until then.
+    /// Upstream keeps it on the `HAnimClass` the asset manager hands out; here it is on the shared `AnimData`, so two
+    /// handles made separately for one animation (`W3dFiles::get_hanim` makes one per call) do not share it.
+    pub embedded_sound_bone_index: EmbeddedSoundBoneIndex,
+}
+
+/// (#181 item 3) `EMBEDDED_SOUND_BONE_INDEX_NOT_SET` (hanim.h:66).
+pub const EMBEDDED_SOUND_BONE_INDEX_NOT_SET: i32 = -1;
+
+/// (#181 item 3) A shared, settable `int`: the cell [`AnimData::embedded_sound_bone_index`] lives in. Compared by its
+/// value.
+#[derive(Clone, Debug)]
+pub struct EmbeddedSoundBoneIndex(Arc<std::sync::atomic::AtomicI32>);
+
+impl Default for EmbeddedSoundBoneIndex {
+    fn default() -> Self {
+        EmbeddedSoundBoneIndex(Arc::new(std::sync::atomic::AtomicI32::new(EMBEDDED_SOUND_BONE_INDEX_NOT_SET)))
+    }
+}
+
+impl PartialEq for EmbeddedSoundBoneIndex {
+    fn eq(&self, other: &Self) -> bool {
+        self.get() == other.get()
+    }
+}
+
+impl EmbeddedSoundBoneIndex {
+    fn get(&self) -> i32 {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 impl AnimData {
@@ -2248,7 +2281,22 @@ impl AnimData {
                 }
             }
         }
-        AnimData { motion, poses }
+        AnimData { motion, poses, embedded_sound_bone_index: EmbeddedSoundBoneIndex::default() }
+    }
+
+    /// (#181 item 3) `Has_Embedded_Sounds()` (hanim.h:120): a bone index was set (0 or more).
+    pub fn has_embedded_sounds(&self) -> bool {
+        self.embedded_sound_bone_index.get() >= 0
+    }
+
+    /// (#181 item 3) `Set_Embedded_Sound_Bone_Index(bone)` (hanim.h:121).
+    pub fn set_embedded_sound_bone_index(&self, bone: i32) {
+        self.embedded_sound_bone_index.0.store(bone, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// (#181 item 3) `Get_Embedded_Sound_Bone_Index()` (hanim.h:122).
+    pub fn get_embedded_sound_bone_index(&self) -> i32 {
+        self.embedded_sound_bone_index.get()
     }
 }
 
@@ -2598,8 +2646,10 @@ pub struct ModeAnim {
 
 /// (#179) `Animatable3DObjClass::ModeInterp` (in `DOUBLE_ANIM`, `Set_Animation(motion0, frame0, motion1, frame1,
 /// percentage)`): a blend of two animations. A motion may be `NULL` upstream (its `Blend_Update` then dereferences it:
-/// undefined). `PrevFrame0`/`PrevFrame1` share their bytes with `ModeAnim`'s (a union) upstream; here they are the
-/// previous blend's frames (0 at first): only the embedded sounds, not translated, read them.
+/// undefined). `PrevFrame0`/`PrevFrame1` share their bytes with `ModeAnim`'s (a union) upstream; ~~here they are the
+/// previous blend's frames (0 at first): only the embedded sounds, not translated, read them.~~ **Corrected 2026-11-14
+/// (#181 items 3, 5):** here they are what upstream's read from the union ([`ModeUnion`]), and the embedded sounds
+/// ([`RenderObj::trigger_embedded_sounds`]) read and write them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModeInterp {
     pub motion0: Option<AnimHandle>,
@@ -2626,6 +2676,113 @@ pub struct ModeCombo {
 impl PartialEq for ModeCombo {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.combo, &other.combo) && Arc::ptr_eq(&self.motions, &other.motions)
+    }
+}
+
+/// (#181 item 5) `Animatable3DObjClass`'s anonymous union of `ModeAnim`, `ModeInterp` and `ModeCombo` (animobj.h:
+/// 186-213), as its bytes: the port keeps each mode's fields apart ([`ModeAnim`], [`ModeInterp`], [`ModeCombo`]), and
+/// this holds what the union's bytes were when the render object last left a mode, so the two reads upstream makes of
+/// another mode's bytes give what upstream's give: `Set_Animation(motion, ...)`'s `ModeAnim.PrevFrame =
+/// ModeAnim.Frame` and the blend's `ModeInterp.PrevFrame0 = ModeInterp.Frame0; PrevFrame1 = Frame1;`. The layout
+/// depends on `sizeof(HAnimClass *)` ([`ModeUnion::pointer_bytes`]): 4 in the shipped Win32 game (the default), 8 in
+/// a 64-bit build (the differential harness). With 4: `Frame0` is `ModeAnim.PrevFrame` and `Frame1` `ModeAnim.
+/// AnimMode`'s bits; with 8: `ModeAnim.AnimMode`'s and `LastSyncTime`'s bits. `ModeAnim.Frame` is `ModeInterp.Motion1`
+/// with either, which every `Release()` of a blend sets to `NULL` (0.0). A pointer's bytes read as a `float` when it
+/// is not `NULL` (a blend left by `Set_Animation(NULL, ...)`, which does not `Release()`, then `Set_Animation(motion,
+/// ...)`) are an address: not known here, read as 0.0, which passes the same sound frames as any address below
+/// 0x3F800000 (1.0f).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModeUnion {
+    /// `sizeof(void *)`: 4 or 8.
+    pub pointer_bytes: u32,
+    /// The bytes, as 32-bit words.
+    words: [u32; 10],
+    /// Which words hold a pointer that is not `NULL` (a bit each).
+    nonnull: u16,
+}
+
+impl ModeUnion {
+    /// The constructor's initialisation (animobj.cpp:85-99): every field written 0 or `NULL` last but `ModeAnim`'s
+    /// `LastSyncTime`, `animDirection`, `frameRateMultiplier`, which `ModeInterp`'s later writes overlap in both
+    /// layouts: all zero.
+    fn new(pointer_bytes: u32) -> Self {
+        ModeUnion { pointer_bytes, words: [0; 10], nonnull: 0 }
+    }
+
+    fn write(&mut self, offset: u32, bits: u32) {
+        let w = (offset / 4) as usize;
+        self.words[w] = bits;
+        self.nonnull &= !(1 << w);
+    }
+
+    /// A pointer written at `offset` (`NULL` or not).
+    fn write_ptr(&mut self, offset: u32, nonnull: bool) {
+        for k in 0..self.pointer_bytes / 4 {
+            let w = (offset / 4 + k) as usize;
+            self.words[w] = 0;
+            if nonnull {
+                self.nonnull |= 1 << w;
+            } else {
+                self.nonnull &= !(1 << w);
+            }
+        }
+    }
+
+    /// The `float` at `offset` (a word of a pointer that is not `NULL`: 0.0, see [`ModeUnion`]).
+    fn read_f32(&self, offset: u32) -> f32 {
+        let w = (offset / 4) as usize;
+        if self.nonnull & (1 << w) != 0 {
+            0.0
+        } else {
+            f32::from_bits(self.words[w])
+        }
+    }
+
+    fn p(&self) -> u32 {
+        self.pointer_bytes
+    }
+
+    /// `ModeAnim.Frame`'s offset.
+    fn anim_frame(&self) -> u32 {
+        self.p()
+    }
+
+    /// `ModeInterp.Frame0`'s offset (`Frame1` 4 after).
+    fn interp_frame0(&self) -> u32 {
+        2 * self.p()
+    }
+
+    /// `ModeAnim`'s fields written (`Motion` not `NULL`).
+    fn store_anim(&mut self, a: &ModeAnim) {
+        let p = self.p();
+        self.write_ptr(0, true);
+        self.write(p, a.frame.to_bits());
+        self.write(p + 4, a.prev_frame.to_bits());
+        self.write(p + 8, anim_mode_index(a.anim_mode) as u32);
+        self.write(p + 12, a.last_sync_time);
+        self.write(p + 16, a.anim_direction.to_bits());
+        self.write(p + 20, a.frame_rate_multiplier.to_bits());
+    }
+
+    /// `ModeInterp`'s fields written.
+    fn store_interp(&mut self, i: &ModeInterp) {
+        let p = self.p();
+        self.write_ptr(0, i.motion0.is_some());
+        self.write_ptr(p, i.motion1.is_some());
+        self.write(2 * p, i.frame0.to_bits());
+        self.write(2 * p + 4, i.frame1.to_bits());
+        self.write(2 * p + 8, i.prev_frame0.to_bits());
+        self.write(2 * p + 12, i.prev_frame1.to_bits());
+        self.write(2 * p + 16, i.percentage.to_bits());
+    }
+
+    /// `Release()` (animobj.cpp:242-273) in `SINGLE_ANIM` (`single`) or `DOUBLE_ANIM`: the motions set to `NULL`.
+    fn release(&mut self, single: bool) {
+        let p = self.p();
+        self.write_ptr(0, false);
+        if !single {
+            self.write_ptr(p, false);
+        }
     }
 }
 
@@ -2663,8 +2820,10 @@ pub struct RenderObj {
     /// is valid, and a parent later in the array contributes its previous transform, as upstream's). Its capture state is
     /// [`RenderObj::bone_controls`]'s, put on before each update.
     live_tree: Option<HTree>,
-    /// `ModeAnim.Frame` kept across `Set_Animation` (its `PrevFrame`).
-    last_frame: f32,
+    /// ~~`ModeAnim.Frame` kept across `Set_Animation` (its `PrevFrame`).~~ **Corrected 2026-11-14 (#181 item 5):**
+    /// the union's bytes as the render object last left a mode ([`ModeUnion`]), which give `Set_Animation`'s
+    /// `PrevFrame` and the blend's `PrevFrame0`/`PrevFrame1`.
+    pub mode_union: ModeUnion,
     /// `Is_Hidden()`.
     pub hidden: bool,
     /// Its hierarchy and sub-objects as made ([`W3dAssetSource::skeleton`] in the base pose);
@@ -2713,7 +2872,7 @@ impl RenderObj {
             mode_combo: None,
             is_tree_valid: false,
             live_tree: None,
-            last_frame: 0.0,
+            mode_union: ModeUnion::new(4),
             hidden: false,
             skeleton: None,
             bone_controls: BTreeMap::new(),
@@ -2856,7 +3015,6 @@ impl RenderObj {
             // This function was somehow called twice per frame.
             a.prev_frame = oldprev;
         }
-        self.last_frame = a.frame;
         // Force the heirarchy to be recalculated
         if !plant(9806) {
             self.is_tree_valid = false;
@@ -2870,8 +3028,11 @@ impl RenderObj {
     /// Motion, Frame)`: one integer frame, [`HTree::anim_update_raw`]) for a raw animation (`CLASSID_HRAWANIM`) and the
     /// virtual one ([`HTree::anim_update`]) for the others ([`HTree::anim_update_animobj`], #180); `DOUBLE_ANIM` `Blend_Update(Transform, Motion0, Frame0,
     /// Motion1, Frame1, Percentage)`; `MULTIPLE_ANIM` `Combo_Update(Transform, AnimCombo)`; then the hierarchy is valid.
-    /// The embedded sounds that follow each update upstream (`AnimatedSoundMgrClass::Trigger_Sound`) are not translated:
-    /// a motion has embedded sounds only when the animated-sound manager named a bone for it, and the port has none.
+    /// ~~The embedded sounds that follow each update upstream (`AnimatedSoundMgrClass::Trigger_Sound`) are not translated:
+    /// a motion has embedded sounds only when the animated-sound manager named a bone for it, and the port has none.~~
+    /// **Corrected 2026-11-14 (#181 item 3):** the embedded sounds follow each update, as upstream's
+    /// ([`RenderObj::trigger_embedded_sounds`]); a motion has them only when the animated-sound manager named a bone for
+    /// it, and Zero Hour plays none (no sound library: [`animatedsoundmgr`]).
     /// A handle without data ([`AnimHandle::data`]): the base pose. Undefined upstream (a `NULL` motion of a blend or a
     /// `NULL` combo dereferenced, or an evaluation the [`HTree`] updates report): the error, with the hierarchy valid and
     /// its pivots as far as the update got.
@@ -2921,6 +3082,8 @@ impl RenderObj {
         } else {
             self.tree_update(&root, |t, r| t.base_update(r))
         };
+        // (#181 item 3) the embedded sounds, after the update
+        let result = result.and_then(|()| self.trigger_embedded_sounds());
         self.is_tree_valid = true;
         result
     }
@@ -3063,21 +3226,131 @@ impl RenderObj {
         }
     }
 
+    /// (#181 item 5) The current mode's fields into the union's bytes ([`ModeUnion`]): upstream they are those bytes, so
+    /// before a mode is left they are what another mode's fields read.
+    fn store_mode_union(&mut self) {
+        if let Some(a) = &self.anim {
+            self.mode_union.store_anim(a);
+        } else if let Some(i) = &self.mode_interp {
+            self.mode_union.store_interp(i);
+        } else if self.mode_combo.is_some() {
+            self.mode_union.write_ptr(0, true);
+        }
+    }
+
+    /// (#181 item 5) `Release()` (animobj.cpp:242-273) of the current mode, on the union's bytes: its motions `NULL`.
+    fn release_mode_union(&mut self) {
+        if self.anim.is_some() {
+            self.mode_union.release(true);
+        } else if self.mode_interp.is_some() {
+            self.mode_union.release(false);
+        }
+    }
+
+    /// (#181 item 3) What each `Set_Animation` does for a motion it is given (animobj.cpp:494-498, 542-556, 588-592):
+    /// `Get_Embedded_Sound_Name(motion)` ([`animatedsoundmgr::get_embedded_sound_name`]) and, when the manager has a
+    /// sound list for the motion, `motion->Set_Embedded_Sound_Bone_Index(Get_Bone_Index(sound_name))`
+    /// ([`RenderObj::get_bone_index`]: 0 for a bone the hierarchy does not have).
+    fn set_embedded_sound_bone(&self, d: &AnimData) {
+        if let Some(sound_name) = animatedsoundmgr::get_embedded_sound_name(Some(d.motion.name())) {
+            let bone_index = self.get_bone_index(&sound_name);
+            d.set_embedded_sound_bone_index(bone_index);
+        }
+    }
+
+    /// (#181 item 3) `HTree->Get_Transform(motion->Get_Embedded_Sound_Bone_Index())`: the live hierarchy's pivot (a
+    /// bone out of range is an upstream assertion: undefined); without a hierarchy the transform (#181 item 10).
+    fn embedded_sound_transform(&self, d: &AnimData) -> W3dResult<Matrix3D> {
+        let bone = if plant(10071) { 0 } else { d.get_embedded_sound_bone_index() };
+        match &self.live_tree {
+            Some(t) => t.get_transform(bone),
+            None => Ok(self.transform),
+        }
+    }
+
+    /// (#181 item 3, #163 item 2) The end of `Update_Sub_Object_Transforms` (animobj.cpp:804-847), after each mode's
+    /// update: "Play any sounds that are triggered by this frame of animation". For each motion of the mode that has
+    /// embedded sounds (`Has_Embedded_Sounds()`), `Trigger_Sound(motion, prev, frame, HTree->Get_Transform(bone))`
+    /// ([`animatedsoundmgr::trigger_sound`]) and its answer the new previous frame: `ModeAnim.PrevFrame`; `ModeInterp.
+    /// PrevFrame0`, then `PrevFrame1`; for each combo entry with a motion, `Get_Prev_Frame(index)` and `Get_Frame
+    /// (index)` and `Set_Prev_Frame(index, ...)` on the caller's combo. Zero Hour sets no sound library, so the answer
+    /// is the previous frame unchanged (module docs of [`animatedsoundmgr`]). A handle without data has no
+    /// `HAnimClass` to hold the bone: none (the port's).
+    fn trigger_embedded_sounds(&mut self) -> W3dResult<()> {
+        if let Some(a) = &self.anim {
+            let Some(d) = a.motion.data.clone() else { return Ok(()) };
+            if d.has_embedded_sounds() {
+                let tm = self.embedded_sound_transform(&d)?;
+                let a = self.anim.as_mut().expect("SINGLE_ANIM");
+                let prev = animatedsoundmgr::trigger_sound(Some(d.motion.name()), a.prev_frame, a.frame, &tm);
+                if !plant(10068) {
+                    a.prev_frame = prev;
+                }
+            }
+        } else if let Some(i) = &self.mode_interp {
+            let d0 = i.motion0.as_ref().and_then(|m| m.data.clone());
+            let d1 = i.motion1.as_ref().and_then(|m| m.data.clone());
+            let (Some(d0), Some(d1)) = (d0, d1) else { return Ok(()) };
+            if d0.has_embedded_sounds() {
+                let tm = self.embedded_sound_transform(&d0)?;
+                let i = self.mode_interp.as_mut().expect("DOUBLE_ANIM");
+                i.prev_frame0 = animatedsoundmgr::trigger_sound(Some(d0.motion.name()), i.prev_frame0, i.frame0, &tm);
+            }
+            if d1.has_embedded_sounds() {
+                let tm = self.embedded_sound_transform(&d1)?;
+                let i = self.mode_interp.as_mut().expect("DOUBLE_ANIM");
+                i.prev_frame1 = animatedsoundmgr::trigger_sound(Some(d1.motion.name()), i.prev_frame1, i.frame1, &tm);
+            }
+        } else if let Some(c) = self.mode_combo.clone() {
+            let combo = c.combo.read().expect("combo lock").clone();
+            let count = combo.get_num_anims();
+            for index in 0..count {
+                let motion = combo.peek_motion(index)?;
+                let Some(d) = motion.and_then(|k| c.motions.get(k)).cloned() else { continue };
+                if d.has_embedded_sounds() {
+                    let tm = self.embedded_sound_transform(&d)?;
+                    let prev_frame = animatedsoundmgr::trigger_sound(Some(d.motion.name()), combo.get_prev_frame(index)?, combo.get_frame(index)?, &tm);
+                    if !plant(10067) {
+                        combo.set_prev_frame(index, prev_frame)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// (#181 item 5) The union's layout for `pointer_bytes`-byte pointers (4, the shipped game's, unless set: the
+    /// differential harness is a 64-bit build). New.
+    pub fn with_union_pointer_bytes(mut self, pointer_bytes: u32) -> Self {
+        self.mode_union = ModeUnion::new(pointer_bytes);
+        self
+    }
+
     /// `Set_Animation(motion, frame, mode)` at sync time `now` (nothing on a
     /// render object that is not an HLOD). (#179) `Release()` of the previous mode, and the hierarchy no longer valid
-    /// (animobj.cpp:472-506); `None` is `BASE_POSE`.
+    /// (animobj.cpp:472-506); `None` is `BASE_POSE`. **(#181 items 3, 5)** `PrevFrame` is the union's `ModeAnim.Frame`
+    /// ([`ModeUnion`]: the previous single animation's frame, 0 after a blend's `Release()`); `None` sets `BASE_POSE`
+    /// before its `Release()`, which then releases nothing, so the union keeps the previous mode's bytes. Then the
+    /// animated-sound manager's bone for the motion, if it names one
+    /// ([`RenderObj::set_embedded_sound_bone`]).
     pub fn set_animation(&mut self, motion: Option<AnimHandle>, frame: f32, mode: AnimMode, now: u32) {
         if !self.is_hlod {
             return;
+        }
+        self.store_mode_union();
+        if motion.is_some() {
+            self.release_mode_union();
         }
         self.mode_interp = None;
         self.mode_combo = None;
         match motion {
             Some(motion) => {
-                let prev_frame = if plant(9972) { frame } else { self.anim.as_ref().map_or(self.last_frame, |a| a.frame) };
+                let prev_frame = if plant(9972) { frame } else { self.mode_union.read_f32(self.mode_union.anim_frame()) };
                 let anim_direction = if anim_mode_index(mode) < anim_mode_index(AnimMode::LoopBackwards) { 1.0 } else { -1.0 };
+                if let Some(d) = &motion.data {
+                    self.set_embedded_sound_bone(d);
+                }
                 self.anim = Some(ModeAnim { motion, frame, prev_frame, last_sync_time: now, frame_rate_multiplier: 1.0, anim_direction, anim_mode: mode });
-                self.last_frame = frame;
             }
             None => self.anim = None,
         }
@@ -3092,6 +3365,9 @@ impl RenderObj {
             return;
         }
         if !plant(9815) {
+            // (#181 item 5) `Release()`
+            self.store_mode_union();
+            self.release_mode_union();
             self.anim = None;
             self.mode_interp = None;
             self.mode_combo = None;
@@ -3100,14 +3376,36 @@ impl RenderObj {
     }
 
     /// (#179) `Set_Animation(motion0, frame0, motion1, frame1, percentage)` (animobj.cpp:519-560): `DOUBLE_ANIM`, a blend
-    /// of two animations (each may be `None`, upstream's `NULL`), the hierarchy no longer valid.
+    /// of two animations (each may be `None`, upstream's `NULL`), the hierarchy no longer valid. ~~`PrevFrame0`/`PrevFrame1`
+    /// the previous blend's frames (0 at first).~~ **Corrected 2026-11-14 (#181 item 5):** after `Release()` and the two
+    /// motions written, `PrevFrame0 = Frame0; PrevFrame1 = Frame1;` read the union's bytes ([`ModeUnion`]): the previous
+    /// blend's frames, or after a single animation (4-byte pointers) its `PrevFrame` and its `AnimMode`'s bits. Then the
+    /// animated-sound manager's bone for each motion, first then second (#181 item 3).
     pub fn set_animation_blend(&mut self, motion0: Option<AnimHandle>, frame0: f32, motion1: Option<AnimHandle>, frame1: f32, percentage: f32) {
         if !self.is_hlod {
             return;
         }
-        let (prev_frame0, prev_frame1) = self.mode_interp.as_ref().map_or((0.0, 0.0), |i| (i.frame0, i.frame1));
-        if let Some(a) = &self.anim {
-            self.last_frame = a.frame;
+        self.store_mode_union();
+        self.release_mode_union();
+        if plant(10070) {
+            self.mode_union.pointer_bytes = 4;
+        }
+        let p = self.mode_union.pointer_bytes;
+        self.mode_union.write_ptr(0, motion0.is_some());
+        self.mode_union.write_ptr(p, motion1.is_some());
+        let f0 = self.mode_union.interp_frame0();
+        let (prev_frame0, prev_frame1) = if plant(10069) {
+            self.mode_interp.as_ref().map_or((0.0, 0.0), |i| (i.frame0, i.frame1))
+        } else {
+            (self.mode_union.read_f32(f0), self.mode_union.read_f32(f0 + 4))
+        };
+        if let Some(d) = motion0.as_ref().and_then(|m| m.data.as_ref()) {
+            self.set_embedded_sound_bone(d);
+        }
+        if let Some(d) = motion1.as_ref().and_then(|m| m.data.as_ref()) {
+            if !plant(10066) {
+                self.set_embedded_sound_bone(d);
+            }
         }
         self.anim = None;
         self.mode_combo = None;
@@ -3127,8 +3425,22 @@ impl RenderObj {
         if !self.is_hlod {
             return;
         }
+        // (#181 item 5) `Release()`, then `ModeCombo.AnimCombo`, which overlaps only `ModeAnim.Motion`
+        self.store_mode_union();
+        self.release_mode_union();
+        self.mode_union.write_ptr(0, combo.is_some());
         if plant(10040) {
-            self.last_frame = 0.0;
+            let f = self.mode_union.anim_frame();
+            self.mode_union.write(f, 0);
+        }
+        // (#181 item 3) the animated-sound manager's bone for each entry's motion (`Peek_Motion(index)`)
+        if let Some(c) = &combo {
+            let entries = c.combo.read().expect("combo lock").clone();
+            for index in 0..entries.get_num_anims() {
+                if let Some(d) = entries.peek_motion(index).ok().flatten().and_then(|k| c.motions.get(k)) {
+                    self.set_embedded_sound_bone(d);
+                }
+            }
         }
         if !plant(10037) {
             self.anim = None;
@@ -6541,11 +6853,97 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
     /// frame 2 stays at x = 41 whatever the time; a blend of frames 0 and 2 at 0.25: x = 1 + 0.25 * 40 = 11; a combo of
     /// the animation alone at frame 2, weight 1: x = 41; under `Scale(2)` the combo's bone at 2 * 41 = 82, and
     /// `get_bone_transform_under` leaves the tree not valid and the transform restored.
+    /// (#181 items 3, 5) A render object's embedded sounds and its union's reads. The two-pivot skeleton and
+    /// `raw_anim` of `a_render_object_s_bones_follow_its_animation`, renamed `SNDTEST.WALK` (a name no other test's
+    /// animation has: the manager is process-wide), with the sounds `1,step` and `2,clank,2D` at the bone `B1`.
+    /// Predictions: the bone index 1 set by `Set_Animation`; at 50 ms (frame 1.5000001) `step` played in 3D at bone 1
+    /// (x = 11) and `PrevFrame` 1; with no library (Zero Hour) `PrevFrame` unchanged; a blend after `MANUAL` frame 2
+    /// reads `PrevFrame0` = the single's `PrevFrame` and `PrevFrame1` = `AnimMode`'s bits (4-byte pointers), or
+    /// `AnimMode`'s and `LastSyncTime`'s bits (8-byte); a single after a blend has `PrevFrame` 0; a combo entry from
+    /// previous frame 0 to frame 2 plays both and gets previous frame 2.
+    #[test]
+    fn a_render_object_triggers_its_embedded_sounds() {
+        use crate::formats::w3d::animatedsoundmgr::{self as asm, IniSection, SoundLibraryBridge, SoundLibraryCall};
+        use crate::formats::w3d::hanim_combo::HAnimCombo;
+        let _l = asm::tests::LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut raw = crate::formats::w3d::hanim::tests::raw_anim().with_frame_rounding(crate::ww::wwmath::FloatToLongMode::PortableTruncate);
+        raw.name = [0; 2 * W3D_NAME_LEN];
+        raw.name[..12].copy_from_slice(b"SNDTEST.WALK");
+        let data = Arc::new(AnimData { motion: Arc::new(HAnim::Raw(raw)), poses: Vec::new(), embedded_sound_bone_index: Default::default() });
+        let handle = AnimHandle { name: b"SNDTEST.WALK".to_vec(), num_frames: 3, frame_rate: 30.0, data: Some(data.clone()) };
+        let mut base = Matrix3D::IDENTITY;
+        base.translate(1.0, 0.0, 0.0);
+        let bone = |name: &[u8], parent, base| SkeletonBone { name: name.to_vec(), parent_index: parent, transform: Matrix3D::IDENTITY, base };
+        let k = Skeleton { bones: vec![bone(b"ROOT", 0, Matrix3D::IDENTITY), bone(b"B1", 0, base)], sub_objects: Vec::new(), scale_factor: 1.0 };
+        asm::shutdown();
+        let entries = vec![(b"BoneName".to_vec(), b"b1".to_vec()), (b"S1".to_vec(), b"1,step".to_vec()), (b"S2".to_vec(), b"2,clank,2D".to_vec())];
+        asm::initialize(Some(&[IniSection { section: b"sndtest.walk".to_vec(), entries }])).unwrap();
+        asm::set_sound_library(Some(SoundLibraryBridge::Recorder));
+        asm::take_recorded_calls();
+
+        let mut r = RenderObj::new(b"SKL", true).with_skeleton(Some(k.clone()));
+        assert!(!data.has_embedded_sounds());
+        r.set_animation(Some(handle.clone()), 0.0, AnimMode::Loop, 0);
+        assert_eq!(data.get_embedded_sound_bone_index(), 1);
+        r.get_bone_transform(1, 0);
+        assert!(asm::take_recorded_calls().is_empty());
+        r.set_transform(&Matrix3D::IDENTITY);
+        let b1 = r.get_bone_transform(1, 50);
+        assert_eq!(b1.get_translation().x, 11.0);
+        assert_eq!(asm::take_recorded_calls(), vec![SoundLibraryCall::Play3D { name: b"step".to_vec(), tm: b1 }]);
+        assert_eq!(r.anim.as_ref().unwrap().prev_frame, 1.0);
+
+        // Zero Hour: no library, the previous frame stays
+        asm::set_sound_library(None);
+        r.set_animation(Some(handle.clone()), 2.0, AnimMode::Manual, 100);
+        assert_eq!(r.anim.as_ref().unwrap().prev_frame, 1.500_000_1);
+        r.get_bone_transform(1, 200);
+        assert_eq!(r.anim.as_ref().unwrap().prev_frame, 1.500_000_1);
+        asm::set_sound_library(Some(SoundLibraryBridge::Recorder));
+
+        // the union: a blend after the single
+        let mut r8 = r.clone().with_union_pointer_bytes(8);
+        r8.set_animation(Some(handle.clone()), 2.0, AnimMode::Manual, 100);
+        r.set_animation_blend(Some(handle.clone()), 0.0, Some(handle.clone()), 2.0, 0.25);
+        let i = r.mode_interp.clone().unwrap();
+        assert_eq!((i.prev_frame0, i.prev_frame1.to_bits()), (1.500_000_1, anim_mode_index(AnimMode::Manual) as u32));
+        r8.set_animation_blend(Some(handle.clone()), 0.0, Some(handle.clone()), 2.0, 0.25);
+        let i = r8.mode_interp.clone().unwrap();
+        assert_eq!((i.prev_frame0.to_bits(), i.prev_frame1.to_bits()), (anim_mode_index(AnimMode::Manual) as u32, 100));
+        // the blend's update: motion 0 from its previous frame to 0 passes nothing; motion 1 from 100's bits (a denormal)
+        // to 2 passes both sounds
+        r.get_bone_transform(1, 300);
+        let calls = asm::take_recorded_calls();
+        assert_eq!(calls.len(), 2, "{calls:?}");
+        assert_eq!(r.mode_interp.as_ref().map(|i| (i.prev_frame0, i.prev_frame1)), Some((1.500_000_1, 2.0)));
+        // a single after a blend: its `Release()` left `Motion1` NULL, read as `ModeAnim.Frame` 0
+        r.set_animation(Some(handle.clone()), 2.0, AnimMode::Manual, 400);
+        assert_eq!(r.anim.as_ref().unwrap().prev_frame, 0.0);
+
+        // a combo entry: Get_/Set_Prev_Frame on the caller's combo
+        let combo = HAnimCombo::<usize>::with_anims(1).into_ref();
+        {
+            let c = combo.read().unwrap();
+            c.set_motion(0, Some(0)).unwrap();
+            c.set_frame(0, 2.0).unwrap();
+            c.set_prev_frame(0, 0.0).unwrap();
+        }
+        asm::take_recorded_calls();
+        r.set_animation_combo(Some(ModeCombo { combo: combo.clone(), motions: Arc::new(vec![data.clone()]) }));
+        r.get_bone_transform(1, 500);
+        let calls = asm::take_recorded_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1], SoundLibraryCall::Play2D { name: b"clank".to_vec() });
+        assert_eq!(combo.read().unwrap().get_prev_frame(0).unwrap(), 2.0);
+        asm::shutdown();
+        asm::set_sound_library(None);
+    }
+
     #[test]
     fn a_render_object_s_bones_follow_its_animation() {
         use crate::formats::w3d::hanim_combo::HAnimCombo;
         let raw = crate::formats::w3d::hanim::tests::raw_anim().with_frame_rounding(crate::ww::wwmath::FloatToLongMode::PortableTruncate);
-        let data = Arc::new(AnimData { motion: Arc::new(HAnim::Raw(raw)), poses: Vec::new() });
+        let data = Arc::new(AnimData { motion: Arc::new(HAnim::Raw(raw)), poses: Vec::new(), embedded_sound_bone_index: Default::default() });
         let handle = AnimHandle { name: b"SKL.WALK".to_vec(), num_frames: 3, frame_rate: 30.0, data: Some(data.clone()) };
         let mut base = Matrix3D::IDENTITY;
         base.translate(1.0, 0.0, 0.0);
