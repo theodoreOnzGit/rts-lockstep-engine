@@ -98,6 +98,11 @@ pub type PivotMapRef = Arc<RwLock<PivotMap>>;
 /// A shared combo entry (upstream's `HAnimComboDataClass *`).
 pub type ComboDataRef<M> = Arc<RwLock<HAnimComboData<M>>>;
 
+/// (#18) A shared combo (upstream's `HAnimComboClass *` as `Animatable3DObjClass::Set_Animation(HAnimComboClass *)`
+/// keeps it in `ModeCombo.AnimCombo`: the caller's pointer, no reference added, so the render object's next update sees
+/// whatever the caller has done to the combo since, its entry vector included).
+pub type HAnimComboRef<M> = Arc<RwLock<HAnimCombo<M>>>;
+
 /// `NamedPivotMapClass::WeightInfoStruct`: a pivot name and its weight.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WeightInfo {
@@ -352,6 +357,11 @@ impl<M: Clone> HAnimCombo<M> {
     /// shared).
     pub fn with_anims(num_animations: usize) -> Self {
         HAnimCombo { data: (0..num_animations).map(|_| HAnimComboData::new(false).into_ref()).collect() }
+    }
+
+    /// (#18) The combo shared ([`HAnimComboRef`]: `new HAnimComboClass`, its pointer handed to the render objects).
+    pub fn into_ref(self) -> HAnimComboRef<M> {
+        Arc::new(RwLock::new(self))
     }
 
     fn entry(&self, index: i32) -> W3dResult<&ComboDataRef<M>> {

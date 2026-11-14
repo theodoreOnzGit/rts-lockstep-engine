@@ -63,7 +63,10 @@ Not yet translated:
   load (`formats::w3d::hmorphanim`, step 2), and channels, raw, compressed and morph animations are sampled and
   hierarchies posed (`motchan`, `hanim`, `hmorphanim`, `htree`: `Base_Update`, `Anim_Update`, `Blend_Update`,
   `Simple_Evaluate_Pivot`, bone capture), compared bit for bit with upstream's compiled code
-  (`tests/differential_w3d.rs`, section 13). Still missing: `HTreeClass::Combo_Update` (`HAnimComboClass`);
+  (`tests/differential_w3d.rs`, section 13). ~~Still missing: `HTreeClass::Combo_Update` (`HAnimComboClass`);~~
+  **Corrected 2026-11-14 (#18):** `HTreeClass::Combo_Update` and hanim.cpp's combos were translated in #162
+  (`formats::w3d::hanim_combo`, `HTree::combo_update`), and the render object's `MULTIPLE_ANIM` is compared with
+  upstream's `Animatable3DObjClass` since #18;
 - ~~the local and composite file systems, and random-access archive reads (archives are read whole into memory today);~~
   **Corrected 2026-11-05 (#24):** translated in batch F1 (#9): `TheFileSystem` over a local device, archives mounted by
   their directory and members read by range; in the browser the art archives are read by range from the player's
@@ -123,6 +126,45 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Looks are compared** with screenshots of the original (needs Windows and the game; the owner's call).
 
 ## Development history
+
+**#18 (2026-11-14, GitHub #18, #181 item 6): `Animatable3DObjClass` in `MULTIPLE_ANIM` against upstream; the combo
+kept as the caller's pointer.**
+- **Found first:** `HTreeClass::Combo_Update` and hanim.cpp's combo classes were already translated and compared in
+  #162 (`formats::w3d::hanim_combo`, `HTree::combo_update`), and `RenderObj` already sent `MULTIPLE_ANIM` to
+  `Combo_Update` (#179). Two things were left. The render object held an `Arc` snapshot of the combo's entry vector,
+  and `Set_Animation(HAnimComboClass *)` was compared with no differential at all, so plant 9812 was unreachable.
+- **Upstream:** `Set_Animation(HAnimComboClass *)` (animobj.cpp:572-597) calls `Release()`, sets `MULTIPLE_ANIM`,
+  stores the pointer without adding a reference, and invalidates the hierarchy. `Update_Sub_Object_Transforms`
+  (780-860) runs the inline `Combo_Update(Transform, AnimCombo)` (animobj.h:313-319) and then the embedded sounds.
+  The caller's later changes reach the next update. They do not invalidate the hierarchy, so a query made before
+  something else invalidates it returns the cached pose. `ModeCombo.AnimCombo` overlaps only `ModeAnim.Motion` in the
+  union.
+- **Port changes:** `HAnimComboRef<M>` (`Arc<RwLock<HAnimCombo>>`) and `HAnimCombo::into_ref`. `ModeCombo::combo` is
+  now that reference, so the update reads the combo as it is at that moment: `Append_`/`Remove_Anim_Combo_Data` and
+  `Reset` after `Set_Animation` are seen. The lib test `a_render_object_s_bones_follow_its_animation` was extended to
+  check that a `Reset` is not seen while the hierarchy is valid, and is seen after `Set_Transform` (the base pose),
+  and that a shared entry appended later is seen too. Two stale doc claims were corrected: the `None` combo, and
+  "Combo_Update still missing" above.
+- **Differential:** `wrap_w3d_eval.cpp` has two new ops. Op 51 is `Set_Animation(combo)` with the script's own combo.
+  Op 52 is every bone's `Get_Bone_Transform`. Both run on #179's verbatim cuts, so build.rs needed no new cut. The
+  new test is `animatable_combo_bones_match_upstream` (generator `animobj_combo_script`). It builds combos of 1 to 4
+  raw, compressed or morph animations with frames, weights and plain or named per-pivot maps, changes them after
+  `Set_Animation`, and mixes in the other render-object ops.
+- **Predicted** (`issue18_predictions.md`): 0 mismatches, max ULP 0. **Result:** 20,000 files, 827,137 of 1,064,605
+  ops compared (op 51: 49,002; op 52: 32,751; op 45: 54,514), **0 mismatches, max ULP 0**. 7,465 scripts stopped
+  where upstream is undefined: entries out of range, NULL motions, `FloatToInt`, and 4 NaN poses. The rest of
+  `differential_w3d` is unchanged (38 tests; `combo_evaluation_matches_upstream` 502,984 ops,
+  `animatable_bones_match_upstream` 494,431 ops, 0 mismatches each). `differential_model_draw_anim`: 20,000, 0.
+- **Plants** (mismatching files): 10038 (the combo under the identity) 4,011 of 20,000; 10040 (`Set_Animation(combo)`
+  loses `ModeAnim`'s frame) 2,108; 10041 (entries in reverse order) 3,324; 10042 (a `MULTIPLE_ANIM` query always
+  re-evaluates) 1,248. The rest stop the Rust from predicting an undefined update, so the C++ later dereferences a
+  NULL motion and the process dies; they were run on a prefix: 10036 (no invalidation) 8 of 15; 10037 (keeps
+  `SINGLE_ANIM`) 9 of 40; 10039 (`Render` does not update) 5 of 40; 10043 (the old entry-vector snapshot) 2 of 100;
+  10044 (frozen entries) 10 of 100; 10045 (keeps the blend) 3 of 40; and 9812 (base pose for the combo), now
+  reachable, 4 of 15. **11 of 11 caught.**
+- **Not done (gaps):** a `NULL` combo, which the port keeps as `BASE_POSE` where upstream stays in `MULTIPLE_ANIM`
+  (undefined at the next update), is not compared; the embedded sounds (#163 item 2); no game code makes a combo
+  (#163 item 1; `RenderModel::update_combo` is still unused, and the logic's art bones are untouched).
 
 **#179 items 4 and 5 (2026-11-14, GitHub #179, #182 item 4): the attach-offset cache's first filler (measured, not
 changed), and a drawable with no object.**

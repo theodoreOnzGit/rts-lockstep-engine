@@ -301,7 +301,7 @@ use crate::common::random_value::RandomValues;
 use crate::common::sparse_match_finder::{SparseMatchFinder, SparseMatchable};
 use crate::common::thing_template::{ClientModuleData, CLIENT_NESTED_BLOCKS};
 use crate::formats::w3d::assetmgr::{AssetManager, HAnim, Prototype};
-use crate::formats::w3d::hanim_combo::HAnimCombo;
+use crate::formats::w3d::hanim_combo::{HAnimCombo, HAnimComboRef};
 use crate::formats::w3d::hmorphanim::PoseLookup;
 use crate::formats::w3d::htree::{HTree, Pivot};
 use crate::formats::w3d::W3dResult;
@@ -2614,9 +2614,12 @@ pub struct ModeInterp {
 /// (#179) `Animatable3DObjClass::ModeCombo` (in `MULTIPLE_ANIM`, `Set_Animation(HAnimComboClass *)`): the combination,
 /// which upstream keeps as the caller's pointer (no reference is added: the caller may change it later), with its
 /// entries' motions as indices into `motions`. Compared as upstream compares the pointers.
+/// ~~(`combo` was an `Arc<HAnimCombo>`: a snapshot of the entry vector, #181 item 6.)~~ **Corrected 2026-11-14 (#18):**
+/// `combo` is the caller's [`HAnimComboRef`], so the update reads the combo as it is then: its entries (each already
+/// shared) and its entry vector (`Append_`/`Remove_Anim_Combo_Data`, `Reset`), as upstream's pointer does.
 #[derive(Clone, Debug)]
 pub struct ModeCombo {
-    pub combo: Arc<HAnimCombo<usize>>,
+    pub combo: HAnimComboRef<usize>,
     pub motions: Arc<Vec<Arc<AnimData>>>,
 }
 
@@ -2903,10 +2906,17 @@ impl RenderObj {
             if plant(9812) {
                 self.tree_update(&root, |t, r| t.base_update(r))
             } else {
+                // (#18) the inline `Combo_Update(Transform, ModeCombo.AnimCombo)` (animobj.h:313-319): the combo as the
+                // caller holds it now
                 let motions = c.motions.clone();
                 let datas: Vec<&AnimData> = motions.iter().map(|d| &**d).collect();
                 let poses = PosesOf(&datas);
-                self.tree_update(&root, |t, r| t.combo_update(r, &c.combo, &poses, |&k: &usize| &*motions[k].motion))
+                let mut combo = c.combo.read().expect("combo lock").clone();
+                if plant(10041) {
+                    combo.data.reverse();
+                }
+                let croot = if plant(10038) { Matrix3D::IDENTITY } else { root };
+                self.tree_update(&croot, |t, r| t.combo_update(r, &combo, &poses, |&k: &usize| &*motions[k].motion))
             }
         } else {
             self.tree_update(&root, |t, r| t.base_update(r))
@@ -2935,7 +2945,7 @@ impl RenderObj {
             return Ok(self.transform);
         }
         // If our hierarchy isn't valid, we just need to evaluate our animation state.
-        if !self.is_tree_valid || plant(9801) {
+        if !self.is_tree_valid || plant(9801) || (plant(10042) && self.mode_combo.is_some()) {
             self.update_sub_object_transforms(now)?;
         }
         match &self.live_tree {
@@ -3105,16 +3115,43 @@ impl RenderObj {
         self.is_tree_valid = false;
     }
 
-    /// (#179) `Set_Animation(HAnimComboClass *anim_combo)` (animobj.cpp:572-597): `MULTIPLE_ANIM` (`None` is upstream's
-    /// `NULL` combo, which the next update dereferences: undefined), the hierarchy no longer valid.
+    /// (#179) `Set_Animation(HAnimComboClass *anim_combo)` (animobj.cpp:572-597): `MULTIPLE_ANIM` ~~(`None` is upstream's
+    /// `NULL` combo, which the next update dereferences: undefined)~~ **Corrected 2026-11-14 (#18):** (`None`, upstream's
+    /// `NULL` combo, which upstream keeps in `MULTIPLE_ANIM` and its next update dereferences (undefined), leaves the
+    /// port in `BASE_POSE`: the port has no `MULTIPLE_ANIM` without a combo), the hierarchy no longer valid.
+    /// (#18) `combo`'s [`ModeCombo::combo`] is the caller's pointer: later changes to the combo reach the next update,
+    /// but do not invalidate the hierarchy (a query before anything invalidates it answers the pose of the last update,
+    /// as upstream's). `ModeAnim`'s frame is kept for the next `Set_Animation(motion, ...)`'s `PrevFrame`
+    /// (`ModeCombo.AnimCombo` overlaps only `ModeAnim.Motion` in upstream's union).
     pub fn set_animation_combo(&mut self, combo: Option<ModeCombo>) {
         if !self.is_hlod {
             return;
         }
-        self.anim = None;
-        self.mode_interp = None;
-        self.mode_combo = combo;
-        self.is_tree_valid = false;
+        if plant(10040) {
+            self.last_frame = 0.0;
+        }
+        if !plant(10037) {
+            self.anim = None;
+        }
+        if !plant(10045) {
+            self.mode_interp = None;
+        }
+        self.mode_combo = combo.map(|mut c| {
+            if plant(10043) {
+                // the old stand-in: a snapshot of the entry vector
+                let v = c.combo.read().expect("combo lock").clone();
+                c.combo = v.into_ref();
+            } else if plant(10044) {
+                // a snapshot of the entries too
+                let v = c.combo.read().expect("combo lock").clone();
+                let data = v.data.iter().map(|d| d.read().expect("combo entry lock").clone().into_ref()).collect();
+                c.combo = HAnimCombo { data }.into_ref();
+            }
+            c
+        });
+        if !plant(10036) {
+            self.is_tree_valid = false;
+        }
     }
 
     /// ~~`Single_Anim_Progress()` at sync time `now` (what `Render` does before it draws, unless the mode is `MANUAL`).~~
@@ -3136,7 +3173,7 @@ impl RenderObj {
         if self.anim.as_ref().is_some_and(|a| a.anim_mode != AnimMode::Manual || plant(9969)) {
             self.single_anim_progress(now);
         }
-        if !self.is_tree_valid && !plant(9809) {
+        if !self.is_tree_valid && !plant(9809) && !(plant(10039) && self.mode_combo.is_some()) {
             self.update_sub_object_transforms(now)?;
         }
         Ok(())
@@ -6538,11 +6575,31 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         assert!(r.anim.is_none());
         assert_eq!(x(&mut r, 1000), 11.0);
 
-        let combo: HAnimCombo<usize> = HAnimCombo::with_anims(1);
-        combo.set_motion(0, Some(0)).unwrap();
-        combo.set_frame(0, 2.0).unwrap();
-        combo.set_weight(0, 1.0).unwrap();
-        r.set_animation_combo(Some(ModeCombo { combo: Arc::new(combo), motions: Arc::new(vec![data]) }));
+        let combo = HAnimCombo::<usize>::with_anims(1).into_ref();
+        {
+            let c = combo.read().unwrap();
+            c.set_motion(0, Some(0)).unwrap();
+            c.set_frame(0, 2.0).unwrap();
+            c.set_weight(0, 1.0).unwrap();
+        }
+        r.set_animation_combo(Some(ModeCombo { combo: combo.clone(), motions: Arc::new(vec![data]) }));
+        assert_eq!(x(&mut r, 1000), 41.0);
+        // (#18) the caller's pointer: a change to the combo is not seen while the hierarchy is valid (the cached pose),
+        // and is after something invalidates it; its entry vector too (`Reset`: no animations, the base pose x = 1;
+        // a shared entry appended at frame 2: x = 41 again)
+        combo.write().unwrap().reset();
+        assert_eq!(x(&mut r, 1000), 41.0);
+        r.set_transform(&Matrix3D::IDENTITY);
+        assert_eq!(x(&mut r, 1000), 1.0);
+        let d = crate::formats::w3d::hanim_combo::HAnimComboData::new(true).into_ref();
+        {
+            let mut e = d.write().unwrap();
+            e.set_hanim(Some(0));
+            e.set_frame(2.0);
+            e.set_weight(1.0);
+        }
+        combo.write().unwrap().append_anim_combo_data(d);
+        r.set_transform(&Matrix3D::IDENTITY);
         assert_eq!(x(&mut r, 1000), 41.0);
 
         let mut s2 = Matrix3D::IDENTITY;

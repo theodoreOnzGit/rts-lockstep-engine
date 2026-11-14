@@ -3838,7 +3838,7 @@ fn assetmgr_matches_upstream() {
 // ---------------------------------------------------------------------------
 
 use rts_lockstep_engine::formats::w3d::assetmgr::HAnim;
-use rts_lockstep_engine::formats::w3d::hanim_combo::{ComboDataRef, HAnimCombo, HAnimComboData, PivotMap, PivotMapRef};
+use rts_lockstep_engine::formats::w3d::hanim_combo::{ComboDataRef, HAnimCombo, HAnimComboData, HAnimComboRef, PivotMap, PivotMapRef};
 use rts_lockstep_engine::formats::w3d::hmorphanim::PoseLookup;
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 
@@ -3848,8 +3848,9 @@ struct EvalWorld {
     trees: Vec<HTree>,
     anims: Vec<(HAnim, u8)>,
     /// (#162) the combos (their animations by index into `anims`), the
-    /// pivot maps and the shared entries the script made (ops 12 to 31).
-    combos: Vec<HAnimCombo<usize>>,
+    /// pivot maps and the shared entries the script made (ops 12 to 31). (#18) Each combo shared, as the wrapper's
+    /// `HAnimComboClass *`: a render object's `Set_Animation(combo)` (op 51) keeps the same one.
+    combos: Vec<HAnimComboRef<usize>>,
     maps: Vec<PivotMapRef>,
     datas: Vec<ComboDataRef<usize>>,
     /// (#179) the render objects ops 40-49 made, each with whether its `PrevFrame` is still comparable (no blend since
@@ -4044,7 +4045,7 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
             }
         }
         12..=31 => rust_combo_op(w, r, log, op)?,
-        40..=49 => rust_robj_op(w, r, log, op)?,
+        40..=49 | 51 | 52 => rust_robj_op(w, r, log, op)?,
         // (#180) the client's drawn pose: `RenderModel::update_render_obj` on a copy of the tree, under the identity
         // (the render object's `Transform`); the loaded tree is not changed
         50 => {
@@ -4107,13 +4108,13 @@ fn rust_combo_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op:
     match op {
         12 => {
             let n = r.u() as i32;
-            w.combos.push(if n < 0 { HAnimCombo::new() } else { HAnimCombo::with_anims(n as usize) });
+            w.combos.push(if n < 0 { HAnimCombo::new() } else { HAnimCombo::with_anims(n as usize) }.into_ref());
         }
         13..=17 => {
             let c = r.u() as usize;
             let i = r.u() as i32;
             let v = r.u();
-            let combo = &w.combos[c];
+            let combo = &*w.combos[c].read().unwrap();
             match op {
                 13 => combo.set_motion(i, if (v as i32) < 0 { None } else { Some(v as usize) })?,
                 14 => combo.set_frame(i, f32::from_bits(v))?,
@@ -4145,19 +4146,20 @@ fn rust_combo_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op:
         22 => {
             let c = r.u() as usize;
             let i = r.u() as i32;
-            let d = w.combos[c].peek_anim_combo_data(i)?;
+            let d = w.combos[c].read().unwrap().peek_anim_combo_data(i)?;
             let anims = &w.anims;
             d.write().unwrap().build_active_pivot_map(|&a| &anims[a].0)?;
         }
         23 => {
             let c = r.u() as usize;
             let anims = &w.anims;
-            let ok = w.combos[c].normalize_weights(|&a| &anims[a].0)?;
+            let combo = &*w.combos[c].read().unwrap();
+            let ok = combo.normalize_weights(|&a| &anims[a].0)?;
             log.push(u8::from(ok));
-            log_combo(log, &w.combos[c])?;
-            let nan = (0..w.combos[c].get_num_anims()).any(|i| {
-                w.combos[c].get_weight(i).is_ok_and(f32::is_nan)
-                    || w.combos[c].get_pivot_weight_map(i).ok().flatten().is_some_and(|m| m.read().unwrap().weights.iter().any(|v| v.is_nan()))
+            log_combo(log, combo)?;
+            let nan = (0..combo.get_num_anims()).any(|i| {
+                combo.get_weight(i).is_ok_and(f32::is_nan)
+                    || combo.get_pivot_weight_map(i).ok().flatten().is_some_and(|m| m.read().unwrap().weights.iter().any(|v| v.is_nan()))
             });
             if nan {
                 return Err(W3dError::Unsupported(NAN_NOT_COMPARED));
@@ -4168,7 +4170,7 @@ fn rust_combo_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op:
             let c = r.u() as usize;
             let root = r.m();
             let mut tree = w.trees[t].clone();
-            let res = tree.combo_update(&root, &w.combos[c], &*w, |&a| &w.anims[a].0);
+            let res = tree.combo_update(&root, &w.combos[c].read().unwrap(), &*w, |&a| &w.anims[a].0);
             w.trees[t] = tree;
             res?;
             log_eval_tree(log, &w.trees[t])?;
@@ -4182,17 +4184,17 @@ fn rust_combo_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op:
             let c = r.u() as usize;
             let d = w.datas[r.u() as usize].clone();
             if op == 26 {
-                w.combos[c].append_anim_combo_data(d);
+                w.combos[c].write().unwrap().append_anim_combo_data(d);
             } else {
-                w.combos[c].remove_anim_combo_data(&d);
+                w.combos[c].write().unwrap().remove_anim_combo_data(&d);
             }
         }
         28..=30 => {
             let c = r.u() as usize;
             match op {
-                28 => w.combos[c].clear(),
-                29 => w.combos[c].reset(),
-                _ => log_combo(log, &w.combos[c])?,
+                28 => w.combos[c].write().unwrap().clear(),
+                29 => w.combos[c].write().unwrap().reset(),
+                _ => log_combo(log, &w.combos[c].read().unwrap())?,
             }
         }
         _ => {
@@ -4231,6 +4233,9 @@ fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
             47 => 4 + 12,
             // (#180)
             50 => 3,
+            // (#18)
+            51 => 2,
+            52 => 1,
             _ => unreachable!(),
         };
         v.push((i, i + 1 + 4 * words));
@@ -4245,18 +4250,14 @@ fn cpp_eval(data: &[u8], script: &[u8]) -> Log {
     })
 }
 
-/// (#179) The render objects' ops (40-49, see `ref_w3d_eval`) on the port's `RenderObj`.
+/// (#179) The render objects' ops (40-49, see `ref_w3d_eval`; #18: 51 and 52) on the port's `RenderObj`.
 use rts_lockstep_engine::client::w3d_model_draw as md;
 
 /// The animation `a` as a render object is given it: its handle with the motion's data, a morph animation's poses the
 /// raw and compressed animations (the wrapper's pose hook: the first of that exact name; the generated names differ
 /// case-insensitively too, so `AnimData`'s lookup finds the same one).
 fn robj_handle(w: &mut EvalWorld, a: usize) -> md::AnimHandle {
-    if w.anim_datas.is_empty() {
-        let shared: Vec<std::sync::Arc<HAnim>> = w.anims.iter().map(|(x, _)| std::sync::Arc::new(x.clone())).collect();
-        let poses: Vec<std::sync::Arc<HAnim>> = shared.iter().zip(&w.anims).filter(|(_, (_, k))| *k != 2).map(|(x, _)| x.clone()).collect();
-        w.anim_datas = shared.iter().map(|m| std::sync::Arc::new(md::AnimData { motion: m.clone(), poses: poses.clone() })).collect();
-    }
+    robj_anim_datas(w);
     let anim = &w.anims[a].0;
     md::AnimHandle {
         name: anim.name().to_vec(),
@@ -4264,6 +4265,23 @@ fn robj_handle(w: &mut EvalWorld, a: usize) -> md::AnimHandle {
         frame_rate: rts_lockstep_engine::formats::w3d::render::get_frame_rate(anim),
         data: Some(w.anim_datas[a].clone()),
     }
+}
+
+/// The animations as the render objects share them ([`EvalWorld::anim_datas`]), made on first use.
+fn robj_anim_datas(w: &mut EvalWorld) {
+    if w.anim_datas.is_empty() {
+        let shared: Vec<std::sync::Arc<HAnim>> = w.anims.iter().map(|(x, _)| std::sync::Arc::new(x.clone())).collect();
+        let poses: Vec<std::sync::Arc<HAnim>> = shared.iter().zip(&w.anims).filter(|(_, (_, k))| *k != 2).map(|(x, _)| x.clone()).collect();
+        w.anim_datas = shared.iter().map(|m| std::sync::Arc::new(md::AnimData { motion: m.clone(), poses: poses.clone() })).collect();
+    }
+}
+
+/// (#18) Whether a render object in `MULTIPLE_ANIM` answered a NaN (not compared: [`NAN_NOT_COMPARED`], as op 24).
+fn robj_combo_nan(ro: &md::RenderObj, m: &[Matrix3D]) -> W3dResult<()> {
+    if ro.mode_combo.is_some() && m.iter().any(|m| m.to_array().iter().any(|v| v.is_nan())) {
+        return Err(W3dError::Unsupported(NAN_NOT_COMPARED));
+    }
+    Ok(())
 }
 
 /// The wrapper's `put_robj`.
@@ -4345,7 +4363,28 @@ fn rust_robj_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: 
                 45 => {
                     let bone = r.u() as i32;
                     let m = w.robjs[ri].0.try_get_bone_transform(bone, now)?;
+                    robj_combo_nan(&w.robjs[ri].0, &[m])?;
                     log_m(log, &m);
+                }
+                // (#18) `Set_Animation(HAnimComboClass *)`: the script's combo itself (-1: `NULL`)
+                51 => {
+                    let c = r.u() as i32;
+                    robj_anim_datas(w);
+                    let combo = (c >= 0).then(|| md::ModeCombo { combo: w.combos[c as usize].clone(), motions: std::sync::Arc::new(w.anim_datas.clone()) });
+                    w.robjs[ri].0.set_animation_combo(combo);
+                }
+                // (#18) every bone's `Get_Bone_Transform`, 0 to `Get_Num_Bones()` (the hierarchy's pivots)
+                52 => {
+                    let ro = &mut w.robjs[ri].0;
+                    let n = ro.skeleton.as_ref().map_or(0, |k| k.bones.len());
+                    let mut ms = Vec::with_capacity(n);
+                    for b in 0..n {
+                        ms.push(ro.try_get_bone_transform(b as i32, now)?);
+                    }
+                    robj_combo_nan(ro, &ms)?;
+                    for m in &ms {
+                        log_m(log, m);
+                    }
                 }
                 46 => {
                     let m = r.m();
@@ -5152,7 +5191,8 @@ fn animobj_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
 /// 5,124; 9817 `Release_Bone` does nothing 181; 9818 the sync-time difference signed 4 of 300 (only a wild script's
 /// backward sync time reaches it); 9819 the live hierarchy made afresh each update (no previous transforms) 429; and
 /// #172/#174's, moved into the live hierarchy: 9694 6,374, 9698 7,848, 9751 4,077. 9812 (`Combo_Update` replaced by
-/// the base pose) and 9816 (`get_bone_transform_under` restores without invalidating) are not reachable here: caught by
+/// the base pose) ~~and 9816~~ **Corrected 2026-11-14 (#18):** is reached by [`animatable_combo_bones_match_upstream`]
+/// (4 of 15 files); 9816 (`get_bone_transform_under` restores without invalidating) ~~are~~ is not reachable here: caught by
 /// the lib test `a_render_object_s_bones_follow_its_animation` (`--features differential`), which also catches 9801,
 /// 9805, 9810 and 9811.
 #[test]
@@ -5160,6 +5200,274 @@ fn animatable_bones_match_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let n = std::env::var("W3D_ANIMOBJ_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
     eval_cases(FloatToLongMode::PortableTruncate, 0x179_A0B1, n, "W3D render objects' animated bones (animobj.cpp)", animobj_script);
+}
+
+/// GitHub #18: a script of render objects in `MULTIPLE_ANIM` (ops 40-52 with the combo ops 12-30; see `ref_w3d_eval`):
+/// one or two render objects ([`animobj_script`]'s hierarchies and scales) and one to three combos of 1 to 4 entries
+/// (any of the file's raw, compressed and morph animations, at [`ev_frame`]'s frames, weights 0, 1, 0.5, 0.25, 1/3 or
+/// any in -0.5..1.5), then in any order: `Set_Animation(combo)` (op 51), the combos changed after it (frames, previous
+/// frames, weights, motions, per-pivot weight maps plain or named and fitted, `Build_Active_Pivot_Map`,
+/// `Normalize_Weights`, shared entries appended and removed, `Reset`, new combos), one bone or every bone (op 52), and
+/// the other render-object ops (the sync time, single animations, the base pose, blends, `Set_Transform`, captured
+/// bones, `Render`, the multiplier). A tame script (every other file) keeps entry indices in range, gives every entry
+/// an animation and fits its maps to 8 weights or a hierarchy; a wild one does not, and also makes combos of 0 or 5
+/// entries and arbitrary weights.
+fn animobj_combo_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    let mut s = Vec::new();
+    let na = w.anims.len() as u32;
+    let nt = w.trees.len() as u32;
+    let ok: Vec<u32> = (0..nt).filter(|&t| robj_ok(&w.trees[t as usize])).collect();
+    if na == 0 || ok.is_empty() {
+        return s;
+    }
+    let op = |s: &mut Vec<u8>, code: u8, words: &[u32]| {
+        s.push(code);
+        for &v in words {
+            w32(s, v);
+        }
+    };
+    let weight = |g: &mut Gn| -> f32 {
+        match g.below(10) {
+            0 => 0.0,
+            1 | 2 => 1.0,
+            3 => 0.5,
+            4 => 0.25,
+            5 => 1.0 / 3.0,
+            6 if !g.clean => g.f32(),
+            _ => g.g.uniform(-0.5, 1.5),
+        }
+    };
+    let frame = |g: &mut Gn| -> u32 {
+        let a = g.below(na);
+        ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits()
+    };
+    let new_robj = |g: &mut Gn, s: &mut Vec<u8>, robjs: &mut Vec<u32>| {
+        let t = ok[g.below(ok.len() as u32) as usize];
+        let scale = match g.below(8) {
+            0..=3 => 1.0f32,
+            4 => 0.5,
+            5 => 2.0,
+            _ => g.g.uniform(0.25, 4.0),
+        };
+        op(s, 40, &[t, scale.to_bits()]);
+        robjs.push(w.trees[t as usize].num_pivots as u32);
+    };
+    // the generator's view: each combo's entry count
+    let mut combos: Vec<u32> = Vec::new();
+    let new_combo = |g: &mut Gn, s: &mut Vec<u8>, combos: &mut Vec<u32>| {
+        let n = if g.clean {
+            1 + g.below(4)
+        } else {
+            match g.below(8) {
+                0 => u32::MAX,
+                1 => 5,
+                _ => g.below(5),
+            }
+        };
+        op(s, 12, &[n]);
+        let c = combos.len() as u32;
+        let n = if n == u32::MAX { 0 } else { n };
+        combos.push(n);
+        for i in 0..n {
+            if g.clean || !g.chance(8) {
+                op(s, 13, &[c, i, g.below(na)]);
+            }
+            op(s, 14, &[c, i, frame(g)]);
+            if g.below(4) != 0 {
+                op(s, 16, &[c, i, weight(g).to_bits()]);
+            }
+        }
+    };
+    let mut maps = 0u32;
+    let mut datas = 0u32;
+    // the shared entries each combo holds (by the order they were made)
+    let mut held: Vec<Vec<u32>> = Vec::new();
+    let mut robjs: Vec<u32> = Vec::new();
+    let mut now = g.below(1000);
+    op(&mut s, 41, &[now]);
+    for _ in 0..1 + g.below(2) {
+        new_robj(g, &mut s, &mut robjs);
+    }
+    for _ in 0..1 + g.below(3) {
+        new_combo(g, &mut s, &mut combos);
+    }
+    for _ in 0..1 + g.below(60) {
+        if g.below(20) == 0 {
+            new_robj(g, &mut s, &mut robjs);
+            continue;
+        }
+        let ri = g.below(robjs.len() as u32);
+        let npiv = robjs[ri as usize];
+        let c = g.below(combos.len() as u32);
+        let n = combos[c as usize];
+        // an entry of combo c: in range, or (wild, or a tame combo with none) none
+        let entry = |g: &mut Gn| -> Option<u32> {
+            if n > 0 && (g.clean || !g.chance(20)) {
+                Some(g.below(n))
+            } else if g.clean {
+                None
+            } else {
+                Some(n + g.below(2))
+            }
+        };
+        match g.below(100) {
+            0..=7 => {
+                now = match g.below(if g.clean { 6 } else { 8 }) {
+                    0 => now,
+                    1 | 2 => now.wrapping_add(g.below(50)),
+                    3 | 4 => now.wrapping_add(33),
+                    5 => now.wrapping_add(100 + g.below(2000)),
+                    6 => now.wrapping_sub(1 + g.below(200)),
+                    _ => g.g.u32(),
+                };
+                op(&mut s, 41, &[now]);
+            }
+            8..=15 => {
+                let a = g.below(na);
+                let f = ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits();
+                op(&mut s, 42, &[ri, a, f, g.below(6)]);
+            }
+            16 | 17 => op(&mut s, 43, &[ri]),
+            18..=20 => {
+                let (a0, f0) = (g.below(na), frame(g));
+                let (a1, f1) = (g.below(na), frame(g));
+                let pct = match g.below(4) {
+                    0 => 0.0f32,
+                    1 => 1.0,
+                    _ => g.g.uniform(-0.2, 1.2),
+                };
+                op(&mut s, 44, &[ri, a0, f0, a1, f1, pct.to_bits()]);
+            }
+            // never `NULL` (-1): the port has no `MULTIPLE_ANIM` without a combo (`RenderObj::set_animation_combo`)
+            21..=33 => op(&mut s, 51, &[ri, c]),
+            34..=43 | 95..=99 => op(&mut s, 45, &[ri, g.below(npiv)]),
+            44..=52 => op(&mut s, 52, &[ri]),
+            53..=57 => {
+                op(&mut s, 46, &[ri]);
+                ev_matrix(g, &mut s);
+            }
+            58..=61 => {
+                op(&mut s, 47, &[ri, g.below(npiv), u32::from(g.below(4) != 0), g.below(2)]);
+                ev_matrix(g, &mut s);
+            }
+            62..=69 => op(&mut s, 48, &[ri, u32::from(g.below(5) == 0)]),
+            70 | 71 => {
+                let m = [1.0f32, 0.5, 2.0, -1.0][g.below(4) as usize];
+                op(&mut s, 49, &[ri, m.to_bits()]);
+            }
+            72..=77 => {
+                if let Some(i) = entry(g) {
+                    op(&mut s, if g.below(4) == 0 { 15 } else { 14 }, &[c, i, frame(g)]);
+                }
+            }
+            78..=80 => {
+                if let Some(i) = entry(g) {
+                    op(&mut s, 16, &[c, i, weight(g).to_bits()]);
+                }
+            }
+            81 | 82 => {
+                if let Some(i) = entry(g) {
+                    let a = if !g.clean && g.chance(6) { u32::MAX } else { g.below(na) };
+                    op(&mut s, 13, &[c, i, a]);
+                }
+            }
+            83..=85 => {
+                // a per-pivot weight map, plain (8 weights; wild 0 to 8) or named (fitted to a hierarchy)
+                let named = g.coin();
+                op(&mut s, 18, &[u32::from(named)]);
+                let m = maps;
+                maps += 1;
+                if named {
+                    for _ in 0..g.below(4) {
+                        op(&mut s, 20, &[m, g.below(COMBO_NAMES.len() as u32), weight(g).to_bits()]);
+                    }
+                    op(&mut s, 21, &[m, g.below(nt)]);
+                } else {
+                    for _ in 0..if g.clean { 8 } else { g.below(9) } {
+                        let v = match g.below(4) {
+                            0 => 0.0f32,
+                            1 => 1.0,
+                            2 => 0.5,
+                            _ => g.g.uniform(0.0, 1.0),
+                        };
+                        op(&mut s, 19, &[m, v.to_bits()]);
+                    }
+                }
+                if let Some(i) = entry(g) {
+                    op(&mut s, 17, &[c, i, if g.below(5) == 0 { u32::MAX } else { m }]);
+                }
+            }
+            86 => {
+                if let Some(i) = entry(g) {
+                    op(&mut s, 22, &[c, i]);
+                }
+            }
+            87 | 88 => op(&mut s, 23, &[c]),
+            89 | 90 => {
+                op(&mut s, 25, &[]);
+                let d = datas;
+                datas += 1;
+                op(&mut s, 26, &[c, d]);
+                held.resize(combos.len(), Vec::new());
+                held[c as usize].push(d);
+                combos[c as usize] += 1;
+                let i = combos[c as usize] - 1;
+                if g.clean || !g.chance(6) {
+                    op(&mut s, 13, &[c, i, g.below(na)]);
+                }
+                op(&mut s, 14, &[c, i, frame(g)]);
+                op(&mut s, 16, &[c, i, weight(g).to_bits()]);
+            }
+            // a shared entry removed: one combo c holds (a wild script: any, which may be in no combo or another)
+            91 if datas > 0 => {
+                held.resize(combos.len(), Vec::new());
+                let h = &mut held[c as usize];
+                let d = if !h.is_empty() && (g.clean || g.coin()) { h[g.below(h.len() as u32) as usize] } else { g.below(datas) };
+                if let Some(k) = h.iter().position(|&e| e == d) {
+                    h.remove(k);
+                    combos[c as usize] -= 1;
+                } else if g.clean {
+                    continue;
+                }
+                op(&mut s, 27, &[c, d]);
+            }
+            92 if !g.clean || g.below(3) == 0 => {
+                op(&mut s, 29, &[c]);
+                combos[c as usize] = 0;
+                held.resize(combos.len(), Vec::new());
+                held[c as usize].clear();
+            }
+            93 => new_combo(g, &mut s, &mut combos),
+            _ => op(&mut s, 30, &[c]),
+        }
+    }
+    s
+}
+
+/// GitHub #18: `Animatable3DObjClass` in `MULTIPLE_ANIM`: `Set_Animation(HAnimComboClass *)` (animobj.cpp:572-597),
+/// `Update_Sub_Object_Transforms`' `MULTIPLE_ANIM` case (780-860) and animobj.h's inline `Combo_Update` (313-319)
+/// over `htree.cpp`'s `Combo_Update` and hanim.cpp's combos (all compiled from upstream: `wrap_w3d_eval.cpp`'s ops
+/// 51 and 52 with #179's verbatim cuts), against the port's `RenderObj::set_animation_combo` and its update, with
+/// [`animobj_combo_script`]'s scripts over section 13's files, the portable `Float_To_Long` on both sides. Compared as
+/// raw bits after every op: each bone's 12 floats (op 45 one bone, op 52 every pivot), the render object's state, and
+/// the combo ops' own outputs. Upstream keeps the caller's pointer, so the combo is changed after `Set_Animation` and
+/// the render object sees the change at its next update (and not before: a valid hierarchy answers its cached pose).
+/// A NaN pose in `MULTIPLE_ANIM` is not compared ([`NAN_NOT_COMPARED`]).
+///
+/// Predictions (`issue18_predictions.md`, before the first run): 0 mismatches, max ULP 0.
+///
+/// Results (2026-11-14), first run: 20,000 files, 20,000 run (9,521 tame scripts to the end), 827,137 of 1,064,605 ops
+/// compared (51: 49,002; 52: 32,751; 45: 54,514; 48: 29,316), **0 mismatches, max ULP 0**. Scripts stopped at undefined
+/// upstream: 7,465 (combo entries out of range 3,418, `NullPointer` 1,637, `IndexOutOfRange` in updates 1,470,
+/// `FloatToInt` 580, `NonTerminating` 200, `UninitialisedRead` 156, NaN poses 4). Planted bugs (mismatching files):
+/// 10038 4,011, 10040 2,108, 10041 3,324, 10042 1,248 of 20,000; and on a prefix, because the planted Rust stops
+/// predicting an undefined update and the C++ then dies: 10036 8 of 15, 10037 9 of 40, 10039 5 of 40, 10043 (the old
+/// entry-vector snapshot, #181 item 6) 2 of 100, 10044 10 of 100, 10045 3 of 40, 9812 4 of 15. All caught.
+#[test]
+fn animatable_combo_bones_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let n = std::env::var("W3D_ANIMOBJ_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
+    eval_cases(FloatToLongMode::PortableTruncate, 0x18_C0B0, n, "W3D render objects' combos (animobj.cpp MULTIPLE_ANIM)", animobj_combo_script);
 }
 
 /// GitHub #180: the scripts of [`drawn_pose_matches_upstream`], only op 50 (the client's drawn pose): up to 40 poses,

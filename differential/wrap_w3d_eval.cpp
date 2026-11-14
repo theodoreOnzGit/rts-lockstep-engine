@@ -38,7 +38,7 @@
 ** byte log that tests/differential_w3d.rs (section 13) reproduces from the
 ** Rust. Allocation (zero-filled) and the file are wrap_w3d.cpp's.
 **
-** GitHub #179: render objects (ops 40-49), `Animatable3DObjClass` compiled from upstream's text, cut verbatim by
+** GitHub #179: render objects (ops 40-49; #18: ops 51 and 52 in MULTIPLE_ANIM), `Animatable3DObjClass` compiled from upstream's text, cut verbatim by
 ** build.rs into OUT_DIR/w3d_animobj_gen:
 **   ao_body.inc       WW3D2/animobj.cpp:242-869: Release, Render, Special_Render, Set_Transform, Set_Position,
 **                     Get_Num_Bones, Get_Bone_Name, Get_Bone_Index, the four Set_Animation, Peek_Animation, both
@@ -715,7 +715,11 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 			delete r;
 			break;
 		}
-		case 42: case 43: case 44: case 45: case 46: case 47: case 48: case 49: {
+		/* (#18) 51 robj combo: Set_Animation(HAnimComboClass *) of the script's combo itself (-1: NULL), which keeps the
+		** pointer, so the ops on the combo that follow reach the render object's next update; 52 robj: every bone's
+		** Get_Bone_Transform, 0 to Get_Num_Bones() - 1 (12 floats each). Both then the state (put_robj). ModeCombo's
+		** pointer overlaps only ModeAnim.Motion, so ModeAnim.PrevFrame stays comparable (g_clean unchanged). */
+		case 42: case 43: case 44: case 45: case 46: case 47: case 48: case 49: case 51: case 52: {
 			size_t ri = rd.u();
 			ao::Animatable3DObjClass *r = ao::g_robjs[ri];
 			if (op == 42) {
@@ -753,6 +757,12 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 				r->Hidden = rd.u() != 0;
 				ao::RenderInfoClass rinfo;
 				r->Render(rinfo);
+			} else if (op == 51) {
+				int c = (int)rd.u();
+				r->Set_Animation(c < 0 ? (HAnimComboClass *)NULL : g_combos[c]);
+			} else if (op == 52) {
+				int n = r->Get_Num_Bones();
+				for (int b = 0; b < n; ++b) putM(r->Get_Bone_Transform(b));
 			} else {
 				r->Set_Animation_Frame_Rate_Multiplier(rd.f());
 			}
