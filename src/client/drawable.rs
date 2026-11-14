@@ -219,6 +219,19 @@ impl Drawable {
         }
     }
 
+    /// (#173 item 4) `getID()` as a particle system keeps it (`attachToDrawable(draw)`, ParticleSys.cpp:1351-1358): the
+    /// port's id for the drawable of an object is its object's (the key [`ClientDrawables::drawables`] keeps it by, which
+    /// `crate::client::client_fx::WorldFxHost` looks it up by); a drawable with no object (the logic's,
+    /// [`ClientDrawables::logic_drawables`]) answers its own id (`saved.drawable_id`, numbered by the client from
+    /// [`LOGIC_DRAWABLE_ID_BASE`]).
+    pub fn particle_drawable_id(&self) -> DrawableId {
+        if self.object_id != crate::common::game_type::INVALID_ID || plant(10201) {
+            self.object_id
+        } else {
+            self.saved.drawable_id
+        }
+    }
+
     /// (#168) `doDrawModule` of each `W3DLaserDraw`, given the drawable's `findClientUpdateModule("LaserUpdate")`: the first
     /// client update module when it is the laser, none without client update modules; any other first module makes
     /// upstream's lookup spin for ever (Drawable.cpp:4767-4773, the loop has no `++clientModules`): `Err`, nothing drawn.
@@ -878,6 +891,14 @@ impl ClientDrawables {
         let t = t.get_final_override().data.clone();
         let mut d = self.new_drawable(w, crate::common::game_type::INVALID_ID, &t, assets, sync_time, true);
         d.saved.drawable_id = self.alloc_drawable_id();
+        // (#173 item 4) the drawable the modules' bone particle systems attach to (`getDrawable()->getID()`): this one's
+        // own id, not the object's `INVALID_ID` `new_drawable` gave them
+        if !plant(10196) {
+            let id = d.particle_drawable_id();
+            for m in &mut d.draw_modules {
+                m.drawable_id = id;
+            }
+        }
         if let Some(mut old) = self.logic_drawables.insert(logic_id, d) {
             // (the logic reuses no id while its drawable lives: not reached)
             self.destroy_client_update_modules(w, &mut old);
@@ -1018,7 +1039,7 @@ impl ClientDrawables {
                             contact_weapon: *contact_weapon,
                             handled: handled.map(|h| (h.bone_transform, h.render_hidden)),
                         };
-                        let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index: self.local_player_index.or(w.players.local_index()), sync_time: self.sync_time };
+                        let host = WorldFxHost { world: w, drawables: &self.drawables, logic_drawables: &self.logic_drawables, local_player_index: self.local_player_index.or(w.players.local_index()), sync_time: self.sync_time };
                         self.fx.weapon_fire_fx(&host, &mut self.random, &f);
                     }
                 }
@@ -1084,7 +1105,7 @@ impl ClientDrawables {
                 _ => {}
             }
             // the effects of the event, in its place among the drawables' (GitHub #43, #44)
-            let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index: self.local_player_index.or(w.players.local_index()), sync_time: self.sync_time };
+            let host = WorldFxHost { world: w, drawables: &self.drawables, logic_drawables: &self.logic_drawables, local_player_index: self.local_player_index.or(w.players.local_index()), sync_time: self.sync_time };
             self.fx.apply_event(&host, &mut self.random, e);
         }
     }
@@ -1483,7 +1504,7 @@ impl ClientDrawables {
             }
         }
         // `W3DDisplay::draw`'s `TheParticleSystemManager->update()`, once per logic frame (GitHub #43, #44)
-        let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index, sync_time: self.sync_time };
+        let host = WorldFxHost { world: w, drawables: &self.drawables, logic_drawables: &self.logic_drawables, local_player_index, sync_time: self.sync_time };
         self.fx.update(&host, &mut self.random);
     }
 }
@@ -1987,6 +2008,56 @@ mod tests {
         assert!(l.decaying);
         c.apply_events(&w, &[ClientEvent::Object(ObjectClientEvent::ClientDestroyDrawable { drawable: 1000 })], &mut NoAssets, 0);
         assert_eq!(c.logic_drawables.keys().copied().collect::<Vec<_>>(), [1001]);
+        assert!(c.errors.is_empty(), "{:?}", c.errors);
+    }
+
+    /// (#173 item 4) A drawable the logic makes with no object, whose template's `W3DModelDraw` has a `ParticleSysBone`:
+    /// its module attaches the system to the drawable's own id (2^30, not the object's `INVALID_ID`); the particle update
+    /// finds the drawable among the logic's (`WorldFxHost::drawable`) and places the system at its own transform (the
+    /// bone is not in `NoAssets`' render object, so the local transform is the origin unturned: the system's transform is
+    /// the drawable's exactly); once the logic destroys the drawable, the next update destroys the system.
+    ///
+    /// *Predictions, written before the first run* (`issue173_predictions.md`): all hold; plants 10196 (the modules keep
+    /// `INVALID_ID`), 10197 (only object drawables are found) and 10201 (`particle_drawable_id` answers the object id)
+    /// each fail it.
+    #[test]
+    fn a_logic_drawable_s_bone_particle_systems_follow_it() {
+        use crate::client::particle_sys::ParticleSystemId;
+        let mut w = crate::logic::world::gate_scenario::gate_world();
+        let mut c = ClientDrawables::new();
+        let ev = w.take_client_events();
+        c.apply_events(&w, &ev, &mut NoAssets, 0);
+        let template = c.drawables.values().next().unwrap().template.clone();
+        // (the gate's templates have no `Draw` block: the template's module data given as `module_data_for` caches it)
+        let line = |depth, f: &str, a: &str| ClientLine { depth, field: f.as_bytes().to_vec(), args: a.split_whitespace().map(|t| t.as_bytes().to_vec()).collect() };
+        let block = ClientModuleData {
+            module_tag_name_key: Default::default(),
+            lines: vec![line(0, "DefaultConditionState", ""), line(1, "Model", "T"), line(1, "ParticleSysBone", "Muzzle PS")],
+        };
+        let data = Arc::new(W3DModelDrawModuleData::parse(b"W3DModelDraw", &block).unwrap().unwrap());
+        c.module_data.insert(template.clone(), Arc::new(vec![data]));
+        c.fx.particles.new_template(b"PS");
+        c.apply_events(&w, &[ClientEvent::Object(ObjectClientEvent::ClientNewDrawable { drawable: 1000, template })], &mut NoAssets, 0);
+        assert_eq!(c.logic_drawables[&1000].particle_drawable_id(), LOGIC_DRAWABLE_ID_BASE);
+        assert_eq!(c.logic_drawables[&1000].draw_modules.iter().map(|m| m.drawable_id).collect::<Vec<_>>(), [LOGIC_DRAWABLE_ID_BASE]);
+        // the beam's own place (`Drawable::setPosition`, as a laser's `LaserUpdate` sets it)
+        let mut own = Matrix3D::IDENTITY;
+        own.rotate_z(0.5);
+        own.set_translation(&crate::ww::vector3::Vector3::new(10.0, 20.0, 5.0));
+        c.logic_drawables.get_mut(&1000).unwrap().saved.transform = own;
+        // (the particle systems update once per logic frame: the events' frame 0 has had its update)
+        w.logic_update().expect("a frame");
+        c.draw(&w, &mut NoAssets, 33);
+        let ids: Vec<ParticleSystemId> = c.logic_drawables[&1000].draw_modules[0].particle_system_ids.iter().map(|t| t.id).collect();
+        assert_eq!(ids.len(), 1);
+        let sys = c.fx.particles.find_particle_system(ids[0]).expect("alive while its drawable is");
+        assert_eq!(sys.attached_to_drawable, LOGIC_DRAWABLE_ID_BASE);
+        assert_eq!(sys.transform, own, "the drawable's own transform, the local transform the identity");
+        assert_eq!((sys.pos.x, sys.pos.y, sys.pos.z), (10.0, 20.0, 5.0));
+        c.apply_events(&w, &[ClientEvent::Object(ObjectClientEvent::ClientDestroyDrawable { drawable: 1000 })], &mut NoAssets, 0);
+        w.logic_update().expect("a frame");
+        c.draw(&w, &mut NoAssets, 66);
+        assert!(c.fx.particles.find_particle_system(ids[0]).is_none(), "destroyed with its drawable");
         assert!(c.errors.is_empty(), "{:?}", c.errors);
     }
 

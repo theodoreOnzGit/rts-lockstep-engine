@@ -155,15 +155,20 @@
 //! - (#171) **The bone particle systems** ([`W3DModelDraw::recalc_bones_for_client_particle_systems`],
 //!   [`W3DModelDraw::update_bones_for_client_particle_systems`], [`W3DModelDraw::stop_client_particle_systems`]) reach
 //!   `TheParticleSystemManager` as an argument ([`DrawEnv::particles`], or `Option<&mut ParticleSystemManager>`);
-//!   without one (`None`: tests, a save's load) no system is found or made, as a manager with none would answer. A
+//!   without one (`None`: tests, a save's load) no system is found or made, as a manager with none would answer. ~~A
 //!   bone's transform is the render object's [`Skeleton`] as made (the base pose under the drawable's scale), not the
 //!   animated pose upstream's `Get_Bone_Transform` evaluates, and without the turret and recoil bone captures; the
 //!   live transform `updateBonesForClientParticleSystems` reads is [`DrawFacts::transform`] (the drawable's, without
-//!   the scale, which the skeleton carries). ~~For a drawable scale that is not a power of two the port's
+//!   the scale, which the skeleton carries).~~ **Corrected 2026-11-14 (#173 items 1 and 3; done in #172, #174, #179):**
+//!   a bone's transform is upstream's `Get_Bone_Transform`: the animation's current pose at the sync time with the
+//!   turret and recoil captures, chained from the render object's transform (the next items); in a draw that
+//!   transform is the draw's root (`Drawable::draw`'s, with the instance matrix and the physics) adjusted by
+//!   `adjustTransformMtx`. ~~For a drawable scale that is not a power of two the port's
 //!   `world * (Scale * bone)` rounds differently from upstream's `(world * Scale) * bone` (measured,
 //!   `tests/differential_model_draw_particles.rs`).~~ **Corrected 2026-11-12 (#172):** that was not upstream's
 //!   convention, nor only a rounding: see the next item. `attachToDrawable` takes [`W3DModelDraw::drawable_id`] (the
-//!   port's drawable id for particles is its object's).
+//!   port's drawable id for particles is its object's; **(#173 item 4)** for the logic's object-less drawables their
+//!   own, `crate::client::drawable::Drawable::particle_drawable_id`).
 //! - (#172) **The drawable's scale is in the render object's hierarchy, not in a matrix.** Upstream makes the render
 //!   object with `Create_Render_Obj(name, getScale(), color)` (W3DModelDraw.cpp:623, 3034), which when
 //!   `WWMath::Fabs(scale - 1) > 0.01` (W3DAssetManager.cpp:84-85, 738) calls `rendobj->Scale(scale)` (858-859):
@@ -3827,7 +3832,9 @@ pub struct W3DModelDraw {
     pub particle_system_ids: Vec<ParticleSysTrackerType>,
     /// (#171) `getDrawable()->getID()`, what `attachToDrawable` keeps: the port's drawable id for particles is its
     /// object's ([`crate::client::particle_sys::ParticleSystem::attached_to_drawable`]); set by the drawable that makes
-    /// the module (0 until then: none).
+    /// the module (0 until then: none). ~~(The logic's object-less drawables leave it 0: their systems attach to no
+    /// drawable, #171's gaps.)~~ **Corrected 2026-11-14 (#173 item 4):** an object-less drawable of the logic's gives its
+    /// own id (`crate::client::drawable::Drawable::particle_drawable_id`, set by `ClientDrawables::new_logic_drawable`).
     pub drawable_id: ObjectId,
     /// (#171) `getDrawable()->testDrawableStatus(DRAWABLE_STATUS_NO_STATE_PARTICLES)`: no bone particle systems. Upstream
     /// sets it only on the in-game UI's placement previews (InGameUI.cpp:1551, 3040), which the port's drawables are not:

@@ -127,6 +127,48 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#173 (2026-11-14, GitHub #173, the gaps of #171): the logic's object-less drawables' bone particle systems.**
+- **Which gaps were open.** Item 1 (the base pose) was done by #179 and #181 item 7: the update reads
+  `RenderObj::get_bone_transform` at the sync time and the recalc `get_bone_transform_under(Scale(getScale()))`
+  (`W3DModelDraw::update_bones_for_client_particle_systems`, `recalc_bones_for_client_particle_systems`), compared by
+  `differential_model_draw_anim` and `differential_model_draw_particles`. Item 2 was #172. Item 3 was done in a draw by
+  #179 item 3 (the root with the instance matrix and the physics, then `adjustTransformMtx`); outside a draw
+  (`AnimatedParticleSysBoneClientUpdate`) the port still puts the render object at the drawable's transform first,
+  which upstream does only when the logic set the object's transform since the last draw: the logic sends no event for
+  that, so closing it needs a logic change (not made: `src/logic` is read-only here). Item 4 was open and is done
+  below. Items 5 (no placement previews), 6 (the dirty-flag pass in the hide, stealth and shroud calls), 7 and 8 are
+  unchanged.
+- **Upstream** (ParticleSys.cpp:1351-1358, 1874-1970; Drawable.cpp:4297-4310; Thing.cpp:250-266): `attachToDrawable`
+  keeps `draw->getID()`; each update finds the drawable by id and reads `getFullyObscuredByShroud()`,
+  `getTransformMatrix()` (without an object, the drawable's own) and `getPosition()` (`m_cachedPos`, the translation
+  `Thing::setTransformMatrix` cached); a drawable no longer found destroys the system.
+- **Two defects, fixed.** `ClientDrawables::new_logic_drawable` left every model draw module's `drawable_id` at
+  `INVALID_ID`, so the bone systems of a logic-made drawable attached to nothing, sat at their model-space position and
+  were never destroyed with it; and `WorldFxHost::drawable` found only object-backed drawables. Now
+  `Drawable::particle_drawable_id` (the object's id, or without an object the client's own id from
+  `LOGIC_DRAWABLE_ID_BASE`) is given to the modules, and `WorldFxHost` (new field `logic_drawables`) answers an
+  object-less drawable with its own transform, its translation and its shroud flag. No game data has such a module
+  today (the beams have only laser draws), so nothing drawn changes.
+- **Compared** (`tests/differential_attach_cache.rs`, new test `a_particle_system_follows_its_drawable_with_an_object_or_none`;
+  `differential/wrap_attach_cache.cpp` entry point 3; new verbatim cuts `ac_thing_set_transform.inc`,
+  `ac_shroud_status.inc`, `ac_psys_attach.inc`, each anchor asserted once): the port's whole
+  `ParticleSystemManager::update` through `WorldFxHost` against the cut block, for an object's drawable and an
+  object-less one. 20,000 cases, 61,379 updates of a live system (30,531 object-less, 10,562 shrouded), 3,547 systems
+  destroyed with their drawable: **0 mismatches**, max ULP 0. Plants 10196-10202: 10197 8,554 cases, 10198 8,554, 10199
+  8,554, 10200 2,015, 10201 9,112, 10202 8,554; 10196 is caught by the new lib test
+  `a_logic_drawable_s_bone_particle_systems_follow_it` (which also fails under 10197-10199, 10201, 10202). 7 of 7.
+  Prediction miss: 10200 predicted ~15 %, measured 10 %.
+- **Other runs:** lib 1,261 passed. `differential_model_draw_particles` 0 / 0, `differential_model_draw_anim` 0,
+  `differential_particle_sys` 0, `differential_client_update` 0, `differential_attach_cache`'s other tests 0,
+  `differential_laser_draw` 0, `differential_weapon_fire` 0. Client 107 passed. Gate (a) PASS, last CRC 0bf44067
+  (unchanged). Clippy: no new warning. `src/logic` unchanged.
+- **Docs struck through:** `w3d_model_draw`'s module docs (the base pose, `DrawFacts::transform`) and
+  `W3DModelDraw::drawable_id`, `ParticleSystem::attached_to_drawable`, `animated_particle_sys_bone_client_update`'s
+  module docs, and #171's entry below.
+- **Not done (gaps):** item 3 outside a draw (needs a logic event for the object's transform changes); items 5-8 as
+  #173 lists them. An object-less drawable's `getPosition()` is taken from its transform: upstream's `setPosition` on a
+  `STICK_TO_TERRAIN_SLOPE` thing aligns it first (no beam template has that kind).
+
 **#169 / #65 (2026-11-14, GitHub #169, #65): `SegmentedLineClass` translated; the laser beams drawn through it.**
 - **Upstream read first:** WW3D2/segline.cpp and segline.h (the whole class); W3DLaserDraw.cpp's constructor (each
   line's `Set_Texture`, `Set_Shader(_PresetAdditiveShader)`, `Set_Width`, `Set_Color`, `Set_UV_Offset_Rate(0,
@@ -918,7 +960,8 @@ first frame.** The logic's change is described in `docs/phase1-porting-graph.md`
   3)~~ **Corrected 2026-11-13 (#181 item 7):** the bones are the render object's animated pose (#179) with its captured
   bones (#174), and their sequence with the animation is compared with upstream's (`tests/differential_model_draw_anim.rs`); ~~at a drawable scale that is not a power of two the port's bone (`world * (Scale * bone)`) rounds differently from
   upstream's~~ **Corrected 2026-11-12 (#172):** not a rounding nor a design decision but a translation defect, fixed in
-  #172; the object-less drawables' systems attach to no drawable.
+  #172; ~~the object-less drawables' systems attach to no drawable~~ **Corrected 2026-11-14 (#173 item 4):** they
+  attach to the drawable's own id and follow its own transform (see #173 above).
 
 **#168 (2026-11-12, GitHub #168): `W3DLaserDraw`, and the logic's object-less drawables (the particle cannon's beams).**
 - **Translated** (engine crate): `client::w3d_laser_draw`: W3DLaserDraw.cpp whole (the data and its field table, the

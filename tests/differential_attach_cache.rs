@@ -7,6 +7,9 @@
 //   (W3DModelDrawModuleData::getAttachToDrawableBoneOffset) and its header (CACHE_ATTACH_BONE)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/Drawable.cpp (Drawable::getTransformMatrix, Drawable::draw's root,
 //   applyPhysicsXform, setInstanceMatrix) and its header (PhysicsXformInfo)
+//   (GitHub #173) GeneralsMD/Code/GameEngine/Source/GameClient/System/ParticleSys.cpp (ParticleSystem::update's
+//   attachment block), GeneralsMD/Code/GameEngine/Source/Common/Thing/Thing.cpp (Thing::setTransformMatrix),
+//   GeneralsMD/Code/GameEngine/Include/Common/GameCommon.h (ObjectShroudStatus)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -15,7 +18,7 @@
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only for
 // this translation), with the additional terms in NOTICE.md.
 
-//! GitHub #179 items 4 and 5 against the upstream text compiled verbatim (`differential/wrap_attach_cache.cpp`, which
+//! GitHub #179 items 4 and 5, and (last test) #173 item 4, against the upstream text compiled verbatim (`differential/wrap_attach_cache.cpp`, which
 //! lists the cuts, the stand-ins and the words).
 //!
 //! # Item 4: the attach-offset cache's first filler
@@ -486,6 +489,193 @@ fn a_drawables_transform_and_root_match_upstream_with_an_object_or_none() {
         check.eq(rust, cc, || format!("case {k}"));
     }
     println!("drawable transform: {} cases, {steps} steps, {draws_without} draws and {gets_without} getTransformMatrix without an object; max ULP among differing words {max_ulp}", cases());
+    if planted() {
+        check.report();
+        panic!("a planted run: see the MEASURED line (a mismatch is the plant caught)");
+    }
+    check.finish();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// #173 item 4: a particle system attached to a drawable, with an object or none
+// ---------------------------------------------------------------------------------------------------------------
+
+const PS_HEADER: usize = 13;
+
+fn psys_case(g: &mut Gen) -> Vec<i32> {
+    let mut w = vec![i32::from(g.below(2) == 0)];
+    w.extend(transform(g, -300.0, 300.0, 30.0));
+    for _ in 0..1 + g.below(16) {
+        let mut s = [0i32; STEP];
+        s[0] = match g.below(100) {
+            0..=19 => 0,
+            20..=29 => 1,
+            30..=44 => 2,
+            45..=54 => 3,
+            55..=57 => 4,
+            _ => 5,
+        };
+        match s[0] {
+            0 => s[2..].copy_from_slice(&transform(g, -300.0, 300.0, 30.0)),
+            1 | 3 => s[1] = i32::from(g.below(2) == 0),
+            2 => s[2..].copy_from_slice(&transform(g, -20.0, 20.0, 20.0)),
+            _ => {}
+        }
+        w.extend(s);
+    }
+    w
+}
+
+/// The Rust's records of a case (the port's `ParticleSystemManager::update` reading the drawable through
+/// `WorldFxHost`); the object's transforms in `w` are replaced by the ones the World holds.
+fn rust_psys(world: &mut World, obj: ObjectId, w: &mut [i32]) -> Vec<i32> {
+    use rts_lockstep_engine::client::client_fx::WorldFxHost;
+    use rts_lockstep_engine::client::drawable::LOGIC_DRAWABLE_ID_BASE;
+    use rts_lockstep_engine::client::particle_sys::{ParticleHost, ParticleSettings, ParticleSystemManager};
+    use rts_lockstep_engine::common::random_value::RandomValues;
+    use std::collections::BTreeMap;
+    let mut out = Vec::new();
+    let object_backed = w[0] != 0;
+    let mut d = Drawable::bare(if object_backed { obj } else { INVALID_ID }, b"Case".to_vec());
+    if !object_backed {
+        // (a logic-made drawable: its own id, as `ClientDrawables::new_logic_drawable` numbers it)
+        d.saved.drawable_id = LOGIC_DRAWABLE_ID_BASE + 7;
+    }
+    let set = |world: &mut World, d: &mut Drawable, m: &mut [i32]| {
+        if object_backed {
+            world.set_transform_matrix(obj, &matrix(m));
+            let t = *world.find_object(obj).expect("the object").thing.transform_matrix();
+            m.copy_from_slice(&words(&t));
+            // `Object::reactToTransformChange`'s push (Object.cpp:1771-1774)
+            d.saved.transform = t;
+        } else {
+            d.saved.transform = matrix(m);
+        }
+    };
+    set(world, &mut d, &mut w[1..13]);
+    let mut manager = ParticleSystemManager::new();
+    manager.load_text(b"x.ini", b"ParticleSystem PS\n  BurstCount = 0 0\nEnd\n").expect("the template");
+    let mut random = RandomValues::new(0);
+    let settings = ParticleSettings::default();
+    let id = manager.create_particle_system(b"PS", true, &mut random, 0).expect("made");
+    {
+        let s = manager.find_particle_system_mut(id).expect("made");
+        // (no emission: only the attachment is compared)
+        s.stop();
+        s.attach_to_drawable(d.particle_drawable_id());
+    }
+    let mut present = true;
+    let mut frame = 0u32;
+    for s in w[PS_HEADER..].chunks_exact_mut(STEP) {
+        match s[0] {
+            0 => set(world, &mut d, &mut s[2..]),
+            1 => d.set_fully_obscured_by_shroud(s[1] != 0, None),
+            2 => {
+                if let Some(p) = manager.find_particle_system_mut(id) {
+                    p.set_local_transform(&matrix(&s[2..]));
+                }
+            }
+            3 => {
+                if let Some(p) = manager.find_particle_system_mut(id) {
+                    p.skip_parent_xfrm = s[1] != 0;
+                }
+            }
+            4 => present = false,
+            _ => {
+                let Some(attached) = manager.find_particle_system(id).map(|p| p.attached_to_drawable) else {
+                    out.extend([800, 2]);
+                    continue;
+                };
+                let mut drawables = BTreeMap::new();
+                let mut logic = BTreeMap::new();
+                if present {
+                    if object_backed {
+                        drawables.insert(obj, d.clone());
+                    } else {
+                        // (kept by the logic's id, which is not the drawable's own)
+                        logic.insert(1000, d.clone());
+                    }
+                }
+                let host = WorldFxHost { world, drawables: &drawables, logic_drawables: &logic, local_player_index: None, sync_time: 0 };
+                let shrouded = i32::from(attached != 0 && host.drawable(attached).is_some_and(|a| a.shrouded));
+                frame += 1;
+                manager.update(&host, &mut random, &settings, frame, frame);
+                match manager.find_particle_system(id) {
+                    None => out.extend([800, 1, shrouded]),
+                    Some(p) => {
+                        out.extend([800, 0, shrouded, i32::from(p.is_identity)]);
+                        out.extend([b(p.pos.x), b(p.pos.y), b(p.pos.z), b(p.last_pos.x), b(p.last_pos.y), b(p.last_pos.z)]);
+                        out.extend(words(&p.transform));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// GitHub #173 item 4: a particle system attached to a drawable reads its shroud, transform and position as
+/// `ParticleSystem::update` reads them (ParticleSys.cpp:1874-1970, with `Drawable::getTransformMatrix` and
+/// `Thing::setTransformMatrix`, compiled verbatim: `differential/wrap_attach_cache.cpp`, entry point 3), for an
+/// object's drawable and for one of the logic's object-less drawables (`WorldFxHost::drawable`).
+///
+/// **Methodology.** One gate World and its first object. Each case: the drawable an object's (half) or an object-less
+/// one of the logic's (kept by the logic's id 1000, its own id `LOGIC_DRAWABLE_ID_BASE + 7`), its first transform, a
+/// stopped system of a template that emits nothing, attached with `Drawable::particle_drawable_id` (C++:
+/// `attachToDrawable(draw)`); then 1 to 16 steps: the transform set (an object's through `World::set_transform_matrix`
+/// and pushed, as `Object::reactToTransformChange` does; an object-less drawable's own) 20 %, the drawable's shroud
+/// 10 %, the system's `setLocalTransform` 15 %, `setSkipParentXfrm` 10 %, the drawable destroyed 3 %, an update 42 %
+/// (the port's whole `ParticleSystemManager::update`; the C++ the cut block): recorded the shroud, whether the system
+/// was destroyed, `m_isIdentity`, `m_pos`, `m_lastPos` and `m_transform`. Every word compared as bits.
+///
+/// **Predictions** (`issue173_predictions.md`, written before the first run): 0 mismatches over 20,000 cases; plants
+/// 10197-10202 caught (10200 in ~15 % of cases, the others ~40-45 %); 10196 not reached here.
+///
+/// **Results (2026-11-14, first run):** 20,000 cases, 61,379 updates of a live system (30,531 on an object-less
+/// drawable, 10,562 shrouded), 3,547 systems destroyed with their drawable: **0 mismatches**, max ULP 0. Plants
+/// (mismatching cases of 20,000): 10197 8,554; 10198 8,554; 10199 8,554; 10200 2,015; 10201 9,112; 10202 8,554; 10196
+/// 0 here (not reached), caught by the lib test `a_logic_drawable_s_bone_particle_systems_follow_it`. 7 of 7 caught.
+/// Prediction misses: 10200 (predicted ~15 %, measured 10 %); the others were 43-46 %, as predicted.
+#[test]
+fn a_particle_system_follows_its_drawable_with_an_object_or_none() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut world = rts_lockstep_engine::logic::world::gate_scenario::gate_world();
+    let obj = world.objects.ids_in_order()[0];
+    let mut check = Check::new("a particle system's attached drawable");
+    let mut g = Gen::new(0x173_4001);
+    let (mut updates, mut object_less_updates, mut destroyed, mut shrouded, mut max_ulp) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    for k in 0..cases() {
+        let mut w = psys_case(&mut g);
+        let rust = rust_psys(&mut world, obj, &mut w);
+        let cc = run_cpp(cpp::ref_psys_attach_seq, &w);
+        {
+            let mut i = 0;
+            while i + 1 < cc.len() {
+                match cc[i + 1] {
+                    0 => {
+                        updates += 1;
+                        object_less_updates += u64::from(w[0] == 0);
+                        shrouded += u64::from(cc[i + 2] != 0);
+                        i += 22;
+                    }
+                    1 => {
+                        destroyed += 1;
+                        i += 3;
+                    }
+                    _ => i += 2,
+                }
+            }
+        }
+        if rust.len() == cc.len() {
+            for (x, y) in rust.iter().zip(&cc) {
+                if x != y && r(*x).is_finite() && r(*y).is_finite() {
+                    max_ulp = max_ulp.max(support::ulp_distance(r(*x), r(*y)));
+                }
+            }
+        }
+        check.eq(rust, cc, || format!("case {k}"));
+    }
+    println!("particle attachment: {} cases, {updates} updates of a live system ({object_less_updates} on an object-less drawable, {shrouded} shrouded), {destroyed} destroyed with their drawable; max ULP among differing words {max_ulp}", cases());
     if planted() {
         check.report();
         panic!("a planted run: see the MEASURED line (a mismatch is the plant caught)");

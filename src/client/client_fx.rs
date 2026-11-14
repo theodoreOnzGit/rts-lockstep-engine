@@ -60,15 +60,16 @@
 //! - The requests of nuggets not drawn yet (sounds, light pulses, shakes, scorches, tracers, rays) are kept in
 //!   [`ClientFx::requests`] for the app, which may drop them.
 
-use crate::client::drawable::Drawable;
+use crate::client::drawable::{get_transform_matrix, Drawable};
 use crate::client::fx_list::{FxHost, FxListStore, FxPlay, FxRequest};
 use crate::client::particle_sys::{Attachment, ParticleHost, ParticleSettings, ParticleSystemManager};
 use crate::common::base_type::Coord3D;
 use crate::common::game_common::{CellShroudStatus, ObjectShroudStatus};
-use crate::common::game_type::{ObjectId, INVALID_ID, LAYER_GROUND};
+use crate::common::game_type::{DrawableId, ObjectId, INVALID_ID, LAYER_GROUND};
 use crate::common::ini::IniResult;
 use crate::common::random_value::RandomValues;
 use crate::logic::client_event::ClientEvent;
+use crate::logic::modules::plant;
 use crate::logic::weapon_host::WeaponFx;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::object_events::ObjectClientEvent;
@@ -129,6 +130,9 @@ pub struct ParticleLod {
 pub struct WorldFxHost<'a> {
     pub world: &'a World,
     pub drawables: &'a BTreeMap<ObjectId, Drawable>,
+    /// (#173 item 4) The logic's object-less drawables (`ClientDrawables::logic_drawables`, by the logic's id), which
+    /// particle systems find by their own drawable id ([`Drawable::particle_drawable_id`]).
+    pub logic_drawables: &'a BTreeMap<DrawableId, Drawable>,
     pub local_player_index: Option<i32>,
     /// (#179) `WW3D::Get_Sync_Time()`, at which the drawables' animated bones are posed.
     pub sync_time: u32,
@@ -172,10 +176,32 @@ impl FxHost for WorldFxHost<'_> {
 }
 
 impl ParticleHost for WorldFxHost<'_> {
+    /// `TheGameClient->findDrawableByID(id)` as `ParticleSystem::update` reads it (ParticleSys.cpp:1878-1890):
+    /// `getFullyObscuredByShroud()`, `getTransformMatrix()` and `getPosition()`. An object's drawable (the port's id for
+    /// it is its object's) answers its object's transform and position, which upstream pushes to the drawable
+    /// (`Object::reactToTransformChange`, Object.cpp:1771-1774); none once the object is gone.
+    ///
+    /// ~~The logic's object-less drawables are not found (their systems are destroyed at the first update).~~
+    /// **Corrected 2026-11-14 (#173 item 4):** an object-less drawable of the logic's
+    /// ([`WorldFxHost::logic_drawables`]) is found by its own id (`saved.drawable_id`, from
+    /// `crate::client::drawable::LOGIC_DRAWABLE_ID_BASE`) and answers `getTransformMatrix()`'s no-object branch (its own
+    /// transform, [`crate::client::drawable::get_transform_matrix`]) and `Thing::getPosition()` (`m_cachedPos`, which
+    /// `Thing::setTransformMatrix` sets to the transform's translation, Thing.cpp:257-260). Checked against both
+    /// compiled verbatim (`tests/differential_attach_cache.rs`, the particle attachment test).
     fn drawable(&self, id: ObjectId) -> Option<Attachment> {
-        let d = self.drawables.get(&id)?;
-        let (position, transform) = self.object(id)?;
-        Some(Attachment { transform, position, shrouded: d.get_fully_obscured_by_shroud() })
+        if let Some(d) = self.drawables.get(&id) {
+            let (position, transform) = self.object(id)?;
+            return Some(Attachment { transform, position, shrouded: d.get_fully_obscured_by_shroud() });
+        }
+        if plant(10197) {
+            return None;
+        }
+        // (#173 item 4) the logic's object-less drawables, by their own id (plant 10202: by the logic's key instead)
+        let d = if plant(10202) { self.logic_drawables.get(&id) } else { self.logic_drawables.values().find(|d| d.saved.drawable_id == id) }?;
+        let transform = if plant(10198) { Matrix3D::IDENTITY } else { get_transform_matrix(None, &d.saved.transform) };
+        let t = transform.get_translation();
+        let position = if plant(10199) { Coord3D::default() } else { Coord3D { x: t.x, y: t.y, z: t.z } };
+        Some(Attachment { transform, position, shrouded: d.get_fully_obscured_by_shroud() && !plant(10200) })
     }
     fn object(&self, id: ObjectId, local_player_index: i32) -> Option<Attachment> {
         let (position, transform) = self.object(id)?;

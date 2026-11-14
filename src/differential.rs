@@ -3692,6 +3692,10 @@ extern "C" {
     /// GitHub #179 item 5: `Drawable::getTransformMatrix` and `Drawable::draw`'s root, with an object or none, verbatim,
     /// over sequences.
     pub fn ref_drawable_transform_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+    /// GitHub #173 item 4: `ParticleSystem::update`'s attachment block (the attached drawable's shroud, transform and
+    /// position) with `Thing::setTransformMatrix`, verbatim, over sequences (differential/wrap_attach_cache.cpp, entry
+    /// point 3).
+    pub fn ref_psys_attach_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
     /// GitHub #181 item 7: W3DModelDraw's draw sequence with an animated render object (differential/
     /// wrap_model_draw_anim.cpp, which documents the words): doDrawModule, setModelState's animation, setPauseAnimation,
     /// adjustAnimation and the bone particle systems over the real hierarchy, raw animations and Animatable3DObjClass,

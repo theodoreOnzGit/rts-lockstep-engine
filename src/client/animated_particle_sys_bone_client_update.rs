@@ -34,7 +34,13 @@
 //!   draw module is a `W3DModelDraw` (or a subclass), whose `updateBonesForClientParticleSystems` always answers true
 //!   ([`crate::client::w3d_model_draw::W3DModelDraw::update_bones_for_client_particle_systems`]); ~~its systems are not
 //!   made yet (#165's gaps), so the walk moves nothing.~~ **Corrected 2026-11-12 (#171):** the module makes its bone
-//!   systems, and the walk moves them, in the object's transform (`DrawableClientHost`).
+//!   systems, and the walk moves them, ~~in the object's transform (`DrawableClientHost`)~~ **Corrected 2026-11-14
+//!   (#173 item 3; changed in #174 and #179):** at the render object's bones (`Get_Bone_Transform`, the animation's
+//!   pose), the render object first put at the drawable's transform (the object's, or an object-less drawable's own)
+//!   as `reactToTransformChange` puts it (`DrawableClientHost`). Upstream's render object keeps the last draw's root
+//!   (with the instance matrix and the physics) unless the logic set the object's transform since; the port is not
+//!   told when it does (the logic sends no event), so this is upstream's answer only for an object moved since the
+//!   last draw, or one whose root has neither (#173's gaps).
 
 use crate::common::xfer::{Xfer, XferResult, XferVersion};
 use crate::client::laser_update::drawable_module_base_xfer;

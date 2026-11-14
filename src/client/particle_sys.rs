@@ -946,7 +946,9 @@ pub struct ParticleSystem {
     pub info: ParticleSystemInfo,
     /// Its particles, in its list's order (`m_systemParticlesHead` on).
     pub particles: Vec<Particle>,
-    /// `m_attachedToDrawableID` (0: none; a drawable's id is its object's here).
+    /// `m_attachedToDrawableID` (0: none; a drawable's id is its object's here, ~~always~~ **Corrected 2026-11-14 (#173
+    /// item 4):** or for the logic's object-less drawables their own, from `crate::client::drawable::LOGIC_DRAWABLE_ID_BASE`:
+    /// `crate::client::drawable::Drawable::particle_drawable_id`).
     pub attached_to_drawable: ObjectId,
     /// `m_attachedToObjectID` (0: none).
     pub attached_to_object: ObjectId,
