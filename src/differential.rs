@@ -3655,6 +3655,10 @@ extern "C" {
     pub fn ref_laser_draw_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
     pub fn ref_laser_draw_xfer(mode: c_int, path: *const std::os::raw::c_char, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #65: SegLineRendererClass (differential/wrap_segline.cpp, which documents the words): seglinerenderer.cpp
+    // compiled verbatim over a recording device.
+    pub fn ref_segline_seq(input: *const c_uint, nin: c_int, out: *mut c_uint, cap: c_int) -> c_int;
+
     // GitHub #171: W3DModelDraw's bone particle systems (differential/wrap_model_draw_particles.cpp, which documents the
     // words): recalcBonesForClientParticleSystems, updateBonesForClientParticleSystems, stopClientParticleSystems,
     // doStartOrStopParticleSys, setHidden, setFullyObscuredByShroud and the parts of setModelState and doDrawModule that

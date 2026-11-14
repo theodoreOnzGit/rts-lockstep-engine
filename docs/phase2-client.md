@@ -127,6 +127,39 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#65 (2026-11-14, GitHub #65, after #49): the W3D emitters' line renderer, `SegLineRendererClass`.**
+- **Translated** (engine crate, `formats::w3d::seglinerenderer`): seglinerenderer.cpp whole as far as it feeds
+  rendering: the constructor's defaults, `Init` (the `W3D_ELINE_*` flags, an unknown mapping mode kept as it was),
+  `Set_Texture_Tile_Factor`'s clamps, `Reset_Line`, `Scale`, and `Render`: the UV scroll (once per call, its fraction
+  kept), chunks of `(128 >> level) + 1` points, eye space through the view's top three rows, V per point by mapping
+  mode, `subdivision_util`'s fractal noise (the randomizers' shared `Random3Class`, or a fresh one per chunk when frozen),
+  the silhouette planes and folds, the intersections (the `0.9` parallel test), the repeated intersection merging with
+  its abort test, the strip and fan vertices and triangles, the packed colours (`Convert_Color`, chopped), and the
+  shader, material and sorting choice. Each chunk is returned as data (`SegLineChunk`); the DirectX 8 device is not.
+- **Upstream quirks kept:** a merge weighs both points by the current count; the merge's copy leaves out `Parallel`;
+  the planes a merge is tested against are not refound after it; a subdivided segment's points all take its first
+  point's colour; the vertex material is always the diffuse one.
+- **The emitters:** `ParticleBuffer` now keeps the renderer itself (`line_renderer`, replacing `line_props` and
+  `line_width`: made, `Init`ed, textured, shaded and sized as the constructor makes it; `Scale` goes through it);
+  `ParticleBuffer::render_line_runs` draws `ParticleDraw::Lines`' runs through it with the camera's view (the caller
+  calls it after `render`: upstream's `Render_Line` calls the renderer inside `Render`, which has no camera here).
+- **Undefined upstream, and often:** a parallel merge of a parallel intersection reads `new_direction` before setting
+  it. Reported as `W3dUndefined::UninitialisedRead` (nothing drawn); 8,520 of the 14,527 merging random sequences
+  reach it. What to draw instead needs the owner's decision.
+- **Compared with the compiled upstream** (`tests/differential_segline.rs`, `differential/wrap_segline.cpp`,
+  `differential/shim_w3d/segline_prelude.h`; seglinerenderer.cpp from its first `#include` to the end, verbatim, over a
+  recording device): 20,000 sequences, 171,364,292 words (every vertex's position, colour, U and V, every triangle's
+  indices, each chunk's shader, material, texture and sorting, the renderer's state and the generator's after each
+  operation), 91,961 chunks, 18,904,757 vertices: **0 mismatches** (the first run); 8,520 sequences end at the
+  undefined read (compared up to it). 20 of 20 plants caught (10096-10115; the weakest, the merge's copy taking
+  `Parallel`, in 39 sequences).
+- **Not yet** (#65's gaps): the client draws line-mode runs as ribbons still (drawing the chunks needs the camera's
+  game-axes view and mutable emitters in `draw_particles`); the emitters' LOD (`Prepare_LOD`, the cost and value
+  arrays), hiding, release, non-HLOD emitters and the draw's `Scale`; the line groups' tetrahedra and prisms
+  (linegrp.cpp); the laser's lines through this renderer.
+- **Results:** lib 1,247 passed (3 new); client 102 passed; `differential_w3d` 40 passed (the emitter log, section 16,
+  unchanged); gate (a) PASS, 300 frames, last CRC 0bf44067; `src/logic` unchanged.
+
 **#67 (2026-11-14, GitHub #67): the legacy materials (`W3D_CHUNK_MATERIALS3`) and the per-triangle material ids.**
 - **Upstream:** WW3D2/meshmdlio.cpp (`read_chunks`' case, `read_v3_materials`, `read_per_tri_materials`,
   `MeshLoadContextClass::Add_Legacy_Material`, `Peek_Legacy_Shader/Vertex_Material/Texture`), vertmaterial.cpp/.h
@@ -646,7 +679,9 @@ first frame.** The logic's change is described in `docs/phase1-porting-graph.md`
 - **Compared with the compiled upstream** (`tests/differential_laser_draw.rs`, `differential/wrap_laser_draw.cpp`): 20,000
   sequences (311,757 steps, 125,145 draws; 98 undefined upstream), 0 mismatches, max ULP 0; the save and 20,000 loads, 0
   mismatches; 30 of 30 planted bugs caught.
-- **Not yet** (#168's gaps): the segment-line renderer's own strip (end caps, sorting) and the scene's culling of the
+- **Not yet** (#168's gaps): ~~the segment-line renderer's own strip (end caps, sorting)~~ **Corrected 2026-11-14
+  (#65):** the segment-line renderer's strip and sorting are translated (`formats::w3d::seglinerenderer`; upstream's
+  `Render` never reads the end-caps bit), but the laser lines are not yet drawn through it; and the scene's culling of the
   lines; the logic-made drawables in a save; a client attached mid-game; the logic's laser radius (still the test table's,
   0 in a game).
 

@@ -169,7 +169,9 @@ fn ribbon(b: &mut QuadBatch, points: &[[f32; 3]], colors: &[[f32; 4]], width: f3
 /// [`PointTables`], facing the camera; the frame's cell of the texture, `frame & mask` in rows of `1 << log2`);
 /// line-mode runs and line-group lines as camera-facing ribbons of the line's width or the particle's size (upstream's
 /// segment-line renderer subdivides, adds noise and merges intersections; its line groups draw tetrahedra or prisms:
-/// not modelled).
+/// ~~not modelled~~ **Corrected 2026-11-14 (#65):** the segment-line renderer is translated in the core
+/// (`formats::w3d::seglinerenderer`, `ParticleBuffer::render_line_runs`) but not yet drawn here; the line groups are not
+/// modelled).
 pub fn emitter_quads<'a>(
     models: impl Iterator<Item = &'a rts_lockstep_engine::formats::w3d::render::RenderModel>,
     tables: &PointTables,

@@ -89,12 +89,20 @@
 //!   integer that cannot hold it (key times, `MaxAge`, orientations,
 //!   frames: [`W3dUndefined::FloatToInt`]); a buffer the 32-bit original
 //!   cannot allocate ([`W3dUndefined::Allocation`]).
-//! - The draws are returned as data ([`ParticleDraw`]); the point group,
-//!   segment-line renderer and line group that draw them are the client's.
+//! - The draws are returned as data ([`ParticleDraw`]); ~~the point group,
+//!   segment-line renderer and line group that draw them are the client's.~~
+//!   **Corrected 2026-11-14 (#65):** the point group and line group that
+//!   draw them are the client's; the segment-line renderer is translated
+//!   ([`super::seglinerenderer`], kept in the buffer), and the line runs go
+//!   through it in [`ParticleBuffer::render_line_runs`], which the caller
+//!   calls after `render` with the camera (`Render` has none here).
 
 use super::shader::{ShaderClass, DSTBLEND_ONE, DSTBLEND_ONE_MINUS_SRC_ALPHA, DSTBLEND_ONE_MINUS_SRC_COLOR, DSTBLEND_SRC_COLOR};
 use super::shader::{SRCBLEND_ONE, SRCBLEND_SRC_ALPHA};
+use super::seglinerenderer::{SegLineChunk, SegLineRenderer};
 use super::w3d_file::W3dEmitterLinePropertiesStruct;
+use crate::ww::matrix3d::Matrix3D;
+use crate::ww::random::Random3;
 use super::{W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
 use crate::ww::random::Random4;
 use crate::ww::vector3::Vector3;
@@ -409,9 +417,13 @@ pub struct ParticleBuffer {
     pub has_point_group: bool,
     pub has_line_renderer: bool,
     pub has_line_group: bool,
-    /// `LineRenderer->Init(*line_props)`; its width (`Set_Width`).
-    pub line_props: Option<W3dEmitterLinePropertiesStruct>,
-    pub line_width: f32,
+    /// ~~`LineRenderer->Init(*line_props)`; its width (`Set_Width`).~~
+    /// **Corrected 2026-11-14 (#65):** the `SegLineRendererClass` itself
+    /// ([`SegLineRenderer`]: `Init(*line_props)`, `Set_Texture`, `Set_Shader`,
+    /// `Set_Width(Get_Particle_Size())`), whose width, noise and UV scroll
+    /// state the buffer keeps; [`ParticleBuffer::render_line_runs`] draws
+    /// [`ParticleDraw::Lines`]' runs with it.
+    pub line_renderer: Option<SegLineRenderer>,
     /// The renderer's texture (`Set_Texture`): its name, `None` for null.
     pub texture: Option<Vec<u8>>,
     /// The renderer's shader (`Set_Shader`, after `Enable_Fog`).
@@ -532,8 +544,7 @@ impl ParticleBuffer {
             has_point_group: false,
             has_line_renderer: false,
             has_line_group: false,
-            line_props: None,
-            line_width: 0.0,
+            line_renderer: None,
             texture: None,
             shader: p.shader,
             position: [None, None],
@@ -577,8 +588,7 @@ impl ParticleBuffer {
                 // (Init(*line_props) before the null test; the second renderer below replaces this one)
                 b.has_line_renderer = true;
                 b.texture = p.texture.clone();
-                b.line_width = b.get_particle_size();
-                b.line_props = p.line_props;
+                b.line_renderer = Some(b.new_line_renderer(p.line_props.as_ref(), &shader, clock));
             }
             W3D_EMITTER_RENDER_MODE_LINEGRP_TETRA | W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM => {
                 b.has_line_group = true;
@@ -598,10 +608,9 @@ impl ParticleBuffer {
         // (Calculate_Cost_Value_Arrays(1.0f): with the default screen-size clamps the minimum LOD is 0 and the
         // decimation threshold stays 0)
         if b.render_mode == W3D_EMITTER_RENDER_MODE_LINE {
-            if p.line_props.is_some() {
+            if let Some(lp) = p.line_props.as_ref() {
                 b.has_line_renderer = true;
-                b.line_props = p.line_props;
-                b.line_width = b.get_particle_size();
+                b.line_renderer = Some(b.new_line_renderer(Some(lp), &shader, clock));
             } else {
                 // in line mode without line properties, drop back to triangles
                 b.render_mode = W3D_EMITTER_RENDER_MODE_TRI_PARTICLES;
@@ -939,12 +948,9 @@ impl ParticleBuffer {
                 *x *= scale;
             }
         }
-        if self.has_line_renderer {
+        if let Some(lr) = self.line_renderer.as_mut() {
             // SegLineRendererClass::Scale: the width and the noise amplitude
-            self.line_width *= scale;
-            if let Some(lp) = self.line_props.as_mut() {
-                lp.noise_amplitude *= scale;
-            }
+            lr.scale(scale);
         }
         self.max_size *= scale;
         self.size_random *= scale;
@@ -1467,7 +1473,48 @@ impl ParticleBuffer {
             }
             start = end;
         }
-        ParticleDraw::Lines { width: self.line_width, runs }
+        ParticleDraw::Lines { width: self.line_renderer.as_ref().map_or(0.0, |lr| lr.width), runs }
+    }
+
+    /// `new SegLineRendererClass` at sync time `clock.sync_time`, then
+    /// `Init(*line_props)`, `Set_Texture(tex)`, `Set_Shader(shader)` and
+    /// `Set_Width(Get_Particle_Size())`, as the constructor makes it (a null
+    /// `line_props` is dereferenced upstream: the defaults are kept here, and
+    /// the constructor then drops back to triangles).
+    fn new_line_renderer(&self, line_props: Option<&W3dEmitterLinePropertiesStruct>, shader: &ShaderClass, clock: &Ww3dClock) -> SegLineRenderer {
+        let mut lr = SegLineRenderer::new(clock.sync_time);
+        if let Some(lp) = line_props {
+            lr.init(lp);
+        }
+        lr.texture = self.texture.clone();
+        lr.shader = *shader;
+        lr.width = self.get_particle_size();
+        lr
+    }
+
+    /// The rest of `Render_Line`: each run of a [`ParticleDraw::Lines`] (in
+    /// order) through `LineRenderer->Render(rinfo, Transform, ...)` at sync
+    /// time `clock.sync_time`, with the buffer's transform (the identity:
+    /// particles are kept in world space) and the camera's `view`; `v3` is
+    /// the randomizers' shared generator. **Differs from upstream:** the
+    /// caller draws the runs after `Render` (which has no camera here),
+    /// before anything else draws from `v3`. `Set_Freeze_Random(
+    /// Is_Freeze_Random())` sets the flag to itself and is left out. Each
+    /// run's chunks, `None` for a buffer with no line renderer.
+    pub fn render_line_runs(
+        &mut self,
+        runs: &[LineRun],
+        clock: &Ww3dClock,
+        view: &Matrix3D,
+        v3: &mut Random3,
+    ) -> W3dResult<Option<Vec<Vec<SegLineChunk>>>> {
+        let Some(lr) = self.line_renderer.as_mut() else { return Ok(None) };
+        let transform = Matrix3D::identity();
+        let mut out = Vec::with_capacity(runs.len());
+        for r in runs {
+            out.push(lr.render(clock.sync_time, view, &transform, &r.points, Some(&r.colors), v3)?);
+        }
+        Ok(Some(out))
     }
 
     /// `Determine_Tail_Diffuse()`: from the texture and the shader.
@@ -1635,5 +1682,53 @@ mod tests {
             }
             d => panic!("{d:?}"),
         }
+    }
+
+    /// (#65) *Predictions, written before the first run:* a line-mode buffer of particle size 1 made at sync 300 has a
+    /// line renderer of width 1 with the line properties' flags, the buffer's texture and fogged shader, its UV clock at
+    /// 300; `Scale(2)` doubles the width and the noise; two particles at x 0 and 400 (after 500 ms) draw one run, which
+    /// `render_line_runs` turns into one chunk of 4 vertices and 2 triangles with the texture; a buffer of points has
+    /// none (`None`).
+    ///
+    /// *Results (2026-11-14), first run:* all held.
+    #[test]
+    fn line_mode_draws_through_the_segment_renderer() {
+        use super::super::seglinerenderer::W3D_ELINE_MERGE_INTERSECTIONS;
+        let mut r = Random4::default();
+        let mut p = params(props_f(1.0, 0.0, &[]));
+        p.render_mode = W3D_EMITTER_RENDER_MODE_LINE;
+        let lp = W3dEmitterLinePropertiesStruct {
+            flags: W3D_ELINE_MERGE_INTERSECTIONS,
+            subdivision_level: 0,
+            noise_amplitude: 0.5,
+            merge_abort_factor: 1.5,
+            texture_tile_factor: 1.0,
+            u_per_sec: 0.0,
+            v_per_sec: 0.0,
+            reserved: [0; 9],
+        };
+        p.line_props = Some(lp);
+        let clock = Ww3dClock { sync_time: 300, frame_time: 0, frame_count: 0 };
+        let mut b = ParticleBuffer::new(&p, &mut r, &clock).unwrap();
+        let lr = b.line_renderer.clone().unwrap();
+        assert_eq!((lr.width, lr.last_used_sync_time, lr.bits & 0xFF), (1.0, 300, 1));
+        assert_eq!((lr.texture.clone(), lr.shader), (b.texture.clone(), b.shader));
+        b.scale(2.0);
+        let lr = b.line_renderer.clone().unwrap();
+        assert_eq!((lr.width, lr.noise_amplitude), (2.0, 1.0));
+        for t in [300, 400] {
+            *b.add_uninitialized_new_particle() = NewParticle { velocity: Vector3::new(1.0, 0.0, 0.0), time_stamp: t, ..NewParticle::default() };
+        }
+        let c = Ww3dClock { sync_time: 800, frame_time: 500, frame_count: 1 };
+        let ParticleDraw::Lines { width, runs } = b.render(&c, None).unwrap() else { panic!("not lines") };
+        assert_eq!((width, runs.len()), (2.0, 1));
+        let mut view = Matrix3D::identity();
+        view.row[2].w = -100.0;
+        let chunks = b.render_line_runs(&runs, &c, &view, &mut Random3::default()).unwrap().unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!((chunks[0].len(), chunks[0][0].vertices.len(), chunks[0][0].triangles.len()), (1, 4, 2));
+        assert_eq!(chunks[0][0].texture, Some(b"a.tga".to_vec()));
+        let mut q = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[])), &mut r, &clock).unwrap();
+        assert_eq!(q.render_line_runs(&runs, &c, &view, &mut Random3::default()).unwrap(), None);
     }
 }
