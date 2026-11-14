@@ -124,6 +124,53 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#179 items 4 and 5 (2026-11-14, GitHub #179, #182 item 4): the attach-offset cache's first filler (measured, not
+changed), and a drawable with no object.**
+- **Upstream, item 4** (W3DModelDraw.cpp:1146-1174, `CACHE_ATTACH_BONE` defined at W3DModelDraw.h:278): one cache per
+  module data, the template's, shared by all its drawables. The first `getAttachToDrawableBoneOffset(draw)` of any
+  drawable fills it from that drawable's `getPristineBonePositions(bone, 0, NULL, &mtx, 1)` in the state its flags
+  select then. Its askers are `adjustTransformMtx` (`doDrawModule` 2098, `reactToTransformChange` 3658) and
+  `getProjectileLaunchOffset` (3363, the turret positions the logic reads: Weapon.cpp:2971, Object.cpp:6041). In
+  practice the first asker is the template's first drawable at its first transform, after `friend_bindToDrawable` set
+  its weapon-set, `NIGHT` and `SNOW` flags (Object.cpp:2975-3006).
+- **The cache feeds the logic, so no behaviour was changed for item 4.** The port keeps two caches, both filled from
+  the no-flags state: the client's when each drawable is made, and the logic's at load (#178). Following upstream's
+  first filler would make the logic's turret positions depend on the first asker's state, which needs the owner's
+  decision. **Measured** (`tests/differential_attach_cache.rs`, new; `differential/wrap_attach_cache.cpp` compiles
+  `getAttachToDrawableBoneOffset` verbatim over four drawables of one template, each asking in its own state):
+  - the port's function asked on upstream's schedule: 20,000 cases, 75,047 asks, **0 mismatches** (plant 9753 caught
+    in 12,317 cases);
+  - the port's two schedules against upstream: 20,000 cases, 76,531 asks. The client's and the logic's caches differ
+    in **4,122 cases** (18,434 asks). They agree with each other at every ask. Every mismatch is one where upstream's
+    first filler was in another state with another offset. That happened in 5,757 cases, and in 1,635 of them the
+    offset was the same as the default state's. The largest offset distance was 50.9 (the generator's bones are
+    within 20 per axis);
+  - with real port logic code, `differential_logic_bones` with plant 9787 (the first query's drawable fills the cache,
+    upstream's schedule): 270 of 20,000 main cases and 3,438 of 20,000 attach cases, as #178 recorded.
+- **Item 5, translated:** `Drawable::getTransformMatrix` (Drawable.cpp:4297-4310) answers the object's transform, or
+  without an object the drawable's own (`Thing::getTransformMatrix`): `client::drawable::get_transform_matrix`, read by
+  `ClientDrawables::draw_facts` (new `own_transform` argument: the drawable's saved transform). ~~`draw_facts` gives
+  the identity without an object~~ **Corrected 2026-11-14 (#179 item 5).** Both of `ClientDrawables::draw`'s loops now
+  take the root from `ClientDrawables::root_draw_facts`. For the logic's object-less drawables, the root is their own
+  transform times their instance matrix, as #182 item 4 asks; `applyPhysicsXform` returns at `!obj`. Nothing drawn
+  changes today, because their only draw modules are lasers, which do not read the root.
+- **Results:** `differential_attach_cache`'s root test covers `getTransformMatrix`, `Drawable::draw`'s root,
+  `applyPhysicsXform` and `setInstanceMatrix` verbatim, with an object or none. The object's transforms are set through
+  `World::set_transform_matrix` and pushed to the drawable as `Object::reactToTransformChange` does. Over 20,000 cases
+  and 130,553 steps (6,914 draws and 4,718 `getTransformMatrix` calls without an object): **0 mismatches**, max ULP 0.
+  Plants 10016 (with an object, the drawable's own transform): 8,285 cases; 10017 (no object: the identity, the old
+  answer): 3,641; 10018 (the object-less root without its instance matrix): 1,595. 3 of 3 caught, and the new lib test
+  `issue179i5_an_object_less_drawable_s_root_is_its_own_transform_times_its_instance_matrix` fails under each.
+- **Other runs:** lib 1,237 passed. `differential_model_draw_particles` 0 / 0, `differential_logic_bones` 0 / 0,
+  `differential_tank_truck_draw` 0, `differential_drawable_loco` 0, `differential_model_draw_anim` 0. Client 102 passed. Gate (a) PASS, last CRC 0bf44067 (unchanged).
+  `src/logic` unchanged.
+- **Not done (gaps):** item 4's behaviour (the owner's decision: one cache shared by the client and the logic, filled
+  by the first asker in its state, or the port's two no-flags fills kept); the measurement's states are stand-ins (the
+  owner's art would show whether any template's attach bone moves between states); an object-backed drawable's saved
+  transform is not kept equal to its object's between saves (upstream's `reactToTransformChange` push), so the fallback
+  would read a stale transform if the object vanished before `ObjectDestroyed`, which does not happen today;
+  `nukeCurrentRender` reads the last drawn transform, not the current `getTransformMatrix()` (not measured here).
+
 **#181 item 7c (2026-11-14, GitHub #181): transition states and the show/hide sub-object lists.**
 - **Upstream** (W3DModelDraw.cpp): `setModelState` (2911-2995) returns for the current state with nothing pending or
   for the pending state; a state whose `WaitForStateToFinishIfPossible` key is the current state's `TransitionKey`

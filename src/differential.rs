@@ -3663,6 +3663,12 @@ extern "C" {
     /// GitHub #182: which of the two client random values the compiled `shudder.Set(...)` gives x (0 the first drawn,
     /// 1 the second; C++ leaves the argument order unspecified).
     pub fn ref_mdp_shudder_order() -> c_int;
+    /// GitHub #179 items 4 and 5 (differential/wrap_attach_cache.cpp, which documents the words): the attach-offset
+    /// cache (`getAttachToDrawableBoneOffset`) asked by several drawables of one template, verbatim, over sequences.
+    pub fn ref_attach_cache_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+    /// GitHub #179 item 5: `Drawable::getTransformMatrix` and `Drawable::draw`'s root, with an object or none, verbatim,
+    /// over sequences.
+    pub fn ref_drawable_transform_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
     /// GitHub #181 item 7: W3DModelDraw's draw sequence with an animated render object (differential/
     /// wrap_model_draw_anim.cpp, which documents the words): doDrawModule, setModelState's animation, setPauseAnimation,
     /// adjustAnimation and the bone particle systems over the real hierarchy, raw animations and Animatable3DObjClass,

@@ -1306,7 +1306,15 @@ impl ClientDrawables {
     /// turrets ([`ClientDrawables::turret_rot_and_pitch`]) and the motion ([`ClientDrawables::motion`]).
     ///
     /// [`PhysicsBehavior::peek_velocity_magnitude`]: crate::logic::modules::physics_behavior::PhysicsBehavior::peek_velocity_magnitude
-    pub fn draw_facts(w: &World, id: ObjectId, show_client_physics: bool, wheel_info: Option<super::drawable_loco::TWheelInfo>) -> DrawFacts {
+    ///
+    /// (#179 item 5) `own_transform` is the drawable's own transform (`Thing::getTransformMatrix()`, the port's
+    /// [`DrawableSaveFields::transform`]); the drawable's transform is [`get_transform_matrix`]'s: the object's, or
+    /// without one `own_transform`.
+    ///
+    /// [`DrawableSaveFields::transform`]: super::drawable_save::DrawableSaveFields::transform
+    pub fn draw_facts(w: &World, id: ObjectId, own_transform: &Matrix3D, show_client_physics: bool, wheel_info: Option<super::drawable_loco::TWheelInfo>) -> DrawFacts {
+        // `*getTransformMatrix()` (Drawable.cpp:2663)
+        let drawable_transform = get_transform_matrix(w.find_object(id).map(|o| o.thing.transform_matrix()), own_transform);
         DrawFacts {
             should_animate_with_power: Self::get_should_animate(w, id, true),
             should_animate_without_power: Self::get_should_animate(w, id, false),
@@ -1316,16 +1324,36 @@ impl ClientDrawables {
             show_client_physics,
             wheel_info,
             // (#171) the render object's transform (`Set_Transform(mtx)`) as the port places it: the object's transform
-            // matrix (the scale is the skeleton's); the identity without an object. (#179 item 3) `getTransformMatrix()`
-            // only: `ClientDrawables::draw` replaces it with the draw's root (`Drawable::draw_transform_mtx`: the
-            // instance matrix and `applyPhysicsXform` on it)
-            transform: w.find_object(id).map_or(Matrix3D::IDENTITY, |o| *o.thing.transform_matrix()),
-            drawable_transform: w.find_object(id).map_or(Matrix3D::IDENTITY, |o| *o.thing.transform_matrix()),
+            // matrix (the scale is the skeleton's); ~~the identity without an object~~ **Corrected 2026-11-14 (#179
+            // item 5):** without an object, the drawable's own transform (`getTransformMatrix()`'s fallback). (#179
+            // item 3) `getTransformMatrix()` only: `ClientDrawables::draw` replaces it with the draw's root
+            // ([`ClientDrawables::root_draw_facts`]: the instance matrix and `applyPhysicsXform` on it)
+            transform: drawable_transform,
+            drawable_transform,
             construction: Self::construction(w, id),
             // (#184 item 1) the freeze the tank and truck draws test, the expression applyPhysicsXform's gates hold
             frozen: super::drawable_loco::PhysicsXformGates::of(w, id).frozen() && !plant(9936),
             has_object: w.find_object(id).is_some(),
         }
+    }
+
+    /// (#179 items 3 and 5) [`ClientDrawables::draw_facts`] of drawable `d` (of object `id`, `INVALID_ID` for the logic's
+    /// object-less drawables) with `Drawable::draw`'s root (Drawable.cpp:2662-2673) as [`DrawFacts::transform`]:
+    /// `*getTransformMatrix()` (the object's, or without one `d`'s own transform), `postMul` its instance matrix, and
+    /// this draw's `applyPhysicsXform` totals ([`Drawable::draw_transform_mtx`], with [`Drawable::physics_xform`] as
+    /// [`Drawable::apply_physics_xform`] set it just before; `None` without an object).
+    pub fn root_draw_facts(w: &World, id: ObjectId, d: &Drawable, show_client_physics: bool) -> DrawFacts {
+        let mut facts = Self::draw_facts(w, id, &d.saved.transform, show_client_physics, d.get_wheel_info());
+        // (#179 item 3) `transformMtx`: the drawable's transform, its instance matrix and this draw's physics totals, in
+        // upstream's order (Drawable.cpp:2662-2673)
+        if !plant(9857) {
+            facts.transform = d.draw_transform_mtx(&facts.drawable_transform);
+        }
+        // (#179 item 5 plant: an object-less drawable's root without its instance matrix)
+        if plant(10018) && w.find_object(id).is_none() {
+            facts.transform = facts.drawable_transform;
+        }
+        facts
     }
 
     /// (#174) What `adjustTransformMtx` reads of the object (W3DModelDraw.cpp:2024-2035): `getConstructionPercent()` and
@@ -1402,12 +1430,7 @@ impl ClientDrawables {
                 // `applyPhysicsXform(&transformMtx)`, before the draw modules (GitHub #41)
                 let xform = physics_xform_facts(w, id);
                 d.apply_physics_xform(&xform, &mut self.random);
-                let mut facts = Self::draw_facts(w, id, show_client_physics, d.get_wheel_info());
-                // (#179 item 3) `transformMtx`: the drawable's transform, its instance matrix and this draw's physics
-                // totals, in upstream's order (Drawable.cpp:2662-2673)
-                if !plant(9857) {
-                    facts.transform = d.draw_transform_mtx(&facts.drawable_transform);
-                }
+                let facts = Self::root_draw_facts(w, id, d, show_client_physics);
                 let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
                 // (#174) the modules' `AttachToBoneInAnotherModule` offsets, which `adjustTransformMtx` reads (filled once)
                 let orientation = w.find_object(id).map_or(0.0, |o| o.thing.orientation());
@@ -1436,7 +1459,10 @@ impl ClientDrawables {
             }
         }
         // (#168) the logic's object-less drawables (`ParticleUplinkCannonUpdate`'s beams): their client update modules,
-        // then `Drawable::draw` (no object: no shroud, no physics); their only draw modules the client makes are lasers
+        // then `Drawable::draw` (no object: no shroud, no physics); their only draw modules the client makes are lasers.
+        // (#179 item 5) Their root is upstream's: their own transform (`getTransformMatrix()`'s fallback) times their
+        // instance matrix ([`ClientDrawables::root_draw_facts`]); `applyPhysicsXform` returns at `!obj`, and
+        // `physics_xform` is never set on them
         let logic_ids: Vec<DrawableId> = self.logic_drawables.keys().copied().collect();
         for id in logic_ids {
             self.client_update_modules_in(w, Slot::Logic(id), ClientUpdateCall::Update);
@@ -1444,7 +1470,7 @@ impl ClientDrawables {
             if d.is_drawable_effectively_hidden() {
                 continue;
             }
-            let facts = Self::draw_facts(w, crate::common::game_type::INVALID_ID, show_client_physics, None);
+            let facts = Self::root_draw_facts(w, crate::common::game_type::INVALID_ID, d, show_client_physics);
             let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
             for dm in d.get_draw_modules(&mut env) {
                 dm.do_draw_module(&facts, &mut env);
@@ -1473,6 +1499,23 @@ enum ClientUpdateCall {
     InitLaser { parent: Option<LaserObject>, target: Option<LaserObject>, start: Coord3D, end: Coord3D, bone: Vec<u8>, size_delta_frames: i32 },
     /// (#168) `setDecayFrames(frames)` of the module `findClientUpdateModule("LaserUpdate")` finds.
     SetDecayFrames(u32),
+}
+
+/// (#179 item 5) `Drawable::getTransformMatrix()` (Drawable.cpp:4297-4310): "Return the Drawable's world transform. If
+/// this Drawable is attached to an Object, return the Object's transform instead." `object_transform` is
+/// `getObject()->getTransformMatrix()` (`None`: no object), `own_transform` the drawable's own (`Thing::getTransformMatrix()`,
+/// Thing.h:142, the port's [`DrawableSaveFields::transform`]). Checked against the upstream text compiled verbatim
+/// (`tests/differential_attach_cache.rs`).
+///
+/// [`DrawableSaveFields::transform`]: super::drawable_save::DrawableSaveFields::transform
+pub fn get_transform_matrix(object_transform: Option<&Matrix3D>, own_transform: &Matrix3D) -> Matrix3D {
+    match object_transform {
+        // (plant 10016: the drawable's own transform answered although it has an object)
+        Some(t) if !plant(10016) => *t,
+        // (plant 10017: the identity, the port's answer before #179 item 5)
+        _ if plant(10017) => Matrix3D::IDENTITY,
+        _ => *own_transform,
+    }
 }
 
 /// (#179) `Drawable::draw`'s transform for the draw modules (Drawable.cpp:2662-2673):
@@ -2011,13 +2054,13 @@ mod tests {
         assert_eq!(PhysicsXformGates::of(&w, id), PhysicsXformGates::OPEN);
         assert!(physics_xform_facts(&w, id).gates.passes());
 
-        assert!(!ClientDrawables::draw_facts(&w, id, true, None).frozen);
+        assert!(!ClientDrawables::draw_facts(&w, id, &Matrix3D::IDENTITY, true, None).frozen);
         w.script_engine.do_freeze_time();
         let g = PhysicsXformGates::of(&w, id);
         assert!(g.time_frozen_script && !g.passes(), "a script froze time: {g:?}");
         // (#184 item 1) the draw modules' freeze is the same expression, read with the same gates
         assert!(g.frozen());
-        assert!(ClientDrawables::draw_facts(&w, id, true, None).frozen, "the tank and truck draws see the freeze");
+        assert!(ClientDrawables::draw_facts(&w, id, &Matrix3D::IDENTITY, true, None).frozen, "the tank and truck draws see the freeze");
         assert_eq!(physics_xform_facts(&w, id).gates, g);
         c.draw(&w, &mut NoAssets, 33);
         assert!(c.drawables[&id].physics_xform.is_none());
@@ -2040,7 +2083,7 @@ mod tests {
         let g = PhysicsXformGates::of(&w, id);
         assert!(g.held && !g.passes(), "{g:?}");
         // (#184 item 1) held is not frozen: the tank and truck draws do not test it
-        assert!(!g.frozen() && !ClientDrawables::draw_facts(&w, id, true, None).frozen);
+        assert!(!g.frozen() && !ClientDrawables::draw_facts(&w, id, &Matrix3D::IDENTITY, true, None).frozen);
 
         let g = PhysicsXformGates::of(&w, crate::common::game_type::INVALID_ID);
         assert!(!g.has_object && !g.passes());
@@ -2351,7 +2394,7 @@ mod tests {
         let words = |w: &World| ids.iter().map(|&id| w.physics_peek(id).unwrap().state_words()).collect::<Vec<_>>();
         let before = words(&w);
         c.draw(&w, &mut NoAssets, 33);
-        let speeds: Vec<Option<f32>> = ids.iter().map(|&id| ClientDrawables::draw_facts(&w, id, true, None).speed).collect();
+        let speeds: Vec<Option<f32>> = ids.iter().map(|&id| ClientDrawables::draw_facts(&w, id, &Matrix3D::IDENTITY, true, None).speed).collect();
         assert_eq!(words(&w), before);
         let mut changed = 0;
         for (k, &id) in ids.iter().enumerate() {
@@ -2361,5 +2404,48 @@ mod tests {
             changed += usize::from(w.physics_peek(id).unwrap().state_words() != before[k]);
         }
         assert!(changed > 0, "the module call fills the cache");
+    }
+
+    /// (#179 item 5, #182 item 4) `Drawable::getTransformMatrix()`'s fallback and the root `Drawable::draw` hands its
+    /// modules ([`ClientDrawables::root_draw_facts`], which both of [`ClientDrawables::draw`]'s loops use): a drawable
+    /// with no object (the logic's beams) gets its own transform times its instance matrix; with an object, the object's
+    /// transform times the instance matrix, whatever the drawable's own transform holds.
+    ///
+    /// *Predictions, written before the first run* (`issue179i45_predictions.md`): holds; plants 10016 (with an object,
+    /// the drawable's own transform), 10017 (no object: the identity, the old answer) and 10018 (the object-less root
+    /// without its instance matrix) each fail it.
+    #[test]
+    fn issue179i5_an_object_less_drawable_s_root_is_its_own_transform_times_its_instance_matrix() {
+        use crate::common::game_type::INVALID_ID;
+        use crate::ww::vector3::Vector3;
+        let w = crate::logic::world::gate_scenario::gate_world();
+        let mut d = Drawable::bare(INVALID_ID, b"Beam".to_vec());
+        let mut own = Matrix3D::IDENTITY;
+        own.rotate_z(0.5);
+        own.set_translation(&Vector3 { x: 10.0, y: 20.0, z: 3.0 });
+        d.saved.transform = own;
+        let mut inst = Matrix3D::IDENTITY;
+        inst.rotate_x(0.25);
+        inst.set_translation(&Vector3 { x: 1.0, y: -2.0, z: 0.5 });
+        d.set_instance_matrix(Some(&inst));
+        assert_eq!(get_transform_matrix(None, &own), own);
+        let f = ClientDrawables::root_draw_facts(&w, INVALID_ID, &d, true);
+        assert!(!f.has_object);
+        assert_eq!(f.drawable_transform, own, "no object: the drawable's own transform");
+        let mut want = own;
+        want.post_mul(&inst);
+        assert_eq!(f.transform, want, "the root: its own transform times its instance matrix");
+        assert_ne!(want, own);
+
+        // with an object: the object's transform, not the drawable's own
+        let id = w.objects.ids_in_order()[0];
+        let ot = *w.find_object(id).expect("an object").thing.transform_matrix();
+        assert_ne!(ot, own);
+        let f = ClientDrawables::root_draw_facts(&w, id, &d, true);
+        assert!(f.has_object);
+        assert_eq!(f.drawable_transform, ot, "an object: the object's transform");
+        let mut want = ot;
+        want.post_mul(&inst);
+        assert_eq!(f.transform, want);
     }
 }
