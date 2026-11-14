@@ -11,7 +11,19 @@
 //   Render_Line_Group, Determine_Tail_Diffuse, Update_Kinematic_Particle_State,
 //   Update_Visual_Particle_State, Update_Bounding_Box, Get_New_Particles,
 //   Kill_Old_Particles, Update_Non_New_Particles, Set_Acceleration, the
-//   inline accessors; PermutationArray, MAX_RANDOM_ENTRIES)
+//   inline accessors; PermutationArray, MAX_RANDOM_ENTRIES; (#65) Prepare_LOD,
+//   Increment_LOD, Decrement_LOD, Get_Cost, Get_Value,
+//   Get_Post_Increment_Value, Set_LOD_Level, Get_LOD_Level, Get_LOD_Count,
+//   Set_LOD_Bias, Calculate_Cost_Value_Arrays, Set_LOD_Max_Screen_Size,
+//   Get_LOD_Max_Screen_Size, LODMaxScreenSizes, On_Frame_Update,
+//   Get_Obj_Space_Bounding_Sphere, Get_Obj_Space_Bounding_Box)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/rendobj.h, rendobj.cpp
+//   (#65: RenderObjClass::Get_Bounding_Sphere, Update_Cached_Bounding_Volumes,
+//   Set_Hidden, Set_Visible, Set_Animation_Hidden, Is_Not_Hidden_At_All,
+//   AT_MIN_LOD, AT_MAX_LOD)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/predlod.cpp
+//   (#65: PredictiveLODOptimizerClass::Add_Object's cost, as Prepare_LOD
+//   hands it over)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/vp.cpp
 //   (VectorProcessorClass::Copy (the three Vector4 overloads) and Clamp)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/pot.cpp (Find_POT)
@@ -80,15 +92,25 @@
 //!
 //! # Where this differs from upstream
 //!
-//! - **Not modelled**: the predictive LOD (`Prepare_LOD`, the cost and
+//! - ~~**Not modelled**: the predictive LOD (`Prepare_LOD`, the cost and
 //!   value arrays): the buffer keeps the decimation threshold the
 //!   constructor leaves with the default screen-size clamps, 0 (every
-//!   particle drawn); the static sort lists (`Render` draws directly); the
+//!   particle drawn);~~ **Corrected 2026-11-14 (#65, batch b):** the
+//!   predictive LOD is translated ([`ParticleBuffer::prepare_lod`],
+//!   [`ParticleBuffer::calculate_cost_value_arrays`], the cost and value
+//!   arrays, the LOD level and bias); the static `LODMaxScreenSizes` is
+//!   [`LodMaxScreenSizes`], which the caller holds; the predictive LOD
+//!   optimizer's object list is the caller's (`prepare_lod` returns the cost
+//!   it adds). Zero Hour never drives it (see [`LodMaxScreenSizes`]), so the
+//!   threshold stays 0 in the game. **Not modelled:** the static sort lists (`Render` draws directly); the
 //!   scene (the caller drives the frame: [`super::part_emt`]).
 //! - **Undefined upstream** ([`W3dUndefined`]): a float converted to an
 //!   integer that cannot hold it (key times, `MaxAge`, orientations,
 //!   frames: [`W3dUndefined::FloatToInt`]); a buffer the 32-bit original
-//!   cannot allocate ([`W3dUndefined::Allocation`]).
+//!   cannot allocate ([`W3dUndefined::Allocation`]); (#65) a LOD array read
+//!   or a screen size written past its end (`Set_LOD_Level(17)` then
+//!   `Get_Cost`, `Decrement_LOD` to 17, `Set_LOD_Max_Screen_Size(17, ..)`:
+//!   [`W3dUndefined::IndexOutOfRange`]).
 //! - The draws are returned as data ([`ParticleDraw`]); ~~the point group,
 //!   segment-line renderer and line group that draw them are the client's.~~
 //!   **Corrected 2026-11-14 (#65):** the point group and line group that
@@ -105,6 +127,7 @@ use crate::ww::matrix3d::Matrix3D;
 use crate::ww::random::Random3;
 use super::{W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
 use crate::ww::random::Random4;
+use crate::ww::vector2::Vector2;
 use crate::ww::vector3::Vector3;
 use crate::ww::vector4::Vector4;
 use crate::ww::wwmath;
@@ -115,6 +138,74 @@ pub const W3D_EMITTER_RENDER_MODE_QUAD_PARTICLES: i32 = 1;
 pub const W3D_EMITTER_RENDER_MODE_LINE: i32 = 2;
 pub const W3D_EMITTER_RENDER_MODE_LINEGRP_TETRA: i32 = 3;
 pub const W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM: i32 = 4;
+
+/// `RenderObjClass::AT_MIN_LOD` (rendobj.cpp: `FLT_MAX`).
+pub const AT_MIN_LOD: f32 = f32::MAX;
+/// `RenderObjClass::AT_MAX_LOD` (rendobj.cpp: `-1.0f`).
+pub const AT_MAX_LOD: f32 = -1.0;
+/// The number of LOD levels a buffer has (`LodCount = 17` in the
+/// constructor; the sizes of `Cost[17]`, `Value[18]` and
+/// `LODMaxScreenSizes[17]`).
+pub const PARTICLE_LOD_COUNT: u32 = 17;
+
+/// `ParticleBufferClass::LODMaxScreenSizes[17]`, a static upstream (the
+/// screen-size clamps of the 17 LOD levels, all `NO_MAX_SCREEN_SIZE` at
+/// start), held by the caller here. **Zero Hour never sets them** (no caller
+/// of `Set_LOD_Max_Screen_Size` outside WW3D2), so with them
+/// `Calculate_Cost_Value_Arrays` gives a minimum LOD of 0 (16 only for an
+/// infinite screen area) and never raises a buffer's LOD.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LodMaxScreenSizes(pub [f32; 17]);
+
+impl Default for LodMaxScreenSizes {
+    fn default() -> Self {
+        LodMaxScreenSizes([super::w3d_file::NO_MAX_SCREEN_SIZE; 17])
+    }
+}
+
+impl LodMaxScreenSizes {
+    /// `ParticleBufferClass::Set_LOD_Max_Screen_Size(lod_level, max_screen_size)`:
+    /// levels outside 0..17 are ignored; level 17 passes the test and writes
+    /// past the array's end (undefined).
+    pub fn set(&mut self, lod_level: i32, max_screen_size: f32) -> W3dResult<()> {
+        if !(0..=17).contains(&lod_level) {
+            return Ok(());
+        }
+        if lod_level == 17 {
+            return Err(W3dUndefined::IndexOutOfRange.into());
+        }
+        self.0[lod_level as usize] = max_screen_size;
+        Ok(())
+    }
+
+    /// `ParticleBufferClass::Get_LOD_Max_Screen_Size(lod_level)`: outside
+    /// 0..17 `NO_MAX_SCREEN_SIZE`; level 17 reads past the end (undefined).
+    pub fn get(&self, lod_level: i32) -> W3dResult<f32> {
+        if !(0..=17).contains(&lod_level) {
+            return Ok(super::w3d_file::NO_MAX_SCREEN_SIZE);
+        }
+        self.0.get(lod_level as usize).copied().ok_or(W3dUndefined::IndexOutOfRange.into())
+    }
+}
+
+/// What `Prepare_LOD` reads of its `CameraClass`: `Get_Position()`, the
+/// viewport (`Get_Viewport()`, whose `Width()` and `Height()` are `Max -
+/// Min`) and the view plane (`Get_View_Plane(min, max)`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LodCamera {
+    pub position: Vector3,
+    pub viewport_min: Vector2,
+    pub viewport_max: Vector2,
+    pub view_plane_min: Vector2,
+    pub view_plane_max: Vector2,
+}
+
+/// `SphereClass` (centre and radius).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Sphere {
+    pub center: Vector3,
+    pub radius: f32,
+}
 
 /// `ParticleBufferClass::PermutationArray` (LOD decimation).
 pub const PERMUTATION_ARRAY: [u32; 16] = [11, 3, 7, 14, 0, 13, 1, 2, 5, 12, 15, 6, 9, 8, 4, 10];
@@ -449,6 +540,27 @@ pub struct ParticleBuffer {
     pub decimation_threshold: u32,
     pub lod_count: u32,
     pub current_group_id: u8,
+    /// `Cost[17]`: the cost of each LOD level (#65).
+    pub cost: [f32; 17],
+    /// `Value[18]`: the value of each LOD level, and the post-increment
+    /// sentinel (#65).
+    pub value: [f32; 18],
+    /// `LodBias`.
+    pub lod_bias: f32,
+    /// `ProjectedArea`, filtered over the `Prepare_LOD` calls.
+    pub projected_area: f32,
+    /// `RenderObjClass`'s cached bounding sphere (`CachedBoundingSphere`) and
+    /// `BOUNDING_VOLUMES_VALID` (#65; `Get_Bounding_Sphere` reads it,
+    /// `On_Frame_Update` invalidates it). The cached box is not kept: nothing
+    /// translated reads it.
+    pub cached_bounding_sphere: Sphere,
+    pub bounding_volumes_valid: bool,
+    /// The buffer's own `RenderObjClass` visibility bits (`IS_VISIBLE`,
+    /// `IS_NOT_HIDDEN`, `IS_NOT_ANIMATION_HIDDEN`; `DEFAULT_BITS` leaves it
+    /// not visible and not hidden). `Prepare_LOD` tests them.
+    pub visible: bool,
+    pub hidden: bool,
+    pub animation_hidden: bool,
 }
 
 /// The constructor's arguments (beyond the emitter and the randomizer).
@@ -492,7 +604,8 @@ fn enable_fog(mut shader: ShaderClass) -> ShaderClass {
 impl ParticleBuffer {
     /// `ParticleBufferClass(emitter, buffer_size, ...)` at sync time
     /// `clock.sync_time`, drawing its randomizer tables from `rand_gen`.
-    pub fn new(p: &BufferParams, rand_gen: &mut Random4, clock: &Ww3dClock) -> W3dResult<ParticleBuffer> {
+    /// `lod_sizes` is the static `LODMaxScreenSizes` (#65).
+    pub fn new(p: &BufferParams, rand_gen: &mut Random4, clock: &Ww3dClock, lod_sizes: &LodMaxScreenSizes) -> W3dResult<ParticleBuffer> {
         let max_num = p.buffer_size;
         if u64::from(max_num) * NEW_PARTICLE_SIZE > WIN32_MAX_ALLOCATION {
             return Err(W3dUndefined::Allocation.into());
@@ -564,8 +677,17 @@ impl ParticleBuffer {
             time_stamp: Vec::new(),
             has_emitter: true,
             decimation_threshold: 0,
-            lod_count: 17,
+            lod_count: PARTICLE_LOD_COUNT,
             current_group_id: 0,
+            cost: [0.0; 17],
+            value: [0.0; 18],
+            lod_bias: 1.0,
+            projected_area: 0.0,
+            cached_bounding_sphere: Sphere::default(),
+            bounding_volumes_valid: false,
+            visible: false,
+            hidden: false,
+            animation_hidden: false,
         };
         b.reset_colors(&p.color, rand_gen)?;
         b.reset_opacity(&p.opacity, rand_gen)?;
@@ -605,8 +727,16 @@ impl ParticleBuffer {
         b.group_id = vec![0; n];
         b.velocity = vec![Vector3::default(); n];
         b.time_stamp = vec![0; n];
-        // (Calculate_Cost_Value_Arrays(1.0f): with the default screen-size clamps the minimum LOD is 0 and the
-        // decimation threshold stays 0)
+        // ~~(Calculate_Cost_Value_Arrays(1.0f): with the default screen-size clamps the minimum LOD is 0 and the
+        // decimation threshold stays 0)~~ Corrected 2026-11-14 (#65, batch b): translated. So that the object is ready
+        // for use after construction, its cost and value arrays for a screen area of 1:
+        let (mut value, mut cost) = ([0.0f32; 18], [0.0f32; 17]);
+        let minlod = b.calculate_cost_value_arrays(1.0f32, lod_sizes, &mut value, &mut cost);
+        (b.value, b.cost) = (value, cost);
+        // Ensure lod is no less than minimum allowed
+        if b.get_lod_level() < minlod {
+            b.set_lod_level(minlod);
+        }
         if b.render_mode == W3D_EMITTER_RENDER_MODE_LINE {
             if let Some(lp) = p.line_props.as_ref() {
                 b.has_line_renderer = true;
@@ -664,6 +794,254 @@ impl ParticleBuffer {
     /// `Set_Current_GroupID(grp)`.
     pub fn set_current_group_id(&mut self, grp: u8) {
         self.current_group_id = grp;
+    }
+
+    /// `RenderObjClass::Set_Hidden(onoff)` (the buffer's own bit).
+    pub fn set_hidden(&mut self, onoff: bool) {
+        self.hidden = onoff;
+    }
+
+    /// `RenderObjClass::Set_Visible(onoff)` (the buffer's own bit).
+    pub fn set_visible(&mut self, onoff: bool) {
+        self.visible = onoff;
+    }
+
+    /// `RenderObjClass::Set_Animation_Hidden(onoff)` (the buffer's own bit).
+    pub fn set_animation_hidden(&mut self, onoff: bool) {
+        self.animation_hidden = onoff;
+    }
+
+    /// `RenderObjClass::Is_Not_Hidden_At_All()`: `IS_NOT_HIDDEN |
+    /// IS_NOT_ANIMATION_HIDDEN` (not `IS_VISIBLE`).
+    pub fn is_not_hidden_at_all(&self) -> bool {
+        !self.hidden && !self.animation_hidden
+    }
+
+    /// `Calculate_Cost_Value_Arrays(screen_area, values, costs)` with the
+    /// static screen sizes `sizes`: each level's cost (the particles it
+    /// draws, `lod / 16` of the buffer, times the polygons per particle),
+    /// each level's value (`AT_MIN_LOD` up to the minimum level, then the
+    /// benefit per cost), `values[LodCount]` the `AT_MAX_LOD` sentinel; the
+    /// minimum level.
+    pub fn calculate_cost_value_arrays(&self, screen_area: f32, sizes: &LodMaxScreenSizes, values: &mut [f32; 18], costs: &mut [f32; 17]) -> i32 {
+        let lod_count = self.lod_count;
+        // Calculate Cost heuristic for each LOD (we currently ignore pixel costs for particle systems). The cost
+        // factor is based on a 1/16 (0.0625) of the total.
+        let mut cost_factor = 0.0f32;
+        match self.render_mode {
+            W3D_EMITTER_RENDER_MODE_TRI_PARTICLES => cost_factor = self.max_num as f32 * 0.0625f32,
+            W3D_EMITTER_RENDER_MODE_QUAD_PARTICLES => cost_factor = self.max_num as f32 * 2.0f32 * 0.0625f32,
+            W3D_EMITTER_RENDER_MODE_LINE => {
+                cost_factor = if crate::logic::modules::plant(10116) {
+                    (2u32.wrapping_mul(self.max_num)) as f32 * 0.0625f32
+                } else {
+                    (2u32.wrapping_mul(self.max_num).wrapping_sub(1)) as f32 * 0.0625f32
+                }
+            }
+            W3D_EMITTER_RENDER_MODE_LINEGRP_TETRA => cost_factor = self.max_num as f32 * 4.0f32 * 0.0625f32,
+            W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM => {
+                cost_factor = self.max_num as f32 * if crate::logic::modules::plant(10117) { 4.0f32 } else { 8.0f32 } * 0.0625f32
+            }
+            _ => {}
+        }
+        for lod in 0..lod_count as usize {
+            costs[lod] = cost_factor * lod as f32;
+            // If cost is zero set it to a small nonzero amount to avoid divisions by zero.
+            costs[lod] = if costs[lod] != 0.0f32 && !crate::logic::modules::plant(10118) { costs[lod] } else { 0.000001f32 };
+        }
+        // Calculate Value heuristic. First, all LOD levels for which MaxScreenSize is smaller than screen_area have
+        // their Value set to AT_MIN_LOD, as well as the first LOD after that (unless there are no other LODs):
+        let mut lod = 0u32;
+        while lod < lod_count && (sizes.0[lod as usize] < screen_area || (crate::logic::modules::plant(10119) && sizes.0[lod as usize] == screen_area)) {
+            values[lod as usize] = AT_MIN_LOD;
+            lod += 1;
+        }
+        if lod >= lod_count {
+            lod = if crate::logic::modules::plant(10120) { 0 } else { lod_count - 1 };
+        } else {
+            values[lod as usize] = AT_MIN_LOD;
+        }
+        // Now lod is the lowest allowed - return this value.
+        let minlod = lod as i32;
+        // Calculate Value heuristic for any remaining LODs based on normalized screen area:
+        lod += 1;
+        while lod < lod_count {
+            let polycount = costs[lod as usize];
+            let benefit_factor = if polycount > wwmath::WWMATH_EPSILON {
+                if crate::logic::modules::plant(10121) {
+                    1.0f32 - (0.5f32 / polycount)
+                } else {
+                    1.0f32 - (0.5f32 / (polycount * polycount))
+                }
+            } else {
+                0.0f32
+            };
+            values[lod as usize] = if crate::logic::modules::plant(10122) {
+                (benefit_factor * screen_area) / costs[lod as usize]
+            } else {
+                (benefit_factor * screen_area * self.lod_bias) / costs[lod as usize]
+            };
+            lod += 1;
+        }
+        values[lod_count as usize] = AT_MAX_LOD; // Post-inc value will flag max LOD.
+        minlod
+    }
+
+    /// `Increment_LOD()`: one level up (a lower threshold).
+    pub fn increment_lod(&mut self) {
+        if self.decimation_threshold > 0 && !crate::logic::modules::plant(10123) {
+            self.decimation_threshold -= 1;
+        }
+    }
+
+    /// `Decrement_LOD()`: one level down, to a threshold of `LodCount` (one
+    /// past the lowest level: level -1).
+    pub fn decrement_lod(&mut self) {
+        let top = if crate::logic::modules::plant(10124) { self.lod_count - 1 } else { self.lod_count };
+        if self.decimation_threshold < top {
+            self.decimation_threshold += 1;
+        }
+    }
+
+    /// `Cost[(LodCount - 1) - DecimationThreshold]` and its index as the
+    /// `unsigned` it is computed in.
+    fn lod_index(&self, extra: u32) -> u32 {
+        (self.lod_count.wrapping_sub(1).wrapping_add(extra)).wrapping_sub(self.decimation_threshold)
+    }
+
+    /// `Get_Cost()`: `Cost[(LodCount - 1) - DecimationThreshold]`; undefined
+    /// past the array (a threshold of `LodCount` or more).
+    pub fn get_cost(&self) -> W3dResult<f32> {
+        self.cost.get(self.lod_index(0) as usize).copied().ok_or(W3dUndefined::IndexOutOfRange.into())
+    }
+
+    /// `Get_Value()`: `Value[(LodCount - 1) - DecimationThreshold]`.
+    pub fn get_value(&self) -> W3dResult<f32> {
+        let i = if crate::logic::modules::plant(10125) { self.lod_index(1) } else { self.lod_index(0) };
+        self.value.get(i as usize).copied().ok_or(W3dUndefined::IndexOutOfRange.into())
+    }
+
+    /// `Get_Post_Increment_Value()`: `Value[LodCount - DecimationThreshold]`.
+    pub fn get_post_increment_value(&self) -> W3dResult<f32> {
+        self.value.get(self.lod_index(1) as usize).copied().ok_or(W3dUndefined::IndexOutOfRange.into())
+    }
+
+    /// `Set_LOD_Level(lod)`: `Bound(lod, 0, LodCount)` (so 17 makes the
+    /// threshold wrap to `0xFFFFFFFF`), then the threshold.
+    pub fn set_lod_level(&mut self, lod: i32) {
+        let hi = if crate::logic::modules::plant(10126) { self.lod_count as i32 - 1 } else { self.lod_count as i32 };
+        let lod = if lod < 0 {
+            0
+        } else if lod > hi {
+            hi
+        } else {
+            lod
+        };
+        self.decimation_threshold = self.lod_count.wrapping_sub(1).wrapping_sub(lod as u32);
+    }
+
+    /// `Get_LOD_Level()`: `(LodCount - 1) - DecimationThreshold`, an
+    /// `unsigned` returned as an `int` (a threshold of 17 is level -1).
+    pub fn get_lod_level(&self) -> i32 {
+        self.lod_count.wrapping_sub(1).wrapping_sub(self.decimation_threshold) as i32
+    }
+
+    /// `Get_LOD_Count()`.
+    pub fn get_lod_count(&self) -> i32 {
+        self.lod_count as i32
+    }
+
+    /// `Set_LOD_Bias(bias)`: `LodBias = MAX(bias, 0.0f)` (a NaN bias is 0).
+    pub fn set_lod_bias(&mut self, bias: f32) {
+        self.lod_bias = if bias > 0.0f32 || crate::logic::modules::plant(10127) { bias } else { 0.0f32 };
+    }
+
+    /// `Invalidate_Cached_Bounding_Volumes()`.
+    pub fn invalidate_cached_bounding_volumes(&mut self) {
+        self.bounding_volumes_valid = false;
+    }
+
+    /// `Get_Obj_Space_Bounding_Sphere(sphere)`: `Update_Bounding_Box`, then
+    /// the sphere around the box (centre, `Extent.Length()`).
+    pub fn get_obj_space_bounding_sphere(&mut self, clock: &Ww3dClock) -> Sphere {
+        self.update_bounding_box(clock);
+        Sphere { center: self.bounding_box.center, radius: self.bounding_box.extent.length() }
+    }
+
+    /// `RenderObjClass::Get_Bounding_Sphere()`: the cached sphere, made again
+    /// when the cache is invalid (`Update_Cached_Bounding_Volumes`: the box
+    /// and the sphere in object space, the centre through the buffer's
+    /// transform, the identity, and the radius times `ObjectScale`, 1).
+    pub fn get_bounding_sphere(&mut self, clock: &Ww3dClock) -> Sphere {
+        if !self.bounding_volumes_valid || crate::logic::modules::plant(10128) {
+            // Get_Obj_Space_Bounding_Box(CachedBoundingBox): Update_Bounding_Box
+            self.update_bounding_box(clock);
+            let mut s = self.get_obj_space_bounding_sphere(clock);
+            s.center = Matrix3D::identity().mul_vector3(&s.center);
+            s.radius *= 1.0f32;
+            self.cached_bounding_sphere = s;
+            self.bounding_volumes_valid = true;
+        }
+        self.cached_bounding_sphere
+    }
+
+    /// `Prepare_LOD(camera)` at the clock, with the static screen sizes: the
+    /// screen area (the lesser of the bounding sphere's projection and the
+    /// particles' at their largest, times the viewport's pixels per view-plane
+    /// unit), filtered (`0.9 * old + 0.1 * new`), the cost and value arrays,
+    /// the level raised to the minimum. Returns the cost
+    /// `PredictiveLODOptimizerClass::Add_Object(this)` adds (`Get_Cost()`), or
+    /// `None` for a hidden buffer, which returns at once.
+    pub fn prepare_lod(&mut self, camera: &LodCamera, sizes: &LodMaxScreenSizes, clock: &Ww3dClock) -> W3dResult<Option<f32>> {
+        if !self.is_not_hidden_at_all() && !crate::logic::modules::plant(10129) {
+            return Ok(None);
+        }
+        let cam = camera.position;
+        // ViewportClass::Width() and Height()
+        let vp_width = camera.viewport_max.x - camera.viewport_min.x;
+        let vp_height = camera.viewport_max.y - camera.viewport_min.y;
+        let (vpr_min, vpr_max) = (camera.view_plane_min, camera.view_plane_max);
+        let width_factor = vp_width / (vpr_max.x - vpr_min.x);
+        let height_factor = if crate::logic::modules::plant(10130) { vp_height / (vpr_max.x - vpr_min.x) } else { vp_height / (vpr_max.y - vpr_min.y) };
+        let sphere = self.get_bounding_sphere(clock);
+        let dist = (sphere.center - cam).length();
+        let mut bounding_sphere_projected_radius = 0.0f32;
+        let mut particle_projected_radius = 0.0f32;
+        if dist != 0.0f32 {
+            let oo_dist = 1.0f32 / dist;
+            bounding_sphere_projected_radius = sphere.radius * oo_dist;
+            particle_projected_radius = self.max_size * oo_dist;
+        }
+        let bs_rad_sq = bounding_sphere_projected_radius * bounding_sphere_projected_radius;
+        let p_rad_sq = particle_projected_radius * particle_projected_radius * self.max_num as f32;
+        // MIN(bs_rad_sq, p_rad_sq)
+        let m = if bs_rad_sq < p_rad_sq || crate::logic::modules::plant(10131) { bs_rad_sq } else { p_rad_sq };
+        let proj_area = wwmath::WWMATH_PI * m * width_factor * height_factor;
+        // Filter the area over time so we don't get as many pops in the LOD algorithm
+        self.projected_area = if crate::logic::modules::plant(10132) {
+            0.1f32 * self.projected_area + 0.9f32 * proj_area
+        } else {
+            0.9f32 * self.projected_area + 0.1f32 * proj_area
+        };
+        let (mut value, mut cost) = (self.value, self.cost);
+        let minlod = self.calculate_cost_value_arrays(self.projected_area, sizes, &mut value, &mut cost);
+        (self.value, self.cost) = (value, cost);
+        // Ensure lod is no less than minimum allowed
+        if self.get_lod_level() < minlod {
+            self.set_lod_level(minlod);
+        }
+        // PredictiveLODOptimizerClass::Add_Object(this): the object's cost
+        Ok(Some(self.get_cost()?))
+    }
+
+    /// `On_Frame_Update()` without an emitter (`Emitter` null, after
+    /// `Emitter_Is_Dead`): the cached bounding volumes invalidated; whether
+    /// the buffer is complete and registers itself for release
+    /// (`Scene->Register(this, SceneClass::RELEASE)`), which the caller does.
+    /// With an emitter, [`super::part_emt::ParticleEmitter::buffer_on_frame_update`].
+    pub fn on_frame_update(&mut self) -> bool {
+        self.invalidate_cached_bounding_volumes();
+        self.is_complete()
     }
 
     /// The table size for a non-zero randomizer:
@@ -1305,7 +1683,12 @@ impl ParticleBuffer {
             };
             let mut count = 0u32;
             for i in (sub1_start..sub1_end).chain(sub2_start..sub2_end) {
-                if PERMUTATION_ARRAY[(i & 0xF) as usize] >= self.decimation_threshold {
+                let keep = if crate::logic::modules::plant(10133) {
+                    PERMUTATION_ARRAY[(i & 0xF) as usize] > self.decimation_threshold
+                } else {
+                    PERMUTATION_ARRAY[(i & 0xF) as usize] >= self.decimation_threshold
+                };
+                if keep {
                     self.apt[count as usize] = i;
                     count += 1;
                 }
@@ -1359,7 +1742,7 @@ impl ParticleBuffer {
     /// the newest run at it), `None` once it is dead.
     pub fn render(&mut self, clock: &Ww3dClock, emitter: Option<(Vector3, bool)>) -> W3dResult<ParticleDraw> {
         self.update_kinematic_particle_state(clock);
-        if self.decimation_threshold < self.lod_count - 1 {
+        if self.decimation_threshold < self.lod_count - 1 && !(crate::logic::modules::plant(10134) && self.decimation_threshold == self.lod_count - 2) {
             self.update_visual_particle_state(clock)?;
         }
         Ok(match self.render_mode {
@@ -1441,7 +1824,8 @@ impl ParticleBuffer {
         let mut last_color = default_diffuse;
         let mut last_id = 0u8;
         for i in (self.start..sub1_end).chain(sub2_start..self.end) {
-            if PERMUTATION_ARRAY[(i & 0xF) as usize] >= self.decimation_threshold {
+            let k = if crate::logic::modules::plant(10135) { i & 0x7 } else { i & 0xF };
+            if PERMUTATION_ARRAY[k as usize] >= self.decimation_threshold {
                 pts.push(positions[i as usize]);
                 last_color = self.diffuse.as_ref().map_or(default_diffuse, |d| d[i as usize]);
                 cols.push(last_color);
@@ -1637,13 +2021,13 @@ mod tests {
     fn keyframes_are_made_as_upstream() {
         let mut r = Random4::default();
         let clock = Ww3dClock::default();
-        let b = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[(1.0, 3.0)])), &mut r, &clock).unwrap();
+        let b = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[(1.0, 3.0)])), &mut r, &clock, &LodMaxScreenSizes::default()).unwrap();
         let k = &b.size_keys;
         assert_eq!((k.num, k.times.clone().unwrap(), k.values.clone().unwrap()), (2, vec![0, 1000], vec![1.0, 3.0]));
         assert_eq!(k.deltas.clone().unwrap(), vec![2.0 / 1000.0, 0.0]);
         assert_eq!(b.max_size, 3.0);
         assert!(b.color.is_none() && b.color_keys.times.is_none());
-        let b = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[(1.0, 3.0), (2.5, 5.0)])), &mut r, &clock).unwrap();
+        let b = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[(1.0, 3.0), (2.5, 5.0)])), &mut r, &clock, &LodMaxScreenSizes::default()).unwrap();
         assert_eq!(b.size_keys.num, 2);
         assert_eq!(b.size_keys.deltas.clone().unwrap()[1], 2.0f32 / 1500.0);
         assert_eq!((find_pot(8), find_pot(9), find_pot(1)), (8, 16, 1));
@@ -1662,7 +2046,7 @@ mod tests {
     #[test]
     fn particles_move_and_die() {
         let mut r = Random4::default();
-        let mut b = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[])), &mut r, &Ww3dClock::default()).unwrap();
+        let mut b = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[])), &mut r, &Ww3dClock::default(), &LodMaxScreenSizes::default()).unwrap();
         for t in [0, 100] {
             *b.add_uninitialized_new_particle() = NewParticle { velocity: Vector3::new(1.0, 0.0, 0.0), time_stamp: t, ..NewParticle::default() };
         }
@@ -1682,6 +2066,66 @@ mod tests {
             }
             d => panic!("{d:?}"),
         }
+    }
+
+    /// (#65, batch b) *Predictions, written before the first run (`issue65b_predictions.md`, P1):* a 40-particle quad
+    /// buffer: cost factor 40 * 2 / 16 = 5, `Cost[k] = 5k` (`Cost[0]` the small nonzero cost); `Value[0]` `AT_MIN_LOD`,
+    /// `Value[17]` `AT_MAX_LOD`, `Value[1] = (1 - 0.5 / 25) / 5`; level 16, threshold 0. `Set_LOD_Level(17)`: `Get_Cost`
+    /// undefined, `Get_Value` is `Value[17]`. 17 `Decrement_LOD`s: threshold 17, level -1, `Get_Cost` undefined. Screen
+    /// size 17 undefined; level 0's size under the area makes the minimum level 1. A hidden buffer prepares nothing; an
+    /// empty one's area is 0 and it hands the optimizer `Cost[16]` = 80.
+    ///
+    /// *Results (2026-11-14), first run:* all held.
+    #[test]
+    fn lod_levels_costs_and_values_are_upstreams() {
+        let mut r = Random4::default();
+        let clock = Ww3dClock::default();
+        let mut p = params(props_f(1.0, 0.0, &[]));
+        p.buffer_size = 40;
+        let mut sizes = LodMaxScreenSizes::default();
+        let mut b = ParticleBuffer::new(&p, &mut r, &clock, &sizes).unwrap();
+        assert_eq!((b.cost[0], b.cost[1], b.cost[16]), (0.000001, 5.0, 80.0));
+        assert_eq!((b.value[0], b.value[17], b.value[1]), (AT_MIN_LOD, AT_MAX_LOD, (1.0f32 - 0.5 / 25.0) * 1.0 * 1.0 / 5.0));
+        assert_eq!((b.get_lod_level(), b.decimation_threshold, b.get_lod_count()), (16, 0, 17));
+        assert_eq!((b.get_cost().unwrap(), b.get_value().unwrap(), b.get_post_increment_value().unwrap()), (80.0, b.value[16], AT_MAX_LOD));
+        b.set_lod_level(17);
+        assert_eq!(b.decimation_threshold, u32::MAX);
+        assert!(b.get_cost().is_err() && b.get_post_increment_value().is_err());
+        assert_eq!(b.get_value().unwrap(), AT_MAX_LOD);
+        b.set_lod_level(-4);
+        assert_eq!(b.decimation_threshold, 16);
+        b.increment_lod();
+        assert_eq!(b.decimation_threshold, 15);
+        for _ in 0..20 {
+            b.decrement_lod();
+        }
+        assert_eq!((b.decimation_threshold, b.get_lod_level()), (17, -1));
+        assert!(b.get_cost().is_err() && b.get_value().is_err());
+        assert!(sizes.set(17, 1.0).is_err() && sizes.get(17).is_err());
+        assert_eq!((sizes.set(18, 1.0), sizes.get(-1).unwrap()), (Ok(()), f32::MAX));
+        sizes.set(0, 0.5).unwrap();
+        let (mut v, mut c) = ([0.0f32; 18], [0.0f32; 17]);
+        assert_eq!(b.calculate_cost_value_arrays(1.0, &sizes, &mut v, &mut c), 1);
+        assert_eq!((v[0], v[1]), (AT_MIN_LOD, AT_MIN_LOD));
+        b.set_lod_bias(-2.0);
+        assert_eq!(b.lod_bias, 0.0);
+        b.set_lod_level(16);
+        let cam = LodCamera {
+            position: Vector3::new(10.0, 0.0, 0.0),
+            viewport_min: Vector2::new(0.0, 0.0),
+            viewport_max: Vector2::new(800.0, 600.0),
+            view_plane_min: Vector2::new(-1.0, -1.0),
+            view_plane_max: Vector2::new(1.0, 1.0),
+        };
+        b.set_hidden(true);
+        assert!(!b.is_not_hidden_at_all());
+        assert_eq!(b.prepare_lod(&cam, &LodMaxScreenSizes::default(), &clock).unwrap(), None);
+        b.set_hidden(false);
+        b.set_visible(true);
+        b.set_animation_hidden(false);
+        assert_eq!(b.prepare_lod(&cam, &LodMaxScreenSizes::default(), &clock).unwrap(), Some(80.0));
+        assert_eq!((b.projected_area, b.bounding_volumes_valid), (0.0, true));
+        assert!(!b.on_frame_update() && !b.bounding_volumes_valid);
     }
 
     /// (#65) *Predictions, written before the first run:* a line-mode buffer of particle size 1 made at sync 300 has a
@@ -1709,7 +2153,7 @@ mod tests {
         };
         p.line_props = Some(lp);
         let clock = Ww3dClock { sync_time: 300, frame_time: 0, frame_count: 0 };
-        let mut b = ParticleBuffer::new(&p, &mut r, &clock).unwrap();
+        let mut b = ParticleBuffer::new(&p, &mut r, &clock, &LodMaxScreenSizes::default()).unwrap();
         let lr = b.line_renderer.clone().unwrap();
         assert_eq!((lr.width, lr.last_used_sync_time, lr.bits & 0xFF), (1.0, 300, 1));
         assert_eq!((lr.texture.clone(), lr.shader), (b.texture.clone(), b.shader));
@@ -1728,7 +2172,7 @@ mod tests {
         assert_eq!(chunks.len(), 1);
         assert_eq!((chunks[0].len(), chunks[0][0].vertices.len(), chunks[0][0].triangles.len()), (1, 4, 2));
         assert_eq!(chunks[0][0].texture, Some(b"a.tga".to_vec()));
-        let mut q = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[])), &mut r, &clock).unwrap();
+        let mut q = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[])), &mut r, &clock, &LodMaxScreenSizes::default()).unwrap();
         assert_eq!(q.render_line_runs(&runs, &c, &view, &mut Random3::default()).unwrap(), None);
     }
 }

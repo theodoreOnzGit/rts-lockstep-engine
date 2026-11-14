@@ -7,8 +7,9 @@
 **     velocity setters, Emit, Update_Cached_Bounding_Volumes,
 **     Create_New_Particles, Initialize_Particle) and Set_Name,
 **     Update_On_Visibilty, COMPILED from verbatim segments;
-**   WW3D2/part_buf.cpp: ParticleBufferClass from PermutationArray to the
-**     comment of Prepare_LOD (the statics, constructors, destructor, Render,
+**   WW3D2/part_buf.cpp: ParticleBufferClass from PermutationArray to ~~the
+**     comment of Prepare_LOD~~ the end (corrected 2026-11-14, #65 batch b:
+**     Prepare_LOD included) (the statics, constructors, destructor, Render,
 **     Generate_APT, Combine_Color_And_Alpha, Render_Particles, Render_Line,
 **     Render_Line_Group, Scale, On_Frame_Update, the bounding volumes) and
 **     from Increment_LOD to the end (the LOD accessors, Reset_Colors ...
@@ -34,8 +35,10 @@
 ** Render needs the DX8 device and is not compiled.
 **
 ** TRANSCRIBED (stand-ins), never called by the driver below:
-**   ParticleBufferClass::Prepare_LOD (needs the camera and the predictive LOD
-**   optimizer), ParticleEmitterClass::Build_Definition, Save and
+**   ~~ParticleBufferClass::Prepare_LOD (needs the camera and the predictive LOD
+**   optimizer),~~ (corrected 2026-11-14, #65 batch b: Prepare_LOD is compiled
+**   from part_buf.cpp, over the prelude's camera stand-in, and driven by
+**   wrap_part_lod.cpp) ParticleEmitterClass::Build_Definition, Save and
 **   Add_Dependencies_To_List (the definition's save side and the file
 **   list), ShaderClass::Guess_Sort_Level (Render reaches it only when
 **   sorting is disabled; the WW3D stand-in reports it enabled).
@@ -100,8 +103,23 @@ void SegLineRendererClass::Render(RenderInfoClass &, const Matrix3D &, unsigned 
 	g_runs.push_back(r);
 }
 
+/* ---- #65 (batch b): what wrap_part_lod.cpp reads of the above ----------- */
+int ref_part_lod_point_renders(void) { return g_point_renders; }
+int ref_part_lod_line_group_renders(void) { return g_line_group_renders; }
+int ref_part_lod_runs(std::vector<std::vector<Vector3> > *pts, std::vector<std::vector<Vector4> > *cols)
+{
+	for (size_t r = 0; r < g_runs.size(); ++r) { pts->push_back(g_runs[r].pts); cols->push_back(g_runs[r].cols); }
+	return (int)g_runs.size();
+}
+void ref_part_lod_clear_runs(void) { g_runs.clear(); }
+extern "C" void ref_part_lod_set_clock(unsigned sync, unsigned frame_time, unsigned frame_count)
+{
+	g_sync = sync;
+	g_frame_time = frame_time;
+	g_frame_count = frame_count;
+}
+
 /* ---- never called ------------------------------------------------------- */
-void ParticleBufferClass::Prepare_LOD(CameraClass &) { abort(); }
 ParticleEmitterDefClass *ParticleEmitterClass::Build_Definition(void) const { abort(); }
 WW3DErrorType ParticleEmitterClass::Save(ChunkSaveClass &) const { abort(); }
 void ParticleEmitterClass::Add_Dependencies_To_List(DynamicVectorClass<StringClass> &, bool) { abort(); }

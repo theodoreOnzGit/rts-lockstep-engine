@@ -127,6 +127,42 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#65 batch b (2026-11-14, GitHub #65): the particle buffer's predictive LOD, and the emitters' hiding, release and
+removal.**
+- **Upstream read first:** part_buf.cpp (`Prepare_LOD`, `Increment_LOD`, `Decrement_LOD`, `Get_Cost`, `Get_Value`,
+  `Get_Post_Increment_Value`, `Set_LOD_Level`, `Get_LOD_Level`, `Get_LOD_Count`, `Calculate_Cost_Value_Arrays`,
+  `Set_/Get_LOD_Max_Screen_Size`, the static `LODMaxScreenSizes`, `On_Frame_Update`), part_buf.h (`Set_LOD_Bias`),
+  part_emt.cpp/.h (`Set_LOD_Bias`, `On_Frame_Update`'s `RELEASE`, `Remove_Buffer_From_Scene`, the destructor's
+  `Emitter_Is_Dead`), rendobj.h/.cpp (the LOD defaults, the bounding-volume cache, the visibility bits), predlod.cpp,
+  scene.cpp, and the game code. **Zero Hour never drives particle LOD:** `RTS3DScene::Visibility_Check` has
+  `Prepare_LOD` commented out ("We're not using LOD yet"), `W3DDisplay::draw` has `Optimize_LODs` commented out ("Ask
+  Vegas why the LOD optimizer hangs particle system"), and nothing outside WW3D2 sets the screen sizes, the level or the
+  bias (`HLodClass::Add_Sub_Object_To_Bone` passes the HLOD's bias, 1). Only `SimpleSceneClass::Visibility_Check` (the
+  2D and 3D-interface scenes) prepares LOD, and with the default screen sizes it cannot lower a buffer's level: the
+  decimation threshold is 0 for the game's life. Emission never consults LOD; decimation is render-only.
+- **Translated** (`formats::w3d::part_buf`, `part_emt`): the LOD functions above, the cost and value arrays (made in
+  the constructor for a screen area of 1, as upstream), `LodMaxScreenSizes` (the static, held by the caller in
+  `ParticleRandom`), `LodCamera` (what `Prepare_LOD` reads of the camera), the cached bounding sphere; the buffer's own
+  visibility bits; `ParticleEmitter::on_frame_update` returning its release, `buffer_on_frame_update`,
+  `ParticleBuffer::on_frame_update` (a buffer without its emitter), `into_buffer` (the destructor),
+  `remove_buffer_from_scene`, `buffer_scene_not_needed`, `enable_remove_on_complete`, the emitter's inherited LOD hooks.
+- **Defect fixed:** ~~the emitter's `Is_Not_Hidden_At_All` tested the visible bit, and an emitter started visible~~
+  **Corrected 2026-11-14 (#65, batch b):** `IS_NOT_HIDDEN_AT_ALL` is `IS_NOT_HIDDEN | IS_NOT_ANIMATION_HIDDEN` and
+  `DEFAULT_BITS` is not visible, so `Set_Visible(false)` does not stop an emitter. The C++ stand-in had the same
+  mistake, which is why the earlier differential could not see it.
+- **Undefined upstream** (`W3dUndefined::IndexOutOfRange`): screen size 17 (a 17-entry array); `Set_LOD_Level(17)`
+  (bounded to `LodCount`) then `Get_Cost` or the post-increment value; `Decrement_LOD` to 17 then `Get_Cost` or
+  `Get_Value`.
+- **Compared with the compiled upstream** (`tests/differential_part_lod.rs`, `differential/wrap_part_lod.cpp`;
+  part_def.cpp now holds part_buf.cpp from `PermutationArray` to the end, `Prepare_LOD` included): 20,000 sequences,
+  89,951,959 words (every emitter and buffer field, the queue's and the ring's particles, all costs and values, what
+  was drawn), **0 mismatching** (the first run: 5, a NaN's sign bit, now compared NaN-equal); 71,210 frames drawn with
+  a threshold of 1 to 15; 4,288 sequences end at upstream undefined. 20 of 20 plants caught (10116-10135; the weakest,
+  a screen size equal to the area counting as smaller, in 78).
+- **Not yet:** non-HLOD emitters; the HLOD's release of a complete emitter (`Remove_Sub_Object`) and its orphaned
+  buffer in `RenderModel`; the scene side of LOD (`Visibility_Check`'s call, the optimizer), dead in Zero Hour.
+- **Results:** lib 1,249 passed (2 new); client 102 passed; `differential_w3d` 40 passed (section 16: 2,261 of 3,000 runs compared, 0 mismatches, as before); `differential_segline` 20,000, 0 mismatching; `differential_model_draw_particles`, `_drawable_loco`, `_tank_truck_draw`, `_model_draw_anim`, `_attach_cache` 0 mismatches; gate (a) PASS, 300 frames, last CRC 0bf44067; `src/logic` unchanged.
+
 **#65 (2026-11-14, GitHub #65, after #49): the W3D emitters' line renderer, `SegLineRendererClass`.**
 - **Translated** (engine crate, `formats::w3d::seglinerenderer`): seglinerenderer.cpp whole as far as it feeds
   rendering: the constructor's defaults, `Init` (the `W3D_ELINE_*` flags, an unknown mapping mode kept as it was),
@@ -154,8 +190,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   undefined read (compared up to it). 20 of 20 plants caught (10096-10115; the weakest, the merge's copy taking
   `Parallel`, in 39 sequences).
 - **Not yet** (#65's gaps): the client draws line-mode runs as ribbons still (drawing the chunks needs the camera's
-  game-axes view and mutable emitters in `draw_particles`); the emitters' LOD (`Prepare_LOD`, the cost and value
-  arrays), hiding, release, non-HLOD emitters and the draw's `Scale`; the line groups' tetrahedra and prisms
+  game-axes view and mutable emitters in `draw_particles`); ~~the emitters' LOD (`Prepare_LOD`, the cost and value
+  arrays), hiding, release,~~ **Corrected 2026-11-14 (#65, batch b):** the LOD, hiding and release are translated (the
+  entry above); non-HLOD emitters and the draw's `Scale`; the line groups' tetrahedra and prisms
   (linegrp.cpp); the laser's lines through this renderer.
 - **Results:** lib 1,247 passed (3 new); client 102 passed; `differential_w3d` 40 passed (the emitter log, section 16,
   unchanged); gate (a) PASS, 300 frames, last CRC 0bf44067; `src/logic` unchanged.

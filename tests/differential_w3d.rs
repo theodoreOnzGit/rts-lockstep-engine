@@ -8086,7 +8086,7 @@ mod part16 {
             log.push(b'e');
             return Ok(Some((log, 0)));
         };
-        let mut rng = ParticleRandom { v3: Random3::new(c.seeds[0], c.seeds[1]), buf: Random4::new(c.seeds[2]) };
+        let mut rng = ParticleRandom { v3: Random3::new(c.seeds[0], c.seeds[1]), buf: Random4::new(c.seeds[2]), lod_max_screen_sizes: Default::default() };
         let mut clock = Ww3dClock { sync_time: c.create_sync, frame_time: 0, frame_count: 0 };
         let mut e = ParticleEmitter::create_from_definition(&def, &mut rng, &clock)?;
         if e.buffer.max_num > PART_MAX_NUM {

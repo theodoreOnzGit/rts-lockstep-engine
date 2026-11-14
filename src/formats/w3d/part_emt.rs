@@ -10,7 +10,14 @@
 //   Set_Velocity_Inheritance_Factor, Emit, Create_New_Particles,
 //   Initialize_Particle, Set_Name, Update_On_Visibilty, Set_Hidden,
 //   Set_Animation_Hidden, Set_Emission_Rate, Set_Burst_Size,
-//   Set_One_Time_Burst, the inline accessors; Copy_Emitter_Property_Struct)
+//   Set_One_Time_Burst, the inline accessors; Copy_Emitter_Property_Struct;
+//   (#65) Set_LOD_Bias, Remove_Buffer_From_Scene, Buffer_Scene_Not_Needed,
+//   Is_Remove_On_Complete_Enabled, Enable_Remove_On_Complete, the
+//   destructor's Emitter_Is_Dead, On_Frame_Update's RELEASE registration)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/rendobj.h, rendobj.cpp
+//   (#65: the LOD hooks the emitter inherits from RenderObjClass: Get_Cost,
+//   Get_Value, Get_Post_Increment_Value, Get_LOD_Level, Get_LOD_Count;
+//   Is_Not_Hidden_At_All's bits)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/part_buf.cpp
 //   (ParticleBufferClass::On_Frame_Update)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/gcd_lcm.cpp
@@ -55,7 +62,18 @@
 //!   inheritance factor.
 //! - **Visibility**: a visible emitter in the scene starts
 //!   (`Update_On_Visibilty`); a hidden or invisible one stops, and its
-//!   particles live on. `Start` counts a new group ID (line mode draws each
+//!   particles live on. **(#65)** "Visible" is `Is_Not_Hidden_At_All`:
+//!   neither hidden nor animation-hidden. `IS_VISIBLE` (`Set_Visible`, which
+//!   the scene's culling sets) is not part of it.
+//! - **Release (#65)**: a complete emitter in the scene with
+//!   `RemoveOnComplete` registers for release in each `On_Frame_Update`
+//!   ([`ParticleEmitter::on_frame_update`] returns it); its buffer, once the
+//!   emitter is gone ([`ParticleEmitter::into_buffer`]: `Emitter_Is_Dead`),
+//!   keeps drawing its particles and registers for release when it is empty
+//!   ([`ParticleBuffer::on_frame_update`]). The scene's release (removing the
+//!   object from its container or the scene) is the caller's.
+//! - **LOD (#65)**: the emitter itself has none (`RenderObjClass`'s defaults:
+//!   one level, the cost of no polygons); `Set_LOD_Bias` goes to the buffer. `Start` counts a new group ID (line mode draws each
 //!   group as its own line).
 //!
 //! # Upstream quirks that are kept
@@ -84,7 +102,7 @@
 //!   forever ([`W3dError::NonTerminating`]).
 
 use super::mesh::convert_shader;
-use super::part_buf::{f2i, f2u, BufferParams, ParticleBuffer, ParticleDraw, Props, Ww3dClock};
+use super::part_buf::{f2i, f2u, BufferParams, LodMaxScreenSizes, ParticleBuffer, ParticleDraw, Props, Ww3dClock, AT_MAX_LOD, AT_MIN_LOD};
 use super::part_ldr::{ParticleEmitterDef, ParticleProperty, Vector3Randomizer};
 use super::shader::ShaderClass;
 use super::{W3dError, W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
@@ -97,11 +115,13 @@ use crate::ww::wwmath;
 /// The two random generators the particle code draws from (process globals
 /// upstream): `Vector3Randomizer::Randomizer` (v3_rnd.cpp, a `Random3Class`
 /// of seeds 0, 0) and part_buf.cpp's `rand_gen` (a `Random4Class` of seed
-/// 4357).
+/// 4357). **(#65)** Also the particle code's other process global, the
+/// static `ParticleBufferClass::LODMaxScreenSizes`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ParticleRandom {
     pub v3: Random3,
     pub buf: Random4,
+    pub lod_max_screen_sizes: LodMaxScreenSizes,
 }
 
 /// `Greatest_Common_Divisor(a, b)` (gcd_lcm.cpp, Euclid).
@@ -200,7 +220,9 @@ pub struct ParticleEmitter {
     /// The render object's transform (`Get_Transform()`).
     pub transform: Matrix3D,
     /// `RenderObjClass`'s visibility bits: `Set_Visible`, `Set_Hidden`,
-    /// `Set_Animation_Hidden`.
+    /// `Set_Animation_Hidden`. ~~(visible at start)~~ **Corrected
+    /// 2026-11-14 (#65, batch b):** `DEFAULT_BITS` has `IS_NOT_HIDDEN` and
+    /// `IS_NOT_ANIMATION_HIDDEN` but not `IS_VISIBLE`: not visible at start.
     pub visible: bool,
     pub hidden: bool,
     pub animation_hidden: bool,
@@ -248,7 +270,7 @@ impl ParticleEmitter {
             frame_mode: a.frame_mode,
             line_props: a.line_props,
         };
-        let buffer = ParticleBuffer::new(&bp, &mut rng.buf, clock)?;
+        let buffer = ParticleBuffer::new(&bp, &mut rng.buf, clock, &rng.lod_max_screen_sizes)?;
         Ok(ParticleEmitter {
             emit_rate,
             burst_size,
@@ -276,7 +298,7 @@ impl ParticleEmitter {
             buffer_in_scene: false,
             is_invisible: false,
             transform: Matrix3D::IDENTITY,
-            visible: true,
+            visible: false,
             hidden: false,
             animation_hidden: false,
         })
@@ -349,9 +371,12 @@ impl ParticleEmitter {
         self.transform.get_translation()
     }
 
-    /// `Is_Not_Hidden_At_All()`.
+    /// `Is_Not_Hidden_At_All()`: ~~visible, not hidden and not animation
+    /// hidden~~ **Corrected 2026-11-14 (#65, batch b):** `IS_NOT_HIDDEN_AT_ALL`
+    /// is `IS_NOT_HIDDEN | IS_NOT_ANIMATION_HIDDEN` (rendobj.h): the visible
+    /// bit is not tested, so `Set_Visible(false)` does not stop an emitter.
     pub fn is_not_hidden_at_all(&self) -> bool {
-        self.visible && !self.hidden && !self.animation_hidden
+        !self.hidden && !self.animation_hidden
     }
 
     /// `Set_Hidden(onoff)`.
@@ -508,15 +533,18 @@ impl ParticleEmitter {
     }
 
     /// `On_Frame_Update()` (the emitter's): the first time it runs, the
-    /// buffer joins the scene and the previous transform is taken.
-    pub fn on_frame_update(&mut self) {
+    /// buffer joins the scene and the previous transform is taken. **(#65)**
+    /// Returns whether it registers for release (`Scene->Register(this,
+    /// SceneClass::RELEASE)`: complete, in the scene and `RemoveOnComplete`);
+    /// the release itself is the caller's.
+    pub fn on_frame_update(&mut self) -> bool {
         if self.active && !self.is_complete && self.first_time {
             if self.buffer_scene_needed {
                 if self.is_in_scene {
                     self.buffer_in_scene = true;
                     self.buffer_scene_needed = false;
                 } else {
-                    return;
+                    return false;
                 }
             }
             self.buffer_scene_needed = false;
@@ -524,7 +552,82 @@ impl ParticleEmitter {
             self.prev_orig = self.transform.get_translation();
             self.first_time = false;
         }
-        // (a complete emitter in the scene with RemoveOnComplete asks to be released: the caller's)
+        // ~~(a complete emitter in the scene with RemoveOnComplete asks to be released: the caller's)~~ Corrected
+        // 2026-11-14 (#65, batch b): returned.
+        self.is_complete() && self.is_in_scene && self.is_remove_on_complete_enabled()
+    }
+
+    /// `Is_Remove_On_Complete_Enabled()`.
+    pub fn is_remove_on_complete_enabled(&self) -> bool {
+        self.remove_on_complete
+    }
+
+    /// `Enable_Remove_On_Complete(onoff)`.
+    pub fn enable_remove_on_complete(&mut self, onoff: bool) {
+        self.remove_on_complete = onoff;
+    }
+
+    /// `Buffer_Scene_Not_Needed()`.
+    pub fn buffer_scene_not_needed(&mut self) {
+        self.buffer_scene_needed = false;
+    }
+
+    /// `Remove_Buffer_From_Scene()`: `Buffer->Remove()`, and the buffer is
+    /// put in the scene again at the next `On_Frame_Update`.
+    pub fn remove_buffer_from_scene(&mut self) {
+        self.buffer_in_scene = false;
+        self.first_time = true;
+        self.buffer_scene_needed = true;
+    }
+
+    /// `Set_LOD_Bias(bias)`: `if (Buffer) Buffer->Set_LOD_Bias(bias)`.
+    pub fn set_lod_bias(&mut self, bias: f32) {
+        self.buffer.set_lod_bias(bias);
+    }
+
+    /// `RenderObjClass::Get_Cost()` (the emitter has no LOD of its own):
+    /// `Get_Num_Polys()` is 0, so the small nonzero cost.
+    pub fn get_cost(&self) -> f32 {
+        0.000001f32
+    }
+
+    /// `RenderObjClass::Get_Value()`: `AT_MIN_LOD`.
+    pub fn get_value(&self) -> f32 {
+        AT_MIN_LOD
+    }
+
+    /// `RenderObjClass::Get_Post_Increment_Value()`: `AT_MAX_LOD`.
+    pub fn get_post_increment_value(&self) -> f32 {
+        AT_MAX_LOD
+    }
+
+    /// `RenderObjClass::Get_LOD_Level()`: 0.
+    pub fn get_lod_level(&self) -> i32 {
+        0
+    }
+
+    /// `RenderObjClass::Get_LOD_Count()`: 1.
+    pub fn get_lod_count(&self) -> i32 {
+        1
+    }
+
+    /// `ParticleBufferClass::On_Frame_Update()` for this emitter's buffer
+    /// (its `Emitter` set): the cached bounding volumes invalidated,
+    /// `Emitter->Emit()`, then whether the buffer is complete and registers
+    /// for release (never, while it has its emitter: `Is_Complete` needs
+    /// `IsEmitterDead`).
+    pub fn buffer_on_frame_update(&mut self, clock: &Ww3dClock, rng: &mut ParticleRandom) -> W3dResult<bool> {
+        self.buffer.invalidate_cached_bounding_volumes();
+        self.emit(clock, rng)?;
+        Ok(self.buffer.is_complete())
+    }
+
+    /// `~ParticleEmitterClass()`: `Buffer->Emitter_Is_Dead()`; the buffer
+    /// (the scene's reference) lives on and draws what is left.
+    pub fn into_buffer(self) -> ParticleBuffer {
+        let mut b = self.buffer;
+        b.emitter_is_dead();
+        b
     }
 
     /// `Emit()`.
@@ -644,7 +747,7 @@ impl ParticleEmitter {
             return Ok(None);
         }
         // ParticleBufferClass::On_Frame_Update: Emitter->Emit()
-        self.emit(clock, rng)?;
+        self.buffer_on_frame_update(clock, rng)?;
         let at = (self.get_position(), self.is_stopped());
         Ok(Some(self.buffer.render(clock, Some(at))?))
     }
@@ -728,5 +831,51 @@ mod tests {
         e.frame(&c1, &mut rng).unwrap();
         assert!(e.is_complete());
         assert_eq!(e.buffer.get_particle_count(), 3);
+    }
+
+    /// (#65, batch b) *Predictions, written before the first run:* `Set_Visible(false)` does not stop a running emitter
+    /// (`Is_Not_Hidden_At_All` ignores the visible bit; `Set_Hidden(true)` does); a 3-particle emitter completes in the
+    /// 250 ms frame and then asks for its release at each `On_Frame_Update` in the scene, unless `RemoveOnComplete` is
+    /// off; destroyed, its buffer is dead-emitter and asks for release once its particles have aged out (after 1 s);
+    /// `Remove_Buffer_From_Scene` puts the buffer back at the next update; the emitter's own LOD is `RenderObjClass`'s.
+    ///
+    /// *Results (2026-11-14), first run:* all held.
+    #[test]
+    fn completes_releases_and_orphans_its_buffer() {
+        let mut rng = ParticleRandom::default();
+        let c0 = Ww3dClock::default();
+        let mut a = args();
+        a.max_particles = 3;
+        let mut e = ParticleEmitter::new(a, &mut rng, &c0).unwrap();
+        e.notify_added();
+        e.update_on_visibility();
+        e.set_visible(false);
+        assert!(!e.is_stopped());
+        e.set_hidden(true);
+        assert!(e.is_stopped());
+        e.set_hidden(false);
+        assert!(!e.is_stopped());
+        assert!(!e.on_frame_update());
+        e.remove_buffer_from_scene();
+        assert!(!e.buffer_in_scene && e.first_time);
+        e.frame(&c0, &mut rng).unwrap();
+        assert!(e.buffer_in_scene);
+        let c1 = Ww3dClock { sync_time: 250, frame_time: 250, frame_count: 1 };
+        assert!(!e.buffer_on_frame_update(&c1, &mut rng).unwrap());
+        assert!(e.is_complete() && e.is_remove_on_complete_enabled());
+        assert!(e.on_frame_update());
+        e.enable_remove_on_complete(false);
+        assert!(!e.on_frame_update());
+        e.buffer_scene_not_needed();
+        assert!(!e.buffer_scene_needed);
+        e.set_lod_bias(2.0);
+        assert_eq!(e.buffer.lod_bias, 2.0);
+        assert_eq!((e.get_cost(), e.get_value(), e.get_post_increment_value(), e.get_lod_level(), e.get_lod_count()), (0.000001, AT_MIN_LOD, AT_MAX_LOD, 0, 1));
+        let mut b = e.into_buffer();
+        assert!(b.is_emitter_dead && !b.has_emitter);
+        b.render(&c1, None).unwrap();
+        assert!(!b.on_frame_update());
+        b.render(&Ww3dClock { sync_time: 2000, frame_time: 1750, frame_count: 2 }, None).unwrap();
+        assert!(b.on_frame_update());
     }
 }

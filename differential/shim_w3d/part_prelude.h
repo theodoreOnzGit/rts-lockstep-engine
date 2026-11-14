@@ -17,6 +17,25 @@
 **   - WW3D: the clock (Get_Sync_Time, Get_Frame_Time, Get_Frame_Count) from
 **     the wrapper's globals; sorting reported enabled and static sort lists
 **     off, so ParticleBufferClass::Render draws directly.
+**   - (#65) CameraClass, ViewportClass and PredictiveLODOptimizerClass, for
+**     ParticleBufferClass::Prepare_LOD (renamed by macro to PartLod*, so that
+**     no other library's stand-in of the same name can be merged with them):
+**     the camera's Get_Position, Get_Viewport (ViewportClass's Width and
+**     Height are camera.h's: Max - Min) and Get_View_Plane answer from fields
+**     the driver sets; Add_Object records the object's Get_Cost() (the
+**     optimizer's list and Optimize_LODs are not needed: Zero Hour never
+**     calls Optimize_LODs). RenderObjClass's LOD defaults (rendobj.h's
+**     inline bodies; Get_Cost is rendobj.cpp's, over Get_Num_Polys 0).
+**     SceneClass::Register counts RELEASE registrations
+**     (g_part_release_count, defined by wrap_part_lod.cpp); Remove goes
+**     through Remove_Render_Object and Notify_Removed as rendobj.cpp's and
+**     scene.cpp's do. The bounding-volume cache is kept as rendobj.h and
+**     rendobj.cpp keep it (BOUNDING_VOLUMES_VALID, Get_Bounding_Sphere,
+**     Update_Cached_Bounding_Volumes with ObjectScale 1).
+**     Corrected 2026-11-14 (#65, batch b): the visibility bits are
+**     rendobj.h's: DEFAULT_BITS is not visible, and Is_Not_Hidden_At_All
+**     tests IS_NOT_HIDDEN | IS_NOT_ANIMATION_HIDDEN only (the stand-in tested
+**     Visible too, as the Rust did, so the differential could not see it).
 **   - PointGroupClass, SegLineRendererClass, LineGroupClass: the setters
 **     store their argument; Render records what was set (the wrapper logs
 **     it); the line renderer's getters answer from the stored line
@@ -41,18 +60,54 @@
 #define WWPROFILE(name)
 #endif
 
+#define CameraClass PartLodCameraClass
+#define ViewportClass PartLodViewportClass
+#define PredictiveLODOptimizerClass PartLodOptimizerClass
+
 class RenderObjClass;
 class RenderInfoClass;
-class CameraClass;
 class StringClass;
+
+/* camera.h's ViewportClass (Width, Height) */
+class ViewportClass
+{
+public:
+	ViewportClass(void) : Min(0, 0), Max(1, 1) {}
+	float Width(void) const { return Max.X - Min.X; }
+	float Height(void) const { return Max.Y - Min.Y; }
+	Vector2 Min;
+	Vector2 Max;
+};
+
+/* What Prepare_LOD reads of the camera. */
+class CameraClass
+{
+public:
+	Vector3 Get_Position(void) const { return Position; }
+	const ViewportClass &Get_Viewport(void) const { return Viewport; }
+	void Get_View_Plane(Vector2 &set_min, Vector2 &set_max) const { set_min = ViewPlaneMin; set_max = ViewPlaneMax; }
+	Vector3 Position;
+	ViewportClass Viewport;
+	Vector2 ViewPlaneMin, ViewPlaneMax;
+};
+
+class PredictiveLODOptimizerClass
+{
+public:
+	static void Add_Object(RenderObjClass *robj);
+};
+
+extern int g_part_release_count;
+void ref_part_lod_note_release(RenderObjClass *obj); /* wrap_part_lod.cpp */
 
 class SceneClass
 {
 public:
 	enum RegType { ON_FRAME_UPDATE = 0, LIGHT, RELEASE };
-	void Register(RenderObjClass *, RegType) {}
+	void Register(RenderObjClass *obj, RegType for_what) { if (for_what == RELEASE) { g_part_release_count++; ref_part_lod_note_release(obj); } }
 	void Unregister(RenderObjClass *, RegType) {}
 	void Add_Render_Object(RenderObjClass *obj);
+	void Remove_Render_Object(RenderObjClass *obj);
 };
 
 class WW3D
@@ -76,16 +131,17 @@ public:
 	static const float AT_MIN_LOD;
 	static const float AT_MAX_LOD;
 
-	RenderObjClass(void) : Transform(1), Scene(NULL), Visible(1), Hidden(0), AnimHidden(0), ForceVisible(0) {}
-	RenderObjClass(const RenderObjClass &src) : RefCountClass(src), Transform(src.Transform), Scene(NULL), Visible(src.Visible), Hidden(src.Hidden),
-		AnimHidden(src.AnimHidden), ForceVisible(src.ForceVisible) {}
+	RenderObjClass(void) : Transform(1), Scene(NULL), BVValid(false), Visible(0), Hidden(0), AnimHidden(0), ForceVisible(0) {}
+	RenderObjClass(const RenderObjClass &src) : RefCountClass(src), Transform(src.Transform), Scene(NULL), BVValid(false), Visible(src.Visible),
+		Hidden(src.Hidden), AnimHidden(src.AnimHidden), ForceVisible(src.ForceVisible) {}
 	RenderObjClass &operator=(const RenderObjClass &) { return *this; }
 	virtual ~RenderObjClass(void) {}
 
 	virtual void Notify_Added(SceneClass *scene) { Scene = scene; }
 	virtual void Notify_Removed(SceneClass *) { Scene = NULL; }
 	void Add(SceneClass *scene) { Scene = scene; Scene->Add_Render_Object(this); }
-	void Remove(void) { Scene = NULL; }
+	/* rendobj.cpp's Remove for a top-level object (no container) */
+	void Remove(void) { if (Scene != NULL) { Scene->Remove_Render_Object(this); return; } }
 	bool Is_In_Scene(void) const { return Scene != NULL; }
 
 	const Matrix3D &Get_Transform(void) const { return Transform; }
@@ -96,24 +152,54 @@ public:
 	virtual void Set_Visible(int onoff) { Visible = onoff; }
 	virtual void Set_Animation_Hidden(int onoff) { AnimHidden = onoff; }
 	virtual void Set_Force_Visible(int onoff) { ForceVisible = onoff; }
-	virtual int Is_Not_Hidden_At_All(void) { return Visible && !Hidden && !AnimHidden; }
+	virtual int Is_Not_Hidden_At_All(void) { return !Hidden && !AnimHidden; }
 
+	/* rendobj.h's LOD defaults; Get_Cost is rendobj.cpp's */
+	virtual int Get_Num_Polys(void) const { return 0; }
+	virtual void Increment_LOD(void) {}
+	virtual void Decrement_LOD(void) {}
+	virtual float Get_Cost(void) const { int polycount = Get_Num_Polys(); float cost = (polycount != 0) ? polycount : 0.000001f; return cost; }
+	virtual float Get_Value(void) const { return AT_MIN_LOD; }
+	virtual float Get_Post_Increment_Value(void) const { return AT_MAX_LOD; }
+	virtual void Set_LOD_Level(int) {}
+	virtual int Get_LOD_Level(void) const { return 0; }
+	virtual int Get_LOD_Count(void) const { return 1; }
 	virtual void Set_LOD_Bias(float) {}
 	virtual bool Is_Complete(void) { return false; }
 	virtual void Add_Dependencies_To_List(DynamicVectorClass<StringClass> &, bool = false) {}
-	virtual void Update_Cached_Bounding_Volumes(void) const {}
-	void Invalidate_Cached_Bounding_Volumes(void) const {}
-	void Validate_Cached_Bounding_Volumes(void) const {}
-	const SphereClass &Get_Bounding_Sphere(void) const { return CachedBoundingSphere; }
+	virtual void Get_Obj_Space_Bounding_Sphere(SphereClass &sphere) const { sphere.Center.Set(0, 0, 0); sphere.Radius = 0; }
+	virtual void Get_Obj_Space_Bounding_Box(AABoxClass &box) const { box.Center.Set(0, 0, 0); box.Extent.Set(0, 0, 0); }
+	/* rendobj.cpp (ObjectScale 1) */
+	virtual void Update_Cached_Bounding_Volumes(void) const
+	{
+		Get_Obj_Space_Bounding_Box(CachedBoundingBox);
+		Get_Obj_Space_Bounding_Sphere(CachedBoundingSphere);
+		Get_Transform().mulVector3(CachedBoundingSphere.Center);
+		CachedBoundingSphere.Radius = 1.0f * CachedBoundingSphere.Radius;
+		CachedBoundingBox.Transform(Get_Transform());
+		Validate_Cached_Bounding_Volumes();
+	}
+	void Invalidate_Cached_Bounding_Volumes(void) const { BVValid = false; }
+	void Validate_Cached_Bounding_Volumes(void) const { BVValid = true; }
+	const SphereClass &Get_Bounding_Sphere(void) const
+	{
+		if (!BVValid) {
+			Update_Cached_Bounding_Volumes();
+		}
+		return CachedBoundingSphere;
+	}
 
 	Matrix3D Transform;
 	SceneClass *Scene;
 	mutable SphereClass CachedBoundingSphere;
 	mutable AABoxClass CachedBoundingBox;
+	mutable bool BVValid;
 	int Visible, Hidden, AnimHidden, ForceVisible;
 };
 
 inline void SceneClass::Add_Render_Object(RenderObjClass *obj) { obj->Notify_Added(this); }
+/* scene.cpp's SceneClass::Remove_Render_Object */
+inline void SceneClass::Remove_Render_Object(RenderObjClass *obj) { obj->Notify_Removed(this); }
 
 /* What the particle buffer handed its renderer at the last Render. */
 struct PartDrawRecord
