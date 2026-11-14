@@ -39,6 +39,7 @@ use rts_lockstep_engine::formats::w3d::assetmgr::{AssetManager, W3dFileFactory};
 use rts_lockstep_engine::formats::w3d::part_buf::Ww3dClock;
 use rts_lockstep_engine::formats::w3d::part_emt::ParticleRandom;
 use rts_lockstep_engine::formats::w3d::render::{RenderModel, SceneKind};
+use rts_lockstep_engine::formats::w3d::linegrp::LineGroupChunk;
 use rts_lockstep_engine::formats::w3d::seglinerenderer::SegLineChunk;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::world::game_logic::World;
@@ -338,6 +339,25 @@ impl<D: LocalDevice> WorldDrawables<D> {
             self.line_chunks = Some((clock.frame_count, *camera, out));
         }
         self.line_chunks.as_ref().map_or((&[], *camera), |(_, c, v)| (v.as_slice(), *c))
+    }
+
+    /// (#65 batch e) The line-group emitters of the last W3D frame ([`Self::draw`]) through the translated
+    /// `LineGroupClass`, with the camera's transform `camera` (game axes, `Camera::view.camera_transform()`, upstream's
+    /// `rinfo.Camera.Get_Transform()`): each model's [`RenderModel::render_line_groups`] in the order
+    /// [`Self::emitter_models`] gives them. World-space draws. No per-frame cache is needed: `LineGroupClass::Render`
+    /// draws from what the frame's `Render_Line_Group` set and keeps no state but its shader's edits (the same bits
+    /// every time), so a second call in the frame draws the same with the camera of that call (upstream draws once per
+    /// frame, with the frame's camera). Before the first frame, none. **Differs from upstream** in the order across
+    /// models, as [`Self::render_line_runs`].
+    pub fn render_line_groups(&mut self, camera: &Matrix3D) -> Vec<LineGroupChunk> {
+        if self.particle_clock.is_none() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for m in self.instances.values_mut().map(|(_, m)| m).chain(self.removed.iter_mut()) {
+            out.extend(m.render_line_groups(camera));
+        }
+        out
     }
 
     /// #148: the scene `pickDrawable` casts at (`RTS3DScene`'s render list, `rts_lockstep_engine::client::pick_drawable`):
@@ -1654,6 +1674,110 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         let (plain, _) = play(false);
         let (crcs, vertices) = play(true);
         println!("line vertices per frame {vertices:?}");
+        assert_eq!(crcs, plain);
+        assert!(vertices[3..].iter().all(|&n| n > 0), "{vertices:?}");
+    }
+
+    /// (#65 batch e) The gate's runner drawn as `PRISMS`: [`smoker_model`]'s puff as a line-group emitter
+    /// (`W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM`), ordered 120 east, 60 frames at 33 ms, with a camera
+    /// ([`crate::camera::Camera`]) over the map; and the same game without the client.
+    ///
+    /// *Predictions, written before the first run (issue65e P5):* the logic's CRCs are equal frame for frame with and
+    /// without the client; every frame, [`WorldDrawables::render_line_groups`] at the camera's transform gives exactly
+    /// the draw `ParticleBuffer::render_line_groups` gives on a copy of the emitter's buffer, and the same again on a
+    /// second call; the batches ([`crate::particles::line_group_batches`]) hold every draw's vertices in Bevy's axes and
+    /// its triangles in order; `emitter_quads` gives no ribbon for the emitter; from the 4th frame on there are vertices,
+    /// 6 per particle.
+    ///
+    /// *Results (2026-11-14), first run:* held. CRCs equal over 60 frames; vertices per frame 0, 0, 0, then 6 more every
+    /// third frame (one particle every 100 ms, a prism of 6 each) to 60 (10 prisms) from frame 31 on.
+    #[test]
+    fn a_line_group_emitter_draws_its_prisms_without_changing_the_crcs() {
+        use rts_lockstep_engine::formats::w3d::part_buf::{ParticleDraw, W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM};
+        let model = || {
+            let ident = [0.0, 0.0, 0.0, 1.0];
+            let mut f = synth::htree_w3d(b"PRISMS", &[
+                PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
+                PivotSpec { name: b"STACK".to_vec(), parent: 0, translation: [0.0, 0.0, 3.0], rotation: ident },
+            ]);
+            let mut spec = synth::EmitterSpec::puff(b"GLOW");
+            spec.render_mode = W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM as u32;
+            f.extend(spec.to_w3d());
+            f.extend(synth::hlod_w3d(b"PRISMS", b"PRISMS", &[(b"GLOW", 1)]));
+            f
+        };
+        let draw = " Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = Prisms\n  End\n End\n";
+        let play = |drawn_client: bool| {
+            let mut w = gate_map_world_with(&drawn("Runner", draw));
+            let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+            let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+            let runner = make(&mut w, b"DrawnRunner", team, at(40.0, 50.0));
+            w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
+            let mut art = MemoryDevice::new();
+            art.insert(b"Art/W3D/prisms.w3d", model());
+            let mut d = WorldDrawables::new(Some(Art::new(FileSystem::new(art))));
+            let cam = crate::camera::Camera::new(&w, at(100.0, 50.0), 200.0, (800, 600));
+            let camera = cam.view.camera_transform();
+            let ev = w.take_client_events();
+            if drawn_client {
+                d.update(&mut w, &ev, 0);
+                assert!(d.drawables.errors.is_empty(), "{:?}", d.drawables.errors);
+                assert!(d.render_line_groups(&camera).is_empty());
+            }
+            let ai = w.find_object(runner).and_then(|o| o.ai).expect("the AI");
+            w.module_call(runner, ai, ModuleCall::AiMoveToPosition { pos: at(160.0, 50.0), command_source: 0 });
+            let (mut crcs, mut vertices) = (Vec::new(), Vec::new());
+            for f in 1..=60u32 {
+                w.logic_update().expect("a frame");
+                let ev = w.take_client_events();
+                if drawn_client {
+                    d.update(&mut w, &ev, f * 33);
+                    // the draw made directly, on a copy
+                    let m = d.instance(runner).expect("the prisms");
+                    let e = &m.emitters[0];
+                    assert!(e.failed.is_none(), "{:?}", e.failed);
+                    let mut direct = Vec::new();
+                    let mut lines = 0;
+                    match (&e.draw, &e.emitter) {
+                        (Some(ParticleDraw::LineGroup(g)), Some(em)) => {
+                            lines = g.lines.len();
+                            direct.extend(em.buffer.clone().render_line_groups(&camera).unwrap());
+                        }
+                        (None, _) => {}
+                        other => panic!("{other:?}"),
+                    }
+                    let chunks = d.render_line_groups(&camera);
+                    assert_eq!(chunks, direct, "frame {f}");
+                    assert_eq!(d.render_line_groups(&camera), chunks, "a second call, frame {f}");
+                    // the mesh data against the direct draws
+                    let q = crate::particles::line_group_batches(&chunks, &camera);
+                    let (mut pos, mut idx) = (Vec::new(), Vec::new());
+                    for c in &direct {
+                        let base = pos.len() as u32;
+                        pos.extend(c.vertices.iter().map(|v| crate::view::to_bevy([v.position.x, v.position.y, v.position.z])));
+                        idx.extend(c.triangles.iter().flat_map(|t| t.map(|i| base + u32::from(i))));
+                    }
+                    if direct.is_empty() {
+                        assert!(q.is_empty());
+                    } else {
+                        assert_eq!(q.keys().cloned().collect::<Vec<_>>(), vec![(b"puff.tga".to_vec(), crate::particles::Blend::Alpha)]);
+                        let b = &q[&(b"puff.tga".to_vec(), crate::particles::Blend::Alpha)];
+                        assert_eq!((&b.positions, &b.indices), (&pos, &idx), "frame {f}");
+                        assert_eq!((b.uvs.len(), b.colors.len()), (pos.len(), pos.len()));
+                    }
+                    assert_eq!(pos.len(), 6 * lines, "frame {f}");
+                    // no ribbons
+                    let ribbons = crate::particles::emitter_quads(d.emitter_models(), crate::particles::point_tables(), [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+                    assert!(ribbons.is_empty(), "frame {f}");
+                    vertices.push(pos.len());
+                }
+                crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
+            }
+            (crcs, vertices)
+        };
+        let (plain, _) = play(false);
+        let (crcs, vertices) = play(true);
+        println!("line-group vertices per frame {vertices:?}");
         assert_eq!(crcs, plain);
         assert!(vertices[3..].iter().all(|&n| n > 0), "{vertices:?}");
     }

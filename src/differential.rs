@@ -3659,6 +3659,10 @@ extern "C" {
     // compiled verbatim over a recording device.
     pub fn ref_segline_seq(input: *const c_uint, nin: c_int, out: *mut c_uint, cap: c_int) -> c_int;
 
+    // GitHub #65 (batch e): LineGroupClass (differential/wrap_linegrp.cpp, which documents the words): linegrp.cpp
+    // compiled verbatim over a recording device.
+    pub fn ref_linegrp_seq(input: *const c_uint, nin: c_int, out: *mut c_uint, cap: c_int) -> c_int;
+
     // GitHub #65 (batch b): ParticleBufferClass's predictive LOD and the emitter's release and removal
     // (differential/wrap_part_lod.cpp, which documents the words): part_buf.cpp and part_emt.cpp compiled verbatim.
     pub fn ref_part_lod_seq(input: *const c_uint, nin: c_int, out: *mut c_uint, cap: c_int) -> c_int;

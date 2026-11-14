@@ -25,11 +25,16 @@
 //! draws them (`ParticleBuffer::render_line_runs`, eye-space chunks made with the camera's view), turned into batches
 //! by [`line_chunk_batches`]: each chunk's vertices back to the world by the camera's transform, then to Bevy's axes;
 //! its triangles, packed colours, U and V as they are.
+//!
+//! **Added 2026-11-14 (GitHub #65, batch e):** the line-group emitters' tetrahedra and prisms as the translated
+//! `LineGroupClass` draws them (`ParticleBuffer::render_line_groups`, world-space draws made with the camera's
+//! transform), turned into batches by [`line_group_batches`]; they replace the ribbons [`emitter_quads`] drew.
 
 use std::collections::BTreeMap;
 
 use rts_lockstep_engine::client::particle_sys::{shader_type, ParticleSystemManager};
 
+use rts_lockstep_engine::formats::w3d::linegrp::LineGroupChunk;
 use rts_lockstep_engine::formats::w3d::seglinerenderer::SegLineChunk;
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 
@@ -146,31 +151,6 @@ fn emitter_blend(shader: rts_lockstep_engine::formats::w3d::shader::ShaderClass)
     }
 }
 
-/// A camera-facing ribbon of `width` through `points` (game axes) with their colours, into `b` (Bevy axes).
-fn ribbon(b: &mut QuadBatch, points: &[[f32; 3]], colors: &[[f32; 4]], width: f32, right: [f32; 3], up: [f32; 3]) {
-    use rts_lockstep_engine::ww::wwmath::sqrt;
-    // the view direction (right x up)
-    let view = [right[1] * up[2] - right[2] * up[1], right[2] * up[0] - right[0] * up[2], right[0] * up[1] - right[1] * up[0]];
-    for k in 0..points.len().saturating_sub(1) {
-        let (a, c) = (to_bevy(points[k]), to_bevy(points[k + 1]));
-        let d = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-        let mut o = [d[1] * view[2] - d[2] * view[1], d[2] * view[0] - d[0] * view[2], d[0] * view[1] - d[1] * view[0]];
-        let l = sqrt(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]);
-        if l <= 0.0 {
-            continue;
-        }
-        let h = 0.5 * width / l;
-        o = [o[0] * h, o[1] * h, o[2] * h];
-        let base = b.positions.len() as u32;
-        for (p, sgn, uv) in [(a, -1.0f32, [0.0, 1.0]), (c, -1.0, [1.0, 1.0]), (c, 1.0, [1.0, 0.0]), (a, 1.0, [0.0, 0.0])] {
-            b.positions.push([p[0] + sgn * o[0], p[1] + sgn * o[1], p[2] + sgn * o[2]]);
-            b.uvs.push(uv);
-        }
-        b.colors.extend([colors[k], colors[k + 1], colors[k + 1], colors[k]]);
-        b.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
-    }
-}
-
 /// The W3D emitters' particles (GitHub #49), in batches keyed as [`particle_quads`]'s (texture, blend), to merge with
 /// them: what each emitter's buffer handed its renderer at the last draw (`RenderModel::update_emitters`), and (#65 batch
 /// c) each buffer an emitter left in the scene (`RenderModel::orphans`). **New** (the
@@ -182,6 +162,9 @@ fn ribbon(b: &mut QuadBatch, points: &[[f32; 3]], colors: &[[f32; 4]], width: f3
 /// (`formats::w3d::seglinerenderer`, `ParticleBuffer::render_line_runs`) ~~but not yet drawn here~~; the line groups are not
 /// modelled). **Corrected 2026-11-14 (#65, batch d):** line-mode runs are no longer drawn here: they go through the
 /// segment-line renderer with the camera's view, and their chunks are drawn by [`line_chunk_batches`].
+/// **Corrected 2026-11-14 (#65, batch e):** ~~line-group lines as camera-facing ribbons~~ the line groups are no longer
+/// drawn here either: the translated line group draws their tetrahedra or prisms with the camera's transform
+/// (`ParticleBuffer::render_line_groups`), and [`line_group_batches`] meshes them. Only the points are drawn here.
 pub fn emitter_quads<'a>(
     models: impl Iterator<Item = &'a rts_lockstep_engine::formats::w3d::render::RenderModel>,
     tables: &PointTables,
@@ -237,14 +220,8 @@ pub fn emitter_quads<'a>(
                         b.colors.extend([rgba(s.diffuse); 4]);
                     }
                 }
-                // (#65 batch d) `ParticleDraw::Lines`: drawn through the segment-line renderer ([`line_chunk_batches`])
-                ParticleDraw::LineGroup(g) => {
-                    let b = out.entry((tex, blend)).or_default();
-                    for l in &g.lines {
-                        let pts = [[l.tail.x, l.tail.y, l.tail.z], [l.head.x, l.head.y, l.head.z]];
-                        ribbon(b, &pts, &[rgba(l.tail_diffuse), rgba(l.head_diffuse)], l.size, right, up);
-                    }
-                }
+                // (#65 batch d) `ParticleDraw::Lines`: drawn through the segment-line renderer ([`line_chunk_batches`]);
+                // (#65 batch e) `ParticleDraw::LineGroup`: drawn through the line group ([`line_group_batches`])
                 _ => {}
             }
         }
@@ -294,6 +271,45 @@ pub fn line_chunk_into(b: &mut QuadBatch, c: &SegLineChunk, camera: &Matrix3D, b
     }
 }
 
+/// (#65 batch e) The line groups' draws (`LineGroupChunk`, from `ParticleBuffer::render_line_groups` through
+/// `WorldDrawables::render_line_groups`), in batches keyed as [`particle_quads`]'s: by the draw's texture (lower case)
+/// and its shader's blend (as the emitters'). `camera` is the camera's transform in the game's axes (eye to world), used
+/// only for a draw made in camera space (`view_identity`: `TRANSFORM` off, which the particle buffers never are);
+/// the buffers' draws are in the world and go to Bevy's axes as they are. **New** (the DirectX 8 device is replaced):
+/// upstream draws each with the identity world transform and the camera's view; the sorting choice is not kept apart
+/// (as [`line_chunk_batches`]), and the draws share their key's batch.
+pub fn line_group_batches(chunks: &[LineGroupChunk], camera: &Matrix3D) -> BTreeMap<(Vec<u8>, Blend), QuadBatch> {
+    let mut out: BTreeMap<(Vec<u8>, Blend), QuadBatch> = BTreeMap::new();
+    for c in chunks {
+        let blend = emitter_blend(c.shader);
+        let tex = c.texture.clone().unwrap_or_default().to_ascii_lowercase();
+        line_group_into(out.entry((tex, blend)).or_default(), c, camera, blend);
+    }
+    out
+}
+
+/// (#65 batch e) One line-group draw appended to `b`: each vertex in Bevy's axes ([`to_bevy`]; first through `camera`
+/// for a camera-space draw), its U and V as given, its colour the packed ARGB unpacked as the device reads it (the
+/// material is always `PRELIT_DIFFUSE`; alpha 1 for an additive batch); its triangles in order, offset past the batch's
+/// vertices.
+pub fn line_group_into(b: &mut QuadBatch, c: &LineGroupChunk, camera: &Matrix3D, blend: Blend) {
+    use rts_lockstep_engine::formats::w3d::mesh::dx8_unpack_color;
+    let base = b.positions.len() as u32;
+    for v in &c.vertices {
+        let w = if c.view_identity { Matrix3D::transform_vector(camera, &v.position) } else { v.position };
+        b.positions.push(to_bevy([w.x, w.y, w.z]));
+        b.uvs.push([v.u, v.v]);
+        let rgba = dx8_unpack_color(v.diffuse);
+        b.colors.push(match blend {
+            Blend::Add => [rgba[0], rgba[1], rgba[2], 1.0],
+            Blend::Alpha => rgba,
+        });
+    }
+    for t in &c.triangles {
+        b.indices.extend(t.map(|i| base + u32::from(i)));
+    }
+}
+
 /// (#168) The laser beams: every `W3DLaserDraw` line of the client's drawables (the objects' and the logic's object-less
 /// ones), each a camera-facing quad of the line's width from the strip the core works out
 /// ([`SegmentedLine::render_strip`](rts_lockstep_engine::client::w3d_laser_draw::SegmentedLine::render_strip): its points,
@@ -323,7 +339,9 @@ pub fn laser_quads(d: &mut rts_lockstep_engine::client::drawable::ClientDrawable
 }
 
 /// (#168) A camera-facing strip of `width` through `points` (game axes) with U `u` across it and V `v` along it, into
-/// `b` (Bevy axes): [`ribbon`]'s geometry with the line's own texture coordinates.
+/// `b` (Bevy axes): ~~[`ribbon`]'s geometry~~ **Corrected 2026-11-14 (#65, batch e):** the geometry of the line-group
+/// ribbons this file drew until batch e (removed with them: a quad per segment, half the width either side, across the
+/// view direction) with the line's own texture coordinates.
 #[allow(clippy::too_many_arguments)]
 fn strip(b: &mut QuadBatch, points: &[[f32; 3]], rgba: [f32; 4], width: f32, u: [f32; 2], v: &[f32], right: [f32; 3], up: [f32; 3]) {
     use rts_lockstep_engine::ww::wwmath::sqrt;
@@ -429,6 +447,54 @@ mod tests {
         assert_eq!((b.positions.len(), &b.indices[6..]), (8, &[4, 5, 6, 5, 7, 6][..]));
         assert!(b.colors.iter().all(|c| c[3] == 1.0), "{:?}", b.colors);
         assert_eq!(b.colors[0][..3], [1.0, 64.0 / 255.0, 0.0]);
+    }
+
+    /// (#65 batch e) *Predictions, written before the first run (issue65e P5):* a known world-space prism draw (6
+    /// vertices, 8 triangles, alpha, texture `Glow.TGA`) becomes one batch (`glow.tga`, alpha) with each vertex at
+    /// `to_bevy(position)` whatever the camera, the indices the triangles' in order, the colours unpacked, the UVs as
+    /// given; the same draw marked camera-space goes through the camera first; with the additive shader it keys `Add`
+    /// with alpha 1, and a second draw offsets its indices by 6.
+    ///
+    /// *Results (2026-11-14), first run:* held.
+    #[test]
+    fn a_line_group_draw_becomes_a_mesh() {
+        use rts_lockstep_engine::formats::w3d::linegrp::LineGroupVertex;
+        use rts_lockstep_engine::formats::w3d::shader::{PRESET_ADDITIVE_SPRITE_SHADER, PRESET_ALPHA_SPRITE_SHADER};
+        use rts_lockstep_engine::ww::vector3::Vector3;
+        let vtx = |x: f32, y: f32, z: f32, diffuse: u32, v: f32| LineGroupVertex { position: Vector3::new(x, y, z), diffuse, u: 0.5, v };
+        let chunk = LineGroupChunk {
+            vertices: vec![
+                vtx(1.0, 2.0, 3.0, 0x80FF_4000, 0.0),
+                vtx(2.0, 2.0, 3.0, 0x80FF_4000, 0.0),
+                vtx(1.0, 3.0, 3.0, 0x80FF_4000, 0.0),
+                vtx(1.0, 2.0, 9.0, 0xFF00_00FF, 1.0),
+                vtx(2.0, 2.0, 9.0, 0xFF00_00FF, 1.0),
+                vtx(1.0, 3.0, 9.0, 0xFF00_00FF, 1.0),
+            ],
+            triangles: vec![[0, 1, 2], [0, 3, 1], [1, 3, 4], [1, 4, 5], [1, 5, 2], [0, 2, 5], [0, 5, 3], [3, 5, 4]],
+            shader: PRESET_ALPHA_SPRITE_SHADER,
+            sorting: true,
+            texture: Some(b"Glow.TGA".to_vec()),
+            view_identity: false,
+        };
+        let camera = Matrix3D::from_translation(&Vector3::new(10.0, 20.0, 30.0));
+        let q = line_group_batches(std::slice::from_ref(&chunk), &camera);
+        assert_eq!(q.keys().cloned().collect::<Vec<_>>(), vec![(b"glow.tga".to_vec(), Blend::Alpha)]);
+        let b = &q[&(b"glow.tga".to_vec(), Blend::Alpha)];
+        let pos: Vec<[f32; 3]> = chunk.vertices.iter().map(|v| to_bevy([v.position.x, v.position.y, v.position.z])).collect();
+        assert_eq!(b.positions, pos);
+        assert_eq!(b.indices, chunk.triangles.iter().flat_map(|t| t.map(u32::from)).collect::<Vec<_>>());
+        assert_eq!(b.uvs[0], [0.5, 0.0]);
+        assert_eq!(b.uvs[3], [0.5, 1.0]);
+        assert_eq!((b.colors[0], b.colors[3]), ([1.0, 64.0 / 255.0, 0.0, 128.0 / 255.0], [0.0, 0.0, 1.0, 1.0]));
+        let eye = LineGroupChunk { view_identity: true, ..chunk.clone() };
+        let q = line_group_batches(&[eye], &camera);
+        assert_eq!(q[&(b"glow.tga".to_vec(), Blend::Alpha)].positions[0], to_bevy([11.0, 22.0, 33.0]));
+        let add = LineGroupChunk { shader: PRESET_ADDITIVE_SPRITE_SHADER, ..chunk.clone() };
+        let q = line_group_batches(&[add.clone(), add], &camera);
+        let b = &q[&(b"glow.tga".to_vec(), Blend::Add)];
+        assert_eq!((b.positions.len(), &b.indices[24..27]), (12, &[6, 7, 8][..]));
+        assert!(b.colors.iter().all(|c| c[3] == 1.0));
     }
 
     use rts_lockstep_engine::client::particle_sys::{NoParticleHost, ParticleSettings};

@@ -2387,6 +2387,8 @@ struct ParticleDraw {
 /// (#65 batch d) The line-mode emitters' runs go through the segment-line renderer with the game camera's view
 /// (`WorldDrawables::render_line_runs` at `Camera::view_matrix`, and `particles::line_chunk_batches` at its transform,
 /// all tested there) into the same batches; this glue only hands them the camera (Bevy systems need a window).
+/// (#65 batch e) The line-group emitters' tetrahedra and prisms likewise (`WorldDrawables::render_line_groups` at the
+/// camera's transform, `particles::line_group_batches`, tested there).
 #[allow(clippy::too_many_arguments)]
 fn draw_particles(
     mut commands: Commands,
@@ -2409,7 +2411,12 @@ fn draw_particles(
     let lines = match &rig {
         Some(r) => {
             let (chunks, camera) = g.models.render_line_runs(&r.cam.view_matrix(), &r.cam.view.camera_transform());
-            crate::particles::line_chunk_batches(chunks, &camera)
+            let mut lines = crate::particles::line_chunk_batches(chunks, &camera);
+            // (#65 batch e) the line groups' tetrahedra and prisms, with the game camera's transform
+            let eye_to_world = r.cam.view.camera_transform();
+            let groups = g.models.render_line_groups(&eye_to_world);
+            crate::particles::merge_batches(&mut lines, crate::particles::line_group_batches(&groups, &eye_to_world));
+            lines
         }
         None => Default::default(),
     };

@@ -39,6 +39,7 @@ pub mod hlod;
 pub mod hmdldef;
 pub mod hmorphanim;
 pub mod htree;
+pub mod linegrp;
 pub mod mesh;
 pub mod meshmdl;
 pub mod motchan;

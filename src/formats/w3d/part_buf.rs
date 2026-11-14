@@ -113,8 +113,10 @@
 //!   [`W3dUndefined::IndexOutOfRange`]).
 //! - The draws are returned as data ([`ParticleDraw`]); ~~the point group,
 //!   segment-line renderer and line group that draw them are the client's.~~
-//!   **Corrected 2026-11-14 (#65):** the point group and line group that
-//!   draw them are the client's; the segment-line renderer is translated
+//!   **Corrected 2026-11-14 (#65):** ~~the point group and line group that
+//!   draw them are the client's;~~ (**Corrected 2026-11-14 (#65, batch e):**
+//!   only the point group is the client's: the line group is translated,
+//!   below); the segment-line renderer is translated
 //!   ([`super::seglinerenderer`], kept in the buffer), and the line runs go
 //!   through it in [`ParticleBuffer::render_line_runs`], which the caller
 //!   calls after `render` with the camera (`Render` has none here).
@@ -124,9 +126,17 @@
 //!   its camera's view matrix (`CameraInvTransform`) once per W3D frame, and
 //!   meshes the eye-space vertices back in the world
 //!   (`client/src/particles.rs::line_chunk_batches`); the ribbons are gone.
+//!   **(#65, batch e):** the line group is translated
+//!   too ([`super::linegrp`], kept in the buffer as [`ParticleBuffer::line_group`]):
+//!   `Render_Line_Group` sets its defaults and arrays, and
+//!   [`ParticleBuffer::render_line_groups`] draws it with the camera's
+//!   transform after `render`; only the point group is the client's. The
+//!   client draws the line groups' chunks
+//!   (`client/src/particles.rs::line_group_batches`), not ribbons.
 
 use super::shader::{ShaderClass, DSTBLEND_ONE, DSTBLEND_ONE_MINUS_SRC_ALPHA, DSTBLEND_ONE_MINUS_SRC_COLOR, DSTBLEND_SRC_COLOR};
 use super::shader::{SRCBLEND_ONE, SRCBLEND_SRC_ALPHA};
+use super::linegrp::{LineGroup, LineGroupChunk, LineModeType, TRANSFORM};
 use super::seglinerenderer::{SegLineChunk, SegLineRenderer};
 use super::w3d_file::W3dEmitterLinePropertiesStruct;
 use crate::ww::matrix3d::Matrix3D;
@@ -521,6 +531,10 @@ pub struct ParticleBuffer {
     /// state the buffer keeps; [`ParticleBuffer::render_line_runs`] draws
     /// [`ParticleDraw::Lines`]' runs with it.
     pub line_renderer: Option<SegLineRenderer>,
+    /// (#65, batch e) The `LineGroupClass` of a line-group buffer ([`LineGroup`]: `Set_Flag(TRANSFORM, true)`,
+    /// `Set_Texture`, `Set_Shader`, `Set_Line_Mode`), whose defaults, arrays and edited shader it keeps;
+    /// `Render_Line_Group` sets it and [`ParticleBuffer::render_line_groups`] draws it.
+    pub line_group: Option<LineGroup>,
     /// The renderer's texture (`Set_Texture`): its name, `None` for null.
     pub texture: Option<Vec<u8>>,
     /// The renderer's shader (`Set_Shader`, after `Enable_Fog`).
@@ -664,6 +678,7 @@ impl ParticleBuffer {
             has_line_renderer: false,
             has_line_group: false,
             line_renderer: None,
+            line_group: None,
             texture: None,
             shader: p.shader,
             position: [None, None],
@@ -721,6 +736,12 @@ impl ParticleBuffer {
             W3D_EMITTER_RENDER_MODE_LINEGRP_TETRA | W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM => {
                 b.has_line_group = true;
                 b.texture = p.texture.clone();
+                let mut lg = LineGroup::new();
+                lg.set_flag(TRANSFORM, true);
+                lg.set_texture(b.texture.clone());
+                lg.set_shader(shader);
+                lg.set_line_mode(if b.render_mode == W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM { LineModeType::Prism } else { LineModeType::Tetrahedron });
+                b.line_group = Some(lg);
                 b.tail_position = Some(vec![Vector3::default(); n]);
             }
             _ => {}
@@ -1907,13 +1928,26 @@ impl ParticleBuffer {
         Ok(Some(out))
     }
 
+    /// (#65, batch e) The rest of `Render_Line_Group`: `LineGroup->Render(rinfo)` with the camera's transform
+    /// `camera` (`rinfo.Camera.Get_Transform()`), sorting enabled (`WW3D::Is_Sorting_Enabled()`, which Zero Hour never
+    /// turns off), over what the last `Render` set ([`ParticleDraw::LineGroup`]). **Differs from upstream:** the caller
+    /// draws it after `Render` (which has no camera here); the line group's arrays are those of that `Render`. The draw
+    /// (world-space vertices: the buffer sets `TRANSFORM`), `None` for a buffer with no line group or no lines.
+    pub fn render_line_groups(&mut self, camera: &Matrix3D) -> W3dResult<Option<LineGroupChunk>> {
+        match self.line_group.as_mut() {
+            Some(lg) => lg.render(camera, true),
+            None => Ok(None),
+        }
+    }
+
     /// `Determine_Tail_Diffuse()`: from the texture and the shader.
     pub fn determine_tail_diffuse(&self) -> TailDiffuseType {
         // a texture controls the fade-off: the tail is the head's colour
         if self.texture.is_some() {
             return TailDiffuseType::SameAsHead;
         }
-        // (called with a line group, whose shader Get_Shader returns)
+        // (called with a line group, whose shader Get_Shader returns: upstream's is the line group's, with its Render's
+        // culling, gradient and texturing edits; the blend and alpha-test bits read here are the buffer's, unedited)
         let shader = self.shader;
         let (src, dst) = (shader.get_src_blend_func(), shader.get_dst_blend_func());
         if dst == DSTBLEND_SRC_COLOR {
@@ -1964,6 +1998,36 @@ impl ParticleBuffer {
                 }
                 Some(d) => self.tail_diffuse = Some(d.clone()),
             },
+        }
+        // (#65, batch e) the line group itself: the defaults of the arrays that are absent, the tail colour when there
+        // is no tail array, then Set_Arrays (Render is the caller's: render_line_groups, with the camera)
+        if let Some(lg) = self.line_group.as_mut() {
+            if self.color.is_none() {
+                lg.set_line_color(default_color);
+            }
+            if self.alpha.is_none() {
+                lg.set_line_alpha(default_alpha);
+            }
+            if self.size.is_none() {
+                lg.set_line_size(default_size);
+            }
+            if self.frame.is_none() {
+                lg.set_line_ucoord(default_ucoord);
+            }
+            if self.tail_diffuse.is_none() {
+                lg.set_tail_diffuse(self.default_tail_diffuse);
+            }
+            let table = apt.as_ref().map(|_| self.apt.clone());
+            lg.set_arrays(
+                self.position[pp].clone().expect("Position"),
+                self.tail_position.clone().expect("TailPosition"),
+                self.diffuse.clone(),
+                self.tail_diffuse.clone(),
+                table,
+                self.size.clone(),
+                self.ucoord.clone(),
+                count as i32,
+            );
         }
         let position = self.position[pp].as_ref().expect("Position");
         let tails = self.tail_position.as_ref().expect("TailPosition");
@@ -2180,5 +2244,40 @@ mod tests {
         assert_eq!(chunks[0][0].texture, Some(b"a.tga".to_vec()));
         let mut q = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[])), &mut r, &clock, &LodMaxScreenSizes::default()).unwrap();
         assert_eq!(q.render_line_runs(&runs, &c, &view, &mut Random3::default()).unwrap(), None);
+    }
+
+    /// (#65 batch e) *Predictions, written before the first run (issue65e P1):* a tetrahedron line-group buffer (size 1,
+    /// colour (1, 0.5, 0) constant, opacity 1, texture `a.tga`, additive) has a line group with `TRANSFORM`, the
+    /// buffer's texture and shader, tetrahedra; two particles drawn: `Render_Line_Group` gives it the defaults (colour,
+    /// alpha 1, size 1, U 0), a tail colour the head's (a texture: `SAME_AS_HEAD`; no colour array: the default
+    /// (1, 0.5, 0, 1)), the positions and tails, the table and the count
+    /// 2; `render_line_groups` draws 8 vertices and 8 triangles in the world; a buffer of points has none.
+    ///
+    /// *Results (2026-11-14), first run:* held.
+    #[test]
+    fn line_group_mode_draws_through_the_line_group() {
+        let mut r = Random4::default();
+        let mut p = params(props_f(1.0, 0.0, &[]));
+        p.render_mode = W3D_EMITTER_RENDER_MODE_LINEGRP_TETRA;
+        let clock = Ww3dClock::default();
+        let mut b = ParticleBuffer::new(&p, &mut r, &clock, &LodMaxScreenSizes::default()).unwrap();
+        let lg = b.line_group.clone().unwrap();
+        assert_eq!((lg.get_flag(TRANSFORM), lg.texture.clone(), lg.shader, lg.line_mode), (1, b.texture.clone(), b.shader, LineModeType::Tetrahedron));
+        for t in [0, 100] {
+            *b.add_uninitialized_new_particle() = NewParticle { velocity: Vector3::new(1.0, 0.0, 0.0), time_stamp: t, ..NewParticle::default() };
+        }
+        let c = Ww3dClock { sync_time: 500, frame_time: 500, frame_count: 1 };
+        let ParticleDraw::LineGroup(g) = b.render(&c, None).unwrap() else { panic!("not a line group") };
+        assert_eq!(g.lines.len(), 2);
+        let lg = b.line_group.clone().unwrap();
+        assert_eq!((lg.default_line_color, lg.default_line_alpha, lg.default_line_size, lg.default_line_ucoord), (Vector3::new(1.0, 0.5, 0.0), 1.0, 1.0, 0.0));
+        assert_eq!((lg.default_tail_diffuse, lg.line_count, lg.alt.is_some()), (Vector4::new(1.0, 0.5, 0.0, 1.0), 2, true));
+        assert_eq!(lg.start_line_loc.as_ref(), b.position[0].as_ref());
+        assert_eq!(lg.end_line_loc.as_ref(), b.tail_position.as_ref());
+        let chunk = b.render_line_groups(&Matrix3D::identity()).unwrap().expect("a draw");
+        assert_eq!((chunk.vertices.len(), chunk.triangles.len(), chunk.view_identity), (8, 8, false));
+        assert_eq!(chunk.texture, Some(b"a.tga".to_vec()));
+        let mut q = ParticleBuffer::new(&params(props_f(1.0, 0.0, &[])), &mut r, &clock, &LodMaxScreenSizes::default()).unwrap();
+        assert_eq!(q.render_line_groups(&Matrix3D::identity()).unwrap(), None);
     }
 }

@@ -964,13 +964,13 @@ impl SegLineRenderer {
 }
 
 /// `ShaderClass::Set_Primary_Gradient(x)`.
-fn set_primary_gradient(shader: &mut ShaderClass, x: u32) {
+pub(super) fn set_primary_gradient(shader: &mut ShaderClass, x: u32) {
     shader.0 &= !MASK_PRIGRADIENT;
     shader.0 |= x << SHIFT_PRIGRADIENT;
 }
 
 /// `ShaderClass::Set_Texturing(x)`.
-fn set_texturing(shader: &mut ShaderClass, x: u32) {
+pub(super) fn set_texturing(shader: &mut ShaderClass, x: u32) {
     shader.0 &= !MASK_TEXTURING;
     shader.0 |= x << SHIFT_TEXTURING;
 }

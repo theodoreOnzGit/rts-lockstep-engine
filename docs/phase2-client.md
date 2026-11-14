@@ -127,6 +127,42 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#65 batch e (2026-11-14, GitHub #65): the line groups, `LineGroupClass`, translated and drawn.**
+- **Upstream read first:** WW3D2/linegrp.cpp, linegrp.h (the whole class); part_buf.cpp's constructor for
+  `LINEGRP_TETRA`/`_PRISM` (`Set_Flag(TRANSFORM, true)`, texture, shader, mode), `Render`'s switch,
+  `Render_Line_Group` (the defaults of absent arrays, `Determine_Tail_Diffuse`, `Set_Arrays`), `Get_Shader`. The game
+  code never makes a `LineGroupClass` itself: only a W3D emitter whose file says `LINEGRP_TETRA` or `_PRISM` does
+  (whether any Zero Hour emitter does cannot be told without the owner's data).
+- **Core** (`src/formats/w3d/linegrp.rs`, new): `LineGroup`, function by function (`Set_Arrays`, the setters and
+  getters, `Set_Flag`, `Get_Polygon_Count`, `Render`); `Render` returns the draw (`LineGroupChunk`: vertices x y z,
+  packed colour, U, V; triangles; the edited shader; sorting; texture; whether the view was the identity) instead of
+  calling DirectX 8. Undefined upstream (`W3dUndefined`): a negative line count, more than 65,535 indices or vertices
+  (the dynamic buffers' `unsigned short` counts), a table entry past the arrays. **Upstream quirk kept:**
+  `xform_mat.Get_Orthogonal_Inverse(xform_mat)` runs in place, so the camera rotation is made symmetric (its lower
+  triangle mirrored), not inverted; the offsets are out of the view plane for most cameras. `ParticleBuffer` keeps the
+  line group (`line_group`), `Render_Line_Group` sets it, `render_line_groups(camera)` draws it after `render` with
+  the camera's transform (`rinfo.Camera.Get_Transform()`), sorting enabled; `RenderModel::render_line_groups`.
+- **Client:** `WorldDrawables::render_line_groups(camera)` (no per-frame cache: the render keeps no state but the
+  shader edits, the same bits each time); `particles::line_group_batches` (world-space vertices to Bevy's axes,
+  triangles in order, colours unpacked, U and V); `emitter_quads` draws no ribbons for line groups (the `ribbon`
+  helper, used by nothing else, is removed); `app::draw_particles` (glue) hands them the game camera's transform.
+- **Differential** (`tests/differential_linegroup.rs`, `differential/wrap_linegrp.cpp`, `shim_w3d/linegrp_prelude.h`;
+  linegrp.cpp cut verbatim by build.rs, its two anchors asserted once; `-fno-builtin-cosf/-sinf` so `WWMath::Cos`/`Sin`
+  go through petir as the Rust's do): 20,000 sequences of setters, `Set_Arrays` and `Render`, every vertex, colour,
+  UV, index, the shader, sorting and the state compared.
+- **Results:** lib 1,257 passed (6 new); `differential_linegroup` **0 mismatching of 20,000**, 19,652,464 words,
+  21,493 draws, 1,860,992 vertices, 0 undefined; plants 10156-10175 **20 of 20 caught** (the weakest: the white
+  threshold, 201; a colour array not forcing the gradient, 431); `differential_segline` unchanged (345,222,657 words,
+  0 mismatches), `differential_part_lod` and `differential_hlod_release` 0 mismatches, `differential_w3d` 40 passed;
+  client 107 passed (2 new); client native release build clean; gate (a) PASS, 300 frames, last CRC 0bf44067;
+  `src/logic` unchanged. Prediction misses: 19.7 million words against 50 to 400 million; a unit test's own check of
+  the quirk on the first offset (whose x is about 0, so the quirk barely moves it) failed on the first lib run and now
+  checks the second.
+- **Gaps** (each wants an issue under #65): the sorting choice; culling and the other shader states (the batches are
+  double-sided, upstream culls back faces of these closed solids); `Get_Shader` after a render (upstream's is the line
+  group's edited one); the order across models; frustum culling; the differential drives the line group directly, not
+  through `ParticleBuffer`; no look in a window.
+
 **#65 batch d (2026-11-14, GitHub #65): the client draws the line-mode emitters through the segment-line renderer.**
 - **Upstream read first:** part_buf.cpp `ParticleBufferClass::Render_Line` calls `LineRenderer->Render(rinfo, Transform,
   ...)` inside `Render`; seglinerenderer.cpp `Render` takes the view from `DX8Wrapper::Get_Transform(D3DTS_VIEW)`, which
@@ -162,7 +198,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   `differential_segline` unchanged: 20,000 sequences, 345,222,657 words, 200,374 chunks, 38,166,767 vertices, 0
   mismatches; gate (a) PASS, 300 frames, last CRC 0bf44067; the web build (`scripts/build_web.sh`, wasm32) clean; `src/logic` unchanged.
 - **Gaps** (each wants an issue under #65): the sorting choice; shader states beyond the blend; the order of the
-  generator's draws across models; culling; the laser and the line groups not through this renderer; no look at a
+  generator's draws across models; culling; the laser ~~and the line groups~~ not through this renderer (**Corrected
+  2026-11-14 (#65, batch e):** the line groups were never this renderer's: they are `LineGroupClass`'s, translated in
+  the batch e entry below); no look at a
   real line-mode emitter in a window (needs the owner's art).
 
 **#185 (2026-11-14, GitHub #185, the owner's decision of 2026-11-14, option (b)): the segment-line renderer's parallel
@@ -321,8 +359,9 @@ removal.**
   game-axes view and mutable emitters in `draw_particles`);~~ **Corrected 2026-11-14 (#65, batch d):** the client draws
   the chunks (the batch d entry above); ~~the emitters' LOD (`Prepare_LOD`, the cost and value
   arrays), hiding, release,~~ **Corrected 2026-11-14 (#65, batch b):** the LOD, hiding and release are translated (the
-  entry above); non-HLOD emitters and the draw's `Scale`; the line groups' tetrahedra and prisms
-  (linegrp.cpp); the laser's lines through this renderer.
+  entry above); non-HLOD emitters and the draw's `Scale`; ~~the line groups' tetrahedra and prisms
+  (linegrp.cpp);~~ **Corrected 2026-11-14 (#65, batch e):** the line groups are translated (the batch e entry); the
+  laser's lines through this renderer.
 - **Results:** lib 1,247 passed (3 new); client 102 passed; `differential_w3d` 40 passed (the emitter log, section 16,
   unchanged); gate (a) PASS, 300 frames, last CRC 0bf44067; `src/logic` unchanged.
 

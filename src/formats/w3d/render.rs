@@ -622,6 +622,49 @@ impl RenderModel {
         out
     }
 
+    /// (#65 batch e) The rest of each line-group buffer's `Render_Line_Group` (`LineGroup->Render(rinfo)`), with the
+    /// camera's transform `camera` (`rinfo.Camera.Get_Transform()`): every buffer whose last [`Self::update_emitters`]
+    /// drew a [`super::part_buf::ParticleDraw::LineGroup`], through
+    /// [`super::part_buf::ParticleBuffer::render_line_groups`], in the order the buffers rendered there (the emitters'
+    /// in sub-object order, then the orphans'). Returns the draws in that order (world space); a buffer upstream is
+    /// undefined on stops, with the reason in its `failed`, and draws nothing. **Differs from upstream** (as
+    /// [`Self::render_line_runs`]): upstream draws inside each buffer's `Render`; here the caller draws after the update,
+    /// with the camera. `LineGroupClass::Render` keeps no state but its shader's edits, which give the same bits every
+    /// time: calling this more than once a frame draws the same.
+    pub fn render_line_groups(&mut self, camera: &Matrix3D) -> Vec<super::linegrp::LineGroupChunk> {
+        use super::part_buf::ParticleDraw;
+        let mut out = Vec::new();
+        for e in self.emitters.iter_mut() {
+            let EmitterSub { emitter, draw, failed, .. } = e;
+            let (Some(em), Some(ParticleDraw::LineGroup(_)), None) = (emitter.as_mut(), draw.as_ref(), failed.as_ref()) else { continue };
+            match em.buffer.render_line_groups(camera) {
+                Ok(Some(c)) => out.push(c),
+                Ok(None) => {}
+                Err(err) => {
+                    *failed = Some(format!("{err}"));
+                    *draw = None;
+                }
+            }
+        }
+        for o in self.orphans.iter_mut() {
+            let OrphanBuffer { obj, draw, failed, .. } = o;
+            let (Some(ParticleDraw::LineGroup(_)), None) = (draw.as_ref(), failed.as_ref()) else { continue };
+            let buffer = match obj {
+                Orphaned::Held(e) => &mut e.buffer,
+                Orphaned::Dead(b) => b,
+            };
+            match buffer.render_line_groups(camera) {
+                Ok(Some(c)) => out.push(c),
+                Ok(None) => {}
+                Err(err) => {
+                    *failed = Some(format!("{err}"));
+                    *draw = None;
+                }
+            }
+        }
+        out
+    }
+
     /// `SimpleSceneClass::Register(obj, RELEASE)`: `ReleaseList.Add(obj)`, at the head (the caller checks it is not
     /// listed: `Add`'s once-only test).
     fn register_release(list: &mut Vec<u32>, id: u32) {
@@ -1183,6 +1226,49 @@ mod tests {
         assert_eq!((chunks.len(), chunks[0].vertices.len(), chunks[0].triangles.len()), (1, 6, 4), "{chunks:?}");
         assert_eq!(chunks[0].texture, Some(b"puff.tga".to_vec()));
         assert_eq!((rng.v3.clone(), model.emitters[0].emitter.as_ref().unwrap().buffer.line_renderer.clone()), (v3, buffer.line_renderer));
+    }
+
+    /// (#65 batch e) A line-group emitter (the puff as `W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM`) in an HLOD, at the
+    /// origin, the camera 100 back along +Z turned 30 degrees about z.
+    ///
+    /// *Predictions, written before the first run (issue65e P1):* the first update draws a line group of no lines, so
+    /// `render_line_groups` gives no draw; at 250 ms 2 lines become one prism draw of 12 vertices and 16 triangles with
+    /// the puff's texture, not in camera space, equal to what `ParticleBuffer::render_line_groups` gives on a copy of the
+    /// buffer; a second call gives the same draw.
+    ///
+    /// *Results (2026-11-14), first run:* held.
+    #[test]
+    fn line_group_emitters_draw_their_prisms() {
+        use super::super::part_buf::{ParticleDraw, Ww3dClock, W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM};
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let mut f = htree_w3d(b"ROBOT", &[PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident }]);
+        let mut spec = EmitterSpec::puff(b"PRISMS");
+        spec.render_mode = W3D_EMITTER_RENDER_MODE_LINEGRP_PRISM as u32;
+        f.extend(spec.to_w3d());
+        f.extend(hlod_w3d(b"ROBOT", b"ROBOT", &[(b"PRISMS", 0)]));
+        let fs = fs_with(&[("Art/W3D/robot.w3d", f)]);
+        let mut am = AssetManager::new_game(W3dFileFactory::default());
+        let mut model = RenderModel::create(&mut am, &fs, b"ROBOT").unwrap().unwrap();
+        model.update::<AssetManager>(&Matrix3D::IDENTITY, None).unwrap();
+        let mut rng = super::super::part_emt::ParticleRandom::default();
+        let mut camera = Matrix3D::from_axis_angle(&crate::ww::vector3::Vector3::new(0.0, 0.0, 1.0), crate::ww::wwmath::WWMATH_PI / 6.0);
+        camera.row[2].w = 100.0;
+        let c0 = Ww3dClock::default();
+        model.update_emitters(&Matrix3D::IDENTITY, &c0, &mut rng);
+        assert!(model.render_line_groups(&camera).is_empty());
+        let c1 = Ww3dClock { sync_time: 250, frame_time: 250, frame_count: 1 };
+        model.update_emitters(&Matrix3D::IDENTITY, &c1, &mut rng);
+        match &model.emitters[0].draw {
+            Some(ParticleDraw::LineGroup(g)) => assert_eq!((g.prism, g.lines.len()), (true, 2)),
+            d => panic!("{d:?} {:?}", model.emitters[0].failed),
+        }
+        let mut buffer = model.emitters[0].emitter.as_ref().unwrap().buffer.clone();
+        let direct = buffer.render_line_groups(&camera).unwrap().expect("a draw");
+        let chunks = model.render_line_groups(&camera);
+        assert_eq!(chunks, vec![direct]);
+        assert_eq!((chunks[0].vertices.len(), chunks[0].triangles.len(), chunks[0].view_identity), (12, 16, false));
+        assert_eq!(chunks[0].texture, Some(b"puff.tga".to_vec()));
+        assert_eq!(model.render_line_groups(&camera), chunks);
     }
 
     /// (#65 batch c) Two emitters (`PUFF`, 10 a second, bursts of 1, 1 s lifetimes) in an HLOD; the first given one
