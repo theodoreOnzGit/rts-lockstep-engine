@@ -580,6 +580,48 @@ impl RenderModel {
         }
     }
 
+    /// (#65 batch d) The rest of each line-mode buffer's `Render_Line` (`LineRenderer->Render(rinfo, ...)`), with the
+    /// camera's view `view` (`CameraClass::Get_View_Matrix`, `CameraInvTransform`, which `Apply_D3D_State` gives
+    /// `D3DTS_VIEW`): every run of the [`super::part_buf::ParticleDraw::Lines`] the last
+    /// [`Self::update_emitters`] drew, through [`super::part_buf::ParticleBuffer::render_line_runs`] at `clock`, in the
+    /// order the buffers rendered there (the emitters' in sub-object order, then the orphans'). `v3` is the
+    /// randomizers' shared generator. Returns the chunks in that order; a buffer upstream is undefined on stops, with
+    /// the reason in its `failed`, and draws nothing. **Differs from upstream** (see `render_line_runs`): upstream
+    /// draws the runs inside each buffer's `Render`; here the caller draws them after the update, with the camera.
+    pub fn render_line_runs(&mut self, clock: &super::part_buf::Ww3dClock, view: &Matrix3D, v3: &mut crate::ww::random::Random3) -> Vec<super::seglinerenderer::SegLineChunk> {
+        use super::part_buf::ParticleDraw;
+        let mut out = Vec::new();
+        for e in self.emitters.iter_mut() {
+            let EmitterSub { emitter, draw, failed, .. } = e;
+            let (Some(em), Some(ParticleDraw::Lines { runs, .. }), None) = (emitter.as_mut(), draw.as_ref(), failed.as_ref()) else { continue };
+            match em.buffer.render_line_runs(runs, clock, view, v3) {
+                Ok(Some(chunks)) => out.extend(chunks.into_iter().flatten()),
+                Ok(None) => {}
+                Err(err) => {
+                    *failed = Some(format!("{err}"));
+                    *draw = None;
+                }
+            }
+        }
+        for o in self.orphans.iter_mut() {
+            let OrphanBuffer { obj, draw, failed, .. } = o;
+            let (Some(ParticleDraw::Lines { runs, .. }), None) = (draw.as_ref(), failed.as_ref()) else { continue };
+            let buffer = match obj {
+                Orphaned::Held(e) => &mut e.buffer,
+                Orphaned::Dead(b) => b,
+            };
+            match buffer.render_line_runs(runs, clock, view, v3) {
+                Ok(Some(chunks)) => out.extend(chunks.into_iter().flatten()),
+                Ok(None) => {}
+                Err(err) => {
+                    *failed = Some(format!("{err}"));
+                    *draw = None;
+                }
+            }
+        }
+        out
+    }
+
     /// `SimpleSceneClass::Register(obj, RELEASE)`: `ReleaseList.Add(obj)`, at the head (the caller checks it is not
     /// listed: `Add`'s once-only test).
     fn register_release(list: &mut Vec<u32>, id: u32) {
@@ -1093,6 +1135,54 @@ mod tests {
             }
             d => panic!("{d:?}"),
         }
+    }
+
+    /// (#65 batch d) A line-mode emitter (the puff, `W3D_EMITTER_RENDER_MODE_LINE`, intersections merged, no
+    /// subdivision or noise) in an HLOD, at the origin, its view 100 back along the camera's -Z.
+    ///
+    /// *Predictions, written before the first run (issue65d P2):* the first update draws nothing, so
+    /// `render_line_runs` gives no chunk; at 250 ms one run of 3 points (the two particles and the emitter's position)
+    /// becomes one chunk of 6 vertices and 4 triangles with the puff's texture, equal to what
+    /// `ParticleBuffer::render_line_runs` gives on a copy of the buffer with a copy of the generator, which ends as the
+    /// model's.
+    ///
+    /// *Results (2026-11-14), first run:* all held (one chunk, 6 vertices, 4 triangles).
+    #[test]
+    fn line_mode_emitters_draw_their_runs_through_the_segment_renderer() {
+        use super::super::part_buf::{ParticleDraw, Ww3dClock};
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let mut f = htree_w3d(b"ROBOT", &[PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident }]);
+        let mut spec = EmitterSpec::puff(b"LINE");
+        spec.render_mode = super::super::part_buf::W3D_EMITTER_RENDER_MODE_LINE as u32;
+        let mut lp = W3dEmitterLinePropertiesStruct::from_bytes(&[0; W3dEmitterLinePropertiesStruct::SIZE]);
+        (lp.flags, lp.merge_abort_factor, lp.texture_tile_factor) = (super::super::seglinerenderer::W3D_ELINE_MERGE_INTERSECTIONS, 1.5, 1.0);
+        spec.line_props = Some(lp);
+        f.extend(spec.to_w3d());
+        f.extend(hlod_w3d(b"ROBOT", b"ROBOT", &[(b"LINE", 0)]));
+        let fs = fs_with(&[("Art/W3D/robot.w3d", f)]);
+        let mut am = AssetManager::new_game(W3dFileFactory::default());
+        let mut model = RenderModel::create(&mut am, &fs, b"ROBOT").unwrap().unwrap();
+        model.update::<AssetManager>(&Matrix3D::IDENTITY, None).unwrap();
+        let mut rng = super::super::part_emt::ParticleRandom::default();
+        let mut view = Matrix3D::identity();
+        view.row[2].w = -100.0;
+        let c0 = Ww3dClock::default();
+        model.update_emitters(&Matrix3D::IDENTITY, &c0, &mut rng);
+        assert!(model.render_line_runs(&c0, &view, &mut rng.v3).is_empty());
+        let c1 = Ww3dClock { sync_time: 250, frame_time: 250, frame_count: 1 };
+        model.update_emitters(&Matrix3D::IDENTITY, &c1, &mut rng);
+        let runs = match &model.emitters[0].draw {
+            Some(ParticleDraw::Lines { runs, .. }) => runs.clone(),
+            d => panic!("{d:?} {:?}", model.emitters[0].failed),
+        };
+        assert_eq!(runs.iter().map(|r| r.points.len()).collect::<Vec<_>>(), vec![3]);
+        let (mut buffer, mut v3) = (model.emitters[0].emitter.as_ref().unwrap().buffer.clone(), rng.v3.clone());
+        let direct: Vec<_> = buffer.render_line_runs(&runs, &c1, &view, &mut v3).unwrap().unwrap().into_iter().flatten().collect();
+        let chunks = model.render_line_runs(&c1, &view, &mut rng.v3);
+        assert_eq!(chunks, direct);
+        assert_eq!((chunks.len(), chunks[0].vertices.len(), chunks[0].triangles.len()), (1, 6, 4), "{chunks:?}");
+        assert_eq!(chunks[0].texture, Some(b"puff.tga".to_vec()));
+        assert_eq!((rng.v3.clone(), model.emitters[0].emitter.as_ref().unwrap().buffer.line_renderer.clone()), (v3, buffer.line_renderer));
     }
 
     /// (#65 batch c) Two emitters (`PUFF`, 10 a second, bursts of 1, 1 s lifetimes) in an HLOD; the first given one

@@ -461,6 +461,14 @@ impl Camera {
         ([eye.x, eye.y, eye.z], [eye.x - z.x, eye.y - z.y, eye.z - z.z])
     }
 
+    /// (#65 batch d) The camera's view matrix in the game's axes (`CameraClass::Get_View_Matrix`: `Update_Frustum`'s
+    /// `CameraInvTransform`, the inverse of the transform, which `Apply_D3D_State` gives the device as `D3DTS_VIEW`): a
+    /// world point to eye space (x right, y up, looking down -z). The segment-line renderer works in it
+    /// (`ParticleBuffer::render_line_runs`); [`Self::eye_target`]'s transform takes its eye-space vertices back.
+    pub fn view_matrix(&self) -> rts_lockstep_engine::ww::matrix3d::Matrix3D {
+        self.view.camera.update_frustum().camera_inv_transform
+    }
+
     /// The camera's vertical field of view, radians, for a perspective projection of the view plane (`WWMath`'s `atan`, through
     /// petir), and its near and far clip planes.
     pub fn projection(&self) -> (f32, f32, f32) {
@@ -507,6 +515,29 @@ mod tests {
 
     fn mouse(t: rts_lockstep_engine::common::message_stream::MessageType, x: i32, y: i32) -> RawMessage {
         RawMessage::mouse(t, ICoord2D { x, y })
+    }
+
+    /// (#65 batch d) *Predictions, written before the first run (issue65d P5):* the demo camera's view matrix takes its
+    /// eye to the origin and the point it looks at ([`Camera::eye_target`], one unit along its -Z) to (0, 0, -1) in eye
+    /// space, within float rounding; the camera's transform takes an eye-space point back where it was.
+    ///
+    /// *Results (2026-11-14), first run:* all held (within 1e-3).
+    #[test]
+    fn the_view_matrix_is_the_camera_s_inverse() {
+        use rts_lockstep_engine::ww::matrix3d::Matrix3D;
+        use rts_lockstep_engine::ww::vector3::Vector3;
+        let (_, cam) = demo();
+        let view = cam.view_matrix();
+        let (eye, target) = cam.eye_target();
+        let e = Matrix3D::transform_vector(&view, &Vector3::new(eye[0], eye[1], eye[2]));
+        let t = Matrix3D::transform_vector(&view, &Vector3::new(target[0], target[1], target[2]));
+        let within = |d: f32, tol: f32| -tol <= d && d <= tol;
+        let near = |a: Vector3, b: [f32; 3], tol: f32| within(a.x - b[0], tol) && within(a.y - b[1], tol) && within(a.z - b[2], tol);
+        assert!(near(e, [0.0, 0.0, 0.0], 1e-3), "{e:?}");
+        assert!(near(t, [0.0, 0.0, -1.0], 1e-3), "{t:?}");
+        let p = Vector3::new(3.0, -2.0, -40.0);
+        let back = Matrix3D::transform_vector(&view, &Matrix3D::transform_vector(&cam.view.camera_transform(), &p));
+        assert!(near(back, [3.0, -2.0, -40.0], 1e-3), "{back:?}");
     }
 
     /// *Predictions, written before the first run:* the demo's camera starts over the map's centre, south of it and

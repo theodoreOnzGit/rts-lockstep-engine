@@ -325,6 +325,9 @@ pub struct EmitterSpec {
     pub render_mode: u32,
     /// Additive (else alpha blended).
     pub additive: bool,
+    /// (#65 batch d) The line properties (`W3D_CHUNK_EMITTER_LINE_PROPERTIES`), written when given (a line-mode
+    /// emitter without them drops back to triangles).
+    pub line_props: Option<W3dEmitterLinePropertiesStruct>,
 }
 
 impl EmitterSpec {
@@ -346,6 +349,7 @@ impl EmitterSpec {
             end_size: 3.0,
             render_mode: 1,
             additive: false,
+            line_props: None,
         }
     }
 
@@ -386,6 +390,9 @@ impl EmitterSpec {
         pb.extend(key(0.0, self.start_size.to_le_bytes()));
         pb.extend(key(self.lifetime, self.end_size.to_le_bytes()));
         body.extend(chunk(W3D_CHUNK_EMITTER_PROPS, &pb));
+        if let Some(lp) = &self.line_props {
+            body.extend(chunk(W3D_CHUNK_EMITTER_LINE_PROPERTIES, &lp.to_bytes()));
+        }
         chunk_sub(W3D_CHUNK_EMITTER, &body)
     }
 }

@@ -39,6 +39,7 @@ use rts_lockstep_engine::formats::w3d::assetmgr::{AssetManager, W3dFileFactory};
 use rts_lockstep_engine::formats::w3d::part_buf::Ww3dClock;
 use rts_lockstep_engine::formats::w3d::part_emt::ParticleRandom;
 use rts_lockstep_engine::formats::w3d::render::{RenderModel, SceneKind};
+use rts_lockstep_engine::formats::w3d::seglinerenderer::SegLineChunk;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
@@ -175,6 +176,10 @@ pub struct WorldDrawables<D: LocalDevice> {
     /// (#65 batch c) What is left in the scene of the models taken out of it (`RenderModel::remove_from_scene`: a
     /// drawable gone, or its model changed): their emitters' buffers, still drawing their particles until they drain.
     removed: Vec<RenderModel>,
+    /// (#65 batch d) The segment-line renderer's chunks of the W3D frame [`Self::render_line_runs`] last drew (its
+    /// frame count, and the camera's transform they were made under), kept so that a second draw of the same frame
+    /// draws nothing again.
+    line_chunks: Option<(u32, Matrix3D, Vec<SegLineChunk>)>,
 }
 
 impl<D: LocalDevice> WorldDrawables<D> {
@@ -190,6 +195,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
             particle_random: ParticleRandom::default(),
             particle_clock: None,
             removed: Vec::new(),
+            line_chunks: None,
         }
     }
 
@@ -308,6 +314,30 @@ impl<D: LocalDevice> WorldDrawables<D> {
             m.orphans.retain(|o| !o.is_drained());
         }
         self.removed.retain(|m| !m.orphans.is_empty());
+    }
+
+    /// (#65 batch d) The line-mode emitters' runs of the last W3D frame ([`Self::draw`]) through the segment-line
+    /// renderer, with the camera's view `view` (game axes, `Camera::view_matrix`) and its transform `camera` (the
+    /// view's inverse, eye to world, returned with the chunks to place them by): each model's
+    /// [`RenderModel::render_line_runs`] in the order [`Self::emitter_models`] gives them (the posed models by object,
+    /// then the removed models' remains) at the frame's clock, drawing from the client's own generator
+    /// ([`Self::particle_random`]'s `v3`, as the emitters' updates do: the World is not touched). Once per W3D frame,
+    /// like upstream's `Render` (the UV scroll and the noise draws advance once): a second call in the same frame
+    /// returns the same chunks with the camera they were made under (the camera may have moved since). Before the first
+    /// frame, none. **Differs from upstream:** upstream draws a buffer's runs
+    /// inside its `Render`, model after model; here every model's are drawn after every model's update (upstream's
+    /// order within the frame is all the updates, then all the renders, so only the order across models differs: a
+    /// gap of #65 batch c).
+    pub fn render_line_runs(&mut self, view: &Matrix3D, camera: &Matrix3D) -> (&[SegLineChunk], Matrix3D) {
+        let Some(clock) = self.particle_clock else { return (&[], *camera) };
+        if self.line_chunks.as_ref().is_none_or(|(f, ..)| *f != clock.frame_count) {
+            let mut out = Vec::new();
+            for m in self.instances.values_mut().map(|(_, m)| m).chain(self.removed.iter_mut()) {
+                out.extend(m.render_line_runs(&clock, view, &mut self.particle_random.v3));
+            }
+            self.line_chunks = Some((clock.frame_count, *camera, out));
+        }
+        self.line_chunks.as_ref().map_or((&[], *camera), |(_, c, v)| (v.as_slice(), *c))
     }
 
     /// #148: the scene `pickDrawable` casts at (`RTS3DScene`'s render list, `rts_lockstep_engine::client::pick_drawable`):
@@ -1498,6 +1528,134 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         let (keys, sizes, n) = batch.expect("frame 60");
         assert_eq!(keys, vec![(b"puff.tga".to_vec(), crate::particles::Blend::Alpha)]);
         assert_eq!(sizes, vec![(n, 6 * n)]);
+    }
+
+    /// (#65 batch d) The gate's runner drawn as `LINER`: [`smoker_model`] with its emitter in line mode
+    /// (`W3D_EMITTER_RENDER_MODE_LINE`, intersections merged, no subdivision or noise, a tile factor of 1), ordered 120
+    /// east, 60 frames at 33 ms, with a camera ([`crate::camera::Camera`]) over the map; and the same game without the
+    /// client.
+    ///
+    /// *Predictions, written before the first run (issue65d P4):* the logic's CRCs are equal frame for frame with and
+    /// without the client; every frame, [`WorldDrawables::render_line_runs`] at the camera's view gives exactly the
+    /// chunks `ParticleBuffer::render_line_runs` gives on a copy of the emitter's buffer with a copy of the client's
+    /// generator at the same view and clock, and leaves the generator and the line renderer as the copies end; a second
+    /// call in the frame gives the same chunks and draws nothing more; the batches
+    /// ([`crate::particles::line_chunk_batches`]) hold every chunk's vertices at the camera's transform times their
+    /// eye-space position, in Bevy's axes, and its triangles in order; `emitter_quads` gives no ribbon for the emitter;
+    /// from the 4th frame on (the first particle at about 100 ms) there are vertices.
+    ///
+    /// *Results (2026-11-14), first run:* all held. CRCs equal over 60 frames; the line's vertices per frame 0, 0, 0,
+    /// then 4 (one particle and the emitter's position), growing by 2 every third frame (one particle every 100 ms, a
+    /// strip of two vertices per point, nothing merged on the straight trail) to 22 (11 points) from frame 31 on.
+    /// *Added after the first run:* the frame's chunks are kept with the camera's transform they were made under, and
+    /// the second call moves the camera and checks the old transform comes back (held).
+    #[test]
+    fn a_line_mode_emitter_draws_through_the_segment_renderer_without_changing_the_crcs() {
+        use rts_lockstep_engine::formats::w3d::part_buf::{ParticleDraw, W3D_EMITTER_RENDER_MODE_LINE};
+        use rts_lockstep_engine::formats::w3d::seglinerenderer::W3D_ELINE_MERGE_INTERSECTIONS;
+        use rts_lockstep_engine::formats::w3d::w3d_file::{W3dEmitterLinePropertiesStruct, W3dPod};
+        let model = || {
+            let ident = [0.0, 0.0, 0.0, 1.0];
+            let mut f = synth::htree_w3d(b"LINER", &[
+                PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
+                PivotSpec { name: b"STACK".to_vec(), parent: 0, translation: [0.0, 0.0, 3.0], rotation: ident },
+            ]);
+            let mut spec = synth::EmitterSpec::puff(b"TRAIL");
+            spec.render_mode = W3D_EMITTER_RENDER_MODE_LINE as u32;
+            let mut lp = W3dEmitterLinePropertiesStruct::from_bytes(&[0; W3dEmitterLinePropertiesStruct::SIZE]);
+            (lp.flags, lp.merge_abort_factor, lp.texture_tile_factor) = (W3D_ELINE_MERGE_INTERSECTIONS, 1.5, 1.0);
+            spec.line_props = Some(lp);
+            f.extend(spec.to_w3d());
+            f.extend(synth::hlod_w3d(b"LINER", b"LINER", &[(b"TRAIL", 1)]));
+            f
+        };
+        let draw = " Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = Liner\n  End\n End\n";
+        let play = |drawn_client: bool| {
+            let mut w = gate_map_world_with(&drawn("Runner", draw));
+            let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+            let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+            let runner = make(&mut w, b"DrawnRunner", team, at(40.0, 50.0));
+            w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
+            let mut art = MemoryDevice::new();
+            art.insert(b"Art/W3D/liner.w3d", model());
+            let mut d = WorldDrawables::new(Some(Art::new(FileSystem::new(art))));
+            let cam = crate::camera::Camera::new(&w, at(100.0, 50.0), 200.0, (800, 600));
+            let (view, eye_to_world) = (cam.view_matrix(), cam.view.camera_transform());
+            let ev = w.take_client_events();
+            if drawn_client {
+                d.update(&mut w, &ev, 0);
+                assert!(d.drawables.errors.is_empty(), "{:?}", d.drawables.errors);
+            }
+            let ai = w.find_object(runner).and_then(|o| o.ai).expect("the AI");
+            w.module_call(runner, ai, ModuleCall::AiMoveToPosition { pos: at(160.0, 50.0), command_source: 0 });
+            let (mut crcs, mut vertices) = (Vec::new(), Vec::new());
+            for f in 1..=60u32 {
+                w.logic_update().expect("a frame");
+                let ev = w.take_client_events();
+                if drawn_client {
+                    d.update(&mut w, &ev, f * 33);
+                    let clock = d.particle_clock.expect("a frame drawn");
+                    // the chunks drawn directly, on copies
+                    let m = d.instance(runner).expect("the liner");
+                    let e = &m.emitters[0];
+                    assert!(e.failed.is_none(), "{:?}", e.failed);
+                    let mut v3 = d.particle_random.v3.clone();
+                    let mut direct = Vec::new();
+                    let mut renderer = None;
+                    match (&e.draw, &e.emitter) {
+                        (Some(ParticleDraw::Lines { runs, .. }), Some(em)) => {
+                            let mut b = em.buffer.clone();
+                            direct.extend(b.render_line_runs(runs, &clock, &view, &mut v3).unwrap().unwrap().into_iter().flatten());
+                            renderer = b.line_renderer;
+                        }
+                        (None, _) => {}
+                        other => panic!("{other:?}"),
+                    }
+                    let (chunks, made_under) = d.render_line_runs(&view, &eye_to_world);
+                    let chunks = chunks.to_vec();
+                    assert_eq!((&chunks, made_under), (&direct, eye_to_world), "frame {f}");
+                    assert_eq!(d.particle_random.v3, v3, "frame {f}");
+                    if renderer.is_some() {
+                        assert_eq!(d.instance(runner).unwrap().emitters[0].emitter.as_ref().unwrap().buffer.line_renderer, renderer);
+                    }
+                    // a second call in the frame, the camera moved: the same chunks, with the camera they were made under
+                    let moved = Matrix3D::from_translation(&rts_lockstep_engine::ww::vector3::Vector3::new(1.0, 2.0, 3.0));
+                    let again = d.render_line_runs(&moved, &moved);
+                    assert_eq!((again.0, again.1), (chunks.as_slice(), eye_to_world), "a second call, frame {f}");
+                    assert_eq!(d.particle_random.v3, v3);
+                    // the mesh data against the direct chunks
+                    let q = crate::particles::line_chunk_batches(&chunks, &eye_to_world);
+                    let (mut pos, mut idx) = (Vec::new(), Vec::new());
+                    for c in &direct {
+                        let base = pos.len() as u32;
+                        for v in &c.vertices {
+                            let p = Matrix3D::transform_vector(&eye_to_world, &v.position);
+                            pos.push(crate::view::to_bevy([p.x, p.y, p.z]));
+                        }
+                        idx.extend(c.triangles.iter().flat_map(|t| t.map(|i| base + u32::from(i))));
+                    }
+                    if direct.is_empty() {
+                        assert!(q.is_empty());
+                    } else {
+                        assert_eq!(q.keys().cloned().collect::<Vec<_>>(), vec![(b"puff.tga".to_vec(), crate::particles::Blend::Alpha)]);
+                        let b = &q[&(b"puff.tga".to_vec(), crate::particles::Blend::Alpha)];
+                        assert_eq!((&b.positions, &b.indices), (&pos, &idx), "frame {f}");
+                        assert_eq!((b.uvs.len(), b.colors.len()), (pos.len(), pos.len()));
+                    }
+                    // no ribbons
+                    let ribbons = crate::particles::emitter_quads(d.emitter_models(), crate::particles::point_tables(), [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+                    assert!(ribbons.is_empty(), "frame {f}");
+                    vertices.push(pos.len());
+                }
+                crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
+            }
+            (crcs, vertices)
+        };
+        let (plain, _) = play(false);
+        let (crcs, vertices) = play(true);
+        println!("line vertices per frame {vertices:?}");
+        assert_eq!(crcs, plain);
+        assert!(vertices[3..].iter().all(|&n| n > 0), "{vertices:?}");
     }
 
     /// A truck `TRUCKT`: pivots ROOTTRANSFORM (0), TIREFL (1), TIREFR (2), TIRERL (3), TIRERR (4), a cube on each (GitHub #41).

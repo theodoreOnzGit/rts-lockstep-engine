@@ -127,6 +127,44 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#65 batch d (2026-11-14, GitHub #65): the client draws the line-mode emitters through the segment-line renderer.**
+- **Upstream read first:** part_buf.cpp `ParticleBufferClass::Render_Line` calls `LineRenderer->Render(rinfo, Transform,
+  ...)` inside `Render`; seglinerenderer.cpp `Render` takes the view from `DX8Wrapper::Get_Transform(D3DTS_VIEW)`, which
+  camera.cpp `CameraClass::Apply_D3D_State` sets to `CameraInvTransform` (`Update_Frustum`: `Transform.Get_Inverse`,
+  `Get_View_Matrix`), and hands the device eye-space vertices with identity world and view transforms.
+- **The camera's view** (`client/src/camera.rs`, `Camera::view_matrix`): the tactical view's 3D camera's
+  `update_frustum().camera_inv_transform` (translated in #146), in the game's axes. The eye-space vertices go back to
+  the world by the same camera's transform (`view.camera_transform()`, by which `apply_camera` also places Bevy's
+  camera), then to Bevy's axes (`view::to_bevy`).
+- **Translated side** (`formats::w3d::render`, `RenderModel::render_line_runs`): each line-mode buffer's runs of the
+  last update through `ParticleBuffer::render_line_runs`, in the update's render order (emitters in sub-object order,
+  then the orphans); a buffer upstream is undefined on stops, as in the update. `synth::EmitterSpec` can write line
+  properties.
+- **Client** (`client/src/drawables.rs`, `WorldDrawables::render_line_runs`): once per W3D frame (the clock's frame
+  count; a second call returns the same chunks and the camera they were made under), all models after all updates,
+  drawing from the client's own `Vector3Randomizer` generator (`particle_random.v3`): the World is untouched.
+  `client/src/particles.rs`, `line_chunk_batches`: each chunk into the particles' batches by texture and blend (the
+  emitters' blend test), its vertices, triangles in order, colours unpacked as the device does (`dx8_unpack_color`;
+  alpha 1 for additive) and U, V as given. `emitter_quads` no longer draws line-mode runs as ribbons.
+  `app::draw_particles` (glue) hands them the game camera.
+- **New, not upstream:** the DirectX 8 device (the vertices back to the world for Bevy); the chunk's sorting choice is
+  not kept apart (every alpha batch is in Bevy's transparent pass, sorted per entity); the other shader states are not
+  mapped; every model's runs are drawn after every model's update (upstream: each buffer's in its `Render`).
+- **Tests (predictions in each, written before the first run; all held the first run):** core
+  `line_mode_emitters_draw_their_runs_through_the_segment_renderer` (one chunk of 6 vertices, 4 triangles, equal to
+  the buffer's own call on copies); client `the_view_matrix_is_the_camera_s_inverse`,
+  `a_segment_line_chunk_becomes_a_mesh` (positions, index order, colours, UVs, the axis change on a known chunk), and
+  `a_line_mode_emitter_draws_through_the_segment_renderer_without_changing_the_crcs` (60 frames of the gate's runner
+  as a line-mode emitter: the chunks equal `ParticleBuffer::render_line_runs` on copies at the same camera every frame,
+  the generator and renderer state equal, the meshes at the camera's transform; 0, 0, 0, then 4 to 22 vertices; no
+  ribbons; CRCs equal with and without the client).
+- **Results:** lib 1,251 passed (1 new); client 105 passed (3 new); client native release build clean;
+  `differential_segline` unchanged: 20,000 sequences, 345,222,657 words, 200,374 chunks, 38,166,767 vertices, 0
+  mismatches; gate (a) PASS, 300 frames, last CRC 0bf44067; the web build (`scripts/build_web.sh`, wasm32) clean; `src/logic` unchanged.
+- **Gaps** (each wants an issue under #65): the sorting choice; shader states beyond the blend; the order of the
+  generator's draws across models; culling; the laser and the line groups not through this renderer; no look at a
+  real line-mode emitter in a window (needs the owner's art).
+
 **#185 (2026-11-14, GitHub #185, the owner's decision of 2026-11-14, option (b)): the segment-line renderer's parallel
 merge of a parallel intersection.**
 - **Upstream read first:** seglinerenderer.cpp, `SegLineRendererClass::Render`'s merge loop: in the parallel branch,
@@ -279,8 +317,9 @@ removal.**
   undefined read (compared up to it)~~ **Corrected 2026-11-14 (#185):** 8,520 sequences ended at the undefined read
   then; since #185 nothing is cut (345,222,657 words, the entry above). 20 of 20 plants caught (10096-10115; the weakest, the merge's copy taking
   `Parallel`, in 39 sequences).
-- **Not yet** (#65's gaps): the client draws line-mode runs as ribbons still (drawing the chunks needs the camera's
-  game-axes view and mutable emitters in `draw_particles`); ~~the emitters' LOD (`Prepare_LOD`, the cost and value
+- **Not yet** (#65's gaps): ~~the client draws line-mode runs as ribbons still (drawing the chunks needs the camera's
+  game-axes view and mutable emitters in `draw_particles`);~~ **Corrected 2026-11-14 (#65, batch d):** the client draws
+  the chunks (the batch d entry above); ~~the emitters' LOD (`Prepare_LOD`, the cost and value
   arrays), hiding, release,~~ **Corrected 2026-11-14 (#65, batch b):** the LOD, hiding and release are translated (the
   entry above); non-HLOD emitters and the draw's `Scale`; the line groups' tetrahedra and prisms
   (linegrp.cpp); the laser's lines through this renderer.

@@ -118,6 +118,12 @@
 //!   ([`super::seglinerenderer`], kept in the buffer), and the line runs go
 //!   through it in [`ParticleBuffer::render_line_runs`], which the caller
 //!   calls after `render` with the camera (`Render` has none here).
+//!   ~~(The client still draws the runs as ribbons.)~~ **Corrected
+//!   2026-11-14 (#65, batch d):** the client draws the chunks: it calls
+//!   `RenderModel::render_line_runs` (each model's line-mode buffers) with
+//!   its camera's view matrix (`CameraInvTransform`) once per W3D frame, and
+//!   meshes the eye-space vertices back in the world
+//!   (`client/src/particles.rs::line_chunk_batches`); the ribbons are gone.
 
 use super::shader::{ShaderClass, DSTBLEND_ONE, DSTBLEND_ONE_MINUS_SRC_ALPHA, DSTBLEND_ONE_MINUS_SRC_COLOR, DSTBLEND_SRC_COLOR};
 use super::shader::{SRCBLEND_ONE, SRCBLEND_SRC_ALPHA};

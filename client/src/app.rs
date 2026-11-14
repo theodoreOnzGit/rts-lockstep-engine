@@ -2384,6 +2384,9 @@ struct ParticleDraw {
 
 /// GUI glue (needs a window): the particles (#43, #44) as one mesh per texture and blend (`crate::particles`, tested
 /// there), facing the camera, rebuilt each frame; at most `MAX_CLIENT_PARTICLES` quads, so the work per frame is bounded.
+/// (#65 batch d) The line-mode emitters' runs go through the segment-line renderer with the game camera's view
+/// (`WorldDrawables::render_line_runs` at `Camera::view_matrix`, and `particles::line_chunk_batches` at its transform,
+/// all tested there) into the same batches; this glue only hands them the camera (Bevy systems need a window).
 #[allow(clippy::too_many_arguments)]
 fn draw_particles(
     mut commands: Commands,
@@ -2394,13 +2397,24 @@ fn draw_particles(
     mut images: ResMut<Assets<Image>>,
     cams: Query<&GlobalTransform, With<Camera3d>>,
     mut vis: Query<&mut Visibility>,
+    rig: Option<Res<Rig>>,
 ) {
     use bevy::asset::RenderAssetUsages;
     use bevy::mesh::{Indices, PrimitiveTopology};
     let Ok(cam) = cams.single() else { return };
     let (right, up) = (cam.right(), cam.up());
     let g = &mut *game;
+    // (#65 batch d) the line-mode runs through the segment-line renderer, with the game camera's view (first: it needs
+    // the emitters mutably)
+    let lines = match &rig {
+        Some(r) => {
+            let (chunks, camera) = g.models.render_line_runs(&r.cam.view_matrix(), &r.cam.view.camera_transform());
+            crate::particles::line_chunk_batches(chunks, &camera)
+        }
+        None => Default::default(),
+    };
     let mut quads = crate::particles::particle_quads(&g.models.drawables.fx.particles, right.to_array(), up.to_array());
+    crate::particles::merge_batches(&mut quads, lines);
     // the W3D models' emitters (#49), in the same batches
     let w3d = crate::particles::emitter_quads(g.models.emitter_models(), crate::particles::point_tables(), right.to_array(), up.to_array());
     crate::particles::merge_batches(&mut quads, w3d);
