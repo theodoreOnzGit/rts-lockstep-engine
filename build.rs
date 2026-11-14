@@ -2839,6 +2839,9 @@ mod differential {
                 lb.compile("upstream_laser_draw");
             }
 
+            // (#181 item 7b) the model draw anim build, made in the next block and compiled after #175's (whose cuts it
+            // includes)
+            let model_draw_anim_build: cc::Build;
             // GitHub #171: W3DModelDraw's bone particle systems (differential/wrap_model_draw_particles.cpp, which lists the
             // cuts): ParticleSys.h's ParticleSystemID; W3DModelDraw.h's ParticleSysTrackerType; W3DModelDraw.cpp's
             // constructor flags, doStartOrStopParticleSys and setHidden, setFullyObscuredByShroud,
@@ -3035,7 +3038,14 @@ mod differential {
                 // ParticleSys.cpp's wind defaults and the constructor's wind draws. It also
                 // includes the cuts above (model_draw_particles_gen) and #179's Animatable3DObjClass cuts
                 // (w3d_animobj_gen), and is compiled in the W3D libraries' setting (the real HTreeClass and
-                // HRawAnimClass of upstream_w3d). No text is edited; each anchor must occur once.
+                // HRawAnimClass of upstream_w3d). (#181 item 7b) ~~testFlagBit~~ (now #175's lb_bones.inc); GameCommon.h's
+                // seconds constants and ConvertVelocityInSecsToFrames; W3DModelDraw.cpp's setModelState middle (to the first
+                // branch's doHideShowSubObjs) and else branch, nukeCurrentRender, hideAllHeadlights and hideAllMuzzleFlashes,
+                // setMuzzleFlashHidden, handleClientTurretPositioning, rebuildWeaponRecoilInfo, handleWeaponFireFX; and
+                // #175's logic_bones_gen cuts (isValidTimeToCalcLogicStuff, PristineBoneInfo, TurretInfo, WeaponBarrelInfo,
+                // the m_validStuff bits, addPublicBone, testFlagBit to loadAnimations, rendobj.cpp's
+                // Get_Sub_Object_By_Name), included, not cut again: compiled after #175's block. No text is edited; each
+                // anchor must occur once.
                 println!("cargo:rerun-if-changed=differential/wrap_model_draw_anim.cpp");
                 let game_type = read_upstream(ge.join("Include/Common/GameType.h"));
                 let game_common = read_upstream(ge.join("Include/Common/GameCommon.h"));
@@ -3061,6 +3071,11 @@ mod differential {
                         "ma_frames.inc",
                         piece(&game_common, "GameCommon.h", "enum\n{\n\tLOGICFRAMES_PER_SECOND = 30,", Some(("const Real LOGICFRAMES_PER_SECONDS_REAL", false))),
                     ),
+                    // (#181 item 7b) the seconds constants and ConvertVelocityInSecsToFrames (InitialRecoilSpeed, RecoilSettleSpeed)
+                    (
+                        "ma_frames2.inc",
+                        piece(&game_common, "GameCommon.h", "const Real LOGICFRAMES_PER_SECONDS_REAL", Some(("inline Real ConvertAccelerationInSecsToFrames", false))),
+                    ),
                     ("ma_recoil_info.inc", piece(&md_h, "W3DModelDraw.h", "\tstruct WeaponRecoilInfo\n", Some(("\tstruct ParticleSysTrackerType\n", false)))),
                     (
                         "ma_maintain.inc",
@@ -3069,10 +3084,6 @@ mod differential {
                     (
                         "ma_no_next.inc",
                         piece(&md, "W3DModelDraw.cpp", "const UnsignedInt NO_NEXT_DURATION = 0xffffffff;", Some(("const UnsignedInt NO_NEXT_DURATION = 0xffffffff;", true))),
-                    ),
-                    (
-                        "ma_test_flag.inc",
-                        piece(&md, "W3DModelDraw.cpp", "inline Bool testFlagBit(Int flags, Int bit)", Some(("\treturn (flags & (1<<bit)) != 0;\n}", true))),
                     ),
                     (
                         "ma_ctor.inc",
@@ -3105,6 +3116,76 @@ mod differential {
                             "W3DModelDraw.cpp",
                             "\t// get this here, before we change anything... we'll need it to pass to adjustAnimation (srj)\n",
                             Some(("\t// and always hide muzzle flashes", false)),
+                        ),
+                    ),
+                    // (#181 item 7b) setModelState's middle: hideAllMuzzleFlashes, the model test (turretNamesDiffer),
+                    // nukeCurrentRender, Create_Render_Obj, validateStuff, rebuildWeaponRecoilInfo, doHideShowSubObjs; and the
+                    // else branch
+                    (
+                        "ma_sms_mid.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "\t// and always hide muzzle flashes, in case modelstate and model have crossed at the same time\n",
+                            Some(("//moved to above\n\t\trebuildWeaponRecoilInfo(newState);\n\t\tdoHideShowSubObjs(&newState->m_hideShowVec);\n", true)),
+                        ),
+                    ),
+                    (
+                        "ma_sms_else.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "\t\tnewState->validateStuff(m_renderObject, getDrawable()->getScale(), getW3DModelDrawModuleData()->m_extraPublicBones);\n",
+                            Some(("// moved to above\n\t\t\n\t\tdoHideShowSubObjs(&newState->m_hideShowVec);\n", true)),
+                        ),
+                    ),
+                    (
+                        "ma_nuke.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "void W3DModelDraw::nukeCurrentRender(Matrix3D* xform)",
+                            Some(("*xform = *getDrawable()->getTransformMatrix();\n\t\t}\n\t}\n}", true)),
+                        ),
+                    ),
+                    (
+                        "ma_headlights.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "void W3DModelDraw::hideAllHeadlights(Bool hide)",
+                            Some(("static Bool turretNamesDiffer(const ModelConditionInfo* a, const ModelConditionInfo* b)", false)),
+                        ),
+                    ),
+                    (
+                        "ma_mf_hidden.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "void ModelConditionInfo::WeaponBarrelInfo::setMuzzleFlashHidden(RenderObjClass *fullObject, Bool hide) const",
+                            Some(("void W3DModelDraw::doHideShowSubObjs(const std::vector<ModelConditionInfo::HideShowSubObjInfo>* vec)", false)),
+                        ),
+                    ),
+                    (
+                        "ma_turret.inc",
+                        piece(&md, "W3DModelDraw.cpp", "void W3DModelDraw::handleClientTurretPositioning()", Some(("//void W3DModelDraw::handleClientFlagPositioning()", false))),
+                    ),
+                    (
+                        "ma_rebuild_recoil.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "void W3DModelDraw::rebuildWeaponRecoilInfo(const ModelConditionInfo* state)",
+                            Some(("/** Preload any assets for the time of day requested */", false)),
+                        ),
+                    ),
+                    (
+                        "ma_fire_fx.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "Bool W3DModelDraw::handleWeaponFireFX(WeaponSlotType wslot, Int specificBarrelToUse, const FXList* fxl, Real weaponSpeed, const Coord3D* victimPos, Real damageRadius)",
+                            Some(("void W3DModelDraw::setAnimationLoopDuration(UnsignedInt numFrames)", false)),
                         ),
                     ),
                     (
@@ -3140,9 +3221,11 @@ mod differential {
                     .include(&animobj_gen)
                     .include(&gen)
                     .include(&anim_gen)
+                    // (#181 item 7b) #175's cuts of the bone caches (written by its block below, which compiles this)
+                    .include(out_dir.join("logic_bones_gen"))
                     .define("StringClass", Some("ShimStringClass"))
                     .file(dif.join("wrap_model_draw_anim.cpp"));
-                ab.compile("upstream_model_draw_anim");
+                model_draw_anim_build = ab;
             }
 
             // GitHub #182 item 2: Drawable's client physics models (differential/wrap_drawable_loco.cpp, which lists the
@@ -3377,6 +3460,8 @@ mod differential {
                     .include(ww.join("WWLib"))
                     .file(dif.join("wrap_logic_bones.cpp"));
                 lb.compile("upstream_logic_bones");
+                // (#181 item 7b) the model draw anim wrapper includes this block's cuts: compiled once they are written
+                model_draw_anim_build.compile("upstream_model_draw_anim");
             }
 
             // GitHub #138: the tactical view's height, origin and screen-to-world mapping (differential/wrap_tactical_view.cpp,

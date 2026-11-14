@@ -587,9 +587,9 @@ impl Drawable {
     /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`: the first module that handles
     /// it ends the walk (the drawable's own recoil pitch and roll, `m_locoInfo`, is not
     /// translated: no locomotor info on the client yet).
-    pub fn handle_weapon_fire_fx<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, env: &mut DrawEnv<'_, A>) -> bool {
+    pub fn handle_weapon_fire_fx<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, has_object: bool, env: &mut DrawEnv<'_, A>) -> bool {
         // where it plays is not asked: any render object transform
-        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, env).is_some()
+        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, has_object, env).is_some()
     }
 
     /// [`Drawable::handle_weapon_fire_fx`] with where the handling module plays the FX list (GitHub #43,
@@ -597,9 +597,10 @@ impl Drawable {
     /// as the draw sets it), which the FX bone is chained from~~ **Corrected 2026-11-13 (#174):** the FX bone is chained
     /// from each render object's own transform ([`crate::client::w3d_model_draw::RenderObj::transform`]; the caller
     /// puts it at the drawable's, [`Drawable::react_to_transform_change`]).
-    pub fn handle_weapon_fire_fx_at<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, env: &mut DrawEnv<'_, A>) -> Option<WeaponFireFxAt> {
+    /// (#181 item 7b) `has_object`: whether the drawable has its object (`getObject() != NULL`).
+    pub fn handle_weapon_fire_fx_at<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, has_object: bool, env: &mut DrawEnv<'_, A>) -> Option<WeaponFireFxAt> {
         for dm in self.get_draw_modules(env) {
-            if let Some(at) = dm.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, env.sync_time) {
+            if let Some(at) = dm.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, has_object, env.sync_time) {
                 return Some(at);
             }
         }
@@ -1002,7 +1003,8 @@ impl ClientDrawables {
                         let orientation = w.find_object(*source).map_or(0.0, |o| o.thing.orientation());
                         d.validate_attach_to_drawable_bone_offsets(w.find_object(*source).map(|o| *o.thing.transform_matrix()), orientation, &mut env);
                         d.react_to_transform_change(&transform, Self::construction(w, *source));
-                        handled = d.handle_weapon_fire_fx_at(wslot, *barrel, fx.is_some(), &mut env);
+                        let has_object = w.find_object(*source).is_some();
+                        handled = d.handle_weapon_fire_fx_at(wslot, *barrel, fx.is_some(), has_object, &mut env);
                     }
                     // the FX list itself (GitHub #43): at the handling module's FX bone, else where
                     // `fireWeaponTemplate` plays it
@@ -1787,6 +1789,17 @@ mod tests {
         assert_eq!(back.client_update_modules[0], d.client_update_modules[0]);
         assert_eq!(back.client_update_modules[1], d.client_update_modules[2]);
         assert_eq!(back.saved.kept_modules.iter().map(|k| (k.module_type, k.tag.clone(), k.data.len())).collect::<Vec<_>>(), [(1, b"ModuleTag_Bones".to_vec(), 3)]);
+    }
+
+    /// (#181 item 7b) `handleWeaponFireFX` on a drawable without draw modules: no module handles it, with or without
+    /// its object (the module's own answer is `tests/differential_model_draw_anim.rs`'s). Predicted: false both ways.
+    #[test]
+    fn a_fire_without_draw_modules_is_not_handled() {
+        let mut d = Drawable::for_tests();
+        let mut random = RandomValues::new(0);
+        let mut env = DrawEnv { assets: &mut NoAssets, random: &mut random, sync_time: 0, logic_time: true, particles: None };
+        assert!(!d.handle_weapon_fire_fx(0, 0, true, true, &mut env));
+        assert!(!d.handle_weapon_fire_fx(0, 0, true, false, &mut env));
     }
 
     #[test]

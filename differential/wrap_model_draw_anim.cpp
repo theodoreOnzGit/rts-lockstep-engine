@@ -21,7 +21,7 @@
 **   ma_maintain.inc       GameEngineDevice/Source/W3DDevice/GameClient/Drawable/Draw/W3DModelDraw.cpp,
 **                         ALL_MAINTAIN_FRAME_FLAGS, isAnyMaintainFrameFlagSet, isCommonMaintainFrameFlagSet (251-267);
 **   ma_no_next.inc        W3DModelDraw.cpp, `NO_NEXT_DURATION` (293);
-**   ma_test_flag.inc      W3DModelDraw.cpp, `testFlagBit` (433-436);
+**   ~~ma_test_flag.inc      W3DModelDraw.cpp, `testFlagBit` (433-436);~~ (#181 item 7b: lb_bones.inc's, below)
 **   ma_ctor.inc           W3DModelDraw.cpp, the constructor's member initialisation (1722-1741);
 **   ma_anim_complete.inc  W3DModelDraw.cpp, `isAnimationComplete` and `adjustAnimSpeedToMovementSpeed` (1955-1992);
 **   ma_draw.inc           W3DModelDraw.cpp, `doDrawModule` (2040-2112);
@@ -33,6 +33,26 @@
 **   ma_sms_tail.inc       W3DModelDraw.cpp, setModelState's end: prevState, m_curState, m_nextState, adjustAnimation
 **                         (3177-3182);
 **   ma_pause.inc          W3DModelDraw.cpp, `setPauseAnimation` (3833-3864);
+**   (#181 item 7b)
+**   ma_frames2.inc        GameCommon.h, LOGICFRAMES_PER_SECONDS_REAL .. ConvertVelocityInSecsToFrames (77-93);
+**   ma_sms_mid.inc        W3DModelDraw.cpp, setModelState from `// and always hide muzzle flashes` to the first branch's
+**                         doHideShowSubObjs (3008-3045): hideAllMuzzleFlashes, the model and turretNamesDiffer test,
+**                         nukeCurrentRender, Create_Render_Obj, validateStuff on the new render object,
+**                         rebuildWeaponRecoilInfo;
+**   ma_sms_else.inc       W3DModelDraw.cpp, setModelState's else branch (3166-3172): validateStuff on the kept render
+**                         object, rebuildWeaponRecoilInfo, doHideShowSubObjs;
+**   ma_nuke.inc           W3DModelDraw.cpp, `nukeCurrentRender` (2787-2818);
+**   ma_headlights.inc     W3DModelDraw.cpp, `hideAllHeadlights` and `hideAllMuzzleFlashes` (2849-2890);
+**   ma_mf_hidden.inc      W3DModelDraw.cpp, `WeaponBarrelInfo::setMuzzleFlashHidden` (2324-2339);
+**   ma_turret.inc         W3DModelDraw.cpp, `handleClientTurretPositioning` (2415-2466);
+**   ma_rebuild_recoil.inc W3DModelDraw.cpp, `rebuildWeaponRecoilInfo` (3874-3906);
+**   ma_fire_fx.inc        W3DModelDraw.cpp, `handleWeaponFireFX` (3696-3771);
+** and re-used from GitHub #175's cuts (OUT_DIR/logic_bones_gen, see wrap_logic_bones.cpp; build.rs compiles this file
+** after them): lb_valid_time.inc (isValidTimeToCalcLogicStuff), lb_pristine.inc (PristineBoneInfo, PristineBoneInfoMap),
+** lb_turret_barrel.inc (TurretInfo, WeaponBarrelInfo), lb_valid_enum.inc (the m_validStuff bits), lb_public_bone.inc
+** (addPublicBone), lb_bones.inc (testFlagBit, findSingleBone, findSingleSubObj, doSingleBoneName, validateStuff,
+** validateCachedBones, validateWeaponBarrelInfo, validateTurretInfo, findPristineBone, findPristineBonePos,
+** loadAnimations), lb_get_sub_object.inc (rendobj.cpp's Get_Sub_Object_By_Name);
 **   ma_wind_defaults.inc  GameEngine/Source/GameClient/System/ParticleSys.cpp, ParticleSystemInfo()'s wind defaults
 **                         (751-757);
 **   ma_wind_draw.inc      ParticleSys.cpp, ParticleSystem's constructor's wind members and their client random values
@@ -67,13 +87,36 @@
 ** numbers), the states (`m_animations`, `m_mode`, `m_flags`, `m_animMinSpeedFactor`, `m_animMaxSpeedFactor`,
 ** `m_particleSysBones`, `m_validStuff`, the barrels), W3DAnimationInfo (`getAnimHandle()`: the loaded animation of that
 ** name, case ignored, Add_Ref'd, else NULL; `isIdleAnim()`, `getDistanceCovered()`), ParticleSystem's members and the
-** particle system manager (wrap_model_draw_particles.cpp's), and setModelState's middle (the render object made again
-** when the model differs or turretNamesDiffer, cut, says so: always, outside a logic time, `nukeCurrentRender`'s `m_pauseAnimation = false` and transform, `Set_Hidden(TRUE)` for a
-** hidden drawable, `Set_Transform(transform)`; the rest of the middle has nothing to do here). The draw is outside a logic
-** time (`isValidTimeToCalcLogicStuff()` false, as the port's client draws): validateStuff then leaves the pristine bones,
-** the turrets and the barrels not valid (W3DModelDraw.cpp:592-598, 721-725 and validateTurretInfo's same test), so
-** handleClientTurretPositioning and handleClientRecoil return at their first test (the latter is the cut; the former a
-** stand-in that does the same) and no barrel is ever fired. The tracks, shadow and decal stay NULL.
+** particle system manager (wrap_model_draw_particles.cpp's), and ~~setModelState's middle (the render object made again
+** when the model differs or turretNamesDiffer, cut, says so: always, outside a logic time, `nukeCurrentRender`'s
+** `m_pauseAnimation = false` and transform, `Set_Hidden(TRUE)` for a hidden drawable, `Set_Transform(transform)`; the rest
+** of the middle has nothing to do here). The draw is outside a logic time (`isValidTimeToCalcLogicStuff()` false, as the
+** port's client draws): validateStuff then leaves the pristine bones, the turrets and the barrels not valid
+** (W3DModelDraw.cpp:592-598, 721-725 and validateTurretInfo's same test), so handleClientTurretPositioning and
+** handleClientRecoil return at their first test (the latter is the cut; the former a stand-in that does the same) and no
+** barrel is ever fired.~~ **Corrected 2026-11-13 (#181 item 7b):** setModelState's middle is cut (ma_sms_mid, ma_sms_else)
+** but for the first branch's end (3047-3157: the garrison flags (debug), tracks (no TrackMarks), shadow (no shadow type),
+** collision types and the scene's Add_Render_Object are not read here; the hidden test, Set_Transform(transform) and
+** onRenderObjRecreated (W3DModelDraw.h:435, empty) are written as there). Op 13 runs setModelState inside the logic's
+** update (`TheGameLogic->isInGameLogicUpdate()` true): validateStuff then validates the new state on the NEW render
+** object (posed by validateCachedBones itself), its turrets and barrels, and handleClientTurretPositioning (cut) and
+** handleClientRecoil turn and recoil real bones; handleWeaponFireFX (cut, op 14) fires a barrel. The tracks, shadow and
+** decal stay NULL.
+**
+** (#181 item 7b) Further stand-ins: the render object's sub-objects (HLodClass's one LOD: `Get_Num_Sub_Objects`,
+** `Get_Sub_Object` Add_Ref'd, `Get_Sub_Object_Bone_Index`, `Get_Sub_Object_On_Bone` as hlod.cpp:2488-2511, each a mesh
+** `SKEL.SUBk` or `SKEL.HEADLIGHTk` on the case's bone, hidden as made or not; no requested bone name is a sub-object's,
+** so findSingleSubObj finds none), reference counts (`Add_Ref`/`Release_Ref`), `W3DDisplay::m_assetManager`'s
+** `Create_Render_Obj` (the case's M0..M2, any case, with those sub-objects; else NULL) and `m_3DScene` (nothing to
+** remove); the name keys (`NAMEKEY`, each distinct string a number from 1, as wrap_logic_bones.cpp's);
+** `TheGlobalData->m_standardPublicBones` (the case's); the module data's recoil numbers (the speeds through
+** ConvertVelocityInSecsToFrames, cut, as INI::parseVelocityReal) and `m_extraPublicBones`; the states' turret and weapon
+** bone names as the INI parse leaves them (lower-cased, `None` an invalid key or cleared, addPublicBone of each; a
+** ConditionState copies the default state's and its own lines replace them); TurretArtAngle/Pitch as
+** INI::parseAngleReal (`* (PI / 180.0f)`); the object's AI (`getTurretRotAndPitch`, AIUpdate.cpp:748-759: the case's
+** turret, else FALSE), its transform and position (the drawable's); `FXList::doFXPos` records where a list plays
+** ([620, x, y, z, the 12 words], wrap_ai.cpp's stand-in's data; nothing without a list). doHideShowSubObjs has nothing to
+** do (no ShowSubObject lines, no showSubObject calls: it aborts otherwise).
 **
 ** Entry point (extern "C", tests/differential_model_draw_anim.rs; floats travel as their bits):
 **   ref_model_draw_anim_seq(file, flen, in, nin, out, cap): file = the W3D file (one hierarchy, then raw animations);
@@ -89,7 +132,15 @@
 **     Release_Bone(b) when a1 is odd ... (see the case); 8 the drawable's transform = the 12 words, reactToTransformChange,
 **     updateBonesForClientParticleSystems (AnimatedParticleSysBoneClientUpdate's call); 9 the system a1 % count (in id
 **     order) dropped; 10 the instance scale = word 2's float; 11 setFullyObscuredByShroud(a1); 12 Get_Bone_Transform(b)
-**     of the render object (b = a1 % its pivot count; recorded as [600, the 12 words]).
+**     of the render object (b = a1 % its pivot count; recorded as [600, the 12 words]); (#181 item 7b) 13 setModelState(state
+**     a1 % s) inside the logic's update; 14 handleWeaponFireFX(slot a1 % 3, barrel word 2, an FX list when word 3),
+**     recorded [610, handled] after doFXPos's [620 ...] (a barrel equal to the slot's barrel count ends the case, [701]:
+**     upstream reads one past the end); 15 the object's AI (word 2) and each turret's (present, angle, pitch) in words
+**     3-8. (#181 item 7b) After the states, the header has the recoil numbers (InitialRecoilSpeed, MaxRecoilDistance,
+**     RecoilDamping, RecoilSettleSpeed as written), the sub-object count (0..4) and 4 x (bone, hidden, headlight), the
+**     standard public bones and the ExtraPublicBone names (each a count 0..2 and 2 name codes), then 4 states x (own
+**     turrets, 2 x (angle name, pitch name, art angle, art pitch in degrees), 3 slots x (FX, recoil, muzzle flash, launch
+**     name or 9: no line)).
 **   The constructor runs setModelState(state 0) first. A setModelState that would read getCurrentAnimFraction's
 **   uninitialised locals (a current state with a maintain-frame flag and a render object in BASE_POSE: undefined upstream)
 **   ends the case instead, recorded as [700] (no state after it). Records: after the constructor and after each step the state:
@@ -98,12 +149,20 @@
 **   skipParentXfrm, isLocalIdentity, slave id, master id, the local transform's 12 words), render object present, and
 **   with one: CurMotionMode, IsTreeValid, in SINGLE_ANIM the motion's index (else -1), Frame, PrevFrame, LastSyncTime,
 **   animDirection, frameRateMultiplier, AnimMode, Is_Animation_Complete (zeros outside SINGLE_ANIM), Is_Hidden, the
-**   Transform's 12 words, ObjectScale, the pivot count and each pivot's Get_Transform (12 words, no update); then the
-**   client random state (6 words)]. Returns the word count. */
+**   Transform's 12 words, ObjectScale, the pivot count and each pivot's Get_Transform (12 words, no update), (#181 item 7b)
+**   the sub-object count and each one's Is_Hidden; then (#181 item 7b) per slot the recoils (count, then state, shift,
+**   rate), per state its caches (m_validStuff & (PRISTINE_BONES_VALID | TURRETS_VALID | BARRELS_VALID), the pristine bones
+**   in name order (length, characters, bone index, matrix), the turrets' bones, per slot the barrels (recoil, FX,
+**   muzzle-flash bone, projectile offset) and m_hasRecoilBonesOrMuzzleFlashes); then the client random state (6 words)].
+**   Returns the word count. */
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <strings.h>
 #include <vector>
+#include <map>
 #include <string>
 #include <algorithm>
 
@@ -151,6 +210,18 @@ extern HTreeClass *(*g_w3d_htree_hook)(const char *);
 #define DEBUG_CRASH(m)
 /* BaseType.h:231 */
 #define REAL_TO_INT(x) ((Int)(ref_fast_float2long_round(ref_fast_float_trunc(x))))
+/* (#181 item 7b) W3DModelDraw.cpp's logging, compiled out as upstream builds it (DEBUG_CRC not defined), as
+** wrap_logic_bones.cpp has it */
+#define BONEPOS_LOG(x) {}
+#define BONEPOS_DUMPMATRIX3D(x) {}
+#define BONEPOS_DUMPMATRIX3DNAMED(x, y) {}
+#define BONEPOS_DUMPREAL(x) {}
+#define BONEPOS_DUMPREALNAMED(x, y) {}
+#define CRCDEBUG_LOG(x) {}
+#define DUMPMATRIX3D(x) {}
+#ifndef stricmp
+#define stricmp strcasecmp
+#endif
 
 namespace mda {
 
@@ -186,12 +257,36 @@ Matrix3D matrix(const int *w)
 #include "ma_wslot.inc"
 #include "ma_which_turret.inc"
 #include "ma_frames.inc"
+#include "ma_frames2.inc"
 #include "mp_psid.inc"
 #include "mp_cache_attach_bone.inc"
 #include "mp_acbits.inc"
 #include "ma_maintain.inc"
 #include "ma_no_next.inc"
-#include "ma_test_flag.inc"
+
+/* (#181 item 7b) the logic time: isValidTimeToCalcLogicStuff (lb_valid_time.inc, W3DModelDraw.cpp:78-82) over
+** TheGameLogic->isInGameLogicUpdate(), the case's op (13: a setModelState inside the logic's update), and no load */
+Bool g_logic_time;
+class GameLogic { public: Bool isInGameLogicUpdate() const { return g_logic_time; } };
+GameLogic g_logic;
+GameLogic *TheGameLogic = &g_logic;
+class GameState { public: Bool isInLoadGame() const { return FALSE; } };
+GameState *TheGameState = NULL;
+#include "lb_valid_time.inc"
+
+/* TheNameKeyGenerator: each distinct string a number from 1 (case-sensitive, as wrap_logic_bones.cpp's) */
+std::map<std::string, int> g_keys;
+NameKeyType namekey(const char *s)
+{
+	std::map<std::string, int>::iterator it = g_keys.find(s);
+	if (it != g_keys.end()) return (NameKeyType)it->second;
+	int k = (int)g_keys.size() + 1;
+	g_keys[s] = k;
+	return (NameKeyType)k;
+}
+#define NAMEKEY(x) mda::namekey_of(x)
+#define KEYNAME(x) AsciiString("")
+void setFPMode() {}
 
 /* GameEngine/Include/GameClient/Drawable.h:237 */
 enum DrawableStatus { DRAWABLE_STATUS_NO_STATE_PARTICLES = 0x00000008 };
@@ -210,7 +305,23 @@ public:
 	Bool isEmpty() const { return s.empty(); }
 	Bool isNotEmpty() const { return !s.empty(); }
 	void toLower() { for (size_t i = 0; i < s.size(); ++i) s[i] = (char)tolower((unsigned char)s[i]); }
+	/* AsciiString.cpp: `compareNoCase("None") == 0` */
+	Bool isNone() const { return strcasecmp(s.c_str(), "None") == 0; }
+	void clear() { s.clear(); }
+	void format(const char *f, ...)
+	{
+		char b[512];
+		va_list ap;
+		va_start(ap, f);
+		vsnprintf(b, sizeof(b), f, ap);
+		va_end(ap);
+		s = b;
+	}
+	bool operator==(const AsciiString &o) const { return s == o.s; }
+	bool operator!=(const AsciiString &o) const { return s != o.s; }
 };
+NameKeyType namekey_of(const char *s) { return namekey(s); }
+NameKeyType namekey_of(const AsciiString &s) { return namekey(s.str()); }
 
 /* ---- the render object (see the header) ---- */
 unsigned int g_sync_time;
@@ -238,6 +349,7 @@ public:
 	bool Hidden;
 	float ObjectScale;
 	CompositeRenderObjClass() : Transform(true), Hidden(false), ObjectScale(1.0f) {}
+	/* RenderObjClass's Set_Collision_Type and the user data are not read here */
 	int Class_ID(void) const { return CLASSID_HLOD; }
 	void Set_Transform(const Matrix3D &m) { Transform = m; }
 	void Set_Position(const Vector3 &v) { Transform.Set_Translation(v); }
@@ -256,11 +368,50 @@ class Animatable3DObjClass : public CompositeRenderObjClass
 {
 public:
 	Animatable3DObjClass(const HTreeClass *source, float scale);
+	/* (#181 item 7b) a sub-object of an HLOD (a mesh: no hierarchy, plays no animation): its name, as made hidden or not */
+	Animatable3DObjClass(const char *name, bool hidden);
 	~Animatable3DObjClass(void)
 	{
 		Release();
 		if (HTree) delete HTree;
+		for (size_t i = 0; i < Subs.size(); ++i) Subs[i]->Release_Ref();
 	}
+	/* RefCountClass's */
+	int Refs;
+	void Add_Ref(void) { ++Refs; }
+	void Release_Ref(void) { if (--Refs == 0) delete this; }
+	/* (#181 item 7b) HLodClass's sub-objects, one LOD (hlod.cpp's `Lod[0]`, each a model on a bone, in order) */
+	std::string Name;
+	std::vector<Animatable3DObjClass *> Subs;
+	std::vector<int> SubBones;
+	const char *Get_Name(void) const { return Name.c_str(); }
+	int Get_Num_Sub_Objects(void) const { return (int)Subs.size(); }
+	/* HLodClass::Get_Sub_Object (Add_Ref'd) */
+	Animatable3DObjClass *Get_Sub_Object(int index) const
+	{
+		if (index < 0 || index >= (int)Subs.size()) return NULL;
+		Subs[index]->Add_Ref();
+		return Subs[index];
+	}
+	/* HLodClass::Get_Sub_Object_Bone_Index(LodIndex, ModelIndex) */
+	int Get_Sub_Object_Bone_Index(int, int model) const { return SubBones[model]; }
+	/* HLodClass::Get_Sub_Object_On_Bone (hlod.cpp:2488-2511), one LOD and no additional models */
+	Animatable3DObjClass *Get_Sub_Object_On_Bone(int index, int boneindex) const
+	{
+		int count = 0;
+		for (int model = 0; model < (int)Subs.size(); model++) {
+			if (SubBones[model] == boneindex) {
+				if (count == index) {
+					Subs[model]->Add_Ref();
+					return Subs[model];
+				}
+				count++;
+			}
+		}
+		return NULL;
+	}
+	/* rendobj.cpp's (lb_get_sub_object.inc) */
+	Animatable3DObjClass *Get_Sub_Object_By_Name(const char *name, int *index = NULL) const;
 	void Render(RenderInfoClass &rinfo);
 	void Special_Render(SpecialRenderInfoClass &rinfo);
 	void Set_Transform(const Matrix3D &m);
@@ -303,7 +454,7 @@ public:
 
 /* animobj.cpp:84-103's initialisation, the hierarchy copied from the loaded one (animobj.cpp:113); then
 ** Create_Render_Obj's `reallyscale` (W3DAssetManager.cpp:738) and HLodClass::Scale's hierarchy part (hlod.cpp:3264-3286) */
-Animatable3DObjClass::Animatable3DObjClass(const HTreeClass *source, float scale) : IsTreeValid(0), CurMotionMode(BASE_POSE)
+Animatable3DObjClass::Animatable3DObjClass(const HTreeClass *source, float scale) : Refs(1), IsTreeValid(0), CurMotionMode(BASE_POSE)
 {
 	ModeAnim.Motion = NULL;
 	ModeAnim.Frame = 0.0f;
@@ -326,8 +477,24 @@ Animatable3DObjClass::Animatable3DObjClass(const HTreeClass *source, float scale
 		Set_Hierarchy_Valid(false);
 	}
 }
+Animatable3DObjClass::Animatable3DObjClass(const char *name, bool hidden) : Refs(1), IsTreeValid(0), CurMotionMode(BASE_POSE)
+{
+	ModeAnim.Motion = NULL;
+	ModeAnim.Frame = 0.0f;
+	ModeAnim.PrevFrame = 0.0f;
+	ModeAnim.LastSyncTime = WW3D::Get_Sync_Time();
+	ModeAnim.frameRateMultiplier = 1.0;
+	ModeAnim.animDirection = 1.0;
+	ModeInterp.Motion0 = NULL;
+	ModeInterp.Motion1 = NULL;
+	ModeCombo.AnimCombo = NULL;
+	HTree = NULL;
+	Name = name;
+	Hidden = hidden;
+}
 typedef Animatable3DObjClass HLodClass;
 typedef Animatable3DObjClass RenderObjClass;
+#include "lb_get_sub_object.inc"
 
 /* ---- the loaded file ---- */
 HTreeClass *g_tree;
@@ -337,6 +504,44 @@ HTreeClass *find_tree(const char *name)
 	if (g_tree && memcmp(g_tree->Get_Name(), name, W3D_NAME_LEN) == 0) return g_tree;
 	return NULL;
 }
+
+/* (#181 item 7b) the models' sub-objects (the same on M0..M2): each a mesh on a bone, hidden as made or not, named
+** `SKEL.SUBk` or `SKEL.HEADLIGHTk` */
+struct SubSpec { int bone; bool hidden; bool headlight; };
+std::vector<SubSpec> g_subs;
+const char *const MODEL_NAMES[] = { "M0", "M1", "M2" };
+/* W3DAssetManager::Create_Render_Obj(name, scale, color): the case's HLOD M0..M2 (any case; see the header), else NULL */
+class W3DAssetManager
+{
+public:
+	RenderObjClass *Create_Render_Obj(const char *name, float scale, int)
+	{
+		for (int m = 0; m < 3; ++m)
+			if (strcasecmp(name, MODEL_NAMES[m]) == 0) {
+				RenderObjClass *r = new RenderObjClass(g_tree, scale);
+				r->Name = MODEL_NAMES[m];
+				for (size_t k = 0; k < g_subs.size(); ++k) {
+					char n[40];
+					snprintf(n, sizeof(n), "SKEL.%s%d", g_subs[k].headlight ? "HEADLIGHT" : "SUB", (int)k);
+					r->Subs.push_back(new RenderObjClass(n, g_subs[k].hidden));
+					r->SubBones.push_back(g_subs[k].bone % r->HTree->Num_Pivots());
+				}
+				return r;
+			}
+		return NULL;
+	}
+};
+class SceneClass { public: void Remove_Render_Object(RenderObjClass *) {} };
+W3DAssetManager g_am;
+SceneClass g_scene;
+class W3DDisplay
+{
+public:
+	static W3DAssetManager *m_assetManager;
+	static SceneClass *m_3DScene;
+};
+W3DAssetManager *W3DDisplay::m_assetManager = &g_am;
+SceneClass *W3DDisplay::m_3DScene = &g_scene;
 
 /* ---- the drawable, its object, the particle systems ---- */
 class PhysicsBehavior
@@ -350,11 +555,35 @@ class GeometryInfo
 public:
 	Real getMaxHeightAbovePosition() const { abort(); return 0; }
 };
+/* (#181 item 7b) the object's AI: getTurretRotAndPitch (AIUpdate.cpp:748-759) answers the case's turret, or FALSE
+** without one (the angles untouched) */
+class AIUpdateInterface
+{
+public:
+	Bool m_has[MAX_TURRETS];
+	Real m_angle[MAX_TURRETS], m_pitch[MAX_TURRETS];
+	Bool getTurretRotAndPitch(WhichTurretType tur, Real *turretAngle, Real *turretPitch) const
+	{
+		if (m_has[tur]) {
+			if (turretAngle) *turretAngle = m_angle[tur];
+			if (turretPitch) *turretPitch = m_pitch[tur];
+			return TRUE;
+		}
+		return FALSE;
+	}
+};
+AIUpdateInterface g_ai;
+Bool g_hasAI;
 class Object
 {
 public:
 	PhysicsBehavior m_physics;
+	Coord3D m_pos;
 	const PhysicsBehavior *getPhysics() const { return &m_physics; }
+	const AIUpdateInterface *getAIUpdateInterface() const { return g_hasAI ? &g_ai : NULL; }
+	/* the logic object's transform and position: the drawable's (see the header) */
+	const Matrix3D *getTransformMatrix() const;
+	const Coord3D *getPosition() const;
 	Real getConstructionPercent() const { abort(); return 0; }
 	const GeometryInfo &getGeometryInfo() const { abort(); }
 	Bool testStatus( ObjectStatusTypes ) const { abort(); return FALSE; }
@@ -386,6 +615,29 @@ public:
 	Int getPristineBonePositions(const char*, Int, Coord3D*, Matrix3D*, Int) const { abort(); return 0; }
 };
 Drawable g_drawable;
+const Matrix3D *Object::getTransformMatrix() const { return &g_drawable.m_transform; }
+const Coord3D *Object::getPosition() const
+{
+	Coord3D *p = const_cast<Coord3D *>(&m_pos);
+	p->x = g_drawable.m_transform.Get_X_Translation();
+	p->y = g_drawable.m_transform.Get_Y_Translation();
+	p->z = g_drawable.m_transform.Get_Z_Translation();
+	return &m_pos;
+}
+
+/* (#181 item 7b) FXList::doFXPos (FXList.h's inline: nothing without a list), recording where the list plays, as
+** wrap_ai.cpp's stand-in records it: [620, primary x, y, z, the primary matrix's 12 words] */
+class FXList
+{
+public:
+	static void doFXPos(const FXList *fx, const Coord3D *primary, const Matrix3D *primaryMtx, const Real, const Coord3D *, const Real)
+	{
+		if (!fx) return;
+		rec({620, bits(primary->x), bits(primary->y), bits(primary->z)});
+		recM(*primaryMtx);
+	}
+};
+FXList g_fxl;
 
 /* BaseType.h:86-87 (the shim's BaseType.h does not carry them) */
 #ifndef PI
@@ -513,6 +765,7 @@ class Shadow
 public:
 	void enableShadowRender( Bool ) { abort(); }
 	void enableShadowInvisible( Bool ) { abort(); }
+	void release( void ) { abort(); }
 };
 
 /* ---- the module data and its states ---- */
@@ -540,33 +793,49 @@ struct ParticleSysBoneInfo
 	AsciiString boneName;
 	const ParticleSystemTemplate *particleSystemTemplate;
 };
-/* W3DModelDraw.h:173-200's barrel, never made here (outside a logic time) */
-struct WeaponBarrelInfo
-{
-	Int m_recoilBone;
-	Int m_fxBone;
-	Int m_muzzleFlashBone;
-	void setMuzzleFlashHidden(RenderObjClass *, Bool) const { abort(); }
-};
+#include "lb_pristine.inc"
 struct ModelConditionInfo
 {
-	/* W3DModelDraw.h's validStuff bits */
-	enum { PRISTINE_BONES_VALID = 0x0001, TURRETS_VALID = 0x0002, BARRELS_VALID = 0x0004, PUBLIC_BONES_VALID = 0x0008 };
-	typedef std::vector<WeaponBarrelInfo> WeaponBarrelInfoVec;
+	struct HideShowSubObjInfo { AsciiString subObjName; Bool hide; };
+#include "lb_turret_barrel.inc"
+	/* W3DModelDraw.h:203-230's members the cuts read (m_hideShowVec empty: no ShowSubObject lines here) */
 	Int model;
+	AsciiString m_modelName;
+	std::vector<HideShowSubObjInfo> m_hideShowVec;
+	mutable std::vector<AsciiString> m_publicBones;
+	AsciiString m_weaponFireFXBoneName[WEAPONSLOT_COUNT];
+	AsciiString m_weaponRecoilBoneName[WEAPONSLOT_COUNT];
+	AsciiString m_weaponMuzzleFlashName[WEAPONSLOT_COUNT];
+	AsciiString m_weaponProjectileLaunchBoneName[WEAPONSLOT_COUNT];
 	std::vector<W3DAnimationInfo> m_animations;
 	Int m_mode;
 	Int m_flags;
 	Real m_animMinSpeedFactor, m_animMaxSpeedFactor;
 	std::vector<ParticleSysBoneInfo> m_particleSysBones;
-	mutable Int m_validStuff;
+	mutable PristineBoneInfoMap m_pristineBones;
+	mutable TurretInfo m_turrets[MAX_TURRETS];
 	mutable WeaponBarrelInfoVec m_weaponBarrelInfoVec[WEAPONSLOT_COUNT];
 	mutable Bool m_hasRecoilBonesOrMuzzleFlashes[WEAPONSLOT_COUNT];
-	/* W3DModelDraw.h's TurretInfo, its name keys (no turret here) */
-	struct TurretInfo { NameKeyType m_turretAngleNameKey, m_turretPitchNameKey; };
-	TurretInfo m_turrets[MAX_TURRETS];
+	mutable Byte m_validStuff;
+#include "lb_valid_enum.inc"
+	void addPublicBone(const AsciiString& boneName) const;
+	void validateStuff(RenderObjClass* robj, Real scale, const std::vector<AsciiString>& extraPublicBones) const;
+	void validateCachedBones(RenderObjClass* robj, Real scale) const;
+	void validateTurretInfo() const;
+	void validateWeaponBarrelInfo() const;
+	const Matrix3D* findPristineBone(NameKeyType boneName, Int* boneIndex) const;
+	Bool findPristineBonePos(NameKeyType boneName, Coord3D& pos) const;
+	void loadAnimations() const;
 };
 ModelConditionInfo g_states[4];
+int g_nstates;
+/* TheGlobalData->m_standardPublicBones: the case's */
+class GlobalData { public: std::vector<AsciiString> m_standardPublicBones; };
+GlobalData g_global;
+GlobalData *TheGlobalData = &g_global;
+#include "lb_public_bone.inc"
+#include "lb_bones.inc"
+#include "ma_mf_hidden.inc"
 #include "ma_turret_differ.inc"
 class W3DModelDrawModuleData
 {
@@ -574,6 +843,7 @@ public:
 	Bool m_animationsRequirePower;
 	Bool m_particlesAttachedToAnimatedBones;
 	AsciiString m_attachToDrawableBone;
+	std::vector<AsciiString> m_extraPublicBones;
 	mutable Vector3 m_attachToDrawableBoneOffset;
 	mutable Bool m_attachToDrawableBoneOffsetValid;
 	Real m_initialRecoil, m_maxRecoil, m_recoilDamping, m_recoilSettle;
@@ -613,7 +883,7 @@ public:
 #include "ma_ctor.inc"
 		setModelState(&g_states[0]);
 	}
-	~W3DModelDraw() { delete m_renderObject; }
+	~W3DModelDraw() { REF_PTR_RELEASE(m_renderObject); }
 	Drawable *getDrawable() const { return &g_drawable; }
 	const W3DModelDrawModuleData *getW3DModelDrawModuleData() const { return &g_data; }
 
@@ -633,44 +903,57 @@ public:
 	Bool updateBonesForClientParticleSystems();
 	void reactToTransformChange(const Matrix3D* oldMtx, const Coord3D* oldPos, Real oldAngle);
 	void handleClientRecoil();
-	/* handleClientTurretPositioning (W3DModelDraw.cpp:2415-2418): `if (!m_curState || !(m_curState->m_validStuff &
-	** ModelConditionInfo::TURRETS_VALID)) return;` is all that runs here (see the header) */
-	void handleClientTurretPositioning()
+	/* (#181 item 7b) cut, no longer a stand-in */
+	void handleClientTurretPositioning();
+	void nukeCurrentRender(Matrix3D* xform);
+	void hideAllHeadlights(Bool hide);
+	static void hideAllMuzzleFlashes(const ModelConditionInfo* state, RenderObjClass* renderObject);
+	void rebuildWeaponRecoilInfo(const ModelConditionInfo* state);
+	Bool handleWeaponFireFX(WeaponSlotType wslot, Int specificBarrelToUse, const FXList* fxl, Real weaponSpeed, const Coord3D* victimPos, Real damageRadius);
+	/* W3DModelDraw.h:435 */
+	virtual void onRenderObjRecreated(void){};
+	/* doHideShowSubObjs (W3DModelDraw.cpp:2342-2378): the states have no ShowSubObject/HideSubObject lines and nothing
+	** calls showSubObject here (m_subObjectVec empty): nothing to do */
+	void doHideShowSubObjs(const std::vector<ModelConditionInfo::HideShowSubObjInfo>* vec)
 	{
-		if (!m_curState || !(m_curState->m_validStuff & ModelConditionInfo::TURRETS_VALID))
-			return;
-		abort();
+		if (!m_renderObject) return;
+		if (!vec->empty()) abort();
 	}
 	/* reached only with a next state, which no state here makes (no transition keys) */
 	void setAnimationLoopDuration(UnsignedInt) { abort(); }
 
-	/* setModelState: the early return for the current state (no next state: the states have no transition keys), the
-	** head cut, the middle (see the header), the tail cut */
+	/* setModelState: the early return for the current state (no next state: the states have no transition keys), then
+	** the cuts: the head, the middle to the first branch's doHideShowSubObjs (hideAllMuzzleFlashes, the model test with
+	** turretNamesDiffer, nukeCurrentRender, Create_Render_Obj, validateStuff, rebuildWeaponRecoilInfo), the first branch's
+	** end (W3DModelDraw.cpp:3047-3157, not cut: the garrison flags (debug), the tracks (no TrackMarks), the shadow (no
+	** shadow type), the collision types and the scene's Add_Render_Object (not read here), then as cut: hidden for a
+	** hidden drawable, Set_Transform(transform), onRenderObjRecreated), the else branch (cut), hideAllHeadlights (cut),
+	** the tail (cut) */
 	void setModelState( const ModelConditionInfo *newState )
 	{
 		const ModelConditionInfo* nextState = NULL;
 		if (m_curState != NULL && newState == m_curState && m_nextState == NULL)
 			return;
 #include "ma_sms_head.inc"
-		/* 3016-3023: `newState->m_modelName != m_curState->m_modelName` is the model codes' comparison here; outside a
-		** logic time no state is TURRETS_VALID, so turretNamesDiffer (cut) answers true: the render object is always made
-		** again */
-		if (m_curState == NULL || newState->model != m_curState->model || turretNamesDiffer(newState, m_curState)) {
-			/* nukeCurrentRender(&transform) (2787-2818) */
-			m_pauseAnimation = false;
-			Matrix3D transform = m_renderObject ? m_renderObject->Get_Transform() : *getDrawable()->getTransformMatrix();
-			delete m_renderObject;
-			m_renderObject = NULL;
-			/* Create_Render_Obj(newState->m_modelName.str(), draw->getScale(), m_hexColor) (3034) */
-			if (newState->model < 3)
-				m_renderObject = new RenderObjClass(g_tree, getDrawable()->getScale());
-			/* validateStuff outside a logic time: nothing valid (see the header); rebuildWeaponRecoilInfo: no barrels */
-			if (m_renderObject) {
-				if (getDrawable()->isDrawableEffectivelyHidden())
+#include "ma_sms_mid.inc"
+			if( m_renderObject )
+			{
+				if (draw->isDrawableEffectivelyHidden())
+				{
 					m_renderObject->Set_Hidden(TRUE);
+					if (m_shadow)
+						m_shadow->enableShadowRender(FALSE);
+					m_shadowEnabled = FALSE;
+				}
 				m_renderObject->Set_Transform(transform);
+				onRenderObjRecreated();
 			}
 		}
+		else
+		{
+#include "ma_sms_else.inc"
+		}
+		hideAllHeadlights(m_hideHeadlights);
 #include "ma_sms_tail.inc"
 	}
 
@@ -709,6 +992,46 @@ public:
 			recM(r->Transform);
 			rec({bits(r->ObjectScale), r->HTree->Num_Pivots()});
 			for (int p = 0; p < r->HTree->Num_Pivots(); ++p) recM(r->HTree->Get_Transform(p));
+			/* (#181 item 7b) each sub-object's Is_Hidden */
+			rec({r->Get_Num_Sub_Objects()});
+			for (int k = 0; k < r->Get_Num_Sub_Objects(); ++k) rec({r->Subs[k]->Is_Hidden()});
+		}
+		/* (#181 item 7b) the recoils, then each state's caches: m_validStuff's PRISTINE_BONES_VALID, TURRETS_VALID and
+		** BARRELS_VALID; the pristine bones by name (length, characters, bone index, matrix); the turrets' bones; the
+		** barrels (recoil, FX, muzzle-flash bone, projectile offset); m_hasRecoilBonesOrMuzzleFlashes */
+		for (int w = 0; w < WEAPONSLOT_COUNT; ++w) {
+			rec({(int)m_weaponRecoilInfoVec[w].size()});
+			for (size_t i = 0; i < m_weaponRecoilInfoVec[w].size(); ++i)
+				rec({(int)m_weaponRecoilInfoVec[w][i].m_state, bits(m_weaponRecoilInfoVec[w][i].m_shift), bits(m_weaponRecoilInfoVec[w][i].m_recoilRate)});
+		}
+		for (int i = 0; i < g_nstates; ++i) {
+			const ModelConditionInfo &st = g_states[i];
+			rec({st.m_validStuff & (ModelConditionInfo::PRISTINE_BONES_VALID | ModelConditionInfo::TURRETS_VALID | ModelConditionInfo::BARRELS_VALID)});
+			std::vector<std::pair<std::string, PristineBoneInfo> > bones;
+			for (PristineBoneInfoMap::const_iterator it = st.m_pristineBones.begin(); it != st.m_pristineBones.end(); ++it) {
+				std::string name;
+				for (std::map<std::string, int>::const_iterator k = g_keys.begin(); k != g_keys.end(); ++k)
+					if (k->second == (int)it->first) name = k->first;
+				bones.push_back(std::make_pair(name, it->second));
+			}
+			std::sort(bones.begin(), bones.end(), [](const std::pair<std::string, PristineBoneInfo> &x, const std::pair<std::string, PristineBoneInfo> &y) { return x.first < y.first; });
+			rec({(int)bones.size()});
+			for (size_t b = 0; b < bones.size(); ++b) {
+				rec({(int)bones[b].first.size()});
+				for (size_t c = 0; c < bones[b].first.size(); ++c) rec({(int)(unsigned char)bones[b].first[c]});
+				rec({bones[b].second.boneIndex});
+				recM(bones[b].second.mtx);
+			}
+			for (int t = 0; t < MAX_TURRETS; ++t) rec({st.m_turrets[t].m_turretAngleBone, st.m_turrets[t].m_turretPitchBone});
+			for (int w = 0; w < WEAPONSLOT_COUNT; ++w) {
+				rec({(int)st.m_weaponBarrelInfoVec[w].size()});
+				for (size_t b = 0; b < st.m_weaponBarrelInfoVec[w].size(); ++b) {
+					const ModelConditionInfo::WeaponBarrelInfo &bi = st.m_weaponBarrelInfoVec[w][b];
+					rec({bi.m_recoilBone, bi.m_fxBone, bi.m_muzzleFlashBone});
+					recM(bi.m_projectileOffsetMtx);
+				}
+				rec({st.m_hasRecoilBonesOrMuzzleFlashes[w] ? 1 : 0});
+			}
 		}
 		unsigned int seed[6];
 		ref_get_state(1, seed);
@@ -720,6 +1043,11 @@ public:
 #include "ma_draw.inc"
 #include "ma_anim.inc"
 #include "ma_recoil.inc"
+#include "ma_turret.inc"
+#include "ma_nuke.inc"
+#include "ma_headlights.inc"
+#include "ma_rebuild_recoil.inc"
+#include "ma_fire_fx.inc"
 #include "mp_start_stop.inc"
 #include "mp_shroud.inc"
 #include "mp_stop.inc"
@@ -798,6 +1126,29 @@ void free_all()
 }
 
 const char *const BONE_NAMES[] = { "B1", "b2", "B3", "b4", "B5", "RootTransform", "nosuchbone" };
+/* (#181 item 7b) the turrets', weapons' and public bones' names (as the INI writes them; 9 is "no line") */
+const char *const WEAPON_NAMES[] = { "TURRET", "PITCH", "BARREL", "MUZZLE", "FX", "B1", "B3", "NOSUCH", "None" };
+const int NO_LINE = 9;
+
+/* (#181 item 7b) the INI parse of a turret or weapon bone (parseBoneNameKey, parseWeaponBoneName, W3DModelDraw.cpp:
+** 1335-1397): lower-cased, `None` an invalid key (cleared for a weapon), addPublicBone of it */
+NameKeyType parse_bone_key(ModelConditionInfo &st, int code)
+{
+	AsciiString tmp = WEAPON_NAMES[code];
+	tmp.toLower();
+	st.addPublicBone(tmp);
+	if (tmp.isEmpty() || tmp.isNone())
+		return NAMEKEY_INVALID;
+	return NAMEKEY(tmp.str());
+}
+void parse_weapon_name(ModelConditionInfo &st, AsciiString &dst, int code)
+{
+	dst = WEAPON_NAMES[code];
+	dst.toLower();
+	if (dst.isNone())
+		dst.clear();
+	st.addPublicBone(dst);
+}
 
 } /* namespace mda */
 
@@ -808,6 +1159,8 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 	using namespace mda;
 	g_out.clear();
 	g_psm.clear();
+	g_keys.clear();
+	g_logic_time = FALSE;
 	ref_wwmath_init_tables();
 	ref_w3d_set_float_to_long_mode(1);
 	if (!load(file, flen)) {
@@ -824,6 +1177,11 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 	g_drawable.m_transform.Make_Identity();
 	g_drawable.m_shouldAnimate = TRUE;
 	g_hasObject = FALSE;
+	g_hasAI = FALSE;
+	for (int t = 0; t < MAX_TURRETS; ++t) {
+		g_ai.m_has[t] = FALSE;
+		g_ai.m_angle[t] = g_ai.m_pitch[t] = 0.0f;
+	}
 	g_object.m_physics.m_speed = 0.0f;
 	g_data.m_particlesAttachedToAnimatedBones = in[k++] != 0;
 	g_data.m_animationsRequirePower = in[k++] != 0;
@@ -835,6 +1193,7 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 		g_templates[t].m_slave = sl < 0 ? NULL : &g_templates[sl];
 	}
 	int nstates = in[k++];
+	g_nstates = nstates;
 	for (int si = 0; si < 4; ++si) {
 		ModelConditionInfo &st = g_states[si];
 		st.model = in[k++];
@@ -843,6 +1202,7 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 		st.m_animMinSpeedFactor = real(in[k++]);
 		st.m_animMaxSpeedFactor = real(in[k++]);
 		st.m_validStuff = 0;
+		st.m_pristineBones.clear();
 		for (int w = 0; w < WEAPONSLOT_COUNT; ++w) {
 			st.m_weaponBarrelInfoVec[w].clear();
 			st.m_hasRecoilBonesOrMuzzleFlashes[w] = FALSE;
@@ -877,13 +1237,94 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 			info.particleSystemTemplate = tmpl < 4 ? &g_templates[tmpl] : NULL;
 			st.m_particleSysBones.push_back(info);
 		}
+		/* the Model line (parseAsciiStringLC; `None` cleared, 1639-1641) */
+		st.m_modelName = st.model < 3 ? MODEL_NAMES[st.model] : "";
+		st.m_modelName.toLower();
+	}
+	/* (#181 item 7b) the module's recoil numbers (parseVelocityReal for the two speeds), the models' sub-objects, the
+	** global data's standard public bones, the module's ExtraPublicBone names, then each state's turrets and weapon
+	** bones (a ConditionState copies the default state's, and its own lines replace them: the turrets all four lines,
+	** a weapon bone its own line; the public bones the copy's and its own) */
+	g_data.m_initialRecoil = ConvertVelocityInSecsToFrames(real(in[k++]));
+	g_data.m_maxRecoil = real(in[k++]);
+	g_data.m_recoilDamping = real(in[k++]);
+	g_data.m_recoilSettle = ConvertVelocityInSecsToFrames(real(in[k++]));
+	g_subs.clear();
+	{
+		int ns = in[k++];
+		for (int i = 0; i < 4; ++i) {
+			SubSpec sp;
+			sp.bone = in[k++];
+			sp.hidden = in[k++] != 0;
+			sp.headlight = in[k++] != 0;
+			if (i < ns) g_subs.push_back(sp);
+		}
+	}
+	g_global.m_standardPublicBones.clear();
+	{
+		int n = in[k++];
+		for (int i = 0; i < 2; ++i) {
+			int c = in[k++];
+			if (i < n) g_global.m_standardPublicBones.push_back(AsciiString(WEAPON_NAMES[c]));
+		}
+	}
+	g_data.m_extraPublicBones.clear();
+	{
+		int n = in[k++];
+		for (int i = 0; i < 2; ++i) {
+			int c = in[k++];
+			if (i < n) g_data.m_extraPublicBones.push_back(AsciiString(WEAPON_NAMES[c]));
+		}
+	}
+	for (int si = 0; si < 4; ++si) {
+		ModelConditionInfo &st = g_states[si];
+		st.m_publicBones.clear();
+		for (int t = 0; t < MAX_TURRETS; ++t) st.m_turrets[t].clear();
+		for (int w = 0; w < WEAPONSLOT_COUNT; ++w) {
+			st.m_weaponFireFXBoneName[w].clear();
+			st.m_weaponRecoilBoneName[w].clear();
+			st.m_weaponMuzzleFlashName[w].clear();
+			st.m_weaponProjectileLaunchBoneName[w].clear();
+		}
+		if (si > 0) {
+			const ModelConditionInfo &d = g_states[0];
+			st.m_publicBones = d.m_publicBones;
+			for (int t = 0; t < MAX_TURRETS; ++t) st.m_turrets[t] = d.m_turrets[t];
+			for (int w = 0; w < WEAPONSLOT_COUNT; ++w) {
+				st.m_weaponFireFXBoneName[w] = d.m_weaponFireFXBoneName[w];
+				st.m_weaponRecoilBoneName[w] = d.m_weaponRecoilBoneName[w];
+				st.m_weaponMuzzleFlashName[w] = d.m_weaponMuzzleFlashName[w];
+				st.m_weaponProjectileLaunchBoneName[w] = d.m_weaponProjectileLaunchBoneName[w];
+			}
+		}
+		int ownTurrets = in[k++];
+		for (int t = 0; t < MAX_TURRETS; ++t) {
+			int ac = in[k++], pc = in[k++];
+			Real aa = real(in[k++]), pa = real(in[k++]);
+			if (si > 0 && !ownTurrets) continue;
+			/* `Turret`/`AltTurret`, `TurretArtAngle` (INI::parseAngleReal, INI.cpp:584-592), `TurretPitch`,
+			** `TurretArtPitch` */
+			const Real RADS_PER_DEGREE = PI / 180.0f;
+			st.m_turrets[t].m_turretAngleNameKey = parse_bone_key(st, ac);
+			st.m_turrets[t].m_turretArtAngle = aa * RADS_PER_DEGREE;
+			st.m_turrets[t].m_turretPitchNameKey = parse_bone_key(st, pc);
+			st.m_turrets[t].m_turretArtPitch = pa * RADS_PER_DEGREE;
+		}
+		for (int w = 0; w < WEAPONSLOT_COUNT; ++w) {
+			int c[4];
+			for (int f = 0; f < 4; ++f) c[f] = in[k++];
+			AsciiString *dst[4] = { &st.m_weaponFireFXBoneName[w], &st.m_weaponRecoilBoneName[w], &st.m_weaponMuzzleFlashName[w], &st.m_weaponProjectileLaunchBoneName[w] };
+			for (int f = 0; f < 4; ++f)
+				if (c[f] != NO_LINE) parse_weapon_name(st, *dst[f], c[f]);
+		}
 	}
 	W3DModelDraw *draw = new W3DModelDraw();
 	draw->state();
 	for (int st = k; st + 13 < nin; st += 14) {
 		const int *a = in + st;
 		switch (a[0]) {
-		case 0: {
+		case 0:
+		case 13: {
 			/* getCurrentAnimFraction (W3DModelDraw.cpp:2127-2148) reads its uninitialised `framenum` and `numFrames`
 			** when Peek_Animation_And_Info answers NULL: a current state with a maintain-frame flag whose render object
 			** plays no animation. Undefined upstream: the case ends there, recorded as [700] */
@@ -895,7 +1336,10 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 				rec({700});
 				goto done;
 			}
+			/* (#181 item 7b) 13: inside the logic's update (isValidTimeToCalcLogicStuff true) */
+			g_logic_time = a[0] == 13;
 			draw->setModelState(ns);
+			g_logic_time = FALSE;
 			break;
 		}
 		case 1: {
@@ -953,6 +1397,31 @@ int ref_model_draw_anim_seq(const char *file, int flen, const int *in, int nin, 
 				Matrix3D m = draw->m_renderObject->Get_Bone_Transform((int)((unsigned)a[1] % (unsigned)n));
 				rec({600});
 				recM(m);
+			}
+			break;
+		case 14: {
+			/* (#181 item 7b) the logic's fire (Drawable::handleWeaponFireFX's call): slot a1 % 3, barrel word 2, an FX list
+			** when word 3; recorded [610, handled] after doFXPos's records. A barrel equal to the count is read one past
+			** the end upstream (`specificBarrelToUse > wbvec.size()`): undefined, the case ends, recorded as [701] */
+			WeaponSlotType wslot = (WeaponSlotType)((unsigned)a[1] % 3u);
+			Int barrel = a[2];
+			const ModelConditionInfo *cs = draw->m_curState;
+			if (cs && (cs->m_validStuff & ModelConditionInfo::BARRELS_VALID) && !cs->m_weaponBarrelInfoVec[wslot].empty() &&
+				barrel == (Int)cs->m_weaponBarrelInfoVec[wslot].size()) {
+				rec({701});
+				goto done;
+			}
+			Bool handled = draw->handleWeaponFireFX(wslot, barrel, a[3] ? &g_fxl : NULL, 0.0f, NULL, 0.0f);
+			rec({610, handled ? 1 : 0});
+			break;
+		}
+		case 15:
+			/* (#181 item 7b) the object's AI and its turrets (word 2: an AI; per turret, present, angle, pitch) */
+			g_hasAI = a[2] != 0;
+			for (int t = 0; t < MAX_TURRETS; ++t) {
+				g_ai.m_has[t] = a[3 + 3 * t] != 0;
+				g_ai.m_angle[t] = real(a[4 + 3 * t]);
+				g_ai.m_pitch[t] = real(a[5 + 3 * t]);
 			}
 			break;
 		default: abort();

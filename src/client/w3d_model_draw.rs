@@ -778,10 +778,16 @@ impl ModelConditionInfo {
     /// frame of the state's first animation (the last, under `PRISTINE_BONE_POS_IN_FINAL_FRAME`;
     /// without animations, the render object's own) under a transform of `scale`.
     ///
-    /// The pose is the asset source's ([`W3dAssetSource::skeleton`]): a fresh render object of
+    /// ~~The pose is the asset source's ([`W3dAssetSource::skeleton`]): a fresh render object of
     /// the model, so a bone the live one has captured is not applied (upstream poses the live
     /// render object when one is given). The live one's animation is left as upstream leaves
-    /// it: set to the pose's animation in `MANUAL`, then back to the animation it had, if any.
+    /// it: set to the pose's animation in `MANUAL`, then back to the animation it had, if any.~~
+    /// **Corrected 2026-11-13 (#181 item 7b):** given a render object, it is that one that is posed and read, as
+    /// upstream's (W3DModelDraw.cpp:631-708): the pose's animation set in `MANUAL`, `Set_Transform(scale)`, its bones
+    /// read from its own hierarchy (the first read evaluating it, captured bones included, and leaving its pivots in
+    /// that pose), the transform restored, then the animation it had, if any (without one it stays on the pose's
+    /// animation in `MANUAL`). Without one, the asset source's posed skeleton ([`W3dAssetSource::skeleton`]) is
+    /// upstream's render object made for the purpose. The sub-objects are always the posed skeleton's (gaps).
     ///
     /// **Files still being fetched** (GitHub #42; new, not upstream's, whose reads never wait):
     /// when the asset source answered a question of this validation "none for now"
@@ -828,6 +834,7 @@ impl ModelConditionInfo {
         // go ahead and set this here, in case we return early.
         self.valid_stuff.fetch_or(PRISTINE_BONES_VALID, Ordering::Relaxed);
 
+        let mut robj = robj;
         let (model_name, is_hlod, cur_anim) = match &robj {
             Some(r) => (r.model_name.clone(), r.is_hlod, if r.is_hlod { r.anim.clone() } else { None }),
             None => {
@@ -853,10 +860,31 @@ impl ModelConditionInfo {
         };
         let skeleton = env.assets.skeleton(&model_name, pose, scale);
 
+        // (#181 item 7b) the render object given is posed itself (W3DModelDraw.cpp:631-674): `originalTransform` saved,
+        // the pose's animation set in `ANIM_MODE_MANUAL` ("make sure we're in frame zero"), then
+        // `Set_Transform(Matrix3D(true).Scale(scale))`; its bones are then read from it ([`find_single_bone`]), the first
+        // one found evaluating its hierarchy in that pose. ~~(#179) The bones are the fresh skeleton's (above); what
+        // remains on the live one is the hierarchy left not valid by the two `Set_Transform`s~~ **Corrected 2026-11-13
+        // (#181 item 7b):** the live one is posed and read, as upstream's; its pivots keep that pose.
+        let original_transform = robj.as_ref().map(|r| r.transform);
+        let now = env.sync_time;
+        if let Some(r) = robj.as_mut() {
+            if let (Some(h), Some(f)) = (anim_to_use.clone(), which_frame) {
+                if !plant(9977) {
+                    r.set_animation(Some(h), f as f32, AnimMode::Manual, now);
+                }
+            }
+            let mut tmp = Matrix3D::IDENTITY;
+            tmp.scale(scale);
+            if !plant(9978) {
+                r.set_transform(&tmp); // set to identity transform
+            }
+        }
+
         let mut map = BTreeMap::new();
         for b in standard_public_bones.iter().filter(|_| !plant(9749)) {
             // don't crash here, since these are catch-all global bones and won't be present in most models.
-            do_single_bone_name(skeleton.as_ref(), b, &mut map);
+            do_single_bone_name(skeleton.as_ref(), robj.as_mut().map(|r| (&mut **r, now)), b, &mut map);
         }
         let mut public = self.public_bones.clone();
         for b in extra_public_bones.iter().filter(|_| !plant(9748)) {
@@ -867,27 +895,15 @@ impl ModelConditionInfo {
         }
         for b in &public {
             // DO crash here (upstream's debug build), since we specifically requested this bone for this model
-            do_single_bone_name(skeleton.as_ref(), b, &mut map);
+            do_single_bone_name(skeleton.as_ref(), robj.as_mut().map(|r| (&mut **r, now)), b, &mut map);
         }
         self.cache().pristine_bones = map;
 
-        if let Some(r) = robj {
-            // (#179) upstream poses the live render object itself: `Set_Transform(tmp)` (W3DModelDraw.cpp:672), its bones
-            // read, `Set_Transform(originalTransform)` (702). The bones are the fresh skeleton's here (above); what remains
-            // on the live one is the hierarchy left not valid by the two `Set_Transform`s.
-            let original_transform = r.transform;
-            let mut tmp = Matrix3D::IDENTITY;
-            tmp.scale(scale);
-            r.set_transform(&tmp);
-            r.set_transform(&original_transform);
-            if r.is_hlod {
-                if let (Some(h), Some(f)) = (anim_to_use, which_frame) {
-                    r.set_animation(Some(h), f as f32, AnimMode::Manual, env.sync_time);
-                }
-                if let Some(a) = cur_anim {
-                    r.set_animation(Some(a.motion), a.frame, a.anim_mode, env.sync_time);
-                    r.set_animation_frame_rate_multiplier(a.frame_rate_multiplier);
-                }
+        if let (Some(r), Some(original_transform)) = (robj, original_transform) {
+            r.set_transform(&original_transform); // restore previous transform
+            if let Some(a) = cur_anim {
+                r.set_animation(Some(a.motion), a.frame, a.anim_mode, now);
+                r.set_animation_frame_rate_multiplier(a.frame_rate_multiplier);
             }
         }
     }
@@ -915,7 +931,7 @@ impl ModelConditionInfo {
                 (0, 0)
             } else {
                 let find = |key: &[u8]| if key.is_empty() { 0 } else { self.find_pristine_bone(key).map_or(0, |b| b.bone_index) };
-                (find(&tur.turret_angle_name_key), find(&tur.turret_pitch_name_key))
+                (find(&tur.turret_angle_name_key), if plant(9979) { find(&tur.turret_angle_name_key) } else { find(&tur.turret_pitch_name_key) })
             };
             self.cache().turret_bones[tslot] = bones;
         }
@@ -961,7 +977,7 @@ impl ModelConditionInfo {
                 if !fx_bone_name.is_empty() {
                     info.fx_bone = bone(&numbered(fx_bone_name, i));
                     // special case: if we have multiple muzzleflashes, but only one fxbone, use that fxbone for everything.
-                    if info.fx_bone == 0 && info.muzzle_flash_bone != 0 {
+                    if info.fx_bone == 0 && info.muzzle_flash_bone != 0 && !plant(9994) {
                         info.fx_bone = prev_fx_bone;
                     }
                 }
@@ -1013,9 +1029,23 @@ impl ModelConditionInfo {
 }
 
 /// `findSingleBone(robj, boneName, mtx, boneIndex)`: the bone by name, unless its index is 0.
-fn find_single_bone(sk: Option<&Skeleton>, bone_name: &[u8]) -> Option<PristineBoneInfo> {
+///
+/// (#181 item 7b) With `live` (the render object `validateCachedBones` was given, and the sync time), the bone is
+/// that render object's: `robj->Get_Bone_Index(boneName)` and `robj->Get_Bone_Transform(boneIndex)` (W3DModelDraw.cpp:
+/// 444-447), whose first call evaluates the live hierarchy in the pose `validateCachedBones` set (and leaves its pivots
+/// so); without it, the posed skeleton of a render object made for the purpose (`tossRobj`).
+fn find_single_bone(sk: Option<&Skeleton>, live: Option<(&mut RenderObj, u32)>, bone_name: &[u8]) -> Option<PristineBoneInfo> {
     if is_none(bone_name) || bone_name.is_empty() {
         return None;
+    }
+    if let Some((r, now)) = live {
+        let bone_index = r.get_bone_index(bone_name);
+        return if bone_index != 0 || (plant(9744) && r.has_htree()) {
+            let mtx = if plant(9976) { r.peek_bone_transform(None, bone_index, now) } else { r.get_bone_transform(bone_index, now) };
+            Some(PristineBoneInfo { mtx, bone_index })
+        } else {
+            None
+        };
     }
     let sk = sk?;
     let bone_index = sk.get_bone_index(bone_name);
@@ -1039,8 +1069,10 @@ fn find_single_sub_obj(sk: Option<&Skeleton>, bone_name: &[u8]) -> Option<Pristi
 }
 
 /// `doSingleBoneName(robj, boneName, map)`: the bone and its numbered variants as bones, or
-/// else as sub-objects, into the map by lower-cased name.
-fn do_single_bone_name(sk: Option<&Skeleton>, bone_name: &[u8], map: &mut BTreeMap<Vec<u8>, PristineBoneInfo>) -> bool {
+/// else as sub-objects, into the map by lower-cased name. (#181 item 7b) The bones are `live`'s when it is given
+/// ([`find_single_bone`]); the sub-objects are always the posed skeleton's (gaps: upstream reads the live sub-objects'
+/// `Get_Transform`).
+fn do_single_bone_name(sk: Option<&Skeleton>, mut live: Option<(&mut RenderObj, u32)>, bone_name: &[u8], map: &mut BTreeMap<Vec<u8>, PristineBoneInfo>) -> bool {
     let mut found_as_bone = false;
     let mut found_as_sub_obj = false;
     let tmp_name = lower(bone_name);
@@ -1049,13 +1081,13 @@ fn do_single_bone_name(sk: Option<&Skeleton>, bone_name: &[u8], map: &mut BTreeM
         n.extend_from_slice(format!("{i:02}").as_bytes());
         n
     };
-    if let Some(info) = find_single_bone(sk, &tmp_name) {
+    if let Some(info) = find_single_bone(sk, live.as_mut().map(|(r, now)| (&mut **r, *now)), &tmp_name) {
         map.insert(tmp_name.clone(), info);
         found_as_bone = true;
     }
     for i in 1..=99 {
         let tmp = numbered(i);
-        match find_single_bone(sk, &tmp) {
+        match find_single_bone(sk, live.as_mut().map(|(r, now)| (&mut **r, *now)), &tmp) {
             Some(info) => {
                 map.insert(tmp, info);
                 found_as_bone = true;
@@ -2568,7 +2600,8 @@ pub struct WeaponFireFxAt {
     /// as `Get_Bone_Transform` gives it (the chain from the render object's transform over the scaled pivots, base
     /// pose); `None` when the asset source gave no skeleton.
     pub bone_transform: Option<Matrix3D>,
-    /// `m_renderObject->Is_Hidden()`: upstream then plays at the logic object's position and transform.
+    /// `m_renderObject->Is_Hidden()`: upstream then plays at the logic object's position and transform. **(#181 item
+    /// 7b)** `Is_Hidden()` and an object (`logicObject != NULL`): a hidden render object without one plays at its bone.
     pub render_hidden: bool,
 }
 
@@ -3553,7 +3586,7 @@ impl W3DModelDraw {
 
     /// `turretNamesDiffer(a, b)`.
     fn turret_names_differ(a: &ModelConditionInfo, b: &ModelConditionInfo) -> bool {
-        if !a.turrets_valid() || !b.turrets_valid() {
+        if !a.turrets_valid() || !b.turrets_valid() || plant(9980) {
             return true;
         }
         (0..MAX_TURRETS).any(|i| {
@@ -3623,7 +3656,9 @@ impl W3DModelDraw {
         let ns = data.state(&new_state);
 
         // and always hide muzzle flashes, in case modelstate and model have crossed at the same time
-        Self::hide_all_muzzle_flashes(Some(ns), self.render_object.as_mut());
+        if !plant(9988) {
+            Self::hide_all_muzzle_flashes(Some(ns), self.render_object.as_mut());
+        }
 
         let remake = match &self.cur_state {
             None => true,
@@ -3657,7 +3692,9 @@ impl W3DModelDraw {
         if remake && self.render_object.is_some() {
             self.on_render_obj_recreated();
         }
-        self.hide_all_headlights(self.hide_headlights);
+        if !plant(9995) {
+            self.hide_all_headlights(self.hide_headlights);
+        }
 
         let prev_state = self.cur_state.take();
         self.cur_state = Some(new_state);
@@ -4140,7 +4177,9 @@ impl W3DModelDraw {
                 let (mut turret_angle, mut turret_pitch) = logic.unwrap_or((0.0, 0.0));
                 // do turret, if any
                 if angle_bone != 0 {
-                    turret_angle += tur.turret_art_angle;
+                    if !plant(9981) {
+                        turret_angle += tur.turret_art_angle;
+                    }
                     let mut turret_xfrm = Matrix3D::IDENTITY;
                     turret_xfrm.rotate_z(turret_angle);
                     if let Some(r) = &mut self.render_object {
@@ -4152,7 +4191,7 @@ impl W3DModelDraw {
                 if pitch_bone != 0 {
                     turret_pitch += tur.turret_art_pitch;
                     let mut turret_pitch_xfrm = Matrix3D::IDENTITY;
-                    turret_pitch_xfrm.rotate_y(-turret_pitch);
+                    turret_pitch_xfrm.rotate_y(if plant(9982) { turret_pitch } else { -turret_pitch });
                     if let Some(r) = &mut self.render_object {
                         r.capture_bone(pitch_bone);
                         r.control_bone(pitch_bone, &turret_pitch_xfrm);
@@ -4186,7 +4225,7 @@ impl W3DModelDraw {
             for (i, barrel) in barrels.iter().enumerate().take(count) {
                 let recoil = &mut self.weapon_recoil_info_vec[wslot][i];
                 if barrel.muzzle_flash_bone != 0 {
-                    let hidden = recoil.state != RecoilState::RecoilStart;
+                    let hidden = (recoil.state != RecoilState::RecoilStart) != plant(9983);
                     barrel.set_muzzle_flash_hidden(self.render_object.as_mut(), hidden);
                 }
                 if barrel.recoil_bone != 0 {
@@ -4194,17 +4233,19 @@ impl W3DModelDraw {
                         RecoilState::Idle => {}
                         RecoilState::RecoilStart | RecoilState::Recoil => {
                             recoil.shift += recoil.recoil_rate;
-                            recoil.recoil_rate *= d.recoil_damping; // recoil decelerates
-                            if recoil.shift >= d.max_recoil {
+                            if !plant(9984) {
+                                recoil.recoil_rate *= d.recoil_damping; // recoil decelerates
+                            }
+                            if recoil.shift >= d.max_recoil && !plant(9986) {
                                 recoil.shift = d.max_recoil;
                                 recoil.state = RecoilState::Settle;
-                            } else if recoil.recoil_rate.abs() < TINY_RECOIL {
+                            } else if crate::ww::wwmath::fabs(recoil.recoil_rate) < TINY_RECOIL && !plant(9989) {
                                 recoil.state = RecoilState::Settle;
                             }
                         }
                         RecoilState::Settle => {
                             recoil.shift -= d.recoil_settle;
-                            if recoil.shift <= 0.0 {
+                            if recoil.shift <= 0.0 && !plant(9985) {
                                 recoil.shift = 0.0;
                                 recoil.state = RecoilState::Idle;
                             }
@@ -4234,7 +4275,9 @@ impl W3DModelDraw {
                     let v = &mut self.weapon_recoil_info_vec[wslot];
                     v.resize(ncount, WeaponRecoilInfo::default());
                     for it in v.iter_mut() {
-                        *it = WeaponRecoilInfo::default();
+                        if !plant(9987) {
+                            *it = WeaponRecoilInfo::default();
+                        }
                     }
                 }
             }
@@ -4270,9 +4313,9 @@ impl W3DModelDraw {
 
     /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`'s answer, whether it was handled
     /// (see [`W3DModelDraw::handle_weapon_fire_fx_at`] for where the effect plays).
-    pub fn handle_weapon_fire_fx(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, sync_time: u32) -> bool {
+    pub fn handle_weapon_fire_fx(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, has_object: bool, sync_time: u32) -> bool {
         // where it plays is not asked: any render object transform
-        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, sync_time).is_some()
+        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, has_object, sync_time).is_some()
     }
 
     /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`: the barrel's recoil started and its muzzle flash
@@ -4284,7 +4327,11 @@ impl W3DModelDraw {
     /// `Get_Bone_Transform(info.m_fxBone)` (W3DModelDraw.cpp:3727), the chain from it with the captured bones
     /// ~~([`RenderObj::get_bone_transform_live`])~~ **Corrected 2026-11-13 (#179):** ([`RenderObj::get_bone_transform`] at
     /// `sync_time`, `WW3D::Get_Sync_Time()`: the animation's current pose, which the query moves on).
-    pub fn handle_weapon_fire_fx_at(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, sync_time: u32) -> Option<WeaponFireFxAt> {
+    ///
+    /// (#181 item 7b) `has_object` is `getDrawable()->getObject() != NULL`: a hidden render object of a drawable with no
+    /// object is still asked its bone upstream ("if I have no object I have no choice"), and plays there
+    /// ([`WeaponFireFxAt::render_hidden`] false).
+    pub fn handle_weapon_fire_fx_at(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, has_object: bool, sync_time: u32) -> Option<WeaponFireFxAt> {
         let cur = self.get_cur_state()?;
         if !cur.barrels_valid() || wslot >= SLOTS {
             return None;
@@ -4296,7 +4343,7 @@ impl W3DModelDraw {
         }
         let mut handled = None;
         // upstream tests `> size()`, so a barrel equal to the count is read past the end (undefined); here it is the first.
-        let barrel = if specific_barrel_to_use < 0 || specific_barrel_to_use as usize >= wbvec.len() { 0 } else { specific_barrel_to_use as usize };
+        let barrel = if specific_barrel_to_use < 0 || specific_barrel_to_use as usize >= wbvec.len() || plant(9990) { 0 } else { specific_barrel_to_use as usize };
         let info = wbvec[barrel];
         if has_fxl && info.fx_bone != 0 {
             if let Some(r) = &mut self.render_object {
@@ -4304,27 +4351,29 @@ impl W3DModelDraw {
                 // skeleton's)~~ (#179) the animation's current pose, (#172) in the world: the chain from the render
                 // object's transform
                 let pristine = r.skeleton.as_ref().and_then(|k| k.bones.get(info.fx_bone as usize)).map(|b| b.transform);
-                // (#179) upstream asks the bone only when the render object is not hidden (or the drawable has no object:
-                // the port's firing drawables always have one), so a hidden one's animation state is not moved on: its
-                // answer here is read without writing (the caller plays at the logic object then)
+                // (#179) upstream asks the bone only when the render object is not hidden or the drawable has no object
+                // ~~(the port's firing drawables always have one)~~ (#181 item 7b: `has_object`), so a hidden one's
+                // animation state is not moved on: its answer here is read without writing (the caller plays at the
+                // logic object then)
+                let at_logic_object = r.hidden && (has_object || plant(9991));
                 let bone_transform = pristine.map(|b| {
                     if plant(9697) {
                         b
-                    } else if r.hidden {
+                    } else if at_logic_object {
                         r.peek_bone_transform(None, info.fx_bone, sync_time)
                     } else {
                         r.get_bone_transform(info.fx_bone, sync_time)
                     }
                 });
-                handled = Some(WeaponFireFxAt { bone_transform, render_hidden: r.hidden });
+                handled = Some(WeaponFireFxAt { bone_transform, render_hidden: at_logic_object });
             }
         }
         if info.recoil_bone != 0 || info.muzzle_flash_bone != 0 {
             if let Some(recoil) = self.weapon_recoil_info_vec[wslot].get_mut(barrel) {
-                recoil.state = RecoilState::RecoilStart;
+                recoil.state = if plant(9992) { RecoilState::Recoil } else { RecoilState::RecoilStart };
                 recoil.recoil_rate = self.data.initial_recoil;
             }
-            if info.muzzle_flash_bone != 0 {
+            if info.muzzle_flash_bone != 0 && !plant(9993) {
                 info.set_muzzle_flash_hidden(self.render_object.as_mut(), false);
             }
         }
@@ -5419,7 +5468,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert!(hidden(&m)[MUZZLE]);
             assert_eq!(m.get_barrel_count(0), 1);
 
-            assert!(!m.handle_weapon_fire_fx(0, 0, false, 0));
+            assert!(!m.handle_weapon_fire_fx(0, 0, false, true, 0));
             assert_eq!(m.weapon_recoil_info_vec[0][0], WeaponRecoilInfo { state: RecoilState::RecoilStart, shift: 0.0, recoil_rate: 2.0 });
             assert!(!hidden(&m)[MUZZLE]);
             let mut shifts = Vec::new();
@@ -5441,7 +5490,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert_eq!(idle_at, Some(50));
             assert_eq!(m.render_object.as_ref().unwrap().bone_controls[&3].transform, back);
             // with an FX list, the FX bone and a render object, it is handled
-            assert!(m.handle_weapon_fire_fx(0, 0, true, 0));
+            assert!(m.handle_weapon_fire_fx(0, 0, true, true, 0));
         }
 
         /// (#172) The drawable's scale as upstream's render object carries it, on [`gunt`] (MUZZLEFX01 is four pivots
@@ -5479,7 +5528,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             // (#174) the FX bone is chained from the render object's own transform: `reactToTransformChange` puts it at the
             // drawable's (no instance scale)
             m.react_to_transform_change(&world, None);
-            let at = m.handle_weapon_fire_fx_at(0, 0, true, 0).unwrap();
+            let at = m.handle_weapon_fire_fx_at(0, 0, true, true, 0).unwrap();
             assert_eq!(at, WeaponFireFxAt { bone_transform: Some(live), render_hidden: false });
             // (#174) the draw's render object transform is the drawable's scaled by the instance scale (W3DModelDraw.cpp:
             // 2045-2054, `m_instanceScale` = the template's 2): the live muzzle bone in the base pose is then the pristine

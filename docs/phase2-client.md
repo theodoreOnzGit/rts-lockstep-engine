@@ -124,6 +124,42 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#181 item 7b (2026-11-13, GitHub #181): the logic-time state change, the turrets, the fire and the recoil.**
+- **Upstream** (W3DModelDraw.cpp): inside the logic's update `setModelState` makes the render object again (the model
+  differs, or `turretNamesDiffer` while either state is not `TURRETS_VALID`) and `validateStuff`s the new state on it:
+  `validateCachedBones` (631-708) poses that **live** render object (the state's first animation in `MANUAL`,
+  `Set_Transform(Matrix3D(true).Scale(scale))`), reads its public bones with `Get_Bone_Transform` (the first read
+  evaluates its hierarchy, whose pivots keep that pose), restores the transform; `validateTurretInfo` and
+  `validateWeaponBarrelInfo` find the turret and barrel bones; `rebuildWeaponRecoilInfo` clears one recoil per barrel.
+  Draws then turn the turret bones (`handleClientTurretPositioning`) and move the recoil bones and muzzle flashes
+  (`handleClientRecoil`); `handleWeaponFireFX` (3696-3771) plays the FX list at the FX bone (or, hidden with an object,
+  at the logic object), starts the recoil and shows the muzzle flash. `handleWeaponPreAttackFX` and `doClientRecoil` do
+  not exist upstream.
+- **Extended test:** `tests/differential_model_draw_anim.rs` / `differential/wrap_model_draw_anim.cpp`: new verbatim
+  cuts (setModelState's middle and else branch, `nukeCurrentRender`, `hideAllHeadlights`, `hideAllMuzzleFlashes`,
+  `setMuzzleFlashHidden`, `handleClientTurretPositioning`, `rebuildWeaponRecoilInfo`, `handleWeaponFireFX`, GameCommon.h's
+  velocity conversion) and #175's bone-cache cuts reused from `logic_bones_gen` (build.rs compiles the wrapper after
+  them); a logic-time `setModelState` op, a fire op, the AI's turrets; generated pivots named for turrets, barrels,
+  muzzle flashes and FX bones, sub-objects on bones, recoil numbers, public bones, turret and weapon lines. Compared
+  besides #181 item 7's words: sub-objects' hidden flags, the recoils, every state's caches (valid bits, pristine bones
+  with matrices, turret bones, barrels) and where each FX list plays.
+- **Results:** 20,000 cases (2,888 ended where upstream is undefined: 1,836 at a `setModelState`, 1,052 at a fire
+  whose barrel equals the count, `> size()` upstream), 548,231 steps, 121,072 draws (83,880 animated, 9,303 with turret
+  bones, 12,490 with recoil bones or muzzle flashes), 1,577 fires handled: **0 mismatches**, max ULP 0. Plants
+  9976-9995: 20 of 20 caught (11 - 6,456 cases each; the table is in the test's header).
+- **Defects found and fixed (port):** (1) `validateCachedBones` read a fresh skeleton and did not pose or evaluate the
+  live render object (the live pivots kept identity transforms); now it poses and reads the live one in upstream's
+  order (plant 9976, the old effect: 6,456 of 20,000 differ). (2) `handleWeaponFireFX` did not ask the FX bone of a
+  hidden render object whose drawable has no object; it now takes `has_object` (plant 9991: 96 of 20,000). Both were
+  found reading the port against upstream and fixed before the first run. Also `handleClientRecoil`'s `abs()` method
+  syntax is now `ww::wwmath::fabs` (no numeric change).
+- **Other runs:** lib 1,236 passed (+1: `Drawable::handle_weapon_fire_fx` reached); `differential_model_draw_particles`
+  0 over 20,000 twice; `differential_tank_truck_draw` 0; `differential_logic_bones` 0 over 20,000 twice; client 102 passed;
+  gate (a) PASS, last CRC 0bf44067. `src/logic` unchanged.
+- **Not done (gaps):** `validateCachedBones`' restore of an old animation (unreachable from `setModelState`, upstream as
+  here); `validateStuff(NULL)` paths (`differential_logic_bones`'s); sub-objects found by name; show/hide lists; more
+  than one LOD; the drawable's own recoil (`m_locoInfo`).
+
 **#181 item 7 (2026-11-13, GitHub #181): `W3DModelDraw`'s draw sequence with an animated render object.**
 - **Upstream** (W3DModelDraw.cpp:2040-2112, animobj.cpp): at one sync time, `doDrawModule` pauses or resumes the
   animation, restarts a completed idle or `RESTART_ANIM_WHEN_COMPLETE` animation (`adjustAnimation`: client random values
@@ -154,10 +190,10 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   #182 item 3 numbers); client 102 passed; gate (a) PASS, last CRC 0bf44067. `src/logic` unchanged.
 - **Port changes:** no behaviour; accessors `W3DModelDraw::pause_animation`, `animation_mode` and
   `RenderObj::live_pivot_transforms` (reached by the new test and two lib tests); the plants.
-- **Not done (gaps):** a logic-time `setModelState` (`validateCachedBones` posing the live render object, the turrets
+- **Not done (gaps):** ~~a logic-time `setModelState` (`validateCachedBones` posing the live render object, the turrets
   and barrels valid), so `handleWeaponFireFX`'s FX bone and a real recoil are not in the sequence (a bone query and
-  captures between draws stand in); compressed and morph animations; blends and combos; transition states and
-  `m_nextState`; turret positioning.
+  captures between draws stand in);~~ **Corrected 2026-11-13 (#181 item 7b):** done, above; compressed and morph
+  animations; blends and combos; transition states and `m_nextState`; ~~turret positioning~~ (done in #181 item 7b).
 
 **#184 item 1 (2026-11-13, GitHub #184): the tank, truck and tank truck draws' own time freezes.**
 - **Upstream:** W3DTankDraw.cpp:312-315 tests `frozen` (Drawable.cpp:1397-1400's expression) first and returns before

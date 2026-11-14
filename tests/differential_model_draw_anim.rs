@@ -6,7 +6,9 @@
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Drawable/Draw/W3DModelDraw.cpp (doDrawModule,
 //   setPauseAnimation, getCurrentAnimFraction, adjustAnimation, setCurAnimDurationInMsec, getCurAnimDistanceCovered,
 //   adjustAnimSpeedToMovementSpeed, isAnimationComplete, handleClientRecoil, the bone particle systems, and setModelState's
-//   head and tail) over GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/animobj.cpp (Animatable3DObjClass), htree.cpp and
+//   head and tail; #181 item 7b: setModelState's middle, validateStuff, validateCachedBones, validateTurretInfo,
+//   validateWeaponBarrelInfo, findPristineBone, nukeCurrentRender, hideAllHeadlights, hideAllMuzzleFlashes,
+//   setMuzzleFlashHidden, rebuildWeaponRecoilInfo, handleClientTurretPositioning, handleWeaponFireFX) over GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/animobj.cpp (Animatable3DObjClass), htree.cpp and
 //   hrawanim.cpp
 //
 // Original copyright notice of those files:
@@ -48,7 +50,7 @@
 //! an `AnimationSpeedFactorRange` (from 0.5 .. 2), 0-3 `Animation`/`IdleAnimation` lines (an animation of the file, or
 //! one that is not there 1 in 12; a distance covered 0, 5, 12.5 or 30; a state's lines all idle 1 in 3, its mode then `ONCE` or
 //! `ONCE_BACKWARDS`, as `parseConditionState` requires) and 0-3 `ParticleSysBone`s. The
-//! sync time starts anywhere in 0..100,000 (1 in 20 near `u32::MAX`, to wrap). Then 1-60 steps: `setModelState` 8 %,
+//! sync time starts anywhere in 0..100,000 (1 in 20 near `u32::MAX`, to wrap). Then 1-60 steps (**Corrected 2026-11-13, #181 item 7b:** the percentages that follow are #181 item 7's; now 4, 22, 16, 12, 2, 3, 3, 3, 3, 1, 2, 2 and 4 % in this order, with ops 13-15 below; the generated pivots are 2-8): `setModelState` 8 %,
 //! `doDrawModule` under a random world transform 25 %, the sync time moved on 20 % (0, 33, < 100, 100-3,100 or < 100,000
 //! ms), the scene's `Render` 15 %, the drawable hidden or shown 3 %, `getShouldAnimate` 4 %, the object and its speed
 //! 4 %, a bone captured and controlled (or released) 5 %, `reactToTransformChange` + `updateBonesForClientParticleSystems`
@@ -60,8 +62,37 @@
 //! valid, the animation, `Frame`, `PrevFrame`, `LastSyncTime`, direction, speed multiplier, mode, complete, hidden,
 //! transform, object scale, and **every pivot's transform**), and the client random state (6 words).
 //!
-//! Both sides run outside a logic time, as the port's client draws (`isValidTimeToCalcLogicStuff()` false): the pristine
-//! bones, turrets and barrels are never valid, so no barrel fires and the recoil does nothing (gaps).
+//! ~~Both sides run outside a logic time, as the port's client draws (`isValidTimeToCalcLogicStuff()` false): the pristine
+//! bones, turrets and barrels are never valid, so no barrel fires and the recoil does nothing (gaps).~~ **Corrected
+//! 2026-11-13 (#181 item 7b):** draws run outside a logic time; `setModelState` runs outside one (op 0) or inside the
+//! logic's update (op 13), where `validateStuff` validates the new state on the new render object.
+//!
+//! # #181 item 7b: the logic-time state change, the turrets, the fire and the recoil
+//!
+//! What upstream does: a `setModelState` inside the logic's update makes the render object again when the model differs
+//! or `turretNamesDiffer` (true until both states are `TURRETS_VALID`), then `validateStuff` on the **new** render object:
+//! `validateCachedBones` sets the state's first animation on it in `MANUAL` (frame 0, or the last under
+//! `PRISTINE_BONE_POS_IN_FINAL_FRAME`), `Set_Transform(Matrix3D(true).Scale(scale))`, finds the global and the state's
+//! public bones (and `NN` variants) by `Get_Bone_Index`, the first found evaluating the live hierarchy
+//! (`Get_Bone_Transform`), restores the transform, and leaves the render object on that animation in `MANUAL` (it had
+//! none); `validateTurretInfo` and `validateWeaponBarrelInfo` find the turrets' and barrels' bones among them;
+//! `rebuildWeaponRecoilInfo` makes one cleared recoil per barrel. Each draw then turns the turret bones by the AI's
+//! angle and pitch plus the art angle and pitch (`handleClientTurretPositioning`), and moves each barrel's recoil bone
+//! (`handleClientRecoil`: the shift grows by the rate, damped, to `MaxRecoilDistance` or until the rate is under 0.01,
+//! then settles back by `RecoilSettleSpeed`), showing a muzzle flash only on the draw after a fire. A fire
+//! (`handleWeaponFireFX`) plays the FX list at the FX bone (`Get_Bone_Transform`: the animation moved on) or, hidden
+//! with an object, at the logic object, starts the recoil and shows the muzzle flash. `handleWeaponPreAttackFX` and
+//! `doClientRecoil` do not exist upstream (GeneralsMD/Code searched): nothing to translate.
+//!
+//! Methodology added: 2-8 pivots, each but the root `B<i>` or (1 in 2) a turret, barrel, muzzle or FX name, numbered
+//! or not; `InitialRecoilSpeed`, `MaxRecoilDistance`, `RecoilDamping`, `RecoilSettleSpeed`; 0-4 sub-objects on bones
+//! (2 in 3 on a muzzle pivot when there is one), hidden as made 1 in 3, a `HEADLIGHT` 1 in 5; 0-2 standard public bones
+//! and `ExtraPublicBone` names; each state's `Turret`/`TurretPitch`/`AltTurret`/`AltTurretPitch` with art angles (a
+//! condition state its own 1 in 2, else the default's) and `WeaponFireFXBone`/`WeaponRecoilBone`/`WeaponMuzzleFlash`/
+//! `WeaponLaunchBone` per slot (a line 1 in 2). Ops: the logic-time `setModelState` 6 %, a fire 13 % (a barrel -1, 0-3
+//! or 5, an FX list 3 in 4), the AI and its turrets 4 %. Compared besides: each sub-object's hidden flag, the recoils, and
+//! every state's caches (the valid bits, the pristine bones with their matrices, the turrets' bones, the barrels), and
+//! where each FX list plays.
 //!
 //! # Predictions (`issue181i7_predictions.md`, before any run)
 //!
@@ -91,6 +122,28 @@
 //!   9962 642; 9963 1,243; 9964 2,816; 9965 1,064; 9966 5,373; 9967 4,439; 9968 4,439; 9969 2,069; 9970 9,763; 9971
 //!   6,445; 9972 8,988; 9973 13,304; 9974 268; 9975 1,493. **20 of 20 caught.**
 //!
+//! # #181 item 7b predictions and results (`issue181i7b_predictions.md`, before any run)
+//!
+//! Predicted: two port defects show on the first run, then 0 mismatches. What happened: both were found by reading the
+//! port against upstream and **fixed before the first run** (so the first comparison never saw them; their plants
+//! below measure them): (1) the port's `validateCachedBones` read a fresh skeleton and did not pose the live render
+//! object, so the live pivots kept their identity transforms where upstream's hold the evaluated pose (plant 9976,
+//! which restores that effect: 6,456 of 20,000 cases differ); (2) `handleWeaponFireFX` did not ask the FX bone of a hidden
+//! render object whose drawable has no object (plant 9991, the old code: 96 of 20,000).
+//!
+//! - **First build:** no error. **First run** (300 cases): 0 mismatches.
+//! - **Gated run** (20,000): 2,888 cases ended where upstream is undefined (1,836 at a `setModelState`, 1,052 at a fire's
+//!   barrel equal to the count), 548,231 steps, 121,072 draws (83,880 with an animation playing, 9,303 with turret bones,
+//!   12,490 with recoil bones or muzzle flashes), 1,577 fires handled, 56,692 particle systems made, 225,758 client
+//!   random values drawn: **0 mismatches**, max ULP 0.
+//! - **Plants 9976-9995**, mismatching cases of 20,000: 9976 6,456; 9977 5,696; 9978 6,142; 9979 2,837; 9980 140; 9981
+//!   767; 9982 947; 9983 1,150; 9984 507; 9985 237; 9986 463; 9987 477; 9988 11; 9989 178; 9990 55; 9991 96; 9992 2,001;
+//!   9993 537; 9994 16; 9995 4,353. **20 of 20 caught.** 9995 first planted the restore of the old animation's speed
+//!   multiplier in `validateCachedBones`: 0 caught, because that restore cannot run from `setModelState` (a render
+//!   object made again has no animation; a kept one's state is already valid); moved to `hideAllHeadlights`.
+//! - Prediction misses: the defects did not show in a run (fixed first); 9988 (11) and 9994 (16) are weaker than the
+//!   100 predicted; 1,052 undefined barrels, inside the 100-1,000 predicted only just above it.
+//!
 //! # Planted bugs
 //!
 //! `L9_PLANT=<id>` (the run prints `MEASURED` and fails on purpose):
@@ -117,6 +170,26 @@
 //! | 9973 | `adjustAnimation` draws the speed factor between max and min |
 //! | 9974 | `getCurrentAnimFraction` divides by the frame count (no `- 1`) |
 //! | 9975 | the completed branch restarts a non-idle animation without `RESTART_ANIM_WHEN_COMPLETE` |
+//! | 9976 | `validateCachedBones` reads the live bones without writing (no evaluation of the live hierarchy) |
+//! | 9977 | `validateCachedBones` does not set the pose's animation in `MANUAL` |
+//! | 9978 | `validateCachedBones` does not set the scale transform before reading |
+//! | 9979 | `validateTurretInfo` finds the pitch bone by the angle key |
+//! | 9980 | `turretNamesDiffer` always true (the render object always made again) |
+//! | 9981 | `handleClientTurretPositioning` leaves out `TurretArtAngle` |
+//! | 9982 | `handleClientTurretPositioning` pitches by `+pitch` |
+//! | 9983 | `handleClientRecoil`'s muzzle flash hidden inverted |
+//! | 9984 | `handleClientRecoil` does not damp the rate |
+//! | 9985 | `handleClientRecoil`'s settle never reaches idle |
+//! | 9986 | `handleClientRecoil` ignores `MaxRecoilDistance` |
+//! | 9987 | `rebuildWeaponRecoilInfo` keeps the old recoils |
+//! | 9988 | `setModelState` does not hide the muzzle flashes |
+//! | 9989 | `handleClientRecoil` ignores `TINY_RECOIL` |
+//! | 9990 | `handleWeaponFireFX` always fires barrel 0 |
+//! | 9991 | `handleWeaponFireFX` does not ask the bone of a hidden render object without an object |
+//! | 9992 | `handleWeaponFireFX` starts the recoil in `RECOIL`, not `RECOIL_START` |
+//! | 9993 | `handleWeaponFireFX` does not show the muzzle flash |
+//! | 9994 | `validateWeaponBarrelInfo` drops the shared-FX-bone special case |
+//! | 9995 | `setModelState` does not call `hideAllHeadlights` |
 
 mod support;
 
@@ -124,7 +197,7 @@ use std::sync::Arc;
 
 use rts_lockstep_engine::client::particle_sys::ParticleSystemManager;
 use rts_lockstep_engine::client::w3d_model_draw::{
-    anim_mode_index, is_any_maintain_frame_flag_set, scale_render_obj_hierarchy, AnimData, AnimHandle, DrawEnv, DrawFacts, DrawParticles, Skeleton, StateRef, W3DModelDraw,
+    anim_mode_index, is_any_maintain_frame_flag_set, scale_render_obj_hierarchy, AnimData, AnimHandle, DrawEnv, DrawFacts, DrawParticles, Skeleton, SkeletonSubObject, StateRef, W3DModelDraw,
     W3DModelDrawModuleData, W3dAssetSource, THE_ANIM_MODE_NAMES,
 };
 use rts_lockstep_engine::common::model_state::{ModelConditionFlags, MODEL_CONDITION_NAMES};
@@ -186,8 +259,27 @@ const DISTANCES: [f32; 4] = [0.0, 5.0, 12.5, 30.0];
 /// The wrapper's index for an animation that is not in the file.
 const MISSING_ANIM: i32 = 99;
 
-const HEADER: usize = 6 + 4 + 1 + 4 * (5 + 1 + 3 * 3 + 1 + 3 * 2);
+/// The #181 item 7 header, then (#181 item 7b) the recoil numbers, the sub-objects, the standard and extra public
+/// bones, and each state's turrets and weapon bones.
+const HEADER_7: usize = 6 + 4 + 1 + 4 * (5 + 1 + 3 * 3 + 1 + 3 * 2);
+const HEADER: usize = HEADER_7 + 4 + 1 + 4 * 3 + 3 + 3 + 4 * (1 + MAX_TURRETS * 4 + 3 * 4);
 const STEP: usize = 14;
+const MAX_TURRETS: usize = 2;
+/// (#181 item 7b) The wrapper's `WEAPON_NAMES`: turret, weapon and public bone names (`NO_LINE`: the line not written).
+const WEAPON_NAMES: [&str; 9] = ["TURRET", "PITCH", "BARREL", "MUZZLE", "FX", "B1", "B3", "NOSUCH", "None"];
+const NO_LINE: i32 = 9;
+/// The pivots' names other than `B<i>`: turrets, barrels, muzzle flashes and FX bones, numbered or not.
+const PIVOT_NAMES: [&str; 12] = ["TURRET", "PITCH", "BARREL", "BARREL01", "BARREL02", "MUZZLE", "MUZZLE01", "MUZZLE02", "FX", "FX01", "FX02", "B3"];
+const SLOT_NAMES: [&str; 3] = ["PRIMARY", "SECONDARY", "TERTIARY"];
+const WEAPON_FIELDS: [&str; 4] = ["WeaponFireFXBone", "WeaponRecoilBone", "WeaponMuzzleFlash", "WeaponLaunchBone"];
+const TURRET_FIELDS: [[&str; 4]; MAX_TURRETS] =
+    [["Turret", "TurretArtAngle", "TurretPitch", "TurretArtPitch"], ["AltTurret", "AltTurretArtAngle", "AltTurretPitch", "AltTurretArtPitch"]];
+/// Art angles in degrees, and the recoil numbers, that print and parse back exactly.
+const ART_DEGREES: [f32; 6] = [0.0, 15.0, -30.0, 45.0, 90.0, 180.0];
+const RECOIL_SPEEDS: [f32; 5] = [0.0, 15.0, 30.0, 60.0, 90.0];
+const MAX_RECOILS: [f32; 4] = [0.5, 1.0, 2.0, 3.0];
+const DAMPINGS: [f32; 5] = [0.25, 0.5, 0.75, 0.9, 1.0];
+const SETTLES: [f32; 4] = [3.0, 6.0, 15.0, 30.0];
 
 // ---- the W3D file ----
 
@@ -226,9 +318,10 @@ fn quat(g: &mut Gen) -> [f32; 4] {
     q.map(|v| v / l)
 }
 
-/// The file and its animations' frame counts.
-fn gen_file(g: &mut Gen) -> (Vec<u8>, Vec<u32>) {
-    let npiv = 2 + g.below(5);
+/// The file, its animations' frame counts and (#181 item 7b) its pivots' names.
+fn gen_file(g: &mut Gen) -> (Vec<u8>, Vec<u32>, Vec<String>) {
+    let npiv = 2 + g.below(7);
+    let names: Vec<String> = (0..npiv).map(|i| if i == 0 || g.below(2) == 0 { format!("B{i}") } else { PIVOT_NAMES[g.below(12) as usize].to_string() }).collect();
     let mut f = Vec::new();
     // W3D_CHUNK_HIERARCHY: the header (version 4.1, name, pivot count, center) and the pivots
     let mut h = Vec::new();
@@ -241,7 +334,7 @@ fn gen_file(g: &mut Gen) -> (Vec<u8>, Vec<u32>) {
     let mut body = hchunk(W3D_CHUNK_HIERARCHY_HEADER, &h);
     let mut pb = Vec::new();
     for i in 0..npiv {
-        pb.extend_from_slice(&name16(format!("B{i}").as_bytes()));
+        pb.extend_from_slice(&name16(names[i as usize].as_bytes()));
         w32(&mut pb, if i == 0 { 0xFFFF_FFFF } else { g.below(i) });
         for _ in 0..3 {
             wf(&mut pb, g.uniform(-2.0, 2.0));
@@ -296,7 +389,7 @@ fn gen_file(g: &mut Gen) -> (Vec<u8>, Vec<u32>) {
         }
         f.extend(hchunk(W3D_CHUNK_ANIMATION, &body));
     }
-    (f, frames)
+    (f, frames, names)
 }
 
 /// The port's load of the file: the hierarchy and the raw animations (the port's default `Float_To_Long`, Win32's).
@@ -361,7 +454,7 @@ fn world(g: &mut Gen) -> [i32; 12] {
 
 /// One case: the file and the wrapper's words.
 fn random_case(g: &mut Gen) -> (Vec<u8>, Vec<i32>) {
-    let (file, frames) = gen_file(g);
+    let (file, frames, pivots) = gen_file(g);
     let nanims = frames.len() as u32;
     let mut w = Vec::new();
     w.push(g.u32() as i32);
@@ -414,23 +507,67 @@ fn random_case(g: &mut Gen) -> (Vec<u8>, Vec<i32>) {
             w.push(g.below(6) as i32);
         }
     }
+    assert_eq!(w.len(), HEADER_7);
+    // (#181 item 7b) InitialRecoilSpeed, MaxRecoilDistance, RecoilDamping, RecoilSettleSpeed (as written)
+    w.push(b(RECOIL_SPEEDS[g.below(5) as usize]));
+    w.push(b(MAX_RECOILS[g.below(4) as usize]));
+    w.push(b(DAMPINGS[g.below(5) as usize]));
+    w.push(b(SETTLES[g.below(4) as usize]));
+    // the sub-objects: on a muzzle-flash pivot 2 in 3 when there is one
+    let muzzles: Vec<u32> = (0..pivots.len() as u32).filter(|&i| pivots[i as usize].starts_with("MUZZLE")).collect();
+    w.push(g.below(5) as i32);
+    for _ in 0..4 {
+        w.push(if !muzzles.is_empty() && g.below(3) != 0 { muzzles[g.below(muzzles.len() as u32) as usize] } else { g.below(pivots.len() as u32) } as i32);
+        w.push(i32::from(g.below(3) == 0));
+        w.push(i32::from(g.below(5) == 0));
+    }
+    // the standard public bones, the ExtraPublicBone names
+    for _ in 0..2 {
+        w.push(g.below(3) as i32);
+        for _ in 0..2 {
+            w.push(g.below(9) as i32);
+        }
+    }
+    // each state: its own turrets (the default state always), 2 x (angle bone, pitch bone, art angle, art pitch); its
+    // weapon bones, 3 slots x (FX, recoil, muzzle flash, launch), a name or no line
+    for _ in 0..4 {
+        w.push(i32::from(g.below(2) == 0));
+        for _ in 0..MAX_TURRETS {
+            w.push(if g.below(3) == 0 { g.below(9) as i32 } else { [0, 1, 8][g.below(3) as usize] });
+            w.push(if g.below(3) == 0 { g.below(9) as i32 } else { [0, 1, 8][g.below(3) as usize] });
+            w.push(b(ART_DEGREES[g.below(6) as usize]));
+            w.push(b(ART_DEGREES[g.below(6) as usize]));
+        }
+        for _ in 0..3 {
+            for f in 0..4 {
+                w.push(match g.below(4) {
+                    0 | 1 => NO_LINE,
+                    _ if g.below(4) == 0 => g.below(9) as i32,
+                    _ => [4, 2, 3, 2][f],
+                });
+            }
+        }
+    }
     assert_eq!(w.len(), HEADER);
     for _ in 0..1 + g.below(60) {
         let mut s = [0i32; STEP];
         let op = match g.below(100) {
-            0..=7 => 0,
-            8..=32 => 1,
-            33..=52 => 2,
-            53..=67 => 3,
-            68..=70 => 4,
-            71..=74 => 5,
-            75..=78 => 6,
-            79..=83 => 7,
-            84..=87 => 8,
-            88..=89 => 9,
-            90..=91 => 10,
-            92..=94 => 11,
-            _ => 12,
+            0..=3 => 0,
+            4..=9 => 13,
+            10..=31 => 1,
+            32..=47 => 2,
+            48..=59 => 3,
+            60..=61 => 4,
+            62..=64 => 5,
+            65..=67 => 6,
+            68..=70 => 7,
+            71..=73 => 8,
+            74 => 9,
+            75..=76 => 10,
+            77..=78 => 11,
+            79..=82 => 12,
+            83..=95 => 14,
+            _ => 15,
         };
         s[0] = op;
         s[1] = match op {
@@ -448,6 +585,20 @@ fn random_case(g: &mut Gen) -> (Vec<u8>, Vec<i32>) {
         };
         match op {
             1 | 8 => s[2..].copy_from_slice(&world(g)),
+            // (#181 item 7b) the fire: a barrel (-1, 0..3 or 5), an FX list 3 in 4
+            14 => {
+                s[2] = [-1, 0, 0, 1, 2, 3, 5][g.below(7) as usize];
+                s[3] = i32::from(g.below(4) != 0);
+            }
+            // the AI 3 in 4, each turret 3 in 4, its angle and pitch
+            15 => {
+                s[2] = i32::from(g.below(4) != 0);
+                for t in 0..MAX_TURRETS {
+                    s[3 + 3 * t] = i32::from(g.below(4) != 0);
+                    s[4 + 3 * t] = b(g.uniform(-4.0, 4.0));
+                    s[5 + 3 * t] = b(g.uniform(-1.5, 1.5));
+                }
+            }
             6 => s[2] = b(if g.below(4) == 0 { 0.0 } else { g.uniform(0.0, 3.0) }),
             7 => {
                 // a turret's turn about Z, a pitch about Y, a recoil's shift along -X
@@ -472,6 +623,8 @@ fn random_case(g: &mut Gen) -> (Vec<u8>, Vec<i32>) {
 struct Assets {
     tree: HTree,
     anims: Vec<Arc<AnimData>>,
+    /// (#181 item 7b) The models' sub-objects (bone, hidden as made, a headlight), the wrapper's `g_subs`.
+    subs: Vec<(i32, bool, bool)>,
 }
 
 impl Assets {
@@ -490,7 +643,10 @@ impl W3dAssetSource for Assets {
         Some(AnimHandle { name: a.motion.name().to_vec(), num_frames: a.motion.get_num_frames(), frame_rate: get_frame_rate(&a.motion), data: Some(a.clone()) })
     }
     /// The render object's hierarchy as `Create_Render_Obj(name, scale, color)` makes it (`scale_render_obj_hierarchy`),
-    /// posed by `Base_Update` under `Matrix3D(true).Scale(scale)` (the pose is not asked outside a logic time).
+    /// posed by `Base_Update` under `Matrix3D(true).Scale(scale)`. (#181 item 7b) The pose asked is not applied: the
+    /// port's `validateCachedBones` reads the bones of the live render object it is given (the only kind this test
+    /// makes); only the sub-objects are read from here, and no requested name is a sub-object's. The sub-objects are the
+    /// wrapper's: `SKEL.SUBk` or `SKEL.HEADLIGHTk` on a bone (modulo the pivot count), hidden as made or not.
     fn skeleton(&mut self, name: &[u8], _pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
         self.create_render_obj(name)?;
         let mut tree = self.tree.clone();
@@ -498,7 +654,20 @@ impl W3dAssetSource for Assets {
         let mut root = Matrix3D::IDENTITY;
         root.scale(scale);
         tree.base_update(&root).expect("parents come first");
-        Some(Skeleton { bones: Skeleton::bones_of(&tree), sub_objects: Vec::new(), scale_factor: tree.scale_factor })
+        let n = tree.num_pivots;
+        let sub_objects = self
+            .subs
+            .iter()
+            .enumerate()
+            .map(|(k, &(bone, hidden, headlight))| SkeletonSubObject {
+                name: format!("SKEL.{}{k}", if headlight { "HEADLIGHT" } else { "SUB" }).into_bytes(),
+                bone_index: bone % n,
+                hidden,
+                transform: Matrix3D::IDENTITY,
+                linear_offset_materials: 0,
+            })
+            .collect();
+        Some(Skeleton { bones: Skeleton::bones_of(&tree), sub_objects, scale_factor: tree.scale_factor })
     }
 }
 
@@ -578,6 +747,39 @@ fn state_words(out: &mut Vec<i32>, m: &W3DModelDraw, mgr: &ParticleSystemManager
             for p in &pivots {
                 push_matrix(out, p);
             }
+            // (#181 item 7b) each sub-object's `Is_Hidden`
+            out.push(ro.sub_object_hidden.len() as i32);
+            out.extend(ro.sub_object_hidden.iter().map(|&h| h as i32));
+        }
+    }
+    // (#181 item 7b) the recoils, then each state's caches (the wrapper's)
+    for v in &m.weapon_recoil_info_vec {
+        out.push(v.len() as i32);
+        for r in v {
+            out.extend([r.state as i32, b(r.shift), b(r.recoil_rate)]);
+        }
+    }
+    for &i in states {
+        let st = m.data.state(&StateRef::Normal(i));
+        out.push(i32::from(st.pristine_bones_valid()) | i32::from(st.turrets_valid()) << 1 | i32::from(st.barrels_valid()) << 3);
+        let c = st.bone_cache();
+        out.push(c.pristine_bones.len() as i32);
+        for (name, info) in &c.pristine_bones {
+            out.push(name.len() as i32);
+            out.extend(name.iter().map(|&ch| i32::from(ch)));
+            out.push(info.bone_index);
+            push_matrix(out, &info.mtx);
+        }
+        for t in 0..MAX_TURRETS {
+            out.extend([c.turret_bones[t].0, c.turret_bones[t].1]);
+        }
+        for w in 0..3 {
+            out.push(c.weapon_barrel_info_vec[w].len() as i32);
+            for bi in &c.weapon_barrel_info_vec[w] {
+                out.extend([bi.recoil_bone, bi.fx_bone, bi.muzzle_flash_bone]);
+                push_matrix(out, &bi.projectile_offset_mtx);
+            }
+            out.push(i32::from(c.has_recoil_bones_or_muzzle_flashes[w]));
         }
     }
     out.extend(random.client.map(|x| x as i32));
@@ -594,6 +796,13 @@ thread_local! {
 static SYSTEMS_MADE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// The cases ended at a `setModelState` that is undefined upstream (see `rust_case`).
 static UNDEFINED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// (#181 item 7b) The cases ended at a fire whose barrel is the barrel count (undefined upstream), and the fires
+/// handled (an FX list played at a bone or the logic object).
+static UNDEFINED_BARREL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static FIRES_HANDLED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// (#181 item 7b) Draws whose state had valid turrets with a bone, and valid barrels with a recoil bone or muzzle flash.
+static TURRET_DRAWS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static RECOIL_DRAWS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// The client random values the last Rust case drew (the generator's counter word moved on).
 static RANDOM_DRAWN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// The last Rust case's draws with an animation playing (the render object in `SINGLE_ANIM` when `doDrawModule` ran).
@@ -603,7 +812,7 @@ static ANIMATED_DRAWS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU
 fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
     STEP_ENDS.with(|e| e.borrow_mut().clear());
     let (tree, anims) = rust_load(file);
-    let mut assets = Assets { tree, anims: anims.into_iter().map(|a| Arc::new(AnimData { motion: Arc::new(a), poses: Vec::new() })).collect() };
+    let mut assets = Assets { tree, anims: anims.into_iter().map(|a| Arc::new(AnimData { motion: Arc::new(a), poses: Vec::new() })).collect(), subs: Vec::new() };
     let mut k = 0;
     let mut next = || {
         k += 1;
@@ -630,7 +839,9 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
         line(0, "AnimationsRequirePower", if require_power { "Yes" } else { "No" }),
     ];
     let names: Vec<String> = assets.anims.iter().map(|a| String::from_utf8(a.motion.name().to_vec()).expect("ASCII")).collect();
+    let mut state_lines: Vec<Vec<ClientLine>> = Vec::new();
     for (si, bit) in STATE_BITS.iter().enumerate() {
+        let mut lines = Vec::new();
         let model = next() as usize;
         let mode = next() as usize;
         let fl = next();
@@ -655,9 +866,6 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
                 bones.push(format!("{} {}", BONE_NAMES[bone], TEMPLATE_NAMES[tmpl]));
             }
         }
-        if si >= nstates {
-            continue;
-        }
         lines.push(if si == 0 { line(0, "DefaultConditionState", "") } else { line(0, "ConditionState", bit) });
         lines.push(line(1, "Model", MODEL_NAMES[model]));
         lines.push(line(1, "AnimationMode", THE_ANIM_MODE_NAMES[mode]));
@@ -668,7 +876,58 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
         for bl in &bones {
             lines.push(line(1, "ParticleSysBone", bl));
         }
+        state_lines.push(lines);
     }
+    // (#181 item 7b) the recoil numbers, the sub-objects, the standard public bones, ExtraPublicBone, then each state's
+    // turret and weapon bone lines (see the wrapper)
+    for (field, v) in ["InitialRecoilSpeed", "MaxRecoilDistance", "RecoilDamping", "RecoilSettleSpeed"].iter().zip([r(next()), r(next()), r(next()), r(next())]) {
+        lines.push(line(0, field, &format!("{v:?}")));
+    }
+    let nsubs = next() as usize;
+    for k in 0..4 {
+        let (bone, hidden, headlight) = (next(), next() != 0, next() != 0);
+        if k < nsubs {
+            assets.subs.push((bone, hidden, headlight));
+        }
+    }
+    let mut standard = Vec::new();
+    let mut extra = Vec::new();
+    for list in [&mut standard, &mut extra] {
+        let n = next() as usize;
+        for i in 0..2 {
+            let c = next() as usize;
+            if i < n {
+                list.push(WEAPON_NAMES[c]);
+            }
+        }
+    }
+    if !extra.is_empty() {
+        lines.push(line(0, "ExtraPublicBone", &extra.join(" ")));
+    }
+    for (si, sl) in state_lines.iter_mut().enumerate() {
+        let own_turrets = next() != 0 || si == 0;
+        for tf in &TURRET_FIELDS {
+            let (ac, pc, aa, pa) = (next() as usize, next() as usize, r(next()), r(next()));
+            if own_turrets {
+                sl.push(line(1, tf[0], WEAPON_NAMES[ac]));
+                sl.push(line(1, tf[1], &format!("{aa:?}")));
+                sl.push(line(1, tf[2], WEAPON_NAMES[pc]));
+                sl.push(line(1, tf[3], &format!("{pa:?}")));
+            }
+        }
+        for slot in SLOT_NAMES {
+            for field in WEAPON_FIELDS {
+                let c = next();
+                if c != NO_LINE {
+                    sl.push(line(1, field, &format!("{slot} {}", WEAPON_NAMES[c as usize])));
+                }
+            }
+        }
+    }
+    for sl in state_lines.into_iter().take(nstates) {
+        lines.extend(sl);
+    }
+    let standard_public_bones: Arc<Vec<Vec<u8>>> = Arc::new(standard.iter().map(|n| n.as_bytes().to_vec()).collect());
     let block = ClientModuleData { module_tag_name_key: Default::default(), lines };
     BLOCK.with(|t| *t.borrow_mut() = String::from_utf8_lossy(&rts_lockstep_engine::client::w3d_model_draw::client_block_text(&block)).into_owned());
     let data = match W3DModelDrawModuleData::parse(b"W3DModelDraw", &block) {
@@ -682,14 +941,18 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
     let mut out = Vec::new();
     let mut m = {
         let mut env = DrawEnv { assets: &mut assets, random: &mut random, sync_time: now, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
-        W3DModelDraw::new_scaled(data.clone(), 0, false, false, scale, Arc::new(Vec::new()), &mut env).expect("an idle state")
+        W3DModelDraw::new_scaled(data.clone(), 0, false, false, scale, standard_public_bones, &mut env).expect("an idle state")
     };
     m.drawable_id = drawable_id;
     let (mut should_animate, mut has_object, mut speed) = (true, false, 0.0f32);
+    // (#181 item 7b) the object's AI and its turrets; the drawable's transform (the logic object's, see the wrapper)
+    let mut has_ai = false;
+    let mut ai_turrets: [Option<(f32, f32)>; MAX_TURRETS] = [None, None];
+    let mut drawable_tf = Matrix3D::IDENTITY;
     state_words(&mut out, &m, &mgr, &states, &assets, &random);
     for s in w[k..].chunks_exact(STEP) {
         match s[0] {
-            0 => {
+            0 | 13 => {
                 let new_state = StateRef::Normal(states[(s[1] as u32 % nstates as u32) as usize]);
                 // `getCurrentAnimFraction` reads uninitialised locals upstream when the render object plays no animation
                 // (`Peek_Animation_And_Info` answers NULL) under a maintain-frame state: undefined, the case ends there
@@ -701,16 +964,18 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
                     UNDEFINED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     break;
                 }
-                let mut env = DrawEnv { assets: &mut assets, random: &mut random, sync_time: now, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
+                // (#181 item 7b) 13: inside the logic's update
+                let mut env = DrawEnv { assets: &mut assets, random: &mut random, sync_time: now, logic_time: s[0] == 13, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
                 m.set_model_state(new_state, &mut env);
             }
             1 => {
                 let world = matrix(&s[2..]);
+                drawable_tf = world;
                 let facts = DrawFacts {
                     should_animate_with_power: should_animate,
                     should_animate_without_power: should_animate,
                     speed: has_object.then_some(speed),
-                    turrets: [None, None],
+                    turrets: if has_object && has_ai { ai_turrets } else { [None, None] },
                     motion: None,
                     show_client_physics: true,
                     wheel_info: None,
@@ -721,6 +986,14 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
                     has_object,
                 };
                 animated_draws += u64::from(m.render_object.as_ref().is_some_and(|ro| ro.anim.is_some()));
+                if let Some(c) = m.get_cur_state() {
+                    if c.turrets_valid() && (0..MAX_TURRETS).any(|t| c.turret_bones(t) != (0, 0)) {
+                        TURRET_DRAWS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    if c.barrels_valid() && (0..3).any(|w| c.has_recoil_bones_or_muzzle_flashes(w)) {
+                        RECOIL_DRAWS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
                 let mut env = DrawEnv { assets: &mut assets, random: &mut random, sync_time: now, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
                 m.do_draw_module(&facts, &mut env);
             }
@@ -745,6 +1018,7 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
                 }
             }
             8 => {
+                drawable_tf = matrix(&s[2..]);
                 m.react_to_transform_change(&matrix(&s[2..]), None);
                 m.update_bones_for_client_particle_systems(Some(&mut mgr), now);
             }
@@ -779,6 +1053,35 @@ fn rust_case(file: &[u8], w: &[i32]) -> Vec<i32> {
                     let t = ro.get_bone_transform((s[1] as u32 % n) as i32, now);
                     out.push(600);
                     push_matrix(&mut out, &t);
+                }
+            }
+            14 => {
+                // (#181 item 7b) the fire; a barrel equal to the count is undefined upstream: the case ends ([701])
+                let wslot = (s[1] as u32 % 3) as usize;
+                let barrel = s[2];
+                let count = m.get_cur_state().filter(|c| c.barrels_valid()).map_or(0, |c| c.weapon_barrels(wslot).len());
+                if count > 0 && barrel == count as i32 {
+                    out.push(701);
+                    UNDEFINED_BARREL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    break;
+                }
+                let at = m.handle_weapon_fire_fx_at(wslot, barrel, s[3] != 0, has_object, now);
+                if let Some(at) = at {
+                    // `FXList::doFXPos` at the logic object (the drawable's transform here) or at the FX bone
+                    let mtx = if at.render_hidden { Some(drawable_tf) } else { at.bone_transform };
+                    if let Some(mtx) = mtx {
+                        let t = mtx.get_translation();
+                        out.extend([620, b(t.x), b(t.y), b(t.z)]);
+                        push_matrix(&mut out, &mtx);
+                    }
+                    FIRES_HANDLED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                out.extend([610, i32::from(at.is_some())]);
+            }
+            15 => {
+                has_ai = s[2] != 0;
+                for (t, slot) in ai_turrets.iter_mut().enumerate() {
+                    *slot = (s[3 + 3 * t] != 0).then(|| (r(s[4 + 3 * t]), r(s[5 + 3 * t])));
                 }
             }
             op => panic!("op {op}"),
@@ -864,10 +1167,16 @@ fn compare(name: &str, seed: u64, n: u64) -> (Check, [u64; 6]) {
 fn the_animated_draw_sequence_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (c, [steps, draws, animated, systems, drawn, max_ulp]) = compare("W3DModelDraw animated draw sequence", 0x181_0007, cases());
+    let ld = |a: &std::sync::atomic::AtomicU64| a.load(std::sync::atomic::Ordering::Relaxed);
     println!(
-        "W3DModelDraw animated: {} cases ({} ended where upstream is undefined), {steps} steps, {draws} draws ({animated} with an animation playing), {systems} particle systems made, {drawn} client random values drawn; max ULP among differing finite words {max_ulp}",
+        "W3DModelDraw animated: {} cases ({} ended where upstream is undefined: {} at a setModelState, {} at a fire's barrel), {steps} steps, {draws} draws ({animated} with an animation playing, {} with turret bones, {} with recoil bones or muzzle flashes), {} fires handled, {systems} particle systems made, {drawn} client random values drawn; max ULP among differing finite words {max_ulp}",
         cases(),
-        UNDEFINED.load(std::sync::atomic::Ordering::Relaxed)
+        ld(&UNDEFINED) + ld(&UNDEFINED_BARREL),
+        ld(&UNDEFINED),
+        ld(&UNDEFINED_BARREL),
+        ld(&TURRET_DRAWS),
+        ld(&RECOIL_DRAWS),
+        ld(&FIRES_HANDLED),
     );
     if planted() {
         c.report();
