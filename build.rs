@@ -1608,6 +1608,59 @@ mod differential {
             for (name, body) in asm_files {
                 std::fs::write(animobj_gen.join(name), format!("{head}{body}\n")).expect("write an animated-sound cut");
             }
+            // GitHub #181 item 3 (INIClass): WWLib's INI database, which AnimatedSoundMgrClass::Initialize reads
+            // w3danimsound.ini with (ops 53 and 59-60 of wrap_w3d_eval.cpp). VERBATIM cuts, each anchor asserted once (a
+            // cut to the end of its file asserts its start once); no text is edited:
+            // - ini_class.inc: INI.H's forward declarations and the class (INI.H:55-247);
+            // - ini_sup.inc: inisup.h's INIEntry and INISection;
+            // - ini_load.inc: ini.cpp's statics, ~INIEntry, ~INISection, Is_Loaded, Initialize, Shutdown, the three
+            //   constructors, the destructor, Clear, Get_Filename and the three Load (ini.cpp:122-595);
+            // - ini_find.inc: Find_Section, Section_Count, Entry_Count, Find_Entry, Get_Entry (ini.cpp:720-860);
+            // - ini_string.inc: Put_String (the merge branch's) and both Get_String (ini.cpp:1623-1787);
+            // - ini_find_entry.inc: INISection::Find_Entry (ini.cpp:2202-2212);
+            // - ini_tail.inc: Strip_Comments, CRC, DuplicateCRCError, Keep_Blank_Entries (ini.cpp:2304 to the end);
+            // - ini_readline.inc: readline.cpp's Read_Line(Straw &, char *, int, bool &);
+            // - ini_crc_h.inc, ini_crc.inc: CRC.H's CRC32 macro and class CRC; crc.cpp's _Table, Memory and String;
+            // - ini_nstrdup.inc: nstrdup.cpp's nstrdup (renamed by the wrapper's macro, as hanim's copy is).
+            let ini_cpp = read_upstream(ww.join("WWLib/ini.cpp"));
+            let ini_h = read_upstream(ww.join("WWLib/INI.H"));
+            let inisup_h = read_upstream(ww.join("WWLib/inisup.h"));
+            let readline_cpp = read_upstream(ww.join("WWLib/readline.cpp"));
+            let crc_h = read_upstream(ww.join("WWLib/CRC.H"));
+            let crc_cpp = read_upstream(ww.join("WWLib/crc.cpp"));
+            let nstrdup_cpp = read_upstream(ww.join("WWLib/nstrdup.cpp"));
+            let to_end = |text: &str, file: &str, from: &str| -> String {
+                assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                text[text.find(from).expect("from")..].to_string()
+            };
+            let ini_files = [
+                ("ini_class.inc", cut(&ini_h, "INI.H", "class PKey;\n", "\t\tstatic bool KeepBlankEntries;\n};", true)),
+                (
+                    "ini_sup.inc",
+                    cut(&inisup_h, "inisup.h", "struct INIEntry : public Node<INIEntry *> {", "\t\tINISection operator = (INISection const & rvalue);\n};", true),
+                ),
+                ("ini_load.inc", cut(&ini_cpp, "ini.cpp", "// Instance of the static variables.\n", "int INIClass::Save(FileClass & file) const", false)),
+                (
+                    "ini_find.inc",
+                    cut(&ini_cpp, "ini.cpp", "INISection * INIClass::Find_Section(char const * section) const", "unsigned INIClass::Enumerate_Entries(", false),
+                ),
+                ("ini_string.inc", cut(&ini_cpp, "ini.cpp", "bool INIClass::Put_String(char const * section,", "char *INIClass::Get_Alloc_String(", false)),
+                ("ini_find_entry.inc", cut(&ini_cpp, "ini.cpp", "INIEntry * INISection::Find_Entry(char const * entry) const", "bool INIClass::Put_PKey(PKey const & key)", false)),
+                ("ini_tail.inc", to_end(&ini_cpp, "ini.cpp", "void INIClass::Strip_Comments(char * buffer)")),
+                (
+                    "ini_readline.inc",
+                    cut(&readline_cpp, "readline.cpp", "int Read_Line(Straw & file, char * buffer, int len, bool & eof)", "int Read_Line(Straw & file, wchar_t * buffer", false),
+                ),
+                (
+                    "ini_crc_h.inc",
+                    cut(&crc_h, "CRC.H", "#define CRC32(c,crc)", "\tstatic unsigned long\tString( const char *string, unsigned long crc = 0 );\n};", true),
+                ),
+                ("ini_crc.inc", to_end(&crc_cpp, "crc.cpp", "unsigned long  CRC::_Table[ 256 ] =")),
+                ("ini_nstrdup.inc", to_end(&nstrdup_cpp, "nstrdup.cpp", "char * nstrdup(const char *str)")),
+            ];
+            for (name, body) in ini_files {
+                std::fs::write(animobj_gen.join(name), format!("{head}{body}\n")).expect("write an INIClass cut");
+            }
         }
         let mut evb = cc::Build::new();
         w3d_build(&mut evb, true);

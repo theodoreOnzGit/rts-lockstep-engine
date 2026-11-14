@@ -35,6 +35,7 @@ use rts_lockstep_engine::client::drawable::ClientDrawables;
 use rts_lockstep_engine::client::w3d_model_draw::{AnimHandle, DrawEnv, DrawParticles, Skeleton, W3dAssetSource, W3dFiles};
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::common::game_type::ObjectId;
+use rts_lockstep_engine::formats::w3d::animatedsoundmgr;
 use rts_lockstep_engine::formats::w3d::assetmgr::{AssetManager, W3dFileFactory};
 use rts_lockstep_engine::formats::w3d::part_buf::Ww3dClock;
 use rts_lockstep_engine::formats::w3d::part_emt::ParticleRandom;
@@ -52,9 +53,18 @@ pub struct Art<D: LocalDevice> {
 }
 
 impl<D: LocalDevice> Art<D> {
-    /// The game's asset manager (`W3DAssetManager`, the game's file search) over `fs`.
+    /// The game's asset manager (`W3DAssetManager`, the game's file search) over `fs`, and, as `WW3D::Init` does
+    /// (ww3d.cpp:312), `AnimatedSoundMgrClass::Initialize()`: the animation sounds' table read from `w3danimsound.ini`
+    /// through the same file search ([`animatedsoundmgr::initialize_file`], #181 item 3). The table is process-wide and
+    /// is not read again while it holds a list. A file whose contents upstream leaves undefined loads what was read before
+    /// that point (the error is reported on stderr). A browser whose bytes have not arrived yet reads no file here (not
+    /// retried).
     pub fn new(fs: FileSystem<D>) -> Self {
-        Art { fs, assets: AssetManager::new_game(W3dFileFactory::default()) }
+        let file_factory = W3dFileFactory::default();
+        if let Err(e) = animatedsoundmgr::initialize_file(&file_factory, &fs, None) {
+            eprintln!("w3danimsound.ini: {e}");
+        }
+        Art { fs, assets: AssetManager::new_game(file_factory) }
     }
 }
 
@@ -750,6 +760,20 @@ mod tests {
         d.insert(b"Art/W3D/soldier.w3d", model(b"SOLDIER", &[b"IDLE"]));
         d.insert(b"Art/W3D/soldierfr.w3d", model(b"SOLDIERFR", &[b"FIRE"]));
         FileSystem::new(d)
+    }
+
+    /// #181 item 3: the game's art, made, reads `w3danimsound.ini` from its files as `WW3D::Init` does. Predicted: the
+    /// art with the file names the bone of `ClientSnd.Walk`'s sounds (`FOOT`); the table is process-wide, so the names
+    /// are this test's own and the table is emptied after.
+    #[test]
+    fn the_art_reads_the_animation_sounds_table() {
+        use rts_lockstep_engine::formats::w3d::animatedsoundmgr as asm;
+        let mut d = MemoryDevice::new();
+        d.insert(b"w3danimsound.ini", b"[ClientSnd.Walk]\nBoneName=FOOT\nS1=4,step\n".to_vec());
+        asm::shutdown();
+        let _art = Art::new(FileSystem::new(d));
+        assert_eq!(asm::get_embedded_sound_name(Some(b"CLIENTSND.WALK")), Some(b"FOOT".to_vec()));
+        asm::shutdown();
     }
 
     /// The gate INI's `Object name` block renamed `Drawn<name>`, with `draw` (a `Draw` block) added.

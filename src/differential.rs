@@ -231,6 +231,27 @@ extern "C" {
         cap: c_int,
         log_len: *mut c_int,
     ) -> c_int;
+    // GitHub #181 item 3 (INIClass): WWLib/ini.cpp's INIClass on one text, and AnimatedSoundMgrClass::Initialize's
+    // table read through it (wrap_w3d_eval.cpp)
+    pub fn ref_iniclass_probe(
+        text: *const c_char,
+        len: c_int,
+        keep_blank: c_int,
+        probes: *const c_uchar,
+        plen: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
+    pub fn ref_iniclass_table(
+        text: *const c_char,
+        len: c_int,
+        available: c_int,
+        names: *const c_uchar,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
     // #19: the WWMath::Float_To_Long branch htree.cpp's raw fast path and
     // hrawanim.cpp use (0 portable `(long) f`, 1 the Win32 `fld`/`fistp`),
     // and that conversion itself (wrap_w3d.cpp)

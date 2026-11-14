@@ -83,6 +83,7 @@
 #include "wwstring.h"
 #include "hashtemplate.h"
 #include <string>
+#include <new>
 
 extern "C" {
 void *ref_w3d_ramfile_open(const char *data, int len);
@@ -296,12 +297,133 @@ char *strupr(char *s)
 	return s;
 }
 char *ref_strstr(const char *a, const char *b) { return (char *)strstr(a, b); }
+/* (#181 item 3, INIClass) strtrim copies a string over itself (`strcpy(buffer, source)` with `source` inside `buffer`),
+** which C leaves undefined. The MSVC CRT the game shipped with copies front to back, so the copy is what it reads;
+** glibc's vectorised strcpy does not (found by tests/differential_iniclass.rs: names with leading white space lost
+** bytes in the middle, "BoneName" became "BoneNe"). strtrim's cut therefore copies through this byte loop. */
+static char *ref_forward_strcpy(char *dst, const char *src)
+{
+	char *d = dst;
+	while ((*d++ = *src++) != 0) {}
+	return dst;
+}
+#define strcpy ref_forward_strcpy
 #include "asm_strtrim.inc"
+#undef strcpy
+
+/* ---- GitHub #181 item 3 (INIClass): WWLib's INI database, VERBATIM (cut by build.rs into w3d_animobj_gen, each
+** anchor asserted once, no text edited): INI.H's class (ini_class.inc), inisup.h's INIEntry and INISection
+** (ini_sup.inc), ini.cpp's statics, constructors, destructors, Clear, Get_Filename, the three Load (ini_load.inc),
+** Find_Section .. Get_Entry (ini_find.inc), Put_String and both Get_String (ini_string.inc), INISection::Find_Entry
+** (ini_find_entry.inc), Strip_Comments .. Keep_Blank_Entries (ini_tail.inc), readline.cpp's Read_Line(Straw &)
+** (ini_readline.inc), CRC.H's CRC32 and class CRC with crc.cpp's table, Memory and String (ini_crc_h.inc, ini_crc.inc),
+** and nstrdup.cpp (ini_nstrdup.inc, renamed ini_nstrdup by the macro below, as hanim's copy is). The real listnode.h
+** and index.h (with bsearch.h) are included. strtrim is the verbatim asm_strtrim.inc above.
+** Stand-ins (not upstream's text): the game's file (`GameFileClass` through `_TheFileFactory`: a FileClass over the
+** script's bytes, available or not), `FileStraw` and `CacheStraw` (each passes the file's bytes through, as theirs do),
+** `file_auto_ptr`, and `OutputDebugString`, which records DuplicateCRCError's message (`_snprintf` is snprintf: the
+** messages compared are shorter than its 512-byte buffer). ---- */
+#include "listnode.h"
+#include "index.h"
+
+/* The stand-ins' names (and WWLib's class CRC) are renamed for this file: other wrappers linked into the same tests
+** define the real FileFactoryClass, _TheFileFactory and file_auto_ptr (wrap_texture.cpp, wrap_w3d_assetmgr.cpp), and
+** GameEngine has a class CRC; one name for two definitions would let the linker merge their inline members. */
+#define FileFactoryClass IniFileFactoryClass
+#define _TheFileFactory ini_TheFileFactory
+#define file_auto_ptr ini_file_auto_ptr
+#define Straw IniStraw
+#define FileStraw IniFileStraw
+#define CacheStraw IniCacheStraw
+#define CRC IniCRC
+
+class IniMemFile : public FileClass
+{
+public:
+	std::string Name;
+	std::string Data;
+	bool Available;
+	size_t Pos;
+	IniMemFile() : Available(false), Pos(0) {}
+	virtual char const *File_Name(void) const { return Name.c_str(); }
+	virtual char const *Set_Name(char const *filename) { Name = filename; return Name.c_str(); }
+	virtual int Create(void) { return 0; }
+	virtual int Delete(void) { return 0; }
+	virtual bool Is_Available(int = false) { return Available; }
+	virtual bool Is_Open(void) const { return true; }
+	virtual int Open(char const *, int = READ) { Pos = 0; return Available; }
+	virtual int Open(int = READ) { Pos = 0; return Available; }
+	virtual int Read(void *buffer, int size)
+	{
+		if (!Available || size <= 0 || Pos >= Data.size()) return 0;
+		size_t n = Data.size() - Pos < (size_t)size ? Data.size() - Pos : (size_t)size;
+		memcpy(buffer, Data.data() + Pos, n);
+		Pos += n;
+		return (int)n;
+	}
+	virtual int Seek(int pos, int = SEEK_CUR) { return pos; }
+	virtual int Size(void) { return (int)Data.size(); }
+	virtual int Write(void const *, int) { return 0; }
+	virtual void Close(void) {}
+};
+class Straw
+{
+public:
+	virtual ~Straw(void) {}
+	virtual int Get(void *buffer, int slen) = 0;
+};
+class FileStraw : public Straw
+{
+public:
+	FileClass &File;
+	FileStraw(FileClass &file) : File(file) { File.Open(); }
+	virtual int Get(void *buffer, int slen) { return File.Read(buffer, slen); }
+};
+class CacheStraw : public Straw
+{
+public:
+	Straw *From;
+	CacheStraw() : From(NULL) {}
+	void Get_From(Straw &straw) { From = &straw; }
+	virtual int Get(void *buffer, int slen) { return From ? From->Get(buffer, slen) : 0; }
+};
+class FileFactoryClass
+{
+public:
+	IniMemFile File;
+	FileClass *Get_File(const char *filename) { File.Set_Name(filename); return &File; }
+	void Return_File(FileClass *) {}
+};
+static FileFactoryClass g_ini_factory;
+static FileFactoryClass *_TheFileFactory = &g_ini_factory;
+class file_auto_ptr
+{
+public:
+	FileClass *F;
+	file_auto_ptr(FileFactoryClass *fac, const char *filename) : F(fac->Get_File(filename)) {}
+	FileClass &operator*() { return *F; }
+};
+static std::vector<std::string> g_ini_debug;
+static void OutputDebugString(const char *s) { g_ini_debug.push_back(s); }
+#define _snprintf snprintf
+#define nstrdup ini_nstrdup
+#include "ini_nstrdup.inc"
+#include "ini_crc_h.inc"
+#include "ini_crc.inc"
+#include "ini_class.inc"
+#include "ini_sup.inc"
+#include "ini_readline.inc"
+#include "ini_load.inc"
+#include "ini_find.inc"
+#include "ini_string.inc"
+#include "ini_find_entry.inc"
+#include "ini_tail.inc"
+#undef nstrdup
+#undef _snprintf
 
 /* (#181 item 3) animatedsoundmgr.cpp calls its two file statics as `::Get_INI` and `::Build_List_From_String`; the
 ** cut is compiled in namespace ao, so these global forwarders (defined after it) reach ao's. */
-namespace ao { class INIClass; }
-ao::INIClass *Get_INI(const char *filename);
+INIClass *Get_INI(const char *filename);
 int Build_List_From_String(const char *buffer, const char *delimiter, StringClass **string_list);
 
 /* ---- GitHub #179: Animatable3DObjClass (see the header) ---- */
@@ -316,87 +438,16 @@ public:
 };
 
 /* (#181 item 3) AnimatedSoundMgrClass, SoundLibraryBridgeClass: verbatim (asm_class.inc, asm_bridge.inc, asm_body.inc,
-** cut by build.rs), compiled on stand-ins for what Initialize reads the INI with: `_TheFileFactory` (its file
-** available or not, by the script), and an INIClass holding the script's sections as INIClass::Load would leave them
-** (Get_Section_List, Entry_Count, Get_Entry, Get_String by name, the first of that name: the script's names are
-** distinct). The sound library is a recorder (g_rec), whose calls the driver logs after each op. */
+** cut by build.rs). ~~compiled on stand-ins for what Initialize reads the INI with: `_TheFileFactory` (its file
+** available or not, by the script), and an INIClass holding the script's sections as INIClass::Load would leave them~~
+** **Corrected 2026-11-14 (#181 item 3, INIClass):** Initialize reads the script's INI text (op 53) through the real
+** INIClass above and the stand-in file factory (its file available or not, by the script). The class's private
+** members are opened (`private` defined as `public` around asm_class.inc) so that op 60 can list the table. The
+** sound library is a recorder (g_rec), whose calls the driver logs after each op. */
 #include "asm_bridge.inc"
+#define private public
 #include "asm_class.inc"
-
-struct INISection
-{
-	char *Section;
-	INISection *NextSec;
-	bool Is_Valid(void) { return true; }
-	INISection *Next_Valid(void) { return NextSec; }
-};
-template <class T> class List
-{
-public:
-	T Head;
-	T First(void) { return Head; }
-};
-struct IniSec
-{
-	std::string name;
-	std::vector<std::pair<std::string, std::string> > entries;
-	INISection node;
-};
-bool g_ini_available;
-std::vector<IniSec> g_ini;
-
-class FileClass
-{
-public:
-	bool Is_Available(int = false) { return g_ini_available; }
-};
-class FileFactoryClass
-{
-public:
-	FileClass File;
-	FileClass *Get_File(const char *) { return &File; }
-	void Return_File(FileClass *) {}
-};
-FileFactoryClass g_factory;
-FileFactoryClass *_TheFileFactory = &g_factory;
-
-class INIClass
-{
-public:
-	List<INISection *> Sections;
-	INIClass(FileClass &)
-	{
-		Sections.Head = NULL;
-		for (size_t i = g_ini.size(); i-- > 0;) {
-			g_ini[i].node.Section = (char *)g_ini[i].name.c_str();
-			g_ini[i].node.NextSec = Sections.Head;
-			Sections.Head = &g_ini[i].node;
-		}
-	}
-	List<INISection *> &Get_Section_List(void) { return Sections; }
-	IniSec *Find(const char *section)
-	{
-		for (size_t i = 0; i < g_ini.size(); ++i) if (strcmp(g_ini[i].name.c_str(), section) == 0) return &g_ini[i];
-		return NULL;
-	}
-	int Entry_Count(const char *section) { IniSec *s = Find(section); return s ? (int)s->entries.size() : 0; }
-	const char *Get_Entry(const char *section, int index)
-	{
-		IniSec *s = Find(section);
-		return (s && index < (int)s->entries.size()) ? s->entries[index].first.c_str() : NULL;
-	}
-	const StringClass &Get_String(StringClass &new_string, const char *section, const char *entry, const char *defvalue = NULL)
-	{
-		IniSec *s = Find(section);
-		if (s) {
-			for (size_t i = 0; i < s->entries.size(); ++i) {
-				if (strcmp(s->entries[i].first.c_str(), entry) == 0) { defvalue = s->entries[i].second.c_str(); break; }
-			}
-		}
-		new_string = defvalue ? defvalue : "";
-		return new_string;
-	}
-};
+#undef private
 
 #define strstr ref_strstr
 #include "asm_body.inc"
@@ -547,7 +598,7 @@ void free_robjs()
 
 } /* namespace ao */
 
-ao::INIClass *Get_INI(const char *filename) { return ao::Get_INI(filename); }
+INIClass *Get_INI(const char *filename) { return ao::Get_INI(filename); }
 int Build_List_From_String(const char *buffer, const char *delimiter, StringClass **string_list)
 {
 	return ao::Build_List_From_String(buffer, delimiter, string_list);
@@ -917,20 +968,8 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 		** CurMotionMode, then 4 floats (SINGLE_ANIM: Frame, PrevFrame, 0, 0; DOUBLE_ANIM: Frame0, Frame1, PrevFrame0,
 		** PrevFrame1; else zeros). */
 		case 53: {
-			ao::g_ini_available = rd.u() != 0;
-			uint32_t nsec = rd.u();
-			ao::g_ini.clear();
-			for (uint32_t k = 0; k < nsec; ++k) {
-				ao::IniSec sec;
-				sec.name = rd_string(rd);
-				uint32_t ne = rd.u();
-				for (uint32_t e = 0; e < ne; ++e) {
-					std::string a = rd_string(rd);
-					std::string b = rd_string(rd);
-					sec.entries.push_back(std::make_pair(a, b));
-				}
-				ao::g_ini.push_back(sec);
-			}
+			g_ini_factory.File.Available = rd.u() != 0;
+			g_ini_factory.File.Data = rd_string(rd);
 			ao::AnimatedSoundMgrClass::Initialize();
 			break;
 		}
@@ -1017,7 +1056,7 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 	ao::AnimatedSoundMgrClass::Shutdown();
 	ao::AnimatedSoundMgrClass::Set_Sound_Library(NULL);
 	ao::g_sound_log = false;
-	ao::g_ini.clear();
+	g_ini_factory.File.Data.clear();
 	ao::free_robjs();
 	free_all();
 	forget_pool_blocks();
@@ -1025,6 +1064,146 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 	*log_len = n;
 	if (n > cap) n = cap;
 	if (n > 0) memcpy(log, &g_log[0], n);
+	return 0;
+}
+
+/* ---- GitHub #181 item 3 (INIClass): the INI database's getters on one text, and AnimatedSoundMgrClass::Initialize's
+** table from it (tests/differential_iniclass.rs reproduces both logs from the Rust). A string is logged as its length
+** and bytes; a NULL as the length 0xFFFFFFFF. ---- */
+static void ini_put_str(const char *v)
+{
+	if (v == NULL) { put32(0xFFFFFFFFu); return; }
+	put32((uint32_t)strlen(v));
+	put(v, strlen(v));
+}
+
+static void ini_log_copy(unsigned char *log, int cap, int *log_len)
+{
+	int n = (int)g_log.size();
+	*log_len = n;
+	if (n > cap) n = cap;
+	if (n > 0) memcpy(log, &g_log[0], n);
+}
+
+/* `INIClass ini(file)` on `text` (with Keep_Blank_Entries(keep_blank)), then: the second Load's answer
+** is not asked (Load is through the constructor, as Get_INI makes it), so first `Load(file)`'s answer on an empty
+** INIClass(); then Section_Count, Is_Loaded; the section list in
+** order, each by its name: Entry_Count, Get_Entry(-1 .. count), Get_String of each entry and of each probe entry
+** (default "DEF"); for each probe section: Section_Present, Entry_Count, Get_Entry(0), Get_String of each probe entry;
+** the DuplicateCRCError messages. `probes`: nsec, the sections, nent, the entries (each a u32 length and bytes). */
+int ref_iniclass_probe(const char *text, int len, int keep_blank, const unsigned char *probes, int plen, unsigned char *log, int cap, int *log_len)
+{
+	g_log.clear();
+	g_ini_debug.clear();
+	std::vector<std::string> psec, pent;
+	{
+		int at = 0;
+		uint32_t k, n;
+		std::vector<std::string> *lists[2] = { &psec, &pent };
+		for (int l = 0; l < 2; ++l) {
+			memcpy(&n, probes + at, 4); at += 4;
+			for (k = 0; k < n; ++k) {
+				uint32_t m; memcpy(&m, probes + at, 4); at += 4;
+				lists[l]->push_back(std::string((const char *)probes + at, m)); at += m;
+			}
+		}
+		(void)plen;
+	}
+	INIClass::Keep_Blank_Entries(keep_blank != 0);
+	g_ini_factory.File.Available = true;
+	g_ini_factory.File.Data.assign(text, (size_t)len);
+	FileClass *file = _TheFileFactory->Get_File("probe.ini");
+	{
+		/* Load's answer, on a database made empty */
+		INIClass fresh;
+		put8(fresh.Load(*file) ? 1 : 0);
+	}
+	g_ini_debug.clear();
+	INIClass *ini = new INIClass(*file);
+	_TheFileFactory->Return_File(file);
+	put32((uint32_t)ini->Section_Count());
+	put8(ini->Is_Loaded() ? 1 : 0);
+	List<INISection *> &section_list = ini->Get_Section_List();
+	uint32_t count = 0;
+	for (INISection *section = section_list.First(); section != NULL && section->Is_Valid(); section = section->Next_Valid()) ++count;
+	put32(count);
+	for (INISection *section = section_list.First(); section != NULL && section->Is_Valid(); section = section->Next_Valid()) {
+		ini_put_str(section->Section);
+		int n = ini->Entry_Count(section->Section);
+		put32((uint32_t)n);
+		for (int i = -1; i <= n; ++i) ini_put_str(ini->Get_Entry(section->Section, i));
+		for (int i = 0; i < n; ++i) {
+			StringClass value;
+			const char *e = ini->Get_Entry(section->Section, i);
+			ini_put_str(ini->Get_String(value, section->Section, e, "DEF").Peek_Buffer());
+		}
+		for (size_t p = 0; p < pent.size(); ++p) {
+			StringClass value;
+			ini_put_str(ini->Get_String(value, section->Section, pent[p].c_str(), "DEF").Peek_Buffer());
+		}
+	}
+	for (size_t q = 0; q < psec.size(); ++q) {
+		const char *sn = psec[q].c_str();
+		put8(ini->Section_Present(sn) ? 1 : 0);
+		put32((uint32_t)ini->Entry_Count(sn));
+		ini_put_str(ini->Get_Entry(sn, 0));
+		for (size_t p = 0; p < pent.size(); ++p) {
+			StringClass value;
+			ini_put_str(ini->Get_String(value, sn, pent[p].c_str(), "DEF").Peek_Buffer());
+		}
+	}
+	put32((uint32_t)g_ini_debug.size());
+	for (size_t d = 0; d < g_ini_debug.size(); ++d) ini_put_str(g_ini_debug[d].c_str());
+	delete ini;
+	INIClass::Keep_Blank_Entries(false);
+	g_ini_factory.File.Data.clear();
+	ini_log_copy(log, cap, log_len);
+	return 0;
+}
+
+/* AnimatedSoundMgrClass::Initialize() reading `text` as w3danimsound.ini (available or not), then its table:
+** AnimSoundLists in order (BoneName, then each sound's Frame, SoundName, Is2D, IsStop), and for each name in `names`
+** (u32 count, then each a u32 length and bytes) the position in AnimSoundLists of AnimationNameHash.Get(name), or -1.
+** Then Shutdown. */
+int ref_iniclass_table(const char *text, int len, int available, const unsigned char *names, unsigned char *log, int cap, int *log_len)
+{
+	g_log.clear();
+	/* the statics as at the process's start (the Rust's reset_statics): the hash table rebuilt empty, size 0 */
+	ao::AnimatedSoundMgrClass::Shutdown();
+	ao::AnimatedSoundMgrClass::AnimationNameHash.~HashTemplateClass();
+	new (&ao::AnimatedSoundMgrClass::AnimationNameHash) HashTemplateClass<StringClass, ao::AnimatedSoundMgrClass::ANIM_SOUND_LIST *>();
+	ao::AnimatedSoundMgrClass::Set_Sound_Library(NULL);
+	g_ini_factory.File.Available = available != 0;
+	g_ini_factory.File.Data.assign(text, (size_t)len);
+	ao::AnimatedSoundMgrClass::Initialize();
+	DynamicVectorClass<ao::AnimatedSoundMgrClass::ANIM_SOUND_LIST *> &lists = ao::AnimatedSoundMgrClass::AnimSoundLists;
+	put32((uint32_t)lists.Count());
+	for (int i = 0; i < lists.Count(); ++i) {
+		ini_put_str(lists[i]->BoneName.Peek_Buffer());
+		put32((uint32_t)lists[i]->List.Count());
+		for (int k = 0; k < lists[i]->List.Count(); ++k) {
+			ao::AnimatedSoundMgrClass::ANIM_SOUND_INFO *info = lists[i]->List[k];
+			put32((uint32_t)info->Frame);
+			ini_put_str(info->SoundName.Peek_Buffer());
+			put8(info->Is2D ? 1 : 0);
+			put8(info->IsStop ? 1 : 0);
+		}
+	}
+	uint32_t n;
+	int at = 0;
+	memcpy(&n, names, 4); at += 4;
+	for (uint32_t k = 0; k < n; ++k) {
+		uint32_t m; memcpy(&m, names + at, 4); at += 4;
+		StringClass name(std::string((const char *)names + at, m).c_str());
+		at += m;
+		ao::AnimatedSoundMgrClass::ANIM_SOUND_LIST *l = ao::AnimatedSoundMgrClass::AnimationNameHash.Get(name);
+		int pos = -1;
+		for (int i = 0; i < lists.Count(); ++i) if (lists[i] == l) pos = i;
+		put32((uint32_t)pos);
+	}
+	ao::AnimatedSoundMgrClass::Shutdown();
+	g_ini_factory.File.Data.clear();
+	ini_log_copy(log, cap, log_len);
 	return 0;
 }
 

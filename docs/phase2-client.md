@@ -565,18 +565,66 @@ removal.**
   and a single after a blend (was the frame before the blend; upstream 0, `Motion1` nulled by `Release()`).
 - **Differential:** build.rs cuts animatedsoundmgr.h's class, the whole of animatedsoundmgr.cpp after its includes,
   soundlibrarybridge.h's class and trim.cpp's `strtrim`, each anchor asserted once, with one edit asserted once (the
-  MSVC for-scope `entry` of `Build_List_From_String`). `wrap_w3d_eval.cpp` compiles them on an `INIClass` stand-in and
-  a recorder; ops 53-58. Test `embedded_sounds_match_upstream` (generator `sound_script`).
+  MSVC for-scope `entry` of `Build_List_From_String`). `wrap_w3d_eval.cpp` compiles them on ~~an `INIClass` stand-in~~
+  **Corrected 2026-11-14 (#181 item 3, INIClass):** the real `INIClass` (see the entry below) and a recorder; ops 53-58. Test `embedded_sounds_match_upstream` (generator `sound_script`).
 - **Predicted** (`issue181i3_predictions.md`): mismatches at first, 1-3 rounds of fixes. **Result:** 0 mismatches from
   the first run (a miss). 20,000 files, 557,858 of 738,455 ops compared, 17,333 sound calls (7,188 stop, 3,101 2D, 7,044
   3D), **0 mismatches, max ULP 0**. The rest of `differential_w3d` unchanged (39 tests, 0 mismatches);
   `differential_model_draw_anim` 20,000, 0; lib 1,241 passed; client 102 passed; gate (a) PASS, last CRC `0bf44067`.
 - **Plants** 10056-10075: 20 of 20 caught (counts in the test's doc comment); 10065 crashes the C++ past 150 cases (12 of
   150), 10063 is caught by the lib tests.
-- **Not done (gaps):** `INIClass` is not translated (`initialize` takes parsed sections) and nothing in the client loads
-  the table; the bone index lives on `AnimData`, so separately made handles do not share it; a non-NULL pointer read as a
-  float is taken as 0.0; the 32-bit union layout is lib-tested only; duplicate section names, `atoi` overflow and a bridge
+- **Not done (gaps):** ~~`INIClass` is not translated (`initialize` takes parsed sections) and nothing in the client loads
+  the table~~ **Corrected 2026-11-14 (#181 item 3, INIClass):** translated, and the client's art loads the table (entry
+  below); the bone index lives on `AnimData`, so separately made handles do not share it; a non-NULL pointer read as a
+  float is taken as 0.0; the 32-bit union layout is lib-tested only; ~~duplicate section names,~~ **(duplicate section
+  names compared since, entry below; they exposed the hash defect fixed there)** `atoi` overflow and a bridge
   to the client's audio are not done.
+
+**#181 item 3, the `INIClass` gap (2026-11-14): `w3danimsound.ini` read through WWLib's INI database.**
+- **Upstream read first:** WWLib ini.cpp (`Load(FileClass &)`, `Load(Straw &)`, `Find_Section`, `Section_Count`,
+  `Entry_Count`, `Find_Entry`, `Get_Entry`, `Get_String`, `Strip_Comments`, `CRC`, `DuplicateCRCError`), INI.H, inisup.h,
+  INDEX.H (`IndexClass`: `qsort` then BSEARCH.H's `Binary_Search`, an "archive" cache), LISTNODE.H, readline.cpp, trim.cpp,
+  crc.cpp, hashtemplate.h, and animatedsoundmgr.cpp's `Get_INI` and `Initialize`. What `Load` does: lines of at most
+  4,095 bytes, every `\r` dropped, trimmed (strtrim's `*source` quirk included); nothing before the first `[...]` line,
+  and **`Load` returns false if the file ends during that scan** (a last-line section header with no newline is never
+  read); a section line is checked before comments are stripped (`[a;b]` is a section); comments cut at the first `;`;
+  `=v`, `k=` (unless `Keep_Blank_Entries`, never called in Zero Hour) and lines with no `=` skipped; **duplicates by
+  CRC-32, first kept** (two different names with one CRC are duplicates), with `DuplicateCRCError` (a `MessageBox` in the
+  Windows release build); **sections never merged** (a second `[A]` is a second section, both under one index ID); empty
+  sections dropped. `Initialize` iterates the section list but reads each section's entries **by its name**, so both
+  `[A]`s read the one `Find_Section` finds.
+- **Port:** `ww::ini` (new: `IniClass`, `IniSection`, `IniEntry`, `IndexClass`, `crc`, `strip_comments`), `ww::trim`
+  (`strtrim` moved from `animatedsoundmgr`). `animatedsoundmgr::initialize` now takes an `IniClass` and reads it through
+  the getters, as upstream; new `get_ini` and `initialize_file` (the whole `Initialize`: the file through
+  `W3dFileFactory` over the port's `FileSystem`, the W3D assets' path); the client's `Art::new` calls it, as `WW3D::Init`
+  does. **`AnimationNameHash` is now upstream's `HashTemplateClass`** (`NameHash`, a port defect fixed, below).
+- **Differential:** build.rs cuts ini.cpp (five pieces), INI.H's class, inisup.h's structs, readline.cpp's `Read_Line`,
+  CRC.H/crc.cpp and nstrdup.cpp verbatim, each anchor asserted once; the real listnode.h and index.h are included.
+  `wrap_w3d_eval.cpp` replaces its `INIClass` stand-in with them (stand-ins remain only for the file, `FileStraw`,
+  `CacheStraw`, `OutputDebugString`). Op 53 now sends the table as INI text read by both sides. New test
+  `tests/differential_iniclass.rs` (`ref_iniclass_probe`, `ref_iniclass_table`).
+- **Predicted** (`iniclass_predictions.md`): 0-2 mismatch classes, most likely duplicate sections; table 0. **Result:** two
+  classes, neither predicted. (1) The harness: strtrim's self-overlapping `strcpy` under glibc lost bytes ("BoneName" ->
+  "BoneNe", 61 of 2,000 cases); MSVC's and the port's copy front to back, so the harness now compiles strtrim's cut with a
+  front-to-back copy. (2) **A port defect**: the old map answered the later of two lists with one upper-case name; upstream's
+  hash, after a `Re_Hash`, answers the earlier. Ablation: the old behaviour gives 1,217 of 14,603 tables mismatching.
+  Duplicate sections themselves matched first time (the stable sort = glibc 2.39's merge-sort `qsort`).
+  **Final: 20,000 texts (57,476 sections, 135,474 entries, 23,119 duplicates dropped), 0 mismatches in the getters;
+  14,632 tables compared (5,368 undefined, not given to the C++), 34,883 sound lists, 0 mismatches.**
+  `differential_w3d` 41 tests, 0 mismatches (`embedded_sounds_match_upstream` through the real `INIClass`: 20,000
+  files, 582,305 ops, 18,548 sound calls); lib 1,270 passed; client 108 passed; gate (a) PASS, last CRC `0bf44067`.
+- **Plants** 10236-10255 (mismatching cases of 20,000): 10236 `\r` kept 7,973; 10237 one byte more per line 4,761; 10238
+  no false return from the scan 2,193; 10239 name cut at the last `]` 8,589; 10240 no trim after a comment 2,909; 10241
+  blank entries kept 9,927; 10242 `Get_String` ignores its default 20,000; 10243 value untrimmed 16,719; 10244 duplicates
+  by name not CRC 3,105; 10245 the later duplicate kept 13,994; 10246 empty sections kept 15,562; 10247 equal IDs reversed
+  8,111; 10248 the first of an equal run 6,149; 10249 `Get_Entry` from 1 16,874; 10250 entries without case 14,533; 10251
+  sections without case 13,950; 10252 `Initialize` reads the listed section's own entries 3,397; 10253 a NUL ends the
+  line 4,003; 10254 `]` must end a section line 12,296; 10255 entry name untrimmed 18,318. **20 of 20 caught**, none
+  crashed (planted runs keep from the C++ the sound tables a planted Rust might misjudge).
+- **Not done (gaps):** `Load`'s merge branch and every other `INIClass` member; MSVC's `qsort` order for equal section
+  IDs (the port is stable, as glibc's); `KeepBlankEntries` per database, not static; the browser reads the file only if
+  its bytes are there when the art is made; the owner's `w3danimsound.ini` (test `the_owner_s_w3danimsound_ini_loads`,
+  `RTS_ZH_DIR`) was not run here, so whether the archives hold the file is still unknown.
 
 **#18 (2026-11-14, GitHub #18, #181 item 6): `Animatable3DObjClass` in `MULTIPLE_ANIM` against upstream; the combo
 kept as the caller's pointer.**

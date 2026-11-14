@@ -4514,6 +4514,7 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
 }
 
 use rts_lockstep_engine::formats::w3d::animatedsoundmgr as asm;
+use rts_lockstep_engine::ww::ini::IniClass;
 
 /// (#181 item 3) The recorded calls the Rust made (stop, 2D, 3D), for the test's report.
 static SOUND_CALLS: [std::sync::atomic::AtomicU64; 3] =
@@ -4538,15 +4539,10 @@ fn rust_sound_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op:
     match op {
         53 => {
             let avail = r.u() != 0;
-            let nsec = r.u();
-            let mut ini = Vec::new();
-            for _ in 0..nsec {
-                let section = rd_string(r);
-                let ne = r.u();
-                let entries = (0..ne).map(|_| (rd_string(r), rd_string(r))).collect();
-                ini.push(asm::IniSection { section, entries });
-            }
-            asm::initialize(avail.then_some(&ini[..]))?;
+            let text = rd_string(r);
+            // (#181 item 3, INIClass) Get_INI: an INIClass loaded from the file when it is available
+            let ini = IniClass::from_file(b"w3danimsound.ini", Some(&text)).map_err(|_| W3dError::Unsupported("INIClass merge"))?;
+            asm::initialize(avail.then_some(&ini))?;
         }
         54 => {
             robj_anim_datas(w);
@@ -4824,16 +4820,10 @@ fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
             52 => 1,
             // (#181 item 3)
             53 => {
+                // (INIClass) the file's availability, then its text
                 let mut r = ScriptReader { s: script, i: i + 1 };
                 r.u();
-                let nsec = r.u();
-                for _ in 0..nsec {
-                    rd_string(&mut r);
-                    let ne = r.u();
-                    for _ in 0..2 * ne {
-                        rd_string(&mut r);
-                    }
-                }
+                rd_string(&mut r);
                 (r.i - i - 1) / 4
             }
             54 | 56 => 0,
@@ -6313,10 +6303,18 @@ fn sound_ini(g: &mut Gn, w: &EvalWorld, s: &mut Vec<u8>) {
     }
     let mut seen = std::collections::BTreeSet::new();
     names.retain(|n| seen.insert(n.to_ascii_uppercase()));
-    w32(s, names.len() as u32);
+    // (#181 item 3, INIClass) the table goes as an INI text, which both sides read with INIClass
+    let mut text: Vec<u8> = Vec::new();
     let pivot_names: Vec<Vec<u8>> = w.trees.iter().flat_map(|t| t.pivots.iter().map(|p| p.name.iter().take_while(|&&c| c != 0).copied().collect::<Vec<u8>>())).collect();
     for n in names {
-        w_string(s, &n);
+        let pad = |g: &mut Gn| -> &'static [u8] { [&b""[..], b" ", b"\t", b"  "][g.below(4) as usize] };
+        if g.below(10) == 0 {
+            text.extend_from_slice(b"; a comment\r\n");
+        }
+        text.extend_from_slice(pad(g));
+        text.push(b'[');
+        text.extend_from_slice(&n);
+        text.extend_from_slice(b"]\n");
         let nf = w.anims.iter().find(|(a, _)| a.name().eq_ignore_ascii_case(&n)).map_or(10, |(a, _)| a.get_num_frames());
         let mut entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         if g.below(3) == 0 {
@@ -6360,12 +6358,19 @@ fn sound_ini(g: &mut Gn, w: &EvalWorld, s: &mut Vec<u8>) {
         if g.below(4) == 0 && entries.len() > 1 {
             entries.rotate_left(1);
         }
-        w32(s, entries.len() as u32);
         for (e, v) in entries {
-            w_string(s, &e);
-            w_string(s, &v);
+            text.extend_from_slice(pad(g));
+            text.extend_from_slice(&e);
+            text.extend_from_slice(pad(g));
+            text.push(b'=');
+            text.extend_from_slice(&v);
+            if g.below(8) == 0 {
+                text.extend_from_slice(b" ; note");
+            }
+            text.extend_from_slice(if g.coin() { &b"\r\n"[..] } else { b"\n" });
         }
     }
+    w_string(s, &text);
 }
 
 /// (#181 item 3) A script of the embedded sounds (ops 53-58 with the render-object and combo ops): the manager shut
@@ -6549,7 +6554,9 @@ fn sound_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
 
 /// GitHub #181 item 3, #163 item 2: the embedded animation sounds. `AnimatedSoundMgrClass` (WW3D2/animatedsoundmgr.cpp
 /// and .h, `SoundLibraryBridgeClass` and WWLib's `strtrim`, cut verbatim into `wrap_w3d_eval.cpp`, on a recording sound
-/// library and an `INIClass` stand-in holding the script's sections) and `Animatable3DObjClass`'s calls of it (the
+/// library and ~~an `INIClass` stand-in holding the script's sections~~ **Corrected 2026-11-14 (#181 item 3, INIClass):**
+/// the real `INIClass` (ini.cpp and its support, cut verbatim) reading the script's table as an INI text, which the
+/// Rust reads with `ww::ini::IniClass`) and `Animatable3DObjClass`'s calls of it (the
 /// three `Set_Animation`s' `Get_Embedded_Sound_Name`, `Update_Sub_Object_Transforms`' `Trigger_Sound` in `SINGLE_ANIM`,
 /// `DOUBLE_ANIM` and `MULTIPLE_ANIM`, all in the verbatim animobj.cpp cuts), against `formats::w3d::animatedsoundmgr`
 /// and the port's `RenderObj`, over section 13's random files with [`sound_script`]'s scripts. Compared as raw bits
@@ -6575,6 +6582,11 @@ fn sound_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
 /// 10074 `Shutdown` keeps the hash 4,629; 10075 `2D`/`STOP` by equality 2,881; 10065 (`BoneName` without case) stops the
 /// Rust from predicting the C++'s undefined parse, which then crashes: 12 of 150. 10063 (no `strupr`) is not reachable
 /// here (the generated animations' names are upper case): caught by the lib tests of `animatedsoundmgr`. 20 of 20.
+///
+/// **Re-run 2026-11-14 (#181 item 3, INIClass)**, with op 53's table sent as INI text and read by the real `INIClass` on
+/// the C++ side and `ww::ini` on the Rust's: 20,000 files, 582,305 of 736,458 ops compared, sound calls 7,502 stop,
+/// 3,149 2D, 7,897 3D, **0 mismatches**; 5,407 scripts stopped where upstream is undefined (op 53: a value of one
+/// parameter 1,365; empty values no longer reach the manager, since `Load` drops them). The plants above were not re-run.
 #[test]
 fn embedded_sounds_match_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());

@@ -6870,7 +6870,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
     /// previous frame 0 to frame 2 plays both and gets previous frame 2.
     #[test]
     fn a_render_object_triggers_its_embedded_sounds() {
-        use crate::formats::w3d::animatedsoundmgr::{self as asm, IniSection, SoundLibraryBridge, SoundLibraryCall};
+        use crate::formats::w3d::animatedsoundmgr::{self as asm, SoundLibraryBridge, SoundLibraryCall};
         use crate::formats::w3d::hanim_combo::HAnimCombo;
         let _l = asm::tests::LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut raw = crate::formats::w3d::hanim::tests::raw_anim().with_frame_rounding(crate::ww::wwmath::FloatToLongMode::PortableTruncate);
@@ -6883,8 +6883,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         let bone = |name: &[u8], parent, base| SkeletonBone { name: name.to_vec(), parent_index: parent, transform: Matrix3D::IDENTITY, base };
         let k = Skeleton { bones: vec![bone(b"ROOT", 0, Matrix3D::IDENTITY), bone(b"B1", 0, base)], sub_objects: Vec::new(), scale_factor: 1.0 };
         asm::shutdown();
-        let entries = vec![(b"BoneName".to_vec(), b"b1".to_vec()), (b"S1".to_vec(), b"1,step".to_vec()), (b"S2".to_vec(), b"2,clank,2D".to_vec())];
-        asm::initialize(Some(&[IniSection { section: b"sndtest.walk".to_vec(), entries }])).unwrap();
+        asm::initialize(Some(&asm::tests::ini(b"[sndtest.walk]\nBoneName=b1\nS1=1,step\nS2=2,clank,2D\n"))).unwrap();
         asm::set_sound_library(Some(SoundLibraryBridge::Recorder));
         asm::take_recorded_calls();
 
