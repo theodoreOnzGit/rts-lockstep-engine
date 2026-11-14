@@ -183,7 +183,9 @@ impl Default for LineGroup {
 
 /// `xform_mat.Get_Orthogonal_Inverse(xform_mat)` (matrix3d.cpp), as `Render`
 /// calls it: `inv` is `*this`, so every read sees the writes before it (see
-/// the module's quirks).
+/// the module's quirks). The three self-assignments (`row[i][i] = row[i][i]`) are upstream's lines, kept so the
+/// translation reads line for line against Matrix3D::Get_Orthogonal_Inverse (#186).
+#[allow(clippy::self_assignment)]
 fn get_orthogonal_inverse_in_place(m: &mut Matrix3D) {
     if plant(10157) {
         *m = m.get_orthogonal_inverse();
