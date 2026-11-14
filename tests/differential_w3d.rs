@@ -4463,7 +4463,7 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
         59..=61 => rust_combo_data_op(w, r, log, op)?,
         40..=49 | 51 | 52 => rust_robj_op(w, r, log, op)?,
         // (#181 items 9, 10) HLODs and their drawn sub-objects
-        62 | 63 => rust_hlod_op(w, r, log, op)?,
+        62..=65 => rust_hlod_op(w, r, log, op)?,
         // (#181 item 3) the embedded sounds
         53..=58 => rust_sound_op(w, r, log, op)?,
         // (#180) the client's drawn pose: `RenderModel::update_render_obj` on a copy of the tree, under the identity
@@ -4482,6 +4482,9 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
                 orphans: Vec::new(),
                 release_list: Vec::new(),
                 updates: 0,
+                lod: None,
+                skeleton_index: None,
+                cast_ray_top: None,
             };
             m.update_render_obj(&rts_lockstep_engine::ww::matrix3d::Matrix3D::IDENTITY, Some((&w.anims[a].0, &*w, frame)))?;
             log_eval_tree(log, m.htree.as_ref().expect("made with one"))?;
@@ -4842,7 +4845,25 @@ fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
                 let (_, _, _) = (r.u(), r.u(), r.u());
                 5 + (r.u() + r.u()) as usize
             }
-            63 => 1,
+            63 | 65 => 1,
+            // (#181 LOD) kind, tree, scale, the LODs (each its size, count, then bone and spec per model), the
+            // aggregates (count, then bone and spec each)
+            64 => {
+                let mut r = ScriptReader { s: script, i: i + 1 };
+                let (_, _, _) = (r.u(), r.u(), r.u());
+                let nlod = r.u() as usize;
+                let mut words = 4;
+                for _ in 0..nlod {
+                    let _ = r.u();
+                    let n = r.u() as usize;
+                    for _ in 0..2 * n {
+                        let _ = r.u();
+                    }
+                    words += 2 + 2 * n;
+                }
+                let nadd = r.u() as usize;
+                words + 1 + 2 * nadd
+            }
             _ => unreachable!(),
         };
         v.push((i, i + 1 + 4 * words));
@@ -5030,9 +5051,10 @@ fn rust_robj_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: 
 }
 
 /// (#181 items 9, 10) What the HLOD ops reached: HLODs made with a loaded hierarchy and with the default one, drawn
-/// sub-objects compared, and of them animation-hidden ones (for the test's report).
-static HLOD_COVERAGE: [std::sync::atomic::AtomicU64; 4] =
-    [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)];
+/// sub-objects compared, and of them animation-hidden ones (for the test's report). (#181 LOD) Then op 64's HLODs, of
+/// them those whose `CurLod` is not the top LOD, and those whose drawn list is not the skeleton's index for index;
+/// op 65's dumps with the dirty flag set while the hierarchy is valid (predicted never), and with it set.
+static HLOD_COVERAGE: [std::sync::atomic::AtomicU64; 9] = [const { std::sync::atomic::AtomicU64::new(0) }; 9];
 
 /// (#181 items 9, 10) A mesh for the drawn models' sub-objects (any: the comparison reads only their bones): a cube.
 fn hlod_sub_mesh() -> MeshModel {
@@ -5047,21 +5069,65 @@ fn hlod_sub_mesh() -> MeshModel {
     .clone()
 }
 
-/// (#181 items 9, 10) Ops 62 and 63 (see `ref_w3d_eval`) on the port: 62 an HLOD render object (`RenderObj`, its
+/// (#181 LOD) A sub-object mesh for ops 62 and 64 whose `MeshClass::Get_Num_Polys()` is `polys` (the cuboid of
+/// [`hlod_sub_mesh`] with its triangles repeated or cut to `polys`, one pass), hidden as given: the stand-in of the
+/// C++ side's sub-object, which answers the same count.
+fn hlod_sub_mesh_polys(polys: u32, hidden: bool) -> rts_lockstep_engine::formats::w3d::render::SubObject {
+    let mut model = hlod_sub_mesh();
+    model.pass_count = 1;
+    let tri = model.polys[0];
+    model.polys = vec![tri; polys as usize];
+    rts_lockstep_engine::formats::w3d::render::SubObject { name: b"H.SUB".to_vec(), bone_index: 0, hidden, model, uv_offset: None }
+}
+
+/// (#181 LOD) What op 64's spec says `Create_Render_Obj` gives: `0xFFFFFFFF` none, else bit 30 hidden and the low 30
+/// bits the poly count.
+fn hlod_made(spec: u32, bone: i32) -> rts_lockstep_engine::formats::w3d::render::MadeSubObject {
+    use rts_lockstep_engine::formats::w3d::render::MadeSubObject;
+    if spec == u32::MAX {
+        return MadeSubObject::NotDrawn(b"H.SUB".to_vec(), bone, "no such render object".into());
+    }
+    let mut s = hlod_sub_mesh_polys(spec & 0x3FFF_FFFF, (spec >> 30) & 1 != 0);
+    s.bone_index = bone;
+    MadeSubObject::Mesh(s)
+}
+
+/// (#181 items 9, 10, LOD, 4) Ops 62-65 (see `ref_w3d_eval`) on the port: 62 an HLOD render object (`RenderObj`, its
 /// skeleton the loaded tree's scaled as op 40's, or none for the default hierarchy: what `W3dFiles::skeleton` gives an
-/// HLOD whose hierarchy is not found) and its drawn model as `RenderModel::create` makes it (the loaded tree unscaled,
-/// or no hierarchy; one sub-object per bone, the LOD's then the additional ones); 63 the drawn model posed by
+/// HLOD whose hierarchy is not found) and its drawn model as ~~`RenderModel::create` makes it (the loaded tree
+/// unscaled, or no hierarchy; one sub-object per bone, the LOD's then the additional ones)~~ (#181 LOD)
+/// `RenderModel::create_drawn` makes it (`RenderModel::hlod_from_def`: the loaded tree unscaled, or no hierarchy; one
+/// LOD of `NO_MAX_SCREEN_SIZE`, then the aggregates); 64 the same with several LODs, each its `MaxScreenSize` and
+/// models of the given poly counts (or none), and its LOD state (`HLodLevels`); 63 the drawn model posed by
 /// `RenderObj::pose_render_model` (the client's drawn pose), each sub-object's `sub_object_transform` and
-/// `sub_object_animation_hidden`, then the transform `pose_render_model` returns.
+/// `sub_object_animation_hidden`, then the transform `pose_render_model` returns; 65 the render object's dirty flag
+/// (`are_sub_object_transforms_dirty`), `is_hierarchy_valid`, `get_num_bones` and each `get_bone_name`.
 fn rust_hlod_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: u8) -> W3dResult<()> {
-    use rts_lockstep_engine::formats::w3d::render::{RenderModel, SubObject};
+    use rts_lockstep_engine::formats::w3d::render::{MadeSubObject, RenderModel};
+    use rts_lockstep_engine::formats::w3d::w3d_file::NO_MAX_SCREEN_SIZE;
     match op {
-        62 => {
+        62 | 64 => {
             let kind = r.u();
             let t = r.u() as usize;
             let scale = r.f();
-            let (nlod, nadd) = (r.u(), r.u());
-            let bones: Vec<i32> = (0..nlod + nadd).map(|_| r.u() as i32).collect();
+            let (lods, aggregates): (Vec<(f32, Vec<MadeSubObject>)>, Vec<MadeSubObject>) = if op == 62 {
+                let (nlod, nadd) = (r.u(), r.u());
+                let bones: Vec<i32> = (0..nlod + nadd).map(|_| r.u() as i32).collect();
+                let made = |b: &i32| hlod_made(0, *b);
+                (vec![(NO_MAX_SCREEN_SIZE, bones[..nlod as usize].iter().map(made).collect())], bones[nlod as usize..].iter().map(made).collect())
+            } else {
+                let nlod = r.u();
+                let mut lods = Vec::new();
+                for _ in 0..nlod {
+                    let size = r.f();
+                    let n = r.u();
+                    let models = (0..n).map(|_| { let b = r.u() as i32; hlod_made(r.u(), b) }).collect();
+                    lods.push((size, models));
+                }
+                let nadd = r.u();
+                let aggs = (0..nadd).map(|_| { let b = r.u() as i32; hlod_made(r.u(), b) }).collect();
+                (lods, aggs)
+            };
             // `htree_name[0] == 0` (an empty name) or not found: the default hierarchy
             let tree = (kind == 0 && w.trees[t].name[0] != 0).then(|| w.trees[t].clone());
             HLOD_COVERAGE[usize::from(tree.is_none())].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -5074,22 +5140,39 @@ fn rust_hlod_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: 
                 None => md::Skeleton::default(),
             };
             w.robjs.push((md::RenderObj::new(b"H", true).with_skeleton(Some(k)).with_union_pointer_bytes(8), true));
-            let model = RenderModel {
-                name: b"H".to_vec(),
-                is_hlod: true,
-                htree: tree,
-                sub_objects: bones.iter().map(|&b| SubObject { name: b"H.SUB".to_vec(), bone_index: b, hidden: false, model: hlod_sub_mesh(), uv_offset: None }).collect(),
-                not_drawn: Vec::new(),
-                emitters: Vec::new(),
-                orphans: Vec::new(),
-                release_list: Vec::new(),
-                updates: 0,
-            };
+            let model = RenderModel::hlod_from_def(b"H", tree, lods, aggregates);
+            let levels = model.lod.clone().expect("an HLOD's levels");
+            if op == 64 {
+                HLOD_COVERAGE[4].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if levels.cur_lod != levels.lod_count - 1 {
+                    HLOD_COVERAGE[5].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                if model.skeleton_index.is_some() {
+                    HLOD_COVERAGE[6].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
             w.drawn.insert(w.robjs.len() - 1, model);
             let (ro, clean) = w.robjs.last().expect("pushed");
             log_robj(log, ro, *clean);
+            if op == 64 {
+                p32(log, levels.lod_count as u32);
+                p32(log, levels.cur_lod as u32);
+                p32(log, levels.get_lod_level() as u32);
+                p32(log, levels.get_lod_count() as u32);
+                for c in &levels.cost {
+                    p32(log, c.to_bits());
+                }
+                for v in &levels.value {
+                    p32(log, v.to_bits());
+                }
+                let m = w.drawn.get(&(w.robjs.len() - 1)).expect("inserted");
+                p32(log, m.sub_objects.len() as u32);
+                for s in &m.sub_objects {
+                    p32(log, s.bone_index as u32);
+                }
+            }
         }
-        _ => {
+        63 => {
             let ri = r.u() as usize;
             let ro = &w.robjs[ri].0;
             let m = w.drawn.get_mut(&ri).expect("an HLOD op 62 made");
@@ -5102,6 +5185,27 @@ fn rust_hlod_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: 
                 HLOD_COVERAGE[3].fetch_add(u64::from(m.sub_object_animation_hidden(i)), std::sync::atomic::Ordering::Relaxed);
             }
             log_m(log, &root);
+        }
+        _ => {
+            let ri = r.u() as usize;
+            let ro = &w.robjs[ri].0;
+            let nb = ro.get_num_bones();
+            let mut names = Vec::new();
+            for i in 0..nb {
+                names.push(ro.get_bone_name(i)?.expect("an HLOD's bone name"));
+            }
+            let dirty = ro.are_sub_object_transforms_dirty();
+            if dirty && ro.is_hierarchy_valid() {
+                HLOD_COVERAGE[7].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            HLOD_COVERAGE[8].fetch_add(u64::from(dirty), std::sync::atomic::Ordering::Relaxed);
+            log.push(u8::from(dirty));
+            log.push(u8::from(ro.is_hierarchy_valid()));
+            p32(log, nb as u32);
+            for n in names {
+                p32(log, n.len() as u32);
+                log.extend_from_slice(&n);
+            }
         }
     }
     Ok(())
@@ -6067,6 +6171,21 @@ fn animobj_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
 /// `Get_Num_Bones`), `Set_Transform`, a bone captured and controlled or released, `Render` (hidden 1 in 5) and the
 /// frame-rate multiplier.
 fn hlod_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    hlod_script_with(g, w, false)
+}
+
+/// (#181 LOD) [`hlod_script`]'s scripts with multi-LOD HLODs: each HLOD made by op 64 (two in three) or op 62, and the
+/// dumps (one op in six) op 63's drawn sub-objects or op 65's dirty flag and bone names, half and half. Op 64's HLOD
+/// has 1 to 4 LODs, each with a `MaxScreenSize` among `NO_MAX_SCREEN_SIZE`, 0, 1, just below and above 1, 0.5, 2, a
+/// uniform one in 0..3, -1, infinity and NaN, and 0 to 4 models; a model is a mesh of 0 to 40 polygons (now and then
+/// 46,341, whose square overflows an `int`), hidden one time in five, or missing one time in eight, on a bone of the
+/// hierarchy or (one time in eight) up to two past it; 0 to 2 aggregates, on a bone from -1 to two past the
+/// hierarchy's last.
+fn hlod_lod_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    hlod_script_with(g, w, true)
+}
+
+fn hlod_script_with(g: &mut Gn, w: &EvalWorld, lods: bool) -> Vec<u8> {
     let mut s = Vec::new();
     let na = w.anims.len() as u32;
     let ok: Vec<u32> = (0..w.trees.len() as u32).filter(|&t| robj_ok(&w.trees[t as usize])).collect();
@@ -6081,6 +6200,7 @@ fn hlod_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
         if robjs.is_empty() || g.below(12) == 0 {
             let (kind, t) = if !ok.is_empty() && g.coin() { (0, ok[g.below(ok.len() as u32) as usize]) } else { (1 + g.below(2), 0) };
             let npiv = if kind == 0 && w.trees[t as usize].name[0] != 0 { w.trees[t as usize].num_pivots as u32 } else { 1 };
+            let op_at = s.len();
             s.push(62);
             w32(&mut s, kind);
             w32(&mut s, t);
@@ -6092,6 +6212,50 @@ fn hlod_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
                 _ => g.g.uniform(0.25, 4.0),
             };
             w32(&mut s, scale.to_bits());
+            if lods && g.below(3) != 0 {
+                // (#181 LOD) op 64: replace the op code and write the LODs
+                s[op_at] = 64;
+                let spec = |g: &mut Gn| -> u32 {
+                    if g.below(8) == 0 {
+                        return u32::MAX;
+                    }
+                    let polys = if g.below(40) == 0 { 46_341 } else { g.below(41) };
+                    polys | (u32::from(g.below(5) == 0) << 30)
+                };
+                let nlod = 1 + g.below(4);
+                w32(&mut s, nlod);
+                for _ in 0..nlod {
+                    let size = match g.below(12) {
+                        0..=2 => rts_lockstep_engine::formats::w3d::w3d_file::NO_MAX_SCREEN_SIZE,
+                        3 => 0.0f32,
+                        4 => 1.0,
+                        5 => f32::from_bits(1.0f32.to_bits() - 1),
+                        6 => f32::from_bits(1.0f32.to_bits() + 1),
+                        7 => [0.5f32, 2.0][g.below(2) as usize],
+                        8 => g.g.uniform(0.0, 3.0),
+                        9 => -1.0,
+                        10 => f32::INFINITY,
+                        _ => f32::NAN,
+                    };
+                    w32(&mut s, size.to_bits());
+                    let n = g.below(5);
+                    w32(&mut s, n);
+                    for _ in 0..n {
+                        let bone = if g.below(8) == 0 { npiv + g.below(3) } else { g.below(npiv) };
+                        w32(&mut s, bone);
+                        w32(&mut s, spec(g));
+                    }
+                }
+                let nadd = g.below(3);
+                w32(&mut s, nadd);
+                for _ in 0..nadd {
+                    let bone = g.below(npiv + 3) as i32 - 1;
+                    w32(&mut s, bone as u32);
+                    w32(&mut s, spec(g));
+                }
+                robjs.push(npiv);
+                continue;
+            }
             let (nlod, nadd) = (g.below(4), g.below(3));
             w32(&mut s, nlod);
             w32(&mut s, nadd);
@@ -6105,7 +6269,7 @@ fn hlod_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
         let npiv = robjs[ri as usize];
         let anim = |g: &mut Gn| g.below(na);
         if g.below(6) == 0 {
-            s.push(63);
+            s.push(if lods && g.coin() { 65 } else { 63 });
             w32(&mut s, ri);
             continue;
         }
@@ -6203,7 +6367,9 @@ fn hlod_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
 /// `Set_Animation_Hidden(!HTree->Get_Visibility(bone))`) with hlod.h's `ModelNodeClass`/`ModelArrayClass`, over
 /// [`animatable_bones_match_upstream`]'s render object, the real `htree.cpp` and the loaders. The port: `RenderObj`
 /// (`client::w3d_model_draw`, the default hierarchy since #181 item 10) and the client's drawn model,
-/// `RenderObj::pose_render_model` on a `RenderModel` as `RenderModel::create` makes it (#181 item 9). Over section 13's
+/// `RenderObj::pose_render_model` on a `RenderModel` as ~~`RenderModel::create`~~ **Corrected 2026-11-14 (#181 LOD):**
+/// `RenderModel::create_drawn` (`hlod_from_def`) makes it (#181 item 9); upstream's HLOD is now made by the verbatim
+/// `HLodClass(const HLodDefClass &)` with one LOD (same scripts, same numbers). Over section 13's
 /// random files with [`hlod_script`]'s scripts, the portable `Float_To_Long` on both sides. Compared as raw bits after
 /// every op: the render object's state, bones (op 45, op 52 from `Get_Num_Bones`), and op 63's drawn sub-objects (each
 /// one's transform and animation-hidden flag) and the transform the port's posing returns against the render object's
@@ -6228,9 +6394,64 @@ fn hlod_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
 fn drawn_sub_objects_match_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let n = std::env::var("W3D_HLOD_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
+    for c in HLOD_COVERAGE.iter() {
+        c.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
     eval_cases(FloatToLongMode::PortableTruncate, 0x181_910, n, "W3D HLODs' drawn sub-objects (hlod.cpp, animobj.cpp)", hlod_script);
     let c: Vec<u64> = HLOD_COVERAGE.iter().map(|a| a.load(std::sync::atomic::Ordering::Relaxed)).collect();
     println!("HLODs made (Rust side, scripts run): {} on a loaded hierarchy, {} on the default one; drawn sub-objects compared {}, of them animation-hidden {}", c[0], c[1], c[2], c[3]);
+}
+
+/// GitHub #181 (the HLOD remainder: the LOD switch, `Get_Bone_Name`, item 4's dirty flag): multi-LOD HLODs against
+/// upstream's. Upstream (compiled from its text, `wrap_w3d_eval.cpp`): `HLodClass(const HLodDefClass &)` (hlod.cpp:
+/// 1082-1156) verbatim with `Add_Lod_Model`, `Add_Sub_Object_To_Bone`, the four `Set_Animation`, `Set_Transform`,
+/// `Set_Position`, `Recalculate_Static_LOD_Factors` to `Calculate_Cost_Value_Arrays` (`Set_LOD_Level`, `Get_LOD_Level`,
+/// `Get_LOD_Count`) and `Update_Sub_Object_Transforms`, all verbatim, over rendobj.h's dirty bit and accessors
+/// (verbatim) and [`drawn_sub_objects_match_upstream`]'s render object, hierarchies and animations. The port:
+/// `RenderModel::hlod_from_def` (what `RenderModel::create_drawn` makes, with `HLodLevels`), `RenderObj` with its dirty
+/// flag and `get_bone_name`, and `RenderObj::pose_render_model`. Over section 13's random files with
+/// [`hlod_lod_script`]'s scripts (HLODs of 1 to 4 LODs with every kind of `MaxScreenSize`, models of any poly count,
+/// hidden or missing, bones out of range), the portable `Float_To_Long` on both sides. Compared as raw bits after every
+/// op: the render object's state and bones; op 64's `LodCount`, `CurLod`, `Get_LOD_Level`, `Get_LOD_Count`, `Cost`,
+/// `Value` and the drawn models' bones (`Add_Lod_Model`'s clamp, `Add_Sub_Object_To_Bone`'s refusals); op 63's drawn sub-objects (those `HLodClass::Render` draws: `Lod[CurLod]`'s, then the aggregates) with
+/// their transforms and animation-hidden flags; op 65's `Are_Sub_Object_Transforms_Dirty()`, `Is_Hierarchy_Valid()`,
+/// `Get_Num_Bones()` and each `Get_Bone_Name(i)`. A script stops before an op the Rust reports undefined upstream.
+///
+/// Predictions (`issue181lod_predictions.md`, before the first run): 0 mismatches, max ULP 0; the dirty flag never set
+/// while the hierarchy is valid.
+///
+/// Results (2026-11-14). The first smoke run (300 files) panicked in the harness: its per-op counter had 64 slots, and
+/// ops 64/65 overflowed it (widened to 66; the test's error). Then: 20,000 files, all run (9,767 tame scripts to the
+/// end), 577,310 of 626,790 ops compared (62: 21,489; 63: 41,453; 64: 43,551 multi-LOD HLODs, 27,802 of them not on
+/// their top LOD and 34,717 whose drawn list is not the skeleton's index for index; 65: 41,025 dumps, 25,451 dirty),
+/// 91,714 drawn sub-objects (600 animation-hidden): **0 mismatches, max ULP 0**; dirty while valid 0 (hit). Scripts
+/// stopped where upstream is undefined: 2,359 (ops 45, 48, 52: the wild files' evaluations, as
+/// [`drawn_sub_objects_match_upstream`]'s; none at a bone name). [`drawn_sub_objects_match_upstream`]'s numbers are
+/// unchanged (its scripts draw the same, its HLODs now made by the verbatim constructor).
+///
+/// Planted bugs (mismatching files of 300): 10276 (`MaxScreenSize == 1` counted below) 51; 10277 (the top LOD drawn)
+/// 115; 10278 (no LOD fits: LOD 0) 18; 10279 (no `Set_LOD_Level(minlod)`) 121; 10280 (no `Add_Lod_Model` clamp) 102;
+/// 10281 (aggregates on a bad bone kept) 172; 10282 (`Set_Transform` not dirty) 31; 10283 (the update leaves it dirty)
+/// 139; 10284 (`Set_Animation` not dirty) 62; 10285 (a new HLOD not dirty) 81; 10286 (`BenefitFactor` over the count,
+/// not its square) 206; 10287 (no `0.000001f` cost) 209; 10288 (`Value[LodCount]` not `AT_MAX_LOD`) 270; 10289 (hidden
+/// models' polygons counted) 200; 10292 (`Render` updates only when dirty) 84. 10290 (the drawn list's skeleton map
+/// ignored) and 10291 (the emitters the top LOD's) are not reachable here (no hidden flags or emitters on the stand-in
+/// sub-objects): caught by the lib tests `hlod_lods_dirty_flags_and_bone_names` and
+/// `the_drawn_model_is_the_lod_the_constructor_selects`, which (with `the_lod_selection_follows_calculate_cost_value_arrays`,
+/// `--features differential`) catch all of 10276-10292.
+#[test]
+fn hlod_lods_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let n = std::env::var("W3D_HLOD_LOD_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
+    for c in HLOD_COVERAGE.iter() {
+        c.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+    eval_cases(FloatToLongMode::PortableTruncate, 0x181_10D, n, "W3D multi-LOD HLODs (hlod.cpp, animobj.cpp, rendobj.h)", hlod_lod_script);
+    let c: Vec<u64> = HLOD_COVERAGE.iter().map(|a| a.load(std::sync::atomic::Ordering::Relaxed)).collect();
+    println!(
+        "HLODs made (Rust side, scripts run): {} on a loaded hierarchy, {} on the default one; op 64's {} ({} not on the top LOD, {} drawn lists not the skeleton's); drawn sub-objects compared {} ({} animation-hidden); dirty while valid {}, dirty dumps {}",
+        c[0], c[1], c[4], c[5], c[6], c[2], c[3], c[7], c[8]
+    );
 }
 
 /// GitHub #179: `Animatable3DObjClass`'s bone query with the animation's current pose (animobj.cpp:658-675
@@ -7121,7 +7342,7 @@ fn eval_cases(mode: FloatToLongMode, seed: u64, cases: usize, label: &str, scrip
     let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
     let mut load_excluded: BTreeMap<String, u64> = BTreeMap::new();
     let (mut files, mut ops_run, mut ops_total) = (0u64, 0u64, 0u64);
-    let mut per_op = [0u64; 64];
+    let mut per_op = [0u64; 66];
     for case in 0..cases {
         g.clean = case % 2 == 0;
         // (#181 item 3) the animated-sound manager as the wrapper leaves it after each script
@@ -7197,7 +7418,7 @@ fn eval_cases(mode: FloatToLongMode, seed: u64, cases: usize, label: &str, scrip
         files += 1;
     }
     println!(
-        "{label} ({mode:?}): {cases} files, {files} run ({tame_full} tame scripts run to the end), {ops_run} of {ops_total} ops compared (per op 1..=63: {:?}); \
+        "{label} ({mode:?}): {cases} files, {files} run ({tame_full} tame scripts run to the end), {ops_run} of {ops_total} ops compared (per op 1..=65: {:?}); \
          files excluded (loading undefined): {load_excluded:?}; scripts stopped at (undefined upstream): {} {excluded:?}",
         &per_op[1..],
         excluded.values().sum::<u64>()

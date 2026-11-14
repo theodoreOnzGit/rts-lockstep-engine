@@ -268,6 +268,37 @@ pub fn hlod_w3d(hlod_name: &[u8], hierarchy: &[u8], subs: &[(&[u8], u32)]) -> Ve
     chunk_sub(W3D_CHUNK_HLOD, &body)
 }
 
+/// (#181 LOD) A `W3D_CHUNK_HLOD` with several LODs (each its `MaxScreenSize` and its sub-objects: full name, bone)
+/// and an aggregate array (none when `aggregates` is empty).
+pub fn hlod_lods_w3d(hlod_name: &[u8], hierarchy: &[u8], lods: &[(f32, &[(&[u8], u32)])], aggregates: &[(&[u8], u32)]) -> Vec<u8> {
+    let array = |id: u32, max_screen_size: f32, subs: &[(&[u8], u32)]| {
+        let mut a = W3dHLodArrayHeaderStruct::from_bytes(&[0; W3dHLodArrayHeaderStruct::SIZE]);
+        a.model_count = subs.len() as u32;
+        a.max_screen_size = max_screen_size;
+        let mut arr = chunk(W3D_CHUNK_HLOD_SUB_OBJECT_ARRAY_HEADER, &a.to_bytes());
+        for (n, bone) in subs {
+            let mut s = W3dHLodSubObjectStruct::from_bytes(&[0; W3dHLodSubObjectStruct::SIZE]);
+            s.bone_index = *bone;
+            s.name = name(n);
+            arr.extend(chunk(W3D_CHUNK_HLOD_SUB_OBJECT, &s.to_bytes()));
+        }
+        chunk_sub(id, &arr)
+    };
+    let mut h = W3dHLodHeaderStruct::from_bytes(&[0; W3dHLodHeaderStruct::SIZE]);
+    h.version = w3d_make_version(1, 0);
+    h.lod_count = lods.len() as u32;
+    h.name = name(hlod_name);
+    h.hierarchy_name = name(hierarchy);
+    let mut body = chunk(W3D_CHUNK_HLOD_HEADER, &h.to_bytes());
+    for (size, subs) in lods {
+        body.extend(array(W3D_CHUNK_HLOD_LOD_ARRAY, *size, subs));
+    }
+    if !aggregates.is_empty() {
+        body.extend(array(W3D_CHUNK_HLOD_AGGREGATE_ARRAY, 0.0, aggregates));
+    }
+    chunk_sub(W3D_CHUNK_HLOD, &body)
+}
+
 /// A channel of [`raw_anim_w3d`]: pivot, `ANIM_CHANNEL_*` type, vector
 /// length, and the values of frames `0..` (`vector_len` floats each).
 #[derive(Clone, Debug, PartialEq)]

@@ -423,6 +423,9 @@ fn build_case(g: &mut Gen, t: &mut Tally) -> Option<(Vec<u32>, Vec<u32>)> {
         orphans: Vec::new(),
         release_list: Vec::new(),
         updates: 0,
+        lod: None,
+        skeleton_index: None,
+        cast_ray_top: None,
     };
     for (k, mut e) in made.into_iter().enumerate() {
         e.set_transform(tm);

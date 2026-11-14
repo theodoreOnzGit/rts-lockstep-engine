@@ -277,7 +277,7 @@ impl ModelScene {
     pub fn load<D: LocalDevice>(fs: &FileSystem<D>, name: &[u8], anim: Option<&[u8]>) -> Result<ModelScene, String> {
         let show = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
         let mut assets = AssetManager::new_game(W3dFileFactory::default());
-        let model = RenderModel::create(&mut assets, fs, name)
+        let model = RenderModel::create_drawn(&mut assets, fs, name)
             .map_err(|e| format!("{}: {e}", show(name)))?
             .ok_or_else(|| format!("no render object {}", show(name)))?;
         let anim = match anim {

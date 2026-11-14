@@ -5,7 +5,10 @@
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/hlod.cpp
 //   (HLodClass::HLodClass(const HLodDefClass &): the sub-objects of each LOD
 //   and the aggregates, bound to their bones; #65 batch c: Remove_Sub_Object,
-//   Notify_Removed, Free's release of the sub-objects)
+//   Notify_Removed, Free's release of the sub-objects; #181 LOD: Add_Lod_Model's
+//   bone clamp, Add_Sub_Object_To_Bone's bone check, Recalculate_Static_LOD_Factors,
+//   Calculate_Cost_Value_Arrays, Set_LOD_Level, Get_LOD_Level, Get_LOD_Count,
+//   Render's Lod[CurLod]), hlod.h (ModelArrayClass's factors)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/scene.cpp
 //   (#65 batch c: SimpleSceneClass::Register's RELEASE list, Customized_Render's
 //   update loop order, Post_Render_Processing)
@@ -16,7 +19,7 @@
 //   render does, the bone transforms its sub-objects take)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/mesh.cpp
 //   (MeshClass::Init: Set_Hidden from W3D_MESH_FLAG_HIDDEN;
-//   Get_Deformed_Vertices)
+//   Get_Deformed_Vertices; #181 LOD: Get_Num_Polys)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/assetmgr.cpp
 //   (WW3DAssetManager::Get_Texture: the lower-cased name)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/textureloader.cpp
@@ -77,8 +80,13 @@
 //!
 //! # Where this differs from upstream
 //!
-//! - **The LOD** is the highest (`LodCount - 1`); upstream picks by screen
-//!   size and cost. Sub-objects that are not meshes (boxes, nulls, nested
+//! - ~~**The LOD** is the highest (`LodCount - 1`); upstream picks by screen
+//!   size and cost.~~ **Corrected 2026-11-14 (#181 LOD):** the drawn model
+//!   ([`RenderModel::create_drawn`]) draws `Lod[CurLod]`, the LOD upstream's
+//!   constructor selects ([`HLodLevels::new`]); Zero Hour never changes it
+//!   afterwards (`Prepare_LOD` and the LOD optimizer are commented out in the
+//!   game). [`RenderModel::create`], the skeleton's view, still lists the top
+//!   LOD (#181 item 13). Sub-objects that are not meshes (boxes, nulls, nested
 //!   HLODs, ~~emitters~~) are listed in [`RenderModel::not_drawn`], not drawn.
 //!   **Corrected 2026-11-07 (#49):** particle emitters are kept
 //!   ([`RenderModel::emitters`]), bound to their bones, and run by
@@ -169,6 +177,173 @@ pub struct RenderModel {
     pub release_list: Vec<u32>,
     /// (#65 batch c) How many times [`RenderModel::update_emitters`] has run (stamps [`EmitterSub::buffer_joined`]).
     pub updates: u32,
+    /// (#181 LOD) `HLodClass`'s levels of detail as its constructor leaves them ([`HLodLevels`]: `LodCount`, `CurLod`,
+    /// `Cost`, `Value`); the drawn sub-objects are `Lod[CurLod]`'s and the aggregates' ([`RenderModel::create_drawn`]).
+    /// `None` for a lone mesh, and for the skeleton's view ([`RenderModel::create`]), which does not select a LOD.
+    pub lod: Option<HLodLevels>,
+    /// (#181 LOD) For each of [`Self::sub_objects`], its index among the sub-objects the draw module's skeleton lists
+    /// (`client::w3d_model_draw::Skeleton`, made from [`RenderModel::create`]: the top LOD's meshes, then the
+    /// aggregates'), by which the render object keeps its hidden flags and material overrides; `None` for a drawn
+    /// sub-object the skeleton does not list (a mesh of a LOD below the top). `None` (the whole field) when the two lists
+    /// are the same, index for index.
+    pub skeleton_index: Option<Vec<Option<usize>>>,
+    /// (#181 LOD) What `HLodClass::Cast_Ray` (hlod.cpp:2686-2706) casts at that the drawn list does not hold: when the
+    /// drawn LOD (`Lod[CurLod]`) is not the top one, the top LOD's meshes (their bones as `Add_Lod_Model` left them),
+    /// and how many of [`Self::sub_objects`] are the drawn LOD's (the rest are the aggregates). `None` when the drawn
+    /// LOD is the top one. See [`RenderModel::cast_ray_sub_objects`].
+    pub cast_ray_top: Option<(Vec<SubObject>, usize)>,
+}
+
+/// (#181 LOD) `HLodClass::ModelArrayClass`'s factors (hlod.h:244-252), without its models: `MaxScreenSize`,
+/// `NonPixelCost`, `PixelCostPerArea`, `BenefitFactor`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LodFactors {
+    pub max_screen_size: f32,
+    pub non_pixel_cost: f32,
+    pub pixel_cost_per_area: f32,
+    pub benefit_factor: f32,
+}
+
+impl Default for LodFactors {
+    /// `ModelArrayClass(void) : MaxScreenSize(NO_MAX_SCREEN_SIZE), NonPixelCost(0.0f), PixelCostPerArea(0.0f),
+    /// BenefitFactor(0.0f)`.
+    fn default() -> Self {
+        LodFactors { max_screen_size: super::w3d_file::NO_MAX_SCREEN_SIZE, non_pixel_cost: 0.0, pixel_cost_per_area: 0.0, benefit_factor: 0.0 }
+    }
+}
+
+/// (#181 LOD) `HLodClass`'s level-of-detail state (hlod.h): `LodCount`, `CurLod`, `Lod[i]`'s factors, `Cost`
+/// (`LodCount` entries), `Value` (`LodCount + 1`: "so PostIncrementValue can always use Value[CurLod + 1]") and
+/// `LODBias`.
+///
+/// **What Zero Hour drives.** Only the constructors' last step: `Recalculate_Static_LOD_Factors()`, then
+/// `minlod = Calculate_Cost_Value_Arrays(1.0f, Value, Cost)` ("a screen area of 1 pixel") and
+/// `if (CurLod < minlod) Set_LOD_Level(minlod)` ([`HLodLevels::new`]). `RTS3DScene::Customized_Render` has its
+/// `Prepare_LOD` commented out ("We're not using LOD yet", W3DScene.cpp:520-526) and `W3DDisplay` its
+/// `PredictiveLODOptimizerClass::Optimize_LODs` (W3DDisplay.cpp:1752), and no game code calls `Set_LOD_Level`,
+/// `Increment_LOD`, `Decrement_LOD`, `Set_Max_Screen_Size`, `Include_NULL_Lod` or `Set_LOD_Bias` on an HLOD: so an
+/// HLOD draws, for its whole life, the first LOD whose `MaxScreenSize` is not below 1 (else the top one). Those
+/// functions, `Prepare_LOD`, `Get_Cost`, `Get_Value` and `Get_Post_Increment_Value` are not translated.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HLodLevels {
+    pub lod_count: i32,
+    pub cur_lod: i32,
+    pub lods: Vec<LodFactors>,
+    pub cost: Vec<f32>,
+    pub value: Vec<f32>,
+    pub lod_bias: f32,
+}
+
+impl HLodLevels {
+    /// The level-of-detail part of `HLodClass(const HLodDefClass & def)` (hlod.cpp:1082-1156): `LodCount =
+    /// def.LodCount`, `CurLod(0)`, `LODBias(1.0f)`, `Lod[ilod].MaxScreenSize = def.Lod[ilod].MaxScreenSize`; then, the
+    /// models added, `Recalculate_Static_LOD_Factors()` (`polycounts`: each LOD's poly count over its models that are
+    /// `Is_Not_Hidden_At_All()`), and "so that the object is ready for use after construction"
+    /// `minlod = Calculate_Cost_Value_Arrays(1.0f, Value, Cost)` and "Ensure lod is no less than minimum allowed":
+    /// `if (CurLod < minlod) Set_LOD_Level(minlod)`. `Cost` and `Value` start at 0 here (upstream's `new float[]`,
+    /// which the game's allocator zero-fills); the calculation writes every entry when `LodCount >= 1`.
+    pub fn new(max_screen_sizes: &[f32], polycounts: &[i32]) -> HLodLevels {
+        let lod_count = max_screen_sizes.len() as i32;
+        let lods = max_screen_sizes.iter().map(|&m| LodFactors { max_screen_size: m, ..LodFactors::default() }).collect();
+        let n = max_screen_sizes.len();
+        let mut l = HLodLevels { lod_count, cur_lod: 0, lods, cost: vec![0.0; n], value: vec![0.0; n + 1], lod_bias: 1.0 };
+        l.recalculate_static_lod_factors(polycounts);
+        let minlod = l.calculate_cost_value_arrays(1.0f32);
+        if l.cur_lod < minlod && !crate::logic::modules::plant(10279) {
+            l.set_lod_level(minlod);
+        }
+        l
+    }
+
+    /// `HLodClass::Recalculate_Static_LOD_Factors()` (hlod.cpp:2922-2952): for each LOD, `PixelCostPerArea = 0` ("there
+    /// are no pixel-related costs"), `NonPixelCost` its poly count (`polycounts[i]`, the sum of `Get_Num_Polys()` over
+    /// its models that are `Is_Not_Hidden_At_All()`) or `0.000001f` for none ("to avoid divisions by zero"), and
+    /// `BenefitFactor = 1 - (0.5f / (polycount * polycount))`, 0 for none. The `int` product wraps as the 32-bit
+    /// original's does (formally undefined past 46,340 polygons). A LOD with no entry in `polycounts` has none.
+    pub fn recalculate_static_lod_factors(&mut self, polycounts: &[i32]) {
+        for (i, l) in self.lods.iter_mut().enumerate() {
+            // Currently there are no pixel-related costs taken into account
+            l.pixel_cost_per_area = 0.0f32;
+            let polycount = polycounts.get(i).copied().unwrap_or(0);
+            // If polycount is zero set Cost to a small nonzero amount to avoid divisions by zero.
+            l.non_pixel_cost = if polycount != 0 { polycount as f32 } else if crate::logic::modules::plant(10287) { 0.0f32 } else { 0.000001f32 };
+            // A polycount of zero yields a benefit factor of zero: otherwise apply formula.
+            let square = if crate::logic::modules::plant(10286) { polycount } else { polycount.wrapping_mul(polycount) };
+            l.benefit_factor = if polycount != 0 { 1.0f32 - (0.5f32 / square as f32) } else { 0.0f32 };
+        }
+    }
+
+    /// `HLodClass::Calculate_Cost_Value_Arrays(screen_area, Value, Cost)` (hlod.cpp:3164-3205): each LOD's cost
+    /// `NonPixelCost + PixelCostPerArea * screen_area`; every LOD whose `MaxScreenSize` is smaller than `screen_area`,
+    /// and the first one after them (unless there is none: then `LodCount - 1`), valued `AT_MIN_LOD`; that one is
+    /// `minlod`, returned; each later one `(BenefitFactor * screen_area * LODBias) / cost`; `Value[LodCount]`
+    /// `AT_MAX_LOD`. With no LODs `minlod` is -1 (and only `Value[0]` is written).
+    pub fn calculate_cost_value_arrays(&mut self, screen_area: f32) -> i32 {
+        use super::part_buf::{AT_MAX_LOD, AT_MIN_LOD};
+        let lod_count = self.lod_count;
+        // Calculate Cost heuristic for each LOD based on normalized screen area:
+        for lod in 0..lod_count.max(0) as usize {
+            self.cost[lod] = self.lods[lod].non_pixel_cost + self.lods[lod].pixel_cost_per_area * screen_area;
+        }
+        // Calculate Value heuristic. First, all LOD levels for which MaxScreenSize is smaller than screen_area have
+        // their Value set to AT_MIN_LOD, as well as the first LOD after that (unless there are no other LODs):
+        let mut lod = 0i32;
+        while lod < lod_count && {
+            let m = self.lods[lod as usize].max_screen_size;
+            m < screen_area || (crate::logic::modules::plant(10276) && m == screen_area)
+        } {
+            self.value[lod as usize] = AT_MIN_LOD;
+            lod += 1;
+        }
+        if lod >= lod_count {
+            lod = if crate::logic::modules::plant(10278) { 0 } else { lod_count - 1 };
+        } else {
+            self.value[lod as usize] = AT_MIN_LOD;
+        }
+        // Now lod is the lowest allowed - return this value.
+        let minlod = lod;
+        // Calculate Value heuristic for any remaining LODs based on normalized screen area:
+        lod += 1;
+        while lod < lod_count {
+            let l = &self.lods[lod as usize];
+            self.value[lod as usize] = (l.benefit_factor * screen_area * self.lod_bias) / self.cost[lod as usize];
+            lod += 1;
+        }
+        // Post-inc value will flag max LOD.
+        if let Some(v) = self.value.get_mut(lod_count.max(0) as usize) {
+            *v = if crate::logic::modules::plant(10288) { AT_MIN_LOD } else { AT_MAX_LOD };
+        }
+        minlod
+    }
+
+    /// `HLodClass::Set_LOD_Level(lod)` (hlod.cpp:3090-3115) on an HLOD not in a scene (the constructor's call): `lod`
+    /// clamped to `0..=LodCount - 1` (`MAX` then `MIN`), and `CurLod` set. In a scene upstream also moves the old LOD's
+    /// models out (`Notify_Removed`) and the new one's in (`Notify_Added`); Zero Hour never calls it there (see the
+    /// type's docs), so that part is not translated.
+    pub fn set_lod_level(&mut self, lod: i32) {
+        let lod = lod.max(0);
+        let lod = lod.min(self.lod_count - 1);
+        if lod == self.cur_lod {
+            return;
+        }
+        self.cur_lod = lod;
+    }
+
+    /// `HLodClass::Get_LOD_Level()` (hlod.cpp:3128): `CurLod`.
+    pub fn get_lod_level(&self) -> i32 {
+        self.cur_lod
+    }
+
+    /// `HLodClass::Get_LOD_Count()` (hlod.cpp:3146): `LodCount`.
+    pub fn get_lod_count(&self) -> i32 {
+        self.lod_count
+    }
+}
+
+/// (#181 LOD) `MeshClass::Get_Num_Polys()` (mesh.cpp:635-645): the model's pass count times its polygon count (an
+/// `int`, wrapping as the original's).
+pub fn mesh_num_polys(m: &MeshModel) -> i32 {
+    (m.pass_count as i32).wrapping_mul(m.poly_count() as i32)
 }
 
 /// (#65 batch c) The scene a model is in, for what its objects' release requests do.
@@ -296,44 +471,77 @@ pub struct EmitterSub {
     pub buffer_joined: u32,
 }
 
+/// (#181 LOD) A sub-object as `Create_Render_Obj(name)` made it for an HLOD, with the bone the definition gives it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MadeSubObject {
+    /// A mesh (`MeshClass`).
+    Mesh(SubObject),
+    /// A particle emitter (#49): name, bone, definition.
+    Emitter(Vec<u8>, i32, super::part_ldr::ParticleEmitterDef),
+    /// Another render object, or none: name, bone, and why it is not drawn.
+    NotDrawn(Vec<u8>, i32, String),
+}
+
+impl MadeSubObject {
+    /// Its bone.
+    pub fn bone_index(&self) -> i32 {
+        match self {
+            MadeSubObject::Mesh(s) => s.bone_index,
+            MadeSubObject::Emitter(_, b, _) | MadeSubObject::NotDrawn(_, b, _) => *b,
+        }
+    }
+
+    fn set_bone_index(&mut self, bone: i32) {
+        match self {
+            MadeSubObject::Mesh(s) => s.bone_index = bone,
+            MadeSubObject::Emitter(_, b, _) | MadeSubObject::NotDrawn(_, b, _) => *b = bone,
+        }
+    }
+
+    /// Its name.
+    pub fn name(&self) -> &[u8] {
+        match self {
+            MadeSubObject::Mesh(s) => &s.name,
+            MadeSubObject::Emitter(n, _, _) | MadeSubObject::NotDrawn(n, _, _) => n,
+        }
+    }
+}
+
+/// `Create_Render_Obj(sub_name)` for an HLOD's sub-object on `bone`.
+fn make_sub_object<D: LocalDevice>(am: &mut AssetManager, fs: &FileSystem<D>, sub_name: Vec<u8>, bone: i32) -> W3dResult<MadeSubObject> {
+    Ok(match am.create_render_obj(fs, &sub_name)?.cloned() {
+        Some(Prototype::Mesh(mesh)) => {
+            let model = MeshModel::from_mesh(&mesh)?;
+            let hidden = model.w3d_attributes & W3D_MESH_FLAG_HIDDEN != 0;
+            MadeSubObject::Mesh(SubObject { name: sub_name, bone_index: bone, hidden, model, uv_offset: None })
+        }
+        Some(Prototype::ParticleEmitter(def)) => MadeSubObject::Emitter(sub_name, bone, def),
+        Some(other) => {
+            let why = format!("a {} prototype, not a mesh", prototype_kind(&other));
+            MadeSubObject::NotDrawn(sub_name, bone, why)
+        }
+        None => MadeSubObject::NotDrawn(sub_name, bone, "no such render object".into()),
+    })
+}
+
 impl RenderModel {
-    /// The render object `Create_Render_Obj(name)` makes, as drawn: an HLOD
-    /// (its top LOD and aggregates) or a mesh. `None` when there is no such
-    /// prototype, or it is another kind.
+    /// The render object `Create_Render_Obj(name)` makes, ~~as drawn~~ **Corrected 2026-11-14 (#181 LOD):** as the
+    /// draw module's skeleton reads it (`client::w3d_model_draw::W3dFiles::skeleton`, which feeds the logic's art bones,
+    /// #175): an HLOD ~~(its top LOD and aggregates)~~ with its top LOD's sub-objects and the aggregates, every bone as
+    /// the file gives it, or a mesh. Upstream draws `Lod[CurLod]` (the LOD its constructor selects) and clamps or
+    /// refuses bones out of range; the client's drawn model is [`RenderModel::create_drawn`]. This view is kept as it
+    /// was because changing what the skeleton lists is the owner's decision (#181 item 13). `None` when there is no
+    /// such prototype, or it is another kind.
     pub fn create<D: LocalDevice>(am: &mut AssetManager, fs: &FileSystem<D>, name: &[u8]) -> W3dResult<Option<RenderModel>> {
         let proto = match am.create_render_obj(fs, name)? {
             Some(p) => p.clone(),
             None => return Ok(None),
         };
         match proto {
-            Prototype::Mesh(mesh) => {
-                let model = MeshModel::from_mesh(&mesh)?;
-                let hidden = model.w3d_attributes & W3D_MESH_FLAG_HIDDEN != 0;
-                Ok(Some(RenderModel {
-                    name: name.to_vec(),
-                    is_hlod: false,
-                    htree: None,
-                    sub_objects: vec![SubObject { name: name.to_vec(), bone_index: 0, hidden, model, uv_offset: None }],
-                    not_drawn: Vec::new(),
-                    emitters: Vec::new(),
-                    orphans: Vec::new(),
-                    release_list: Vec::new(),
-                    updates: 0,
-                }))
-            }
+            Prototype::Mesh(mesh) => Ok(Some(RenderModel::lone_mesh(name, &mesh)?)),
             Prototype::HLod(def) => {
                 let htree = am.get_htree(fs, &def.hierarchy_tree_name)?.cloned();
-                let mut out = RenderModel {
-                    name: name.to_vec(),
-                    is_hlod: true,
-                    htree,
-                    sub_objects: Vec::new(),
-                    not_drawn: Vec::new(),
-                    emitters: Vec::new(),
-                    orphans: Vec::new(),
-                    release_list: Vec::new(),
-                    updates: 0,
-                };
+                let mut out = RenderModel::empty_hlod(name, htree);
                 let mut subs = Vec::new();
                 if let Some(top) = def.lods.last() {
                     subs.extend(top.sub_objects.iter().cloned());
@@ -341,36 +549,198 @@ impl RenderModel {
                 subs.extend(def.aggregates.sub_objects.iter().cloned());
                 for s in subs {
                     let Some(sub_name) = s.name else { continue };
-                    match am.create_render_obj(fs, &sub_name)?.cloned() {
-                        Some(Prototype::Mesh(mesh)) => {
-                            let model = MeshModel::from_mesh(&mesh)?;
-                            let hidden = model.w3d_attributes & W3D_MESH_FLAG_HIDDEN != 0;
-                            out.sub_objects.push(SubObject { name: sub_name, bone_index: s.bone_index, hidden, model, uv_offset: None });
-                        }
-                        Some(Prototype::ParticleEmitter(def)) => {
-                            let id = out.emitters.len() as u32;
-                            out.emitters.push(EmitterSub {
-                                name: sub_name,
-                                bone_index: s.bone_index,
-                                def,
-                                emitter: None,
-                                draw: None,
-                                failed: None,
-                                id,
-                                in_release_list: false,
-                                buffer_joined: 0,
-                            });
-                        }
-                        Some(other) => {
-                            let why = format!("a {} prototype, not a mesh", prototype_kind(&other));
-                            out.not_drawn.push((sub_name, why));
-                        }
-                        None => out.not_drawn.push((sub_name, "no such render object".into())),
-                    }
+                    let made = make_sub_object(am, fs, sub_name, s.bone_index)?;
+                    out.add_made(made);
                 }
                 Ok(Some(out))
             }
             _ => Ok(None),
+        }
+    }
+
+    /// (#181 LOD) The render object `Create_Render_Obj(name)` makes, as upstream draws it (the client's drawn model).
+    /// A mesh as [`RenderModel::create`]'s. An HLOD as `HLodClass(const HLodDefClass & def)` (hlod.cpp:1082-1156) makes
+    /// it: the hierarchy `def.HierarchyTreeName`'s (upstream's default one, `Init_Default`, when it is not found:
+    /// `htree` `None`, one pivot); each LOD's sub-objects created by name (`Create_Render_Obj`) and added by
+    /// `Add_Lod_Model` (hlod.cpp:3519-3541: a bone at or past `HTree->Num_Pivots()` becomes bone 0, "survive the case
+    /// where the skeleton for this object no longer has the bone"); the LOD factors and the LOD selection
+    /// ([`HLodLevels::new`]: the first LOD whose `MaxScreenSize` is not below 1, else the top); then the aggregates,
+    /// each by `Add_Sub_Object_To_Bone` (hlod.cpp:2562-2592: one on a bone outside `0..Num_Pivots()` is refused, and
+    /// is listed in [`RenderModel::not_drawn`]). The drawn sub-objects are what `HLodClass::Render` draws
+    /// (hlod.cpp:2146-2170): `Lod[CurLod]`'s models (meshes in [`RenderModel::sub_objects`], emitters in
+    /// [`RenderModel::emitters`], the others in [`RenderModel::not_drawn`]), then the aggregates
+    /// (`AdditionalModels`; `SUBOBJS_MATCH_LOD` is never set on a loaded HLOD). [`RenderModel::skeleton_index`] maps
+    /// them to the skeleton's list. A LOD's poly count (`Get_Num_Polys`) is its meshes' ([`mesh_num_polys`]); other
+    /// render objects count 0 here (only `Cost` and `Value` read it, and nothing in Zero Hour reads those). With
+    /// `LodCount` 0 (undefined upstream: `Render` reads `Lod[0]` of an empty array) only the aggregates are drawn.
+    pub fn create_drawn<D: LocalDevice>(am: &mut AssetManager, fs: &FileSystem<D>, name: &[u8]) -> W3dResult<Option<RenderModel>> {
+        let proto = match am.create_render_obj(fs, name)? {
+            Some(p) => p.clone(),
+            None => return Ok(None),
+        };
+        match proto {
+            Prototype::Mesh(mesh) => Ok(Some(RenderModel::lone_mesh(name, &mesh)?)),
+            Prototype::HLod(def) => {
+                let htree = am.get_htree(fs, &def.hierarchy_tree_name)?.cloned();
+                let mut lods = Vec::new();
+                for lod in &def.lods {
+                    let mut made = Vec::new();
+                    for s in &lod.sub_objects {
+                        let Some(sub_name) = s.name.clone() else { continue };
+                        made.push(make_sub_object(am, fs, sub_name, s.bone_index)?);
+                    }
+                    lods.push((lod.max_screen_size, made));
+                }
+                let mut aggregates = Vec::new();
+                for s in &def.aggregates.sub_objects {
+                    let Some(sub_name) = s.name.clone() else { continue };
+                    aggregates.push(make_sub_object(am, fs, sub_name, s.bone_index)?);
+                }
+                Ok(Some(RenderModel::hlod_from_def(name, htree, lods, aggregates)))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// (#181 LOD) The HLOD [`RenderModel::create_drawn`] makes, from the sub-objects already created
+    /// ([`MadeSubObject`], each with the bone the definition gives it): `lods` each LOD's `MaxScreenSize` and models,
+    /// `aggregates` the aggregates. See [`RenderModel::create_drawn`].
+    pub fn hlod_from_def(name: &[u8], htree: Option<HTree>, lods: Vec<(f32, Vec<MadeSubObject>)>, aggregates: Vec<MadeSubObject>) -> RenderModel {
+        use crate::logic::modules::plant;
+        // Init_Default's one pivot when the hierarchy was not found
+        let num_pivots = htree.as_ref().map_or(1, |t| t.num_pivots());
+        let mut out = RenderModel::empty_hlod(name, htree);
+        // the skeleton's list (RenderModel::create): the top LOD's meshes, then every aggregate mesh
+        let top_meshes = lods.last().map_or(0, |(_, l)| l.iter().filter(|m| matches!(m, MadeSubObject::Mesh(_))).count());
+        // HLodClass::Add_Lod_Model's clamp
+        let lods: Vec<(f32, Vec<MadeSubObject>)> = lods
+            .into_iter()
+            .map(|(size, models)| {
+                let models = models
+                    .into_iter()
+                    .map(|mut m| {
+                        if m.bone_index() >= num_pivots && !plant(10280) {
+                            m.set_bone_index(0);
+                        }
+                        m
+                    })
+                    .collect();
+                (size, models)
+            })
+            .collect();
+        let polycounts: Vec<i32> = lods
+            .iter()
+            .map(|(_, models)| {
+                models.iter().fold(0i32, |n, m| match m {
+                    MadeSubObject::Mesh(s) if !s.hidden || plant(10289) => n.wrapping_add(mesh_num_polys(&s.model)),
+                    _ => n,
+                })
+            })
+            .collect();
+        let sizes: Vec<f32> = lods.iter().map(|(m, _)| *m).collect();
+        let levels = HLodLevels::new(&sizes, &polycounts);
+        let top = lods.len().checked_sub(1);
+        let drawn_lod = if plant(10277) { top } else { usize::try_from(levels.cur_lod).ok().filter(|&c| c < lods.len()) };
+        let mut index: Vec<Option<usize>> = Vec::new();
+        let mut identity = drawn_lod == top;
+        let mut lods = lods;
+        if let Some(c) = drawn_lod {
+            let models = std::mem::take(&mut lods[c].1);
+            let on_top = Some(c) == top;
+            for m in models {
+                if matches!(m, MadeSubObject::Mesh(_)) {
+                    index.push(if on_top { Some(index.len()) } else { None });
+                }
+                out.add_made(m);
+            }
+        }
+        // (#181 LOD) HLodClass::Cast_Ray's "collide against the top LOD", kept apart when it is not the drawn one
+        if let Some(t) = top.filter(|&t| Some(t) != drawn_lod) {
+            let meshes: Vec<SubObject> = lods[t].1.iter().filter_map(|m| if let MadeSubObject::Mesh(s) = m { Some(s.clone()) } else { None }).collect();
+            out.cast_ray_top = Some((meshes, out.sub_objects.len()));
+        }
+        if plant(10291) {
+            // the pre-#181-LOD emitters: the top LOD's
+            out.emitters.clear();
+            if let Some(t) = top {
+                for m in std::mem::take(&mut lods[t].1) {
+                    if let MadeSubObject::Emitter(..) = m {
+                        out.add_made(m);
+                    }
+                }
+            }
+        }
+        // HLodClass::Add_Sub_Object_To_Bone: "if ((boneindex < 0) || (boneindex >= HTree->Num_Pivots())) return 0;"
+        let mut agg_mesh = 0usize;
+        for m in aggregates {
+            let is_mesh = matches!(m, MadeSubObject::Mesh(_));
+            let bone = m.bone_index();
+            if (bone < 0 || bone >= num_pivots) && !plant(10281) {
+                out.not_drawn.push((m.name().to_vec(), format!("bone {bone} out of range: Add_Sub_Object_To_Bone refuses it")));
+                if is_mesh {
+                    agg_mesh += 1;
+                    identity = false;
+                }
+                continue;
+            }
+            if is_mesh {
+                index.push(Some(top_meshes + agg_mesh));
+                agg_mesh += 1;
+            }
+            out.add_made(m);
+        }
+        out.lod = Some(levels);
+        out.skeleton_index = if identity { None } else { Some(index) };
+        out
+    }
+
+    /// A lone mesh's render model (`MeshClass`).
+    fn lone_mesh(name: &[u8], mesh: &super::mesh::Mesh) -> W3dResult<RenderModel> {
+        let model = MeshModel::from_mesh(mesh)?;
+        let hidden = model.w3d_attributes & W3D_MESH_FLAG_HIDDEN != 0;
+        Ok(RenderModel {
+            name: name.to_vec(),
+            is_hlod: false,
+            htree: None,
+            sub_objects: vec![SubObject { name: name.to_vec(), bone_index: 0, hidden, model, uv_offset: None }],
+            not_drawn: Vec::new(),
+            emitters: Vec::new(),
+            orphans: Vec::new(),
+            release_list: Vec::new(),
+            updates: 0,
+            lod: None,
+            skeleton_index: None,
+            cast_ray_top: None,
+        })
+    }
+
+    /// An HLOD's render model with no sub-objects yet.
+    fn empty_hlod(name: &[u8], htree: Option<HTree>) -> RenderModel {
+        RenderModel {
+            name: name.to_vec(),
+            is_hlod: true,
+            htree,
+            sub_objects: Vec::new(),
+            not_drawn: Vec::new(),
+            emitters: Vec::new(),
+            orphans: Vec::new(),
+            release_list: Vec::new(),
+            updates: 0,
+            lod: None,
+            skeleton_index: None,
+            cast_ray_top: None,
+        }
+    }
+
+    /// A made sub-object into the model: a mesh drawn, an emitter (its id the next), the others listed as not drawn.
+    fn add_made(&mut self, m: MadeSubObject) {
+        match m {
+            MadeSubObject::Mesh(s) => self.sub_objects.push(s),
+            MadeSubObject::Emitter(name, bone_index, def) => {
+                let id = self.emitters.len() as u32;
+                self.emitters.push(EmitterSub { name, bone_index, def, emitter: None, draw: None, failed: None, id, in_release_list: false, buffer_joined: 0 });
+            }
+            MadeSubObject::NotDrawn(name, _, why) => self.not_drawn.push((name, why)),
         }
     }
 
@@ -455,11 +825,7 @@ impl RenderModel {
     /// which `RenderObj::pose_render_model` returns.
     pub fn sub_object_transform(&self, i: usize) -> W3dResult<Matrix3D> {
         let s = self.sub_objects.get(i).ok_or(W3dUndefined::IndexOutOfRange)?;
-        if s.is_skin() {
-            Ok(Matrix3D::IDENTITY)
-        } else {
-            self.bone_transform(s.bone_index)
-        }
+        self.sub_transform(s)
     }
 
     /// (#181 item 9) `!Is_Not_Animation_Hidden()` of sub-object `i`: hidden by its bone's animated visibility
@@ -792,6 +1158,9 @@ impl RenderModel {
             orphans: self.orphans,
             release_list: self.release_list,
             updates: self.updates,
+            lod: None,
+            skeleton_index: None,
+            cast_ray_top: None,
         };
         let mut emitters = self.emitters;
         // HLodClass::Notify_Removed
@@ -824,15 +1193,44 @@ impl RenderModel {
         rest
     }
 
+    /// (#181 LOD) The meshes `HLodClass::Cast_Ray` (hlod.cpp:2686-2706) casts at, in its order: "collide against the
+    /// top LOD" (`Lod[LodCount-1]`'s models), then `AdditionalModels`. The top LOD is the drawn one unless
+    /// [`Self::cast_ray_top`] holds it; a lone mesh's is itself. Their transforms ([`Self::sub_transform`]) and skins'
+    /// vertices ([`Self::deformed_sub`]) are the hierarchy's, which the client's posing gives the live pivots
+    /// (`RenderObj::pose_render_model`, which also gives these meshes the render object's hidden flags). Upstream's
+    /// first `if (Are_Sub_Object_Transforms_Dirty()) Update_Sub_Object_Transforms();` is the client's: it picks against
+    /// the pose of the last draw.
+    pub fn cast_ray_sub_objects(&self) -> Vec<&SubObject> {
+        match &self.cast_ray_top {
+            Some((top, n)) if !crate::logic::modules::plant(10293) => top.iter().chain(self.sub_objects.iter().skip(*n)).collect(),
+            _ => self.sub_objects.iter().collect(),
+        }
+    }
+
+    /// (#181 LOD) [`Self::sub_object_transform`] of a sub-object given by reference (one of
+    /// [`Self::cast_ray_sub_objects`]): its bone's transform, or the identity for a skin.
+    pub fn sub_transform(&self, s: &SubObject) -> W3dResult<Matrix3D> {
+        if s.is_skin() {
+            Ok(Matrix3D::IDENTITY)
+        } else {
+            self.bone_transform(s.bone_index)
+        }
+    }
+
+    /// (#181 LOD) [`Self::deformed`] of a sub-object given by reference.
+    pub fn deformed_sub(&self, s: &SubObject) -> W3dResult<super::meshmdl::Deformed> {
+        match (&self.htree, s.is_skin()) {
+            (Some(t), true) => s.model.get_deformed_vertices(t),
+            _ => Ok((s.model.vertices.clone(), s.model.normals.clone())),
+        }
+    }
+
     /// `Get_Deformed_Vertices(dst_vert, dst_norm)` of skin `i` (vertices and
     /// normals in the model's space); its own vertices for a rigid mesh or
     /// without a hierarchy.
     pub fn deformed(&self, i: usize) -> W3dResult<super::meshmdl::Deformed> {
         let s = self.sub_objects.get(i).ok_or(W3dUndefined::IndexOutOfRange)?;
-        match (&self.htree, s.is_skin()) {
-            (Some(t), true) => s.model.get_deformed_vertices(t),
-            _ => Ok((s.model.vertices.clone(), s.model.normals.clone())),
-        }
+        self.deformed_sub(s)
     }
 }
 
@@ -1165,6 +1563,86 @@ mod tests {
     /// the second) under 1.
     ///
     /// *Result (2026-11-07), first run:* held.
+    /// (#181 LOD) A three-LOD HLOD on the two-bone ROBOT: LOD 0 (`MaxScreenSize` 0.5: the hidden quad, the box on a bone
+    /// past the hierarchy), LOD 1 (2.0: the box on the arm, the puff emitter), LOD 2 (`NO_MAX_SCREEN_SIZE`: the box on
+    /// the arm, the skin); aggregates the box on the arm and one on bone 9.
+    ///
+    /// Predicted before the run, from hlod.cpp: `CurLod` 1 (LOD 0's 0.5 is below 1, LOD 1's 2.0 is not); `Cost`
+    /// `[12, 12, 14]` (the hidden quad not counted; the box's 12 triangles, one pass; the skin's 2), `Value`
+    /// `[AT_MIN_LOD, AT_MIN_LOD, (1 - 0.5 / 196) / 14, AT_MAX_LOD]`; drawn: LOD 1's box, then the aggregate box (the one on
+    /// bone 9 refused and listed as not drawn); the puff the one emitter; the skeleton map `[None, Some(2)]` (the
+    /// skeleton's view lists the top LOD's box and skin, then both aggregate boxes). The skeleton's view
+    /// (`RenderModel::create`) is unchanged: four meshes, the last on bone 9. LOD 0's box, had it been drawn, would be
+    /// on bone 0 (`Add_Lod_Model`'s clamp): checked through a model whose only LOD is that one.
+    #[test]
+    fn the_drawn_model_is_the_lod_the_constructor_selects() {
+        use super::super::part_buf::{AT_MAX_LOD, AT_MIN_LOD};
+        use super::super::w3d_file::NO_MAX_SCREEN_SIZE;
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let mut f = htree_w3d(b"ROBOT", &[
+            PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
+            PivotSpec { name: b"ARM".to_vec(), parent: 0, translation: [0.0, 0.0, 5.0], rotation: ident },
+        ]);
+        f.extend(MeshSpec::cuboid(b"ROBOT", b"BOX", [-1.0; 3], [1.0; 3]).to_w3d());
+        let mut skin = MeshSpec::quad(b"ROBOT", b"SKIN");
+        skin.attributes = W3D_MESH_FLAG_GEOMETRY_TYPE_SKIN;
+        skin.bones = Some(vec![0, 0, 1, 1]);
+        f.extend(skin.to_w3d());
+        let mut hidden = MeshSpec::quad(b"ROBOT", b"HIDE");
+        hidden.attributes = W3D_MESH_FLAG_HIDDEN;
+        f.extend(hidden.to_w3d());
+        f.extend(EmitterSpec::puff(b"PUFF").to_w3d());
+        let lod0: &[(&[u8], u32)] = &[(b"ROBOT.HIDE", 0), (b"ROBOT.BOX", 7)];
+        let lod1: &[(&[u8], u32)] = &[(b"ROBOT.BOX", 1), (b"PUFF", 1)];
+        let lod2: &[(&[u8], u32)] = &[(b"ROBOT.BOX", 1), (b"ROBOT.SKIN", 0)];
+        f.extend(hlod_lods_w3d(b"ROBOT", b"ROBOT", &[(0.5, lod0), (2.0, lod1), (NO_MAX_SCREEN_SIZE, lod2)], &[(b"ROBOT.BOX", 1), (b"ROBOT.BOX", 9)]));
+        let low = hlod_lods_w3d(b"LOW", b"ROBOT", &[(NO_MAX_SCREEN_SIZE, lod0)], &[]);
+        let fs = fs_with(&[("Art/W3D/robot.w3d", f), ("Art/W3D/low.w3d", low)]);
+        let mut am = AssetManager::new_game(W3dFileFactory::default());
+        let m = RenderModel::create_drawn(&mut am, &fs, b"ROBOT").unwrap().unwrap();
+        let l = m.lod.clone().unwrap();
+        assert_eq!((l.lod_count, l.cur_lod, l.get_lod_level(), l.get_lod_count()), (3, 1, 1, 3));
+        assert_eq!(l.cost, vec![12.0, 12.0, 14.0]);
+        assert_eq!(l.value, vec![AT_MIN_LOD, AT_MIN_LOD, (1.0f32 - 0.5f32 / 196.0f32) * 1.0 * 1.0 / 14.0, AT_MAX_LOD]);
+        let drawn: Vec<(&[u8], i32)> = m.sub_objects.iter().map(|s| (&s.name[..], s.bone_index)).collect();
+        assert_eq!(drawn, vec![(&b"ROBOT.BOX"[..], 1), (&b"ROBOT.BOX"[..], 1)]);
+        assert_eq!(m.emitters.len(), 1);
+        assert_eq!(m.not_drawn.len(), 1, "{:?}", m.not_drawn);
+        assert_eq!(m.skeleton_index, Some(vec![None, Some(2)]));
+        // the skeleton's view, as before
+        let k = RenderModel::create(&mut am, &fs, b"ROBOT").unwrap().unwrap();
+        let listed: Vec<(&[u8], i32)> = k.sub_objects.iter().map(|s| (&s.name[..], s.bone_index)).collect();
+        assert_eq!(listed, vec![(&b"ROBOT.BOX"[..], 1), (&b"ROBOT.SKIN"[..], 0), (&b"ROBOT.BOX"[..], 1), (&b"ROBOT.BOX"[..], 9)]);
+        assert_eq!((k.lod.is_none(), k.skeleton_index.is_none(), k.emitters.len()), (true, true, 0));
+        // Add_Lod_Model's clamp: the box on bone 7 of a two-bone hierarchy is on bone 0
+        let low = RenderModel::create_drawn(&mut am, &fs, b"LOW").unwrap().unwrap();
+        let drawn: Vec<(&[u8], i32, bool)> = low.sub_objects.iter().map(|s| (&s.name[..], s.bone_index, s.hidden)).collect();
+        assert_eq!(drawn, vec![(&b"ROBOT.HIDE"[..], 0, true), (&b"ROBOT.BOX"[..], 0, false)]);
+        assert_eq!(low.skeleton_index, None);
+    }
+
+    /// (#181 LOD) `HLodLevels` on its own (`Calculate_Cost_Value_Arrays` at a screen area of 1): no LOD below 1 keeps
+    /// `CurLod` 0; every LOD below 1 gives the top; a NaN `MaxScreenSize` stops the scan (`NaN < 1` is false); a size of
+    /// exactly 1 is not below 1; `Set_LOD_Level` clamps; a poly count of 46,341 wraps its square as the original's `int`.
+    #[test]
+    fn the_lod_selection_follows_calculate_cost_value_arrays() {
+        let sel = |sizes: &[f32]| HLodLevels::new(sizes, &[]).cur_lod;
+        assert_eq!(sel(&[2.0, 5.0]), 0);
+        assert_eq!(sel(&[0.0, 0.5, 0.9]), 2);
+        assert_eq!(sel(&[0.0, f32::NAN, 0.5]), 1);
+        assert_eq!(sel(&[0.5, 1.0, 0.5]), 1);
+        assert_eq!(sel(&[f32::from_bits(1.0f32.to_bits() - 1), -1.0, f32::INFINITY]), 2);
+        let mut l = HLodLevels::new(&[0.0, 0.0], &[3, 0]);
+        assert_eq!((l.cur_lod, l.cost.clone()), (1, vec![3.0, 0.000001]));
+        assert_eq!(l.lods[1].benefit_factor, 0.0);
+        l.set_lod_level(-4);
+        assert_eq!(l.get_lod_level(), 0);
+        l.set_lod_level(9);
+        assert_eq!(l.get_lod_level(), 1);
+        let big = HLodLevels::new(&[super::super::w3d_file::NO_MAX_SCREEN_SIZE], &[46_341]);
+        assert_eq!(big.lods[0].benefit_factor, 1.0f32 - 0.5f32 / (46_341i32.wrapping_mul(46_341) as f32));
+    }
+
     #[test]
     fn an_hlod_emitter_emits_on_its_bone() {
         let ident = [0.0, 0.0, 0.0, 1.0];

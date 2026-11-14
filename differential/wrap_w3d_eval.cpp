@@ -54,8 +54,9 @@
 ** No edit. Compiled (namespace ao) on stand-ins: the base class (CompositeRenderObjClass: `Transform`,
 ** `Set_Transform`/`Set_Position` as RenderObjClass's assignments, `Update_Sub_Object_Transforms` and `Validate_Transform`
 ** doing nothing (RenderObjClass's; no container), `Is_Not_Hidden_At_All` the driver's hidden flag,
-** `Are_Sub_Object_Transforms_Dirty` false: HLodClass sets that bit only with Set_Transform, which also invalidates the
-** hierarchy, and its update clears both), `WW3D::Get_Sync_Time()` the driver's sync time (op 41),
+** ~~`Are_Sub_Object_Transforms_Dirty` false: HLodClass sets that bit only with Set_Transform, which also invalidates the
+** hierarchy, and its update clears both~~ **Corrected 2026-11-14 (#181 item 4):** the real bit and its accessors
+** (rendobj.h, verbatim), which op 62/64's HLODs set and clear as upstream's), `WW3D::Get_Sync_Time()` the driver's sync time (op 41),
 ** ~~AnimatedSoundMgrClass with no embedded sound (Get_Embedded_Sound_Name NULL, so Has_Embedded_Sounds is false and
 ** Trigger_Sound is never reached: it aborts)~~ **Corrected 2026-11-14 (#181 item 3):** the real AnimatedSoundMgrClass
 ** (verbatim, see ops 53-58; with no table loaded it names no bone, as the stand-in did), and the constructor (animobj.cpp:82-111's member initialisation, with
@@ -475,13 +476,17 @@ class RenderInfoClass {};
 class SpecialRenderInfoClass {};
 
 /* (#181 item 10) WW3DAssetManager for the constructor from a name (ao_ctor.inc): Get_HTree answers the tree op 62 named
-** (one of the loaded ones), or NULL for a name the script says is not found. */
+** (one of the loaded ones), or NULL for a name the script says is not found. (#181 LOD) Create_Render_Obj, for
+** HLodClass(const HLodDefClass &) (hl_ctor.inc): the next of the sub-objects ops 62 and 64 described, in the order
+** the constructor asks for them (each LOD's models, then the aggregates), or NULL for one described as missing. */
 HTreeClass *g_found_htree;
+class RenderObjClass;
 class WW3DAssetManager
 {
 public:
 	static WW3DAssetManager *Get_Instance(void) { static WW3DAssetManager m; return &m; }
 	HTreeClass *Get_HTree(const char *) { return g_found_htree; }
+	RenderObjClass *Create_Render_Obj(const char *name);
 };
 
 class CompositeRenderObjClass
@@ -490,15 +495,33 @@ public:
 #include "ao_anim_mode.inc"
 	Matrix3D Transform;
 	bool Hidden;
-	CompositeRenderObjClass() : Transform(true), Hidden(false) {}
+	/* (#181 item 4) RenderObjClass's Bits, as far as the SUBOBJ_TRANSFORMS_DIRTY bit (rendobj.h:538, ro_dirty_bit.inc)
+	** and its two accessors (rendobj.h:494-495, ro_dirty.inc), verbatim; clear as made (DEFAULT_BITS has no such bit) */
+	int Bits;
+	enum {
+#include "ro_dirty_bit.inc"
+	};
+	CompositeRenderObjClass() : Transform(true), Hidden(false), Bits(0) {}
 	void Set_Transform(const Matrix3D &m) { Transform = m; }
 	void Set_Position(const Vector3 &v) { Transform.Set_Translation(v); }
 	void Update_Sub_Object_Transforms(void) {}
 	void Validate_Transform(void) const {}
 	const Matrix3D &Get_Transform(void) const { return Transform; }
 	int Is_Not_Hidden_At_All(void) { return !Hidden; }
-	bool Are_Sub_Object_Transforms_Dirty(void) { return false; }
+#include "ro_dirty.inc"
+	/* (#181 LOD) RenderObjClass::AT_MIN_LOD and AT_MAX_LOD (rendobj.cpp:104-105: FLT_MAX and -1.0f) */
+	static const float AT_MIN_LOD;
+	static const float AT_MAX_LOD;
+	/* (#181 LOD) HLodClass's scene and name, as far as its constructor and LOD functions reach them: never in a scene
+	** (Is_In_Scene false, so Set_LOD_Level and Add_Lod_Model notify nobody), Set_Name kept */
+	void *Scene;
+	char ObjName[64];
+	bool Is_In_Scene(void) { return false; }
+	void Set_Name(const char *n) { strncpy(ObjName, n, sizeof(ObjName) - 1); ObjName[sizeof(ObjName) - 1] = 0; }
+	const char *Get_Name(void) const { return ObjName; }
 };
+const float CompositeRenderObjClass::AT_MIN_LOD = FLT_MAX;
+const float CompositeRenderObjClass::AT_MAX_LOD = -1.0f;
 
 class Animatable3DObjClass : public CompositeRenderObjClass
 {
@@ -514,12 +537,14 @@ public:
 	}
 	void Render(RenderInfoClass &rinfo);
 	void Special_Render(SpecialRenderInfoClass &rinfo);
-	void Set_Transform(const Matrix3D &m);
-	void Set_Position(const Vector3 &v);
-	void Set_Animation(void);
-	void Set_Animation(HAnimClass *motion, float frame, int anim_mode = ANIM_MODE_MANUAL);
-	void Set_Animation(HAnimClass *motion0, float frame0, HAnimClass *motion1, float frame1, float percentage);
-	void Set_Animation(HAnimComboClass *anim_combo);
+	/* (#181 item 4) virtual, as upstream's (rendobj.h, animobj.h): op 64's HLODs override them (hl_set_transform.inc,
+	** hl_add_bone.inc) to set the sub-objects' transforms dirty */
+	virtual void Set_Transform(const Matrix3D &m);
+	virtual void Set_Position(const Vector3 &v);
+	virtual void Set_Animation(void);
+	virtual void Set_Animation(HAnimClass *motion, float frame, int anim_mode = ANIM_MODE_MANUAL);
+	virtual void Set_Animation(HAnimClass *motion0, float frame0, HAnimClass *motion1, float frame1, float percentage);
+	virtual void Set_Animation(HAnimComboClass *anim_combo);
 	void Set_Animation_Frame_Rate_Multiplier(float multiplier);
 	HAnimClass *Peek_Animation_And_Info(float &frame, int &numFrames, int &mode, float &mult);
 	HAnimClass *Peek_Animation(void);
@@ -554,26 +579,93 @@ public:
 #include "ao_inline.inc"
 #include "ao_ctor.inc"
 
-/* (#181 item 9) an HLOD's sub-object (MeshClass, as far as HLodClass::Update_Sub_Object_Transforms reaches it):
-** RenderObjClass's Set_Transform (the assignment), Set_Animation_Hidden (rendobj.h:474, the IS_NOT_ANIMATION_HIDDEN bit,
-** kept here as a flag) and Update_Sub_Object_Transforms (nothing: a mesh has no sub-objects). Its transform starts as
+/* (#181 items 9, 10, LOD) an HLOD's sub-object (MeshClass, as far as HLodClass reaches it): RenderObjClass's
+** Set_Transform (the assignment), Set_Animation_Hidden (rendobj.h:474, the IS_NOT_ANIMATION_HIDDEN bit, kept here as a
+** flag) and Update_Sub_Object_Transforms (nothing: a mesh has no sub-objects); MeshClass::Get_Num_Polys (the poly count
+** the op gives), Is_Not_Hidden_At_All (the op's hidden flag; Add_Lod_Model leaves the animation bit clear), and the
+** reference count, container, LOD bias and scene notifications, which change nothing here. Its transform starts as
 ** RenderObjClass()'s identity, not animation-hidden. */
 class RenderObjClass
 {
 public:
 	Matrix3D Transform;
 	bool AnimHidden;
-	RenderObjClass() : Transform(true), AnimHidden(false) {}
+	bool Hidden;
+	int Polys;
+	int Refs;
+	RenderObjClass() : Transform(true), AnimHidden(false), Hidden(false), Polys(0), Refs(1) {}
 	void Set_Transform(const Matrix3D &m) { Transform = m; }
 	void Set_Animation_Hidden(int onoff) { AnimHidden = onoff != 0; }
 	void Update_Sub_Object_Transforms(void) {}
+	int Get_Num_Polys(void) const { return Polys; }
+	int Is_Not_Hidden_At_All(void) { return !Hidden && !AnimHidden; }
+	void Add_Ref(void) { ++Refs; }
+	void Release_Ref(void) { --Refs; }
+	void Set_Container(void *) {}
+	void Set_LOD_Bias(float) {}
+	void Notify_Added(void *) {}
+	void Notify_Removed(void *) {}
 };
 
-/* (#181 items 9, 10) HLodClass as far as its drawn sub-objects: made from its definition (hlod.cpp:1082-1083 passes
-** HierarchyTreeName to the constructor above), one LOD (Lod[0]) and the additional models, each a sub-object on a bone;
-** hlod.cpp's Update_Sub_Object_Transforms verbatim (hl_update.inc) with hlod.h's ModelNodeClass and ModelArrayClass
-** (hl_nodes.inc); Set_Sub_Object_Transforms_Dirty nothing (the base's Are_Sub_Object_Transforms_Dirty is false, see the
-** header); then Create_Render_Obj's scale as the other constructor (HLodClass::Scale's hierarchy part). */
+/* (#181 LOD) what Create_Render_Obj gives, in order: a sub-object's poly count and hidden flag, or missing */
+struct MadeSpec
+{
+	bool missing;
+	int polys;
+	bool hidden;
+};
+std::vector<MadeSpec> g_made_specs;
+size_t g_made_next;
+std::vector<RenderObjClass *> g_made;
+RenderObjClass *WW3DAssetManager::Create_Render_Obj(const char *)
+{
+	MadeSpec m = g_made_specs[g_made_next++];
+	if (m.missing) return NULL;
+	RenderObjClass *r = new RenderObjClass;
+	r->Polys = m.polys;
+	r->Hidden = m.hidden;
+	g_made.push_back(r);
+	return r;
+}
+
+/* (#181 LOD) HLodDefClass as far as HLodClass(const HLodDefClass &) reads it (hlod.h's names; op 62 and 64 fill it):
+** the name, the hierarchy's name, LodCount and each LOD's MaxScreenSize, ModelCount, ModelName and BoneIndex, the
+** aggregates, and no proxies. */
+class ProxyArrayClass
+{
+public:
+	void Add_Ref(void) {}
+	void Release_Ref(void) {}
+};
+class HLodDefClass
+{
+public:
+	class SubObjectArrayClass
+	{
+	public:
+		float MaxScreenSize;
+		int ModelCount;
+		char **ModelName;
+		int *BoneIndex;
+	};
+	char *Name;
+	char *HierarchyTreeName;
+	int LodCount;
+	SubObjectArrayClass *Lod;
+	SubObjectArrayClass Aggregates;
+	ProxyArrayClass *ProxyArray;
+	const char *Get_Name(void) const { return Name; }
+};
+
+/* (#181 items 9, 10, LOD, 4) HLodClass as far as its drawn sub-objects, its LOD and its dirty flag: made by
+** HLodClass(const HLodDefClass &) VERBATIM (hl_ctor.inc, which passes HierarchyTreeName to the constructor above), with
+** Add_Lod_Model (hl_add_lod.inc), Add_Sub_Object_To_Bone and the four Set_Animation (hl_add_bone.inc),
+** Set_Transform and Set_Position (hl_set_transform.inc), the LOD functions (hl_lod.inc: Recalculate_Static_LOD_Factors
+** to Calculate_Cost_Value_Arrays), Update_Sub_Object_Transforms (hl_update.inc) and hlod.h's ModelNodeClass and
+** ModelArrayClass (hl_nodes.inc); Update_Sub_Object_Bits and Update_Obj_Space_Bounding_Volumes do nothing (the
+** bounding volumes are not compared; the latter's Base_Update of the hierarchy is undone by its
+** Set_Hierarchy_Valid(false) before any read here). Then Create_Render_Obj's scale (HLodClass::Scale's hierarchy part),
+** as the other constructor. */
 class HLodClass : public Animatable3DObjClass
 {
 public:
@@ -581,34 +673,89 @@ public:
 	int LodCount;
 	int CurLod;
 	ModelArrayClass *Lod;
+	int BoundingBoxIndex;
+	float *Cost;
+	float *Value;
 	ModelArrayClass AdditionalModels;
-	std::vector<RenderObjClass *> Subs;
-	HLodClass(const char *htree_name, float scale, const std::vector<int> &lod_bones, const std::vector<int> &add_bones)
-		: Animatable3DObjClass(htree_name), LodCount(1), CurLod(0), Lod(new ModelArrayClass[1])
-	{
-		for (size_t i = 0; i < lod_bones.size() + add_bones.size(); ++i) {
-			ModelNodeClass n;
-			n.Model = new RenderObjClass;
-			n.BoneIndex = i < lod_bones.size() ? lod_bones[i] : add_bones[i - lod_bones.size()];
-			Subs.push_back(n.Model);
-			if (i < lod_bones.size()) Lod[0].Add(n); else AdditionalModels.Add(n);
-		}
-		bool reallyscale = (WWMath::Fabs(scale - 1.0f) > 0.01f);
-		if (reallyscale && scale != 1.0f) {
-			HTree->Scale(scale);
-			Set_Hierarchy_Valid(false);
-		}
-	}
+	void *SnapPoints;
+	ProxyArrayClass *ProxyArray;
+	float LODBias;
+	std::vector<RenderObjClass *> Made;
+	HLodClass(const HLodDefClass &def);
 	~HLodClass(void)
 	{
 		delete[] Lod;
-		for (size_t i = 0; i < Subs.size(); ++i) delete Subs[i];
+		delete[] Cost;
+		delete[] Value;
+		for (size_t i = 0; i < Made.size(); ++i) delete Made[i];
 	}
-	void Set_Sub_Object_Transforms_Dirty(bool) {}
+	void Update_Sub_Object_Bits(void) {}
+	void Update_Obj_Space_Bounding_Volumes(void) {}
 	virtual void Update_Sub_Object_Transforms(void);
+	virtual void Set_Transform(const Matrix3D &m);
+	virtual void Set_Position(const Vector3 &v);
+	virtual void Set_Animation(void);
+	virtual void Set_Animation(HAnimClass *motion, float frame, int mode);
+	virtual void Set_Animation(HAnimClass *motion0, float frame0, HAnimClass *motion1, float frame1, float percentage);
+	virtual void Set_Animation(HAnimComboClass *anim_combo);
+	void Add_Lod_Model(int lod, RenderObjClass *robj, int boneindex);
+	int Add_Sub_Object_To_Bone(RenderObjClass *subobj, int boneindex);
+	void Recalculate_Static_LOD_Factors(void);
+	void Increment_LOD(void);
+	void Decrement_LOD(void);
+	float Get_Cost(void) const;
+	float Get_Value(void) const;
+	float Get_Post_Increment_Value(void) const;
+	void Set_LOD_Level(int lod);
+	int Get_LOD_Level(void) const;
+	int Get_LOD_Count(void) const;
+	int Calculate_Cost_Value_Arrays(float screen_area, float *values, float *costs) const;
 };
 
+#include "hl_ctor.inc"
+#include "hl_add_lod.inc"
+#include "hl_add_bone.inc"
+#include "hl_set_transform.inc"
+#include "hl_lod.inc"
 #include "hl_update.inc"
+
+/* (#181 LOD) a new HLOD from the op's description: the definition (LODs, aggregates; each sub-object named), the
+** sub-objects Create_Render_Obj will give, then Create_Render_Obj's scale (W3DAssetManager.cpp:738, HLodClass::Scale's
+** hierarchy part, hlod.cpp:3264-3286) */
+HLodClass *make_hlod(const char *htree_name, float scale, const std::vector<float> &sizes, const std::vector<std::vector<int> > &lod_bones,
+	const std::vector<int> &add_bones, const std::vector<MadeSpec> &specs)
+{
+	static char sub_name[] = "H.SUB";
+	HLodDefClass def;
+	def.Name = (char *)"H";
+	def.HierarchyTreeName = (char *)htree_name;
+	def.LodCount = (int)sizes.size();
+	def.Lod = new HLodDefClass::SubObjectArrayClass[sizes.size() + 1];
+	std::vector<char *> names(64, sub_name);
+	std::vector<std::vector<int> > bones(lod_bones);
+	bones.push_back(add_bones);
+	for (size_t i = 0; i <= sizes.size(); ++i) {
+		HLodDefClass::SubObjectArrayClass &a = i < sizes.size() ? def.Lod[i] : def.Aggregates;
+		a.MaxScreenSize = i < sizes.size() ? sizes[i] : NO_MAX_SCREEN_SIZE;
+		a.ModelCount = (int)bones[i].size();
+		a.ModelName = &names[0];
+		a.BoneIndex = bones[i].empty() ? NULL : &bones[i][0];
+	}
+	def.ProxyArray = NULL;
+	g_made_specs = specs;
+	g_made_next = 0;
+	g_made.clear();
+	HLodClass *h = new HLodClass(def);
+	h->Made = g_made;
+	g_made.clear();
+	delete[] def.Lod;
+	bool reallyscale = (WWMath::Fabs(scale - 1.0f) > 0.01f);
+	if (reallyscale && scale != 1.0f) {
+		h->HTree->Scale(scale);
+		h->Set_Hierarchy_Valid(false);
+	}
+	return h;
+}
 
 /* animobj.cpp:82-111's initialisation, the hierarchy copied from a loaded one; then Create_Render_Obj's scale (see the
 ** header) */
@@ -964,18 +1111,23 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 			break;
 		/* (#181 items 9, 10) 62 kind tree scale nlod nadd bones...: a new HLOD (kind 0: on loaded tree `tree`, by its name;
 		** 1: an empty name; 2: a name not found: both the default hierarchy), at `scale`, with nlod sub-objects in its LOD
-		** and nadd additional ones on the given bones; then the state (put_robj). 63 robj: an HLOD's drawn sub-objects as
-		** its last Update_Sub_Object_Transforms left them: the count, then each one's Transform (12 floats) and animation
-		** hidden flag (1 byte); then the render object's Transform (12 floats). */
+		** and nadd additional ones on the given bones; then the state (put_robj). (#181 LOD) Made by
+		** HLodClass(const HLodDefClass &) (make_hlod) with one LOD of NO_MAX_SCREEN_SIZE and sub-objects of no polygons.
+		** 63 robj: an HLOD's drawn sub-objects as its last Update_Sub_Object_Transforms left them (#181 LOD: those
+		** HLodClass::Render draws, Lod[CurLod]'s models then AdditionalModels): the count, then each one's Transform (12
+		** floats) and animation hidden flag (1 byte); then the render object's Transform (12 floats). */
 		case 62: {
 			uint32_t kind = rd.u();
 			uint32_t t = rd.u();
 			float scale = rd.f();
 			uint32_t nlod = rd.u();
 			uint32_t nadd = rd.u();
-			std::vector<int> lb, ab;
-			for (uint32_t k = 0; k < nlod; ++k) lb.push_back((int)rd.u());
+			std::vector<std::vector<int> > lb(1);
+			std::vector<int> ab;
+			for (uint32_t k = 0; k < nlod; ++k) lb[0].push_back((int)rd.u());
 			for (uint32_t k = 0; k < nadd; ++k) ab.push_back((int)rd.u());
+			std::vector<ao::MadeSpec> specs(nlod + nadd);
+			for (size_t k = 0; k < specs.size(); ++k) { specs[k].missing = false; specs[k].polys = 0; specs[k].hidden = false; }
 			char name[W3D_NAME_LEN + 1];
 			memset(name, 0, sizeof(name));
 			if (kind == 0) {
@@ -985,7 +1137,7 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 				strcpy(name, "NOSUCHTREE");
 				ao::g_found_htree = NULL;
 			}
-			ao::g_robjs.push_back(new ao::HLodClass(name, scale, lb, ab));
+			ao::g_robjs.push_back(ao::make_hlod(name, scale, std::vector<float>(1, NO_MAX_SCREEN_SIZE), lb, ab, specs));
 			ao::g_found_htree = NULL;
 			ao::g_clean.push_back(true);
 			ao::put_robj(ao::g_robjs.size() - 1);
@@ -993,12 +1145,100 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 		}
 		case 63: {
 			ao::HLodClass *h = (ao::HLodClass *)ao::g_robjs[rd.u()];
-			put32((uint32_t)h->Subs.size());
-			for (size_t k = 0; k < h->Subs.size(); ++k) {
-				putM(h->Subs[k]->Transform);
-				put8(h->Subs[k]->AnimHidden ? 1 : 0);
+			std::vector<ao::RenderObjClass *> drawn;
+			if (h->CurLod >= 0 && h->CurLod < h->LodCount) {
+				for (int k = 0; k < h->Lod[h->CurLod].Count(); ++k) drawn.push_back(h->Lod[h->CurLod][k].Model);
+			}
+			for (int k = 0; k < h->AdditionalModels.Count(); ++k) drawn.push_back(h->AdditionalModels[k].Model);
+			put32((uint32_t)drawn.size());
+			for (size_t k = 0; k < drawn.size(); ++k) {
+				putM(drawn[k]->Transform);
+				put8(drawn[k]->AnimHidden ? 1 : 0);
 			}
 			putM(h->Get_Transform());
+			break;
+		}
+		/* (#181 LOD) 64 kind tree scale nlod [size nmodels (bone spec)...]... nadd (bone spec)...: a new HLOD of nlod LODs
+		** (each its MaxScreenSize's bits and its models), and nadd aggregates, on a hierarchy as op 62's; a spec is what
+		** Create_Render_Obj gives for that sub-object: 0xFFFFFFFF none (NULL), else bit 30 hidden and the low 30 bits its
+		** poly count. Logs the state (put_robj), then LodCount, CurLod, Get_LOD_Level(), Get_LOD_Count(), each Cost[i]
+		** and each Value[i] (LodCount + 1) as float bits, then the drawn models' count and each one's BoneIndex. */
+		case 64: {
+			uint32_t kind = rd.u();
+			uint32_t t = rd.u();
+			float scale = rd.f();
+			uint32_t nlod = rd.u();
+			std::vector<float> sizes;
+			std::vector<std::vector<int> > lb(nlod);
+			std::vector<int> ab;
+			std::vector<ao::MadeSpec> specs;
+			for (uint32_t l = 0; l < nlod; ++l) {
+				sizes.push_back(rd.f());
+				uint32_t n = rd.u();
+				for (uint32_t k = 0; k < n; ++k) {
+					lb[l].push_back((int)rd.u());
+					uint32_t sp = rd.u();
+					ao::MadeSpec m;
+					m.missing = sp == 0xFFFFFFFFu;
+					m.hidden = (sp >> 30) & 1;
+					m.polys = (int)(sp & 0x3FFFFFFFu);
+					specs.push_back(m);
+				}
+			}
+			uint32_t nadd = rd.u();
+			for (uint32_t k = 0; k < nadd; ++k) {
+				ab.push_back((int)rd.u());
+				uint32_t sp = rd.u();
+				ao::MadeSpec m;
+				m.missing = sp == 0xFFFFFFFFu;
+				m.hidden = (sp >> 30) & 1;
+				m.polys = (int)(sp & 0x3FFFFFFFu);
+				specs.push_back(m);
+			}
+			char name[W3D_NAME_LEN + 1];
+			memset(name, 0, sizeof(name));
+			if (kind == 0) {
+				memcpy(name, g_trees[t]->Get_Name(), W3D_NAME_LEN);
+				ao::g_found_htree = g_trees[t];
+			} else if (kind == 2) {
+				strcpy(name, "NOSUCHTREE");
+				ao::g_found_htree = NULL;
+			}
+			ao::HLodClass *h = ao::make_hlod(name, scale, sizes, lb, ab, specs);
+			ao::g_robjs.push_back(h);
+			ao::g_found_htree = NULL;
+			ao::g_clean.push_back(true);
+			ao::put_robj(ao::g_robjs.size() - 1);
+			put32((uint32_t)h->LodCount);
+			put32((uint32_t)h->CurLod);
+			put32((uint32_t)h->Get_LOD_Level());
+			put32((uint32_t)h->Get_LOD_Count());
+			for (int k = 0; k < h->LodCount; ++k) putF(h->Cost[k]);
+			for (int k = 0; k <= h->LodCount; ++k) putF(h->Value[k]);
+			/* the drawn models' bones (Lod[CurLod]'s, then AdditionalModels'): Add_Lod_Model's clamp and
+			** Add_Sub_Object_To_Bone's refusals */
+			std::vector<int> drawn_bones;
+			if (h->CurLod >= 0 && h->CurLod < h->LodCount) {
+				for (int k = 0; k < h->Lod[h->CurLod].Count(); ++k) drawn_bones.push_back(h->Lod[h->CurLod][k].BoneIndex);
+			}
+			for (int k = 0; k < h->AdditionalModels.Count(); ++k) drawn_bones.push_back(h->AdditionalModels[k].BoneIndex);
+			put32((uint32_t)drawn_bones.size());
+			for (size_t k = 0; k < drawn_bones.size(); ++k) put32((uint32_t)drawn_bones[k]);
+			break;
+		}
+		/* (#181 item 4, Get_Bone_Name) 65 robj: an HLOD's Are_Sub_Object_Transforms_Dirty() and Is_Hierarchy_Valid() (1
+		** byte each), Get_Num_Bones(), then each bone's Get_Bone_Name(i) (its length, then its bytes) */
+		case 65: {
+			ao::HLodClass *h = (ao::HLodClass *)ao::g_robjs[rd.u()];
+			put8(h->Are_Sub_Object_Transforms_Dirty() ? 1 : 0);
+			put8(h->Is_Hierarchy_Valid() ? 1 : 0);
+			int nb = h->Get_Num_Bones();
+			put32((uint32_t)nb);
+			for (int k = 0; k < nb; ++k) {
+				const char *bn = h->Get_Bone_Name(k);
+				put32((uint32_t)strlen(bn));
+				put(bn, strlen(bn));
+			}
 			break;
 		}
 		/* (#180) 50 tree anim frame: the client's drawn pose. A fresh render object on the tree (scale 1), in SINGLE_ANIM

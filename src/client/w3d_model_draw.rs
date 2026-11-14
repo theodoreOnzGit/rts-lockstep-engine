@@ -1076,8 +1076,9 @@ fn find_single_bone(sk: Option<&Skeleton>, live: Option<(&mut RenderObj, u32)>, 
 /// sub-object transforms dirty (validateCachedBones' `Set_Transform(Matrix3D(true).Scale(scale))` set the bit, hlod.cpp:
 /// 2222-2226) and runs `HLodClass::Update_Sub_Object_Transforms` (3351-3387): the hierarchy evaluated in the pose
 /// validateCachedBones set, and each sub-object given `HTree->Get_Transform(bone)`. Here: the live render object's
-/// [`RenderObj::get_bone_transform`] of the sub-object's bone, which evaluates its hierarchy when it is not valid. The
-/// port keeps no dirty bit: inside validateCachedBones the bit and the hierarchy's validity go together (both set by
+/// [`RenderObj::get_bone_transform`] of the sub-object's bone, which evaluates its hierarchy when it is not valid. ~~The
+/// port keeps no dirty bit~~ **Corrected 2026-11-14 (#181 item 4):** the port keeps the dirty bit
+/// ([`RenderObj::are_sub_object_transforms_dirty`]) but this read goes by the hierarchy's validity: inside validateCachedBones the bit and the hierarchy's validity go together (both set by
 /// that `Set_Transform`, both cleared by the first evaluation), so the two agree there, the only caller with a live
 /// render object. ~~(#181 item 7b) the sub-objects are always the posed skeleton's~~ **Corrected 2026-11-14 (#181 item
 /// 7c):** read live, as upstream's. Without `live` (`tossRobj`, a render object made for the purpose and posed): the
@@ -2593,7 +2594,8 @@ impl<D: LocalDevice> W3dAssetSource for W3dFiles<'_, D> {
             _ => None,
         }
     }
-    /// The render model as drawn ([`RenderModel::create`]), ~~posed~~ **Corrected 2026-11-12 (#172):** its
+    /// The render model ~~as drawn~~ **Corrected 2026-11-14 (#181 LOD):** as the skeleton reads it (top LOD; the drawn one is
+    /// `RenderModel::create_drawn`) ([`RenderModel::create`]), ~~posed~~ **Corrected 2026-11-12 (#172):** its
     /// hierarchy scaled as `Create_Render_Obj(name, scale, color)` scales it ([`scale_render_obj_hierarchy`]), then
     /// posed by `Anim_Update` (or `Base_Update`) under the scaled identity, as `Validate_Transform` poses it. (#180) ~~The
     /// `Anim_Update` is the virtual one ([`RenderModel::update`]), where upstream's render object takes animobj.h's inline
@@ -2828,6 +2830,11 @@ pub struct RenderObj {
     /// is valid, and a parent later in the array contributes its previous transform, as upstream's). Its capture state is
     /// [`RenderObj::bone_controls`]'s, put on before each update.
     live_tree: Option<HTree>,
+    /// (#181 item 4) `Are_Sub_Object_Transforms_Dirty()` (rendobj.h:494-495, the `SUBOBJ_TRANSFORMS_DIRTY` bit): set by
+    /// an HLOD's constructor (hlod.cpp:1151), `HLodClass::Set_Transform` (2222-2226) and its four `Set_Animation`
+    /// (2603-2672); cleared by `HLodClass::Update_Sub_Object_Transforms` (3386). Never set on a render object that is
+    /// not an HLOD. See [`RenderObj::are_sub_object_transforms_dirty`].
+    sub_object_transforms_dirty: bool,
     /// ~~`ModeAnim.Frame` kept across `Set_Animation` (its `PrevFrame`).~~ **Corrected 2026-11-14 (#181 item 5):**
     /// the union's bytes as the render object last left a mode ([`ModeUnion`]), which give `Set_Animation`'s
     /// `PrevFrame` and the blend's `PrevFrame0`/`PrevFrame1`.
@@ -2880,6 +2887,8 @@ impl RenderObj {
             mode_combo: None,
             is_tree_valid: false,
             live_tree: None,
+            // (#181 item 4) HLodClass's constructors: "Flag our sub-objects as having dirty transforms"
+            sub_object_transforms_dirty: is_hlod && !plant(10285),
             mode_union: ModeUnion::new(4),
             hidden: false,
             skeleton: None,
@@ -2970,6 +2979,42 @@ impl RenderObj {
         if !plant(9802) {
             self.is_tree_valid = false;
         }
+        // (#181 item 4) `HLodClass::Set_Transform`'s `Set_Sub_Object_Transforms_Dirty(true)`
+        if self.is_hlod && !plant(10282) {
+            self.sub_object_transforms_dirty = true;
+        }
+    }
+
+    /// (#181 item 4) `Are_Sub_Object_Transforms_Dirty()` (rendobj.h:495). In Zero Hour's paths every call that sets it
+    /// (the constructor, `Set_Transform`, the `Set_Animation`s) also invalidates the hierarchy, and the update clears
+    /// both, so it is set only while [`RenderObj::is_hierarchy_valid`] is false; the converse does not hold
+    /// (`Control_Bone` and `Single_Anim_Progress` invalidate the hierarchy only). `Render` updates when either says so.
+    pub fn are_sub_object_transforms_dirty(&self) -> bool {
+        self.sub_object_transforms_dirty
+    }
+
+    /// (#181) `Get_Bone_Name(bone_index)` (`Animatable3DObjClass::Get_Bone_Name`, animobj.cpp:407-414:
+    /// `HTree->Get_Bone_Name(bone_index)`, htree.cpp:945-951, `Pivot[boneidx].Name`; `RenderObjClass`'s `NULL`,
+    /// rendobj.h:353, for a render object that is not an HLOD): the skeleton's pivot name, or "RootTransform" for the
+    /// default hierarchy (`Init_Default`). No Zero Hour code calls it (only the aggregate saver, agg_def.cpp:431); it
+    /// names the pivots `Get_Bone_Index` searches. A bone out of range (an upstream assertion) is undefined, and so is a
+    /// name of `W3D_NAME_LEN` characters (no terminator in `Pivot[i].Name`).
+    pub fn get_bone_name(&self, bone_index: i32) -> W3dResult<Option<Vec<u8>>> {
+        if !self.is_hlod {
+            return Ok(None);
+        }
+        if !self.bone_in_range(bone_index) {
+            return Err(crate::formats::w3d::W3dUndefined::IndexOutOfRange.into());
+        }
+        if self.has_default_htree() {
+            return Ok(Some(b"RootTransform".to_vec()));
+        }
+        let k = self.skeleton.as_ref().ok_or(crate::formats::w3d::W3dUndefined::NullPointer)?;
+        let name = k.bones[bone_index as usize].name.clone();
+        if name.len() >= W3D_NAME_LEN {
+            return Err(crate::formats::w3d::W3dUndefined::StringOverrun.into());
+        }
+        Ok(Some(name))
     }
 
     /// (#179) `Is_Hierarchy_Valid()` (animobj.h:157).
@@ -3146,6 +3191,10 @@ impl RenderObj {
         // (#181 item 3) the embedded sounds, after the update
         let result = result.and_then(|()| self.trigger_embedded_sounds());
         self.is_tree_valid = true;
+        // (#181 item 4) `HLodClass::Update_Sub_Object_Transforms`'s `Set_Sub_Object_Transforms_Dirty(false)`
+        if self.is_hlod && !plant(10283) {
+            self.sub_object_transforms_dirty = false;
+        }
         result
     }
 
@@ -3267,7 +3316,10 @@ impl RenderObj {
     /// sub-object hidden as this object's is, and given this object's material overrides' UV
     /// offsets (GitHub #41; none on the others). Call before posing it ([`RenderModel::update`]).
     /// New (upstream's render object is the drawn one).~~ **Corrected 2026-11-14 (#181 item 9):** the render object's
-    /// drawn state put on a render model made for the same name (the client's, [`RenderModel::create`]), which is then
+    /// drawn state put on a render model made for the same name (the client's, ~~[`RenderModel::create`]~~ **Corrected
+    /// 2026-11-14 (#181 LOD):** [`RenderModel::create_drawn`]: `Lod[CurLod]`; its sub-objects take the render object's
+    /// hidden flags and UV overrides through [`RenderModel::skeleton_index`] when they are not the skeleton's index for
+    /// index, and a lower LOD's meshes, which the skeleton does not list, keep theirs as made), which is then
     /// drawn as it stands (not posed again). The sub-object part of `HLodClass::Update_Sub_Object_Transforms`
     /// (hlod.cpp:3351-3388: each sub-object `Set_Transform(HTree->Get_Transform(bone))` and
     /// `Set_Animation_Hidden(!HTree->Get_Visibility(bone))`): the model's hierarchy takes the live hierarchy's pivots
@@ -3318,13 +3370,49 @@ impl RenderObj {
                 }
             }
         }
-        if m.sub_objects.len() == self.sub_object_hidden.len() {
-            for (s, &h) in m.sub_objects.iter_mut().zip(&self.sub_object_hidden) {
-                s.hidden = h;
+        match m.skeleton_index.clone().filter(|_| !plant(10290)) {
+            None => {
+                if m.sub_objects.len() == self.sub_object_hidden.len() {
+                    for (s, &h) in m.sub_objects.iter_mut().zip(&self.sub_object_hidden) {
+                        s.hidden = h;
+                    }
+                }
+                for (i, s) in m.sub_objects.iter_mut().enumerate() {
+                    s.uv_offset = self.material_overrides.get(&i).copied();
+                }
+            }
+            // (#181 LOD) a drawn model whose sub-objects are not the skeleton's index for index (`Lod[CurLod]` below
+            // the top, or an aggregate `Add_Sub_Object_To_Bone` refused): each by its skeleton index; one the skeleton
+            // does not list keeps its state as made (the render object keeps none for it: #181's gaps)
+            Some(index) => {
+                let fits = self.skeleton.as_ref().is_some_and(|k| k.sub_objects.len() == self.sub_object_hidden.len());
+                for (s, j) in m.sub_objects.iter_mut().zip(index) {
+                    match j {
+                        Some(j) => {
+                            if fits {
+                                if let Some(&h) = self.sub_object_hidden.get(j) {
+                                    s.hidden = h;
+                                }
+                            }
+                            s.uv_offset = self.material_overrides.get(&j).copied();
+                        }
+                        None => s.uv_offset = None,
+                    }
+                }
             }
         }
-        for (i, s) in m.sub_objects.iter_mut().enumerate() {
-            s.uv_offset = self.material_overrides.get(&i).copied();
+        // (#181 LOD) the top LOD `HLodClass::Cast_Ray` casts at, when it is not the drawn one: the skeleton's first
+        // sub-objects, index for index
+        let fits = self.skeleton.as_ref().is_some_and(|k| k.sub_objects.len() == self.sub_object_hidden.len());
+        if let Some((top, _)) = m.cast_ray_top.as_mut() {
+            for (j, s) in top.iter_mut().enumerate() {
+                if fits {
+                    if let Some(&h) = self.sub_object_hidden.get(j) {
+                        s.hidden = h;
+                    }
+                }
+                s.uv_offset = self.material_overrides.get(&j).copied();
+            }
         }
         if plant(10260) {
             Matrix3D::IDENTITY
@@ -3464,6 +3552,16 @@ impl RenderObj {
         if !plant(9808) {
             self.is_tree_valid = false;
         }
+        // (#181 item 4) `HLodClass::Set_Animation(motion, frame, mode)`: `Set_Sub_Object_Transforms_Dirty(true)`
+        self.set_animation_dirty();
+    }
+
+    /// (#181 item 4) The `Set_Sub_Object_Transforms_Dirty(true)` each of `HLodClass`'s four `Set_Animation` ends with
+    /// (hlod.cpp:2603-2672).
+    fn set_animation_dirty(&mut self) {
+        if !plant(10284) {
+            self.sub_object_transforms_dirty = true;
+        }
     }
 
     /// (#179) `Set_Animation()` (animobj.cpp:452-457): `Release()`, `BASE_POSE`, the hierarchy no longer valid.
@@ -3480,6 +3578,8 @@ impl RenderObj {
             self.mode_combo = None;
         }
         self.is_tree_valid = false;
+        // (#181 item 4) `HLodClass::Set_Animation()`
+        self.set_animation_dirty();
     }
 
     /// (#179) `Set_Animation(motion0, frame0, motion1, frame1, percentage)` (animobj.cpp:519-560): `DOUBLE_ANIM`, a blend
@@ -3518,6 +3618,8 @@ impl RenderObj {
         self.mode_combo = None;
         self.mode_interp = Some(ModeInterp { motion0, motion1, frame0, frame1, prev_frame0, prev_frame1, percentage });
         self.is_tree_valid = false;
+        // (#181 item 4) `HLodClass::Set_Animation(motion0, frame0, motion1, frame1, percentage)`
+        self.set_animation_dirty();
     }
 
     /// (#179) `Set_Animation(HAnimComboClass *anim_combo)` (animobj.cpp:572-597): `MULTIPLE_ANIM` ~~(`None` is upstream's
@@ -3571,6 +3673,8 @@ impl RenderObj {
         if !plant(10036) {
             self.is_tree_valid = false;
         }
+        // (#181 item 4) `HLodClass::Set_Animation(HAnimComboClass *)`
+        self.set_animation_dirty();
     }
 
     /// ~~`Single_Anim_Progress()` at sync time `now` (what `Render` does before it draws, unless the mode is `MANUAL`).~~
@@ -3578,8 +3682,10 @@ impl RenderObj {
     /// `Is_Not_Hidden_At_All()`, hlod.cpp:2146-2154) at sync time `now`: nothing for a render object that is not an HLOD
     /// (no `HTree`) or that is hidden; `Single_Anim_Progress()` unless `MANUAL`; then, the hierarchy not valid,
     /// `Update_Sub_Object_Transforms()` (which moves the animation on again at the same sync time: by nothing, except a
-    /// frame left on a wrap point). `Are_Sub_Object_Transforms_Dirty()` is not kept: every call that sets it
-    /// (`HLodClass::Set_Transform`) also invalidates the hierarchy, and the update clears both.
+    /// frame left on a wrap point). ~~`Are_Sub_Object_Transforms_Dirty()` is not kept: every call that sets it
+    /// (`HLodClass::Set_Transform`) also invalidates the hierarchy, and the update clears both.~~ **Corrected 2026-11-14
+    /// (#181 item 4):** kept ([`RenderObj::are_sub_object_transforms_dirty`]); the update runs when the hierarchy is not
+    /// valid or the sub-objects' transforms are dirty (`if (!Is_Hierarchy_Valid() || Are_Sub_Object_Transforms_Dirty())`).
     pub fn render(&mut self, now: u32) {
         let _ = self.try_render(now);
     }
@@ -3592,7 +3698,8 @@ impl RenderObj {
         if self.anim.as_ref().is_some_and(|a| a.anim_mode != AnimMode::Manual || plant(9969)) {
             self.single_anim_progress(now);
         }
-        if !self.is_tree_valid && !plant(9809) && !(plant(10039) && self.mode_combo.is_some()) {
+        let stale = if plant(10292) { self.sub_object_transforms_dirty } else { !self.is_tree_valid || self.sub_object_transforms_dirty };
+        if stale && !plant(9809) && !(plant(10039) && self.mode_combo.is_some()) {
             self.update_sub_object_transforms(now)?;
         }
         Ok(())
@@ -7152,6 +7259,160 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         let mut model = RenderModel::create(&mut am, &fs, b"VIS.BASE").unwrap().unwrap();
         assert_eq!(bits(&r.pose_render_model(&mut model)), bits(&t));
         assert!(model.htree.is_none());
+    }
+
+    /// GitHub #181 (the HLOD remainder): item 4's dirty flag, `Get_Bone_Name`, and the drawn model of a multi-LOD HLOD
+    /// with the render object's hidden flags and material overrides. Synthetic files: hierarchy `TWO` (ROOTTRANSFORM, ARM),
+    /// meshes `TWO.HI` and `TWO.LO`; HLOD `TWO` of two LODs (LOD 0 `MaxScreenSize` 2.0: `TWO.LO` on the arm; LOD 1
+    /// `NO_MAX_SCREEN_SIZE`: `TWO.HI` on the arm) and an aggregate `TWO.HI` on the root; HLOD `TOP`, the same with LOD 0's
+    /// size 0.5.
+    ///
+    /// Predictions, written before the first run: a new HLOD is dirty (`HLodClass`'s constructor), a render clears it
+    /// with the hierarchy's validity; `Set_Transform` and each `Set_Animation` set it again with the validity cleared;
+    /// `Control_Bone` clears the validity only, and a render then updates (`!valid || dirty`); a render object that is
+    /// not an HLOD is never dirty. Bone names: ROOTTRANSFORM and ARM; "RootTransform" for the default hierarchy; out of
+    /// range undefined; `None` for a mesh. `TWO` draws LOD 0 (2.0 is not below 1): `TWO.LO`, then the aggregate, mapped to
+    /// the skeleton's (top LOD `TWO.HI`, aggregate `TWO.HI`) as `[None, Some(1)]`: hiding the skeleton's sub-object 1 and
+    /// overriding its UV offset reach the drawn aggregate, and hiding sub-object 0 (the top LOD's) reaches nothing drawn.
+    /// `TOP` draws its top LOD, index for index (no map).
+    #[test]
+    fn hlod_lods_dirty_flags_and_bone_names() {
+        use crate::common::file_system::MemoryDevice;
+        use crate::formats::w3d::assetmgr::W3dFileFactory;
+        use crate::formats::w3d::synth::{hlod_lods_w3d, htree_w3d, MeshSpec, PivotSpec};
+        use crate::formats::w3d::w3d_file::NO_MAX_SCREEN_SIZE;
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let mut f = htree_w3d(b"TWO", &[
+            PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
+            PivotSpec { name: b"ARM".to_vec(), parent: 0, translation: [0.0, 0.0, 5.0], rotation: ident },
+        ]);
+        f.extend(MeshSpec::cuboid(b"TWO", b"HI", [-1.0; 3], [1.0; 3]).to_w3d());
+        f.extend(MeshSpec::cuboid(b"TWO", b"LO", [-2.0; 3], [2.0; 3]).to_w3d());
+        let lo: &[(&[u8], u32)] = &[(b"TWO.LO", 1)];
+        let hi: &[(&[u8], u32)] = &[(b"TWO.HI", 1)];
+        let agg: &[(&[u8], u32)] = &[(b"TWO.HI", 0)];
+        f.extend(hlod_lods_w3d(b"TWO", b"TWO", &[(2.0, lo), (NO_MAX_SCREEN_SIZE, hi)], agg));
+        let mut d = MemoryDevice::new();
+        d.insert(b"Art/W3D/two.w3d", f);
+        d.insert(b"Art/W3D/top.w3d", hlod_lods_w3d(b"TOP", b"TWO", &[(0.5, lo), (NO_MAX_SCREEN_SIZE, hi)], agg));
+        d.insert(b"Art/W3D/noh.w3d", hlod_lods_w3d(b"NOH", b"", &[(NO_MAX_SCREEN_SIZE, hi)], &[]));
+        let fs = FileSystem::new(d);
+        let mut am = AssetManager::new_game(W3dFileFactory::default());
+        let k = W3dFiles { assets: &mut am, fs: &fs }.skeleton(b"TWO", None, 1.0);
+        let mut r = RenderObj::new(b"TWO", true).with_skeleton(k);
+
+        // item 4
+        assert!(r.are_sub_object_transforms_dirty() && !r.is_hierarchy_valid(), "as made");
+        r.render(0);
+        assert!(!r.are_sub_object_transforms_dirty() && r.is_hierarchy_valid(), "the update clears both");
+        r.set_transform(&Matrix3D::IDENTITY);
+        assert!(r.are_sub_object_transforms_dirty() && !r.is_hierarchy_valid(), "Set_Transform");
+        r.render(0);
+        for set in 0..4 {
+            match set {
+                0 => r.set_animation(None, 0.0, AnimMode::Manual, 0),
+                1 => r.set_animation_base_pose(),
+                2 => r.set_animation_blend(None, 0.0, None, 0.0, 0.5),
+                _ => r.set_animation_combo(None),
+            }
+            assert!(r.are_sub_object_transforms_dirty() && !r.is_hierarchy_valid(), "Set_Animation {set}");
+            r.set_animation_base_pose();
+            let _ = r.try_render(0);
+            assert!(!r.are_sub_object_transforms_dirty(), "rendered after Set_Animation {set}");
+        }
+        r.capture_bone(1);
+        r.control_bone(1, &Matrix3D::from_translation(&crate::ww::vector3::Vector3::new(0.0, 3.0, 0.0)));
+        assert!(!r.are_sub_object_transforms_dirty() && !r.is_hierarchy_valid(), "Control_Bone invalidates only");
+        r.render(0);
+        assert!(r.is_hierarchy_valid(), "a render updates an invalid hierarchy");
+        assert_eq!(r.live_pivot_transforms()[1].get_translation().y, 3.0);
+        let mut mesh = RenderObj::new(b"TWO.HI", false);
+        mesh.set_transform(&Matrix3D::IDENTITY);
+        assert!(!mesh.are_sub_object_transforms_dirty());
+
+        // Get_Bone_Name
+        assert_eq!(r.get_bone_name(0).unwrap(), Some(b"ROOTTRANSFORM".to_vec()));
+        assert_eq!(r.get_bone_name(1).unwrap(), Some(b"ARM".to_vec()));
+        assert!(r.get_bone_name(2).is_err());
+        assert_eq!(mesh.get_bone_name(0).unwrap(), None);
+        let k = W3dFiles { assets: &mut am, fs: &fs }.skeleton(b"NOH", None, 1.0);
+        let noh = RenderObj::new(b"NOH", true).with_skeleton(k);
+        assert_eq!(noh.get_bone_name(0).unwrap(), Some(b"RootTransform".to_vec()));
+
+        // the drawn LOD, its map to the skeleton's sub-objects
+        let mut model = RenderModel::create_drawn(&mut am, &fs, b"TWO").unwrap().unwrap();
+        let names: Vec<&[u8]> = model.sub_objects.iter().map(|s| &s.name[..]).collect();
+        assert_eq!(names, vec![&b"TWO.LO"[..], &b"TWO.HI"[..]]);
+        assert_eq!(model.skeleton_index, Some(vec![None, Some(1)]));
+        r.set_sub_object_hidden(0, true);
+        r.material_overrides.insert(1, [0.25, 0.5]);
+        r.pose_render_model(&mut model);
+        assert_eq!(model.sub_objects.iter().map(|s| (s.hidden, s.uv_offset)).collect::<Vec<_>>(), vec![(false, None), (false, Some([0.25, 0.5]))]);
+        r.set_sub_object_hidden(1, true);
+        r.pose_render_model(&mut model);
+        assert_eq!(model.sub_objects.iter().map(|s| s.hidden).collect::<Vec<_>>(), vec![false, true]);
+        let top = RenderModel::create_drawn(&mut am, &fs, b"TOP").unwrap().unwrap();
+        assert_eq!((top.lod.as_ref().map(|l| l.cur_lod), top.skeleton_index.clone()), (Some(1), None));
+    }
+
+    /// GitHub #181 (the pick fix): the client's pick casts at what `HLodClass::Cast_Ray` (hlod.cpp:2686-2706) casts at,
+    /// the top LOD's models then the aggregates, whatever LOD is drawn. HLOD `TWO`: LOD 0 (`MaxScreenSize` 2.0, so
+    /// `CurLod` 0, drawn) `TWO.LO` on the arm; LOD 1 (the top) `TWO.HI` on the arm; aggregate `TWO.HI` on the root.
+    ///
+    /// Predictions, written before the first run: drawn `[TWO.LO, TWO.HI]`; cast at `[TWO.HI (top, arm), TWO.HI
+    /// (aggregate, root)]`, the top one at the live arm pivot (T then (0, 0, 5)) and the aggregate at the live root
+    /// (T), bit for bit; hiding the skeleton's sub-object 0 (the top LOD's mesh) hides the cast-at top mesh and leaves
+    /// the drawn `TWO.LO` shown. `TOP` (its top LOD drawn) casts at its drawn list. Under plant 10293 (the cast list the
+    /// drawn one, the regression) the first name is `TWO.LO` and the test fails.
+    #[test]
+    fn the_pick_casts_at_the_top_lod() {
+        use crate::common::file_system::MemoryDevice;
+        use crate::formats::w3d::assetmgr::W3dFileFactory;
+        use crate::formats::w3d::synth::{hlod_lods_w3d, htree_w3d, MeshSpec, PivotSpec};
+        use crate::formats::w3d::w3d_file::NO_MAX_SCREEN_SIZE;
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let mut f = htree_w3d(b"TWO", &[
+            PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
+            PivotSpec { name: b"ARM".to_vec(), parent: 0, translation: [0.0, 0.0, 5.0], rotation: ident },
+        ]);
+        f.extend(MeshSpec::cuboid(b"TWO", b"HI", [-1.0; 3], [1.0; 3]).to_w3d());
+        f.extend(MeshSpec::cuboid(b"TWO", b"LO", [-2.0; 3], [2.0; 3]).to_w3d());
+        let lo: &[(&[u8], u32)] = &[(b"TWO.LO", 1)];
+        let hi: &[(&[u8], u32)] = &[(b"TWO.HI", 1)];
+        let agg: &[(&[u8], u32)] = &[(b"TWO.HI", 0)];
+        f.extend(hlod_lods_w3d(b"TWO", b"TWO", &[(2.0, lo), (NO_MAX_SCREEN_SIZE, hi)], agg));
+        let mut d = MemoryDevice::new();
+        d.insert(b"Art/W3D/two.w3d", f);
+        d.insert(b"Art/W3D/top.w3d", hlod_lods_w3d(b"TOP", b"TWO", &[(0.5, lo), (NO_MAX_SCREEN_SIZE, hi)], agg));
+        let fs = FileSystem::new(d);
+        let mut am = AssetManager::new_game(W3dFileFactory::default());
+        let bits = |m: &Matrix3D| m.to_array().map(f32::to_bits);
+        let mut t = Matrix3D::IDENTITY;
+        t.translate(100.0, 200.0, 0.0);
+        t.rotate_z(0.5);
+        let k = W3dFiles { assets: &mut am, fs: &fs }.skeleton(b"TWO", None, 1.0);
+        let mut r = RenderObj::new(b"TWO", true).with_skeleton(k);
+        r.set_transform(&t);
+        r.render(0);
+        let mut model = RenderModel::create_drawn(&mut am, &fs, b"TWO").unwrap().unwrap();
+        r.pose_render_model(&mut model);
+        let drawn: Vec<&[u8]> = model.sub_objects.iter().map(|s| &s.name[..]).collect();
+        assert_eq!(drawn, vec![&b"TWO.LO"[..], &b"TWO.HI"[..]]);
+        let cast = model.cast_ray_sub_objects();
+        let names: Vec<(&[u8], i32)> = cast.iter().map(|s| (&s.name[..], s.bone_index)).collect();
+        assert_eq!(names, vec![(&b"TWO.HI"[..], 1), (&b"TWO.HI"[..], 0)], "the top LOD, then the aggregate");
+        let live = r.live_pivot_transforms();
+        assert_eq!(bits(&model.sub_transform(cast[0]).unwrap()), bits(&live[1]));
+        assert_eq!(bits(&model.sub_transform(cast[1]).unwrap()), bits(&live[0]));
+        assert_eq!(bits(&live[0]), bits(&t));
+        r.set_sub_object_hidden(0, true);
+        r.pose_render_model(&mut model);
+        let hidden: Vec<bool> = model.cast_ray_sub_objects().iter().map(|s| s.hidden).collect();
+        assert_eq!(hidden, vec![true, false]);
+        assert!(!model.sub_objects[0].hidden, "the drawn lower LOD keeps its own");
+        let top = RenderModel::create_drawn(&mut am, &fs, b"TOP").unwrap().unwrap();
+        assert!(top.cast_ray_top.is_none());
+        assert_eq!(top.cast_ray_sub_objects().len(), top.sub_objects.len());
     }
 
     #[test]

@@ -178,7 +178,8 @@ pub struct WorldDrawables<D: LocalDevice> {
     /// (#181 item 9) The transform each object's drawn model was posed under: its render object's `Transform` at the
     /// last pose ([`RenderObj::pose_render_model`](rts_lockstep_engine::client::w3d_model_draw::RenderObj::pose_render_model)).
     drawn_roots: BTreeMap<ObjectId, Matrix3D>,
-    /// Models that could not be made (`RenderModel::create` gave none or failed), by name, and why.
+    /// Models that could not be made (~~`RenderModel::create`~~ **Corrected 2026-11-14 (#181 LOD):** `RenderModel::create_drawn`,
+    /// the model as upstream draws it, `Lod[CurLod]`) gave none or failed), by name, and why.
     pub missing: BTreeMap<Vec<u8>, String>,
     /// Models and animations a module asked for while their files were being fetched ([`Deferred`]).
     pub waiting_models: BTreeSet<Vec<u8>>,
@@ -424,8 +425,11 @@ impl<D: LocalDevice> WorldDrawables<D> {
     ///   model as the oriented box of its vertices in its bone's frame (a skin's deformed vertices in the model's frame),
     ///   under the object's transform (its position, its orientation about z, the drawable's physics transform), as the
     ///   model is drawn. **Corrected 2026-11-14 (#181 item 9):** the drawn model is in the world (its render object's live
-    ///   hierarchy, under the drawable's root): each mesh under its drawn transform
-    ///   ([`Self::drawn_sub_object_transform`]), a skin's deformed vertices as they are. **Without the art (the demo), the fallback:** the object's logic geometry as the one box (a
+    ///   hierarchy, under the drawable's root): each mesh under its ~~drawn transform
+    ///   ([`Self::drawn_sub_object_transform`])~~ bone's transform in that hierarchy, a skin's deformed vertices as they
+    ///   are. **Corrected 2026-11-14 (#181 LOD, pick fix):** ~~each shown sub-object mesh of the posed model~~ the meshes
+    ///   `HLodClass::Cast_Ray` casts at (hlod.cpp:2686-2706: the top LOD's, then the aggregates;
+    ///   `RenderModel::cast_ray_sub_objects`), not the drawn LOD's (`Lod[CurLod]`) when that is a lower one. **Without the art (the demo), the fallback:** the object's logic geometry as the one box (a
     ///   sphere's or cylinder's radius as the box's half-widths, a box's own half-lengths, standing on its position but
     ///   a sphere's, centred on it; at least the sizes the shapes are drawn with).
     /// - **Its bounding sphere** is the sphere around its boxes.
@@ -468,18 +472,23 @@ impl<D: LocalDevice> WorldDrawables<D> {
             let mut models: Vec<BoxRenderObj> = Vec::new();
             match self.instance(id) {
                 Some(m) => {
-                    for (i, sub) in m.sub_objects.iter().enumerate() {
+                    // ~~each of the drawn model's sub-objects~~ **Corrected 2026-11-14 (#181 LOD):** the meshes
+                    // `HLodClass::Cast_Ray` casts at (hlod.cpp:2686-2706): the top LOD's, then the aggregates
+                    // (`RenderModel::cast_ray_sub_objects`), whatever LOD is drawn (`Lod[CurLod]`)
+                    for sub in m.cast_ray_sub_objects() {
                         if sub.hidden {
                             continue;
                         }
                         // ~~under the object's transform~~ **Corrected 2026-11-14 (#181 item 9):** the drawn model is in
                         // the world (the live render object's hierarchy): a skin's deformed vertices as they are, a mesh
-                        // under its drawn transform
+                        // under its ~~drawn~~ transform in the live hierarchy (a lone mesh: the drawn root)
                         let (points, tm) = if sub.is_skin() {
-                            (m.deformed(i).map(|(p, _)| p).unwrap_or_default(), Matrix3D::IDENTITY)
-                        } else {
-                            let Some(t) = self.drawn_sub_object_transform(id, i) else { continue };
+                            (m.deformed_sub(sub).map(|(p, _)| p).unwrap_or_default(), Matrix3D::IDENTITY)
+                        } else if m.htree.is_some() {
+                            let Ok(t) = m.sub_transform(sub) else { continue };
                             (sub.model.vertices.clone(), t)
+                        } else {
+                            (sub.model.vertices.clone(), self.drawn_root(id).unwrap_or(Matrix3D::IDENTITY))
                         };
                         let (basis, origin) = basis_of(&tm);
                         if let Some(b) = oriented_bounds(points.iter().map(|p| Vector3::new(p[0], p[1], p[2])), basis, origin, coll_type::ALL) {
@@ -689,7 +698,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
                     continue;
                 }
                 let unserved = art.fs.local.device.unserved_reads();
-                let made = RenderModel::create(&mut art.assets, &art.fs, &c.model);
+                let made = RenderModel::create_drawn(&mut art.assets, &art.fs, &c.model);
                 if art.fs.local.device.unserved_reads() != unserved {
                     // a file it read is being fetched: made again on a later frame
                     continue;

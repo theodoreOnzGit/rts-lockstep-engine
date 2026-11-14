@@ -127,6 +127,62 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#181, the HLOD remainder (2026-11-14, GitHub #181: the LOD switch, `Get_Bone_Name`, item 4): the drawn model is
+the LOD upstream's constructor selects; the sub-objects' dirty flag is kept.**
+- **What Zero Hour drives (read first).** `CurLod` changes only through `Set_LOD_Level`, `Increment_LOD`,
+  `Decrement_LOD` and `Include_NULL_Lod`. Every `HLodClass` constructor ends in `Recalculate_Static_LOD_Factors()`,
+  `minlod = Calculate_Cost_Value_Arrays(1.0f, Value, Cost)`, `if (CurLod < minlod) Set_LOD_Level(minlod)`
+  (hlod.cpp:1082-1156, 2922-2952, 3090-3205): the first LOD whose `MaxScreenSize` is not below 1, else the top. After
+  that nothing changes it: `RTS3DScene::Customized_Render` has `Prepare_LOD` commented out ("We're not using LOD yet",
+  W3DScene.cpp:520-526, 1989), `W3DDisplay` has `Optimize_LODs` commented out (W3DDisplay.cpp:1752), and no
+  GameEngine/GameEngineDevice code calls `Set_LOD_Level`, `Increment_LOD`, `Decrement_LOD`, `Set_Max_Screen_Size`,
+  `Include_NULL_Lod` or `Set_LOD_Bias` on an HLOD (`TheGameLODManager`'s static LOD and `MinLODRequired` never reach
+  it). `Render` draws `Lod[CurLod]` and the aggregates (hlod.cpp:2146-2170; `SUBOBJS_MATCH_LOD` is set only by
+  aggregate definitions); `Update_Sub_Object_Transforms` updates every LOD (3351-3388); `Cast_Ray` and the volumetric
+  shadows read the top LOD. `Get_Bone_Name` (animobj.cpp:407-414, htree.cpp:945-951) has no game caller (only
+  agg_def.cpp's saver). The dirty bit (rendobj.h:494-495) is set by the constructors, `Set_Transform`, `Set_Position`,
+  the four `Set_Animation`, `Add_Sub_Object_To_Bone`, each with the hierarchy invalidated, and cleared by the update;
+  read by `Animatable3DObjClass::Render` (`!valid || dirty`), the collision casts and `Validate_Transform`.
+- **Translated:** `HLodLevels` (`Recalculate_Static_LOD_Factors`, `Calculate_Cost_Value_Arrays`, `Set_LOD_Level` out
+  of a scene, `Get_LOD_Level`, `Get_LOD_Count`, `ModelArrayClass`'s factors), `mesh_num_polys` (`MeshClass::Get_Num_Polys`),
+  `RenderModel::create_drawn`/`hlod_from_def` (the constructor: `Add_Lod_Model`'s clamp of a bone past the hierarchy to
+  0, `Add_Sub_Object_To_Bone`'s refusal of a bone outside it, the LOD selection; drawn `Lod[CurLod]` then the
+  aggregates, emitters too), `RenderModel::skeleton_index` (each drawn sub-object's index in the skeleton's list, for
+  the render object's hidden flags and UV overrides), the dirty flag on `RenderObj`
+  (`are_sub_object_transforms_dirty`; `Render` updates on `!valid || dirty`), `RenderObj::get_bone_name`. The client
+  makes its models with `create_drawn`. `RenderModel::create`, `Skeleton::of`, `W3dFiles::skeleton` and
+  `RenderModel::update` are unchanged (the skeleton's view still lists the top LOD with raw bones: #181 item 13).
+  Not translated (never called by Zero Hour): `Prepare_LOD`, the optimizer, `Increment_LOD`/`Decrement_LOD`, `Get_Cost`,
+  `Get_Value`, `Get_Post_Increment_Value`, `Set_Max_Screen_Size`, `Set_LOD_Bias`, `Include_NULL_Lod`, `Set_LOD_Level`'s
+  in-scene branch.
+- **Defects found and fixed (drawn model only):** (1) the top LOD was drawn where upstream draws `Lod[CurLod]`; (2)
+  `Add_Lod_Model`'s bone clamp was missing; (3) an aggregate on a bone outside the hierarchy was kept; (4) item 4's dirty
+  flag was not kept (no output change in the game's paths: never dirty while valid, measured below). (2) and (3) remain
+  in the skeleton's view, pending #181 item 13.
+- **Results:** `differential_w3d::hlod_lods_match_upstream` (new ops 64, 65; ops 62, 63 now through the verbatim
+  constructor; build.rs cuts hlod.cpp's constructor, `Add_Lod_Model`, `Add_Sub_Object_To_Bone` with the four
+  `Set_Animation`, `Set_Transform`/`Set_Position`, the LOD functions, and rendobj.h's dirty bit and accessors, each
+  anchor asserted once): 20,000 files, 577,310 ops, 43,551 multi-LOD HLODs (27,802 not on the top LOD), 91,714 drawn
+  sub-objects, 41,025 dirty/bone-name dumps: **0 mismatches, max ULP 0**; dirty while valid 0. Plants 10276-10292 all
+  caught (counts in the test's docs; 10290, 10291 by the lib tests only). `drawn_sub_objects_match_upstream` unchanged
+  (30,605 / 33,970 HLODs, 205,024 sub-objects, 0). `differential_w3d` 43 passed, all 0. Lib 1,274 passed (+3); client
+  108 passed; `differential_model_draw_anim` 20,000, 0; `differential_logic_bones` 0 / 0 (unchanged); gate (a) PASS,
+  last CRC 0bf44067; `src/logic` unchanged.
+- **Prediction misses:** the first smoke run panicked in the harness (the per-op counter had 64 slots; widened to 66);
+  plants 10280, 10281 were at first not caught by mismatches (the unclamped bone made op 63 undefined, so the scripts
+  stopped instead): op 64 now logs the drawn models' bones, which catches them (102, 172 of 300); 10290 and 10291 are
+  reached only by the lib tests, as predicted.
+- **Gaps:** the skeleton's view (top LOD, raw bones; `Get_Sub_Object` upstream spans every LOD) is #181 item 13's, so a
+  lower LOD's drawn meshes take no hidden flag or UV override from the render object; ~~the client's pick boxes come
+  from the drawn model, so for an HLOD whose `CurLod` is below the top they are that LOD's, where `HLodClass::Cast_Ray`
+  casts at the top LOD (introduced by this change; was right by accident before)~~ **Corrected 2026-11-14 (#181 LOD,
+  pick fix):** the pick casts at the top LOD and the aggregates, as `HLodClass::Cast_Ray` (hlod.cpp:2686-2706) does
+  (`RenderModel::cast_ray_top`, `cast_ray_sub_objects`; the top LOD's meshes posed by the live pivots and given the
+  render object's hidden flags by `pose_render_model`; plant 10293 restores the regression, caught by the lib test
+  `the_pick_casts_at_the_top_lod`); non-mesh LOD models count 0
+  polygons (only `Cost`/`Value`, which nothing reads); `LodCount` 0 (undefined upstream) draws only the aggregates;
+  whether any shipped HLOD has `CurLod` below its top was not measured (no game files here).
+
 **#181 items 9 and 10 (2026-11-14, GitHub #181): the drawn model is the render object's live hierarchy; an HLOD with
 no hierarchy in its source has upstream's default one.**
 - **What was still open.** Item 9: after #180 (92c07cc) the client's `WorldDrawables::pose` still posed its own
@@ -147,7 +203,9 @@ no hierarchy in its source has upstream's default one.**
   live hierarchy's pivots and visibility (in the world, under the render object's `Transform`) into the drawn model
   and returns that transform; `RenderModel::sub_object_animation_hidden`. The client (`client/src/drawables.rs`) no
   longer poses the model: it keeps the root (`drawn_root`), gives the emitters and the pick the world transforms
-  (`drawn_sub_object_transform`); the app takes the root off each part and hides animation-hidden parts.
+  (`drawn_sub_object_transform`; **Corrected 2026-11-14 (#181 LOD, pick fix):** the pick no longer follows the drawn
+  model's sub-objects: it casts at `RenderModel::cast_ray_sub_objects`, the top LOD's and the aggregates, under the
+  same live pivots); the app takes the root off each part and hides animation-hidden parts.
   `W3dFiles::skeleton` and `RenderModel::update` (the logic's art bones, #175) are untouched.
 - **Results:** `differential_w3d::drawn_sub_objects_match_upstream` (new ops 62, 63; animobj.cpp's constructor,
   hlod.cpp's `Update_Sub_Object_Transforms` and hlod.h's node classes cut verbatim by build.rs): 20,000 files, 576,218
@@ -161,7 +219,8 @@ no hierarchy in its source has upstream's default one.**
   `doDrawModule` puts on the render object's transform; with the drawn model now that transform's, three client tests
   drew collapsed units. Their fixture (`drawn()`) now sets `Scale = 1.0`.
 - **Gaps:** `get_bone_transform_scaled` (plant paths only) answers the identity for the default hierarchy;
-  `Get_Bone_Name`, the LOD switch and skin sub-objects' own transforms not translated; the pick does not leave out
+  ~~`Get_Bone_Name`, the LOD switch and~~ **Corrected 2026-11-14 (#181 LOD, entry above):** `Get_Bone_Name` and the
+  constructor's LOD selection are translated; skin sub-objects' own transforms not translated; the pick does not leave out
   animation-hidden sub-objects; the app's matrices are not tested (GUI glue).
 
 **#163 item 3 (2026-11-14, GitHub #163, the gaps of #162): `HAnimComboDataClass`'s copy constructor and `Copy()`
@@ -826,7 +885,8 @@ changed), and a drawable with no object.**
   gate (a) PASS, last CRC 0bf44067. `src/logic` unchanged.
 - **Not done (gaps):** `validateCachedBones`' restore of an old animation (unreachable from `setModelState`, upstream as
   here); `validateStuff(NULL)` paths (`differential_logic_bones`'s); ~~sub-objects found by name; show/hide lists;~~
-  (**Corrected 2026-11-14 (#181 item 7c):** done, above) more than one LOD; the drawable's own recoil (`m_locoInfo`).
+  (**Corrected 2026-11-14 (#181 item 7c):** done, above) more than one LOD (**Corrected 2026-11-14 (#181 LOD):** the
+  drawn model draws `Lod[CurLod]`; the draw module's sub-object list is still the top LOD's, #181 item 13); the drawable's own recoil (`m_locoInfo`).
 
 **#181 item 7 (2026-11-13, GitHub #181): `W3DModelDraw`'s draw sequence with an animated render object.**
 - **Upstream** (W3DModelDraw.cpp:2040-2112, animobj.cpp): at one sync time, `doDrawModule` pauses or resumes the

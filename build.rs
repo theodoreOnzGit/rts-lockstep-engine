@@ -1590,6 +1590,56 @@ mod differential {
                     cut(&hlod_cpp, "hlod.cpp", "void HLodClass::Update_Sub_Object_Transforms(void)", "void HLodClass::Update_Obj_Space_Bounding_Volumes(void)", false),
                 ),
                 ("hl_nodes.inc", cut(&hlod_h, "hlod.h", "\tclass ModelNodeClass \n", "\t// Lod Render Objects, basically one of the LOD Models will be rendered.", false)),
+                // (#181 LOD) HLodClass(const HLodDefClass & def) (hlod.cpp:1082-1156: the LODs' models by
+                // Add_Lod_Model, the factors, the aggregates by Add_Sub_Object_To_Bone, the LOD selection
+                // `Calculate_Cost_Value_Arrays(1.0f, ...)` / `Set_LOD_Level(minlod)`, the dirty flag), up to the next
+                // constructor's comment block
+                (
+                    "hl_ctor.inc",
+                    cut(
+                        &hlod_cpp,
+                        "hlod.cpp",
+                        "HLodClass::HLodClass(const HLodDefClass & def) :",
+                        "/***********************************************************************************************\n * HLodClass::HLodClass -- Constructs an HLod from an HModelDef",
+                        false,
+                    ),
+                ),
+                // (#181 LOD) Recalculate_Static_LOD_Factors, Increment_LOD, Decrement_LOD, Get_Cost, Get_Value,
+                // Get_Post_Increment_Value, Set_LOD_Level, Get_LOD_Level, Get_LOD_Count, Calculate_Cost_Value_Arrays
+                // (hlod.cpp:2922-3205)
+                (
+                    "hl_lod.inc",
+                    cut(&hlod_cpp, "hlod.cpp", "void HLodClass::Recalculate_Static_LOD_Factors(void)", "RenderObjClass * HLodClass::Get_Current_LOD(void)", false),
+                ),
+                // (#181 LOD) Add_Lod_Model (hlod.cpp:3519-3541: a bone past the hierarchy becomes bone 0)
+                (
+                    "hl_add_lod.inc",
+                    cut(&hlod_cpp, "hlod.cpp", "void HLodClass::Add_Lod_Model(int lod, RenderObjClass * robj, int boneindex)", "void HLodClass::Create_Decal(DecalGeneratorClass * generator)", false),
+                ),
+                // (#181 LOD, item 4) Add_Sub_Object_To_Bone and the four Set_Animation (hlod.cpp:2562-2672: each sets the
+                // sub-objects' transforms dirty)
+                (
+                    "hl_add_bone.inc",
+                    cut(&hlod_cpp, "hlod.cpp", "int HLodClass::Add_Sub_Object_To_Bone(RenderObjClass * subobj,int boneindex)", "bool HLodClass::Cast_Ray(RayCollisionTestClass & raytest)", false),
+                ),
+                // (#181 item 4) Set_Transform and Set_Position (hlod.cpp:2222-2246)
+                (
+                    "hl_set_transform.inc",
+                    cut(&hlod_cpp, "hlod.cpp", "void HLodClass::Set_Transform(const Matrix3D &m)", "void HLodClass::Notify_Added(SceneClass * scene)", false),
+                ),
+                // (#181 item 4) RenderObjClass's Set_Sub_Object_Transforms_Dirty and Are_Sub_Object_Transforms_Dirty
+                // (rendobj.h:494-495) and the bit (rendobj.h:538)
+                (
+                    "ro_dirty.inc",
+                    cut(
+                        &rendobj_h,
+                        "rendobj.h",
+                        "\tvoid\t\t\t\t\t\t\t\tSet_Sub_Object_Transforms_Dirty(bool onoff)",
+                        "{ return (Bits & SUBOBJ_TRANSFORMS_DIRTY) != 0; }\n",
+                        true,
+                    ),
+                ),
+                ("ro_dirty_bit.inc", cut(&rendobj_h, "rendobj.h", "\t\tSUBOBJ_TRANSFORMS_DIRTY =", "// my sub-objects need me to update their transform\n", true)),
             ];
             for (name, body) in files {
                 std::fs::write(animobj_gen.join(name), format!("{head}{body}\n")).expect("write an animobj cut");
