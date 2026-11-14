@@ -204,8 +204,22 @@ impl VertexMaterialState {
     /// The end of `VertexMaterialClass::Load_W3D` on a new material:
     /// `Set_Name`, `Parse_W3dVertexMaterialStruct` and the mapper choice of
     /// `Parse_Mapping_Args`.
+    ///
+    /// (#67) A legacy material ([`VertexMaterial::legacy`], made by
+    /// `read_v3_materials`) is `VertexMaterialClass()` with the colours,
+    /// shininess and opacity of its `D3DMATERIAL8`; `Init_From_Material3`
+    /// sets no flag and no mapper.
     pub fn from_w3d(vm: &VertexMaterial) -> Self {
         let mut m = VertexMaterialState { name: vm.name.clone(), ..Default::default() };
+        if let Some(d) = &vm.legacy {
+            m.ambient = [d.ambient[0], d.ambient[1], d.ambient[2]];
+            m.diffuse = [d.diffuse[0], d.diffuse[1], d.diffuse[2]];
+            m.specular = [d.specular[0], d.specular[1], d.specular[2]];
+            m.emissive = [d.emissive[0], d.emissive[1], d.emissive[2]];
+            m.shininess = d.power;
+            m.opacity = d.diffuse[3];
+            return m;
+        }
         let v = &vm.info;
         m.ambient = convert_color(&v.ambient);
         m.diffuse = convert_color(&v.diffuse);
@@ -260,7 +274,7 @@ mod tests {
         b[8] = 128; // Diffuse.R
         b[16 + 2] = 255; // Emissive.B
         b[24..28].copy_from_slice(&0.25f32.to_le_bytes()); // Opacity
-        let vm = VertexMaterial { name: Some(b"m".to_vec()), info: W3dVertexMaterialStruct::from_bytes(&b), mapper_args: [None, None] };
+        let vm = VertexMaterial { name: Some(b"m".to_vec()), info: W3dVertexMaterialStruct::from_bytes(&b), mapper_args: [None, None], legacy: None };
         let m = VertexMaterialState::from_w3d(&vm);
         assert_eq!(m.diffuse, [128.0 / 255.0, 0.0, 0.0]);
         assert_eq!(m.ambient, [0.0; 3]);

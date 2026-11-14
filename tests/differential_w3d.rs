@@ -5,7 +5,9 @@
 //! `hrawanim.cpp` and `hcanim.cpp` (see `differential/wrap_w3d.cpp` and
 //! `build.rs`; the file underneath is the real `RAMFile.cpp`), and (sections
 //! 7 to 9) the mesh loader of `meshmdlio.cpp` (`differential/
-//! wrap_w3d_mesh.cpp`), the HLOD definition loader of `hlod.cpp`
+//! wrap_w3d_mesh.cpp`; section 7b, #67: its legacy materials, with
+//! `vertmaterial.cpp`'s and `shader.cpp`'s `Init_From_Material3` cut
+//! verbatim), the HLOD definition loader of `hlod.cpp`
 //! (`differential/wrap_w3d_hlod.cpp`), the collection and aggregate
 //! definition loaders of `collect.cpp` and `agg_def.cpp`
 //! (`differential/wrap_w3d_collect.cpp`), (section 10) the box, sphere
@@ -994,7 +996,7 @@ fn dx8_convert_color_matches_upstream() {
 // 7. Meshes
 // ---------------------------------------------------------------------------
 
-use rts_lockstep_engine::formats::w3d::mesh::{self, Arr, MatDesc, Mesh, MeshLoadOptions, PrelitMode};
+use rts_lockstep_engine::formats::w3d::mesh::{self, Arr, D3dMaterial8, MatDesc, Mesh, MeshLoadOptions, PrelitMode};
 
 fn p_arr<T: Copy + PartialEq>(log: &mut Log, a: &Option<Arr<T>>, f: impl Fn(&mut Log, T)) {
     match a {
@@ -1101,6 +1103,19 @@ fn log_mesh(log: &mut Log, m: &Mesh) {
             let a = a.clone().unwrap_or_default();
             p32(log, a.len() as u32);
             log.extend_from_slice(&a);
+        }
+        // #67: the D3DMATERIAL8 (a loaded material's stays the constructor's in the harness)
+        log.extend_from_slice(&v.legacy.unwrap_or(D3dMaterial8::NEW).to_bytes());
+    }
+    // #67: the context's VertexMaterialCrcs and LegacyMaterials
+    p32(log, m.vertex_material_crcs.len() as u32);
+    for c in &m.vertex_material_crcs {
+        p32(log, *c);
+    }
+    p32(log, m.legacy_materials.len() as u32);
+    for l in &m.legacy_materials {
+        for v in [l.vertex_material_idx, l.shader_idx, l.texture_idx] {
+            p32(log, v as u32);
         }
     }
     p32(log, m.textures.len() as u32);
@@ -1515,6 +1530,401 @@ fn mesh_load_matches_upstream() {
         excluded.values().sum::<u64>()
     );
     check.finish();
+}
+
+// ---------------------------------------------------------------------------
+// 7b. Legacy materials (#67): W3D_CHUNK_MATERIALS3 and the per-triangle
+//     material ids (meshmdlio.cpp's read_v3_materials, Add_Legacy_Material,
+//     read_per_tri_materials; vertmaterial.cpp's Init_From_Material3 and
+//     Compute_CRC; shader.cpp's Init_From_Material3)
+// ---------------------------------------------------------------------------
+
+/// A legacy texture file name: a small pool, so that names repeat in other
+/// cases (stricmp de-duplication), with empty names (`Get_Texture` refuses
+/// them) and, rarely, the 511 and 512 bytes around the buffer's limit.
+fn legacy_file_name(g: &mut Gn) -> Vec<u8> {
+    let mut v = match g.below(14) {
+        0 => Vec::new(),
+        1 => b"tex.tga".to_vec(),
+        2 => b"TEX.TGA".to_vec(),
+        3 => b"Tex.tga".to_vec(),
+        4 => b"other.dds".to_vec(),
+        5 => b"OTHER.DDS".to_vec(),
+        6 => {
+            // 511 or 512 bytes with the terminator
+            let n = 510 + g.below(2) as usize;
+            (0..n).map(|_| b'a' + g.below(3) as u8).collect()
+        }
+        7 => (0..1 + g.below(12)).map(|_| b'a' + g.below(26) as u8).collect(),
+        _ => [b"a.tga".to_vec(), b"A.TGA".to_vec(), b"b.tga".to_vec()][g.below(3) as usize].clone(),
+    };
+    if !g.chance(25) {
+        v.push(0);
+    }
+    v
+}
+
+/// A colour channel or coefficient: often 0 (so that the diffuse product is
+/// black and an SI map is read) or 255.
+fn legacy_byte(g: &mut Gn) -> u8 {
+    match g.below(5) {
+        0 | 1 => 0,
+        2 => 255,
+        3 => 128,
+        _ => g.g.u32() as u8,
+    }
+}
+
+/// A W3dMaterial3Struct (44 bytes).
+fn legacy_info(g: &mut Gn) -> Vec<u8> {
+    let mut b = Vec::new();
+    let attr = match g.below(6) {
+        0 | 1 => W3DMATERIAL_USE_ALPHA,
+        2 => g.g.u32(),
+        3 => W3DMATERIAL_USE_SORTING | (g.below(2) * W3DMATERIAL_USE_ALPHA),
+        _ => 0,
+    };
+    w32(&mut b, attr);
+    let black = g.below(4) == 0;
+    for k in 0..6 {
+        for _ in 0..3 {
+            // DiffuseColor (k 0) and DiffuseCoefficients (k 4) black together sometimes
+            b.push(if black && (k == 0 || k == 4) && g.coin() { 0 } else { legacy_byte(g) });
+        }
+        b.push(if g.below(8) == 0 { g.g.u32() as u8 } else { 0 });
+    }
+    for _ in 0..4 {
+        let f = match g.below(4) {
+            0 => 1.0,
+            1 => 0.5,
+            _ => g.f32(),
+        };
+        w32(&mut b, f32::to_bits(f));
+    }
+    b
+}
+
+/// A legacy map chunk (`id`): a file-name chunk and a W3dMap3Struct chunk,
+/// each sometimes missing, short or of the wrong id.
+fn legacy_map(g: &mut Gn, id: u32) -> Vec<u8> {
+    let mut b = Vec::new();
+    if !g.chance(20) {
+        let f = legacy_file_name(g);
+        let fid = if g.chance(25) { W3D_CHUNK_MAP3_INFO } else { W3D_CHUNK_MAP3_FILENAME };
+        b.extend(chunk(g, fid, false, &f));
+    }
+    if !g.chance(20) {
+        let mut mi = Vec::new();
+        mi.extend_from_slice(&(g.below(2) as u16).to_le_bytes());
+        mi.extend_from_slice(&(if g.below(6) == 0 { 2 + g.below(5) } else { 1 } as u16).to_le_bytes());
+        w32(&mut mi, f32::to_bits(15.0));
+        if g.below(12) == 0 {
+            // a short map info: a load error (plant 10094)
+            mi.truncate(g.below(8) as usize);
+        }
+        let mid = if g.chance(25) { W3D_CHUNK_MAP3_FILENAME } else { W3D_CHUNK_MAP3_INFO };
+        b.extend(chunk(g, mid, false, &mi));
+    }
+    chunk(g, id, true, &b)
+}
+
+/// One W3D_CHUNK_MATERIAL3. `prev` is the previous material's info, reused
+/// (under any name) for one in three, so that shaders and vertex materials
+/// de-duplicate.
+fn legacy_material(g: &mut Gn, prev: &mut Option<Vec<u8>>) -> Vec<u8> {
+    let mut b = Vec::new();
+    if !g.chance(25) {
+        let mut nm: Vec<u8> = match g.below(8) {
+            0 => b"mat".to_vec(),
+            1 => b"other".to_vec(),
+            2 if g.below(10) == 0 => (0..257 + g.below(10)).map(|_| b'n').collect(),
+            _ => (0..g.below(10)).map(|_| b'a' + g.below(26) as u8).collect(),
+        };
+        if !g.chance(25) {
+            nm.push(0);
+        }
+        let id = if g.chance(30) { W3D_CHUNK_MATERIAL3_INFO } else { W3D_CHUNK_MATERIAL3_NAME };
+        b.extend(chunk(g, id, false, &nm));
+    }
+    if !g.chance(25) {
+        let mut info = match prev {
+            Some(p) if g.below(3) == 0 => p.clone(),
+            _ => legacy_info(g),
+        };
+        *prev = Some(info.clone());
+        if g.chance(20) {
+            info.truncate(g.below(44) as usize);
+        }
+        b.extend(chunk(g, W3D_CHUNK_MATERIAL3_INFO, false, &info));
+    }
+    for _ in 0..g.below(4) {
+        let id = match g.below(7) {
+            0 | 1 => W3D_CHUNK_MATERIAL3_DC_MAP,
+            2 | 3 => W3D_CHUNK_MATERIAL3_SI_MAP,
+            4 => W3D_CHUNK_MATERIAL3_DI_MAP,
+            5 => W3D_CHUNK_MATERIAL3_SC_MAP,
+            _ => 0x77,
+        };
+        b.extend(legacy_map(g, id));
+    }
+    let id = if g.chance(30) { W3D_CHUNK_MATERIAL3_NAME } else { W3D_CHUNK_MATERIAL3 };
+    chunk(g, id, true, &b)
+}
+
+/// A mesh with legacy materials: geometry, sometimes the current material
+/// chunks first (vertex materials, textures, shaders: the de-duplication
+/// then mixes the two kinds), one W3D_CHUNK_MATERIALS3 (rarely two or none),
+/// its per-triangle ids (mostly in range), legacy texture coordinates and
+/// vertex colours, in a random order after the geometry. Also returns
+/// whether current material chunks follow the legacy ones (their ids then
+/// index lists that the legacy materials extended).
+fn gen_legacy_mesh(g: &mut Gn) -> (Vec<u8>, bool) {
+    let mut h = W3dMeshHeader3Struct::from_bytes(&[0; 116]);
+    h.version = match g.below(6) {
+        0 => w3d_make_version(2, 0),
+        1 => w3d_make_version(3, 0),
+        _ => w3d_make_version(4, 2),
+    };
+    h.attributes = match g.below(6) {
+        0 => g.g.u32(),
+        1 => W3D_MESH_FLAG_TWO_SIDED,
+        _ => 0,
+    };
+    h.mesh_name = g.name();
+    h.container_name = if g.coin() { [0; 16] } else { g.name() };
+    let verts = if g.below(20) == 0 { 0 } else { 1 + g.below(8) };
+    let tris = if g.below(20) == 0 { 0 } else { 1 + g.below(8) };
+    h.num_vertices = verts;
+    h.num_tris = tris;
+    let nmat = if g.below(20) == 0 { 0 } else { 1 + g.below(5) };
+    h.num_materials = match g.below(10) {
+        0 => nmat + 1,
+        1 => nmat.saturating_sub(1),
+        2 => 1,
+        _ => nmat,
+    };
+    h.sort_level = if g.below(8) == 0 { 1 } else { 0 };
+    let hb = h.to_bytes();
+    let mut body = chunk(g, W3D_CHUNK_MESH_HEADER3, false, &hb);
+    let v = floats(g, 3 * verts as usize);
+    body.extend(chunk(g, W3D_CHUNK_VERTICES, false, &v));
+    let mut tb = Vec::new();
+    for _ in 0..tris {
+        for _ in 0..3 {
+            w32(&mut tb, if g.below(100) == 0 { g.g.u32() } else { g.below(verts.max(1)) });
+        }
+        w32(&mut tb, g.below(32));
+        tb.extend(floats(g, 4));
+    }
+    body.extend(chunk(g, W3D_CHUNK_TRIANGLES, false, &tb));
+    let mut mg = MeshGen { verts, tris, vmats: 0, shaders: 0, textures: 0 };
+    let mut parts: Vec<Vec<u8>> = Vec::new();
+    // the current material chunks, before the legacy ones (one in four)
+    if g.below(4) == 0 {
+        for _ in 0..1 + g.below(2) {
+            let c = gen_material_chunks(g, &mut mg, 0);
+            body.extend(c);
+        }
+    }
+    let n_legacy = match g.below(12) {
+        0 => 0,
+        1 => 2,
+        _ => 1,
+    };
+    for _ in 0..n_legacy {
+        let mut prev = None;
+        let mut b = Vec::new();
+        for _ in 0..nmat {
+            b.extend(legacy_material(g, &mut prev));
+        }
+        let id = if g.chance(30) { W3D_CHUNK_MATERIAL3 } else { W3D_CHUNK_MATERIALS3 };
+        parts.push(chunk(g, id, true, &b));
+    }
+    if g.below(3) != 0 {
+        let mut b = Vec::new();
+        for _ in 0..tris + if g.below(10) == 0 { 1 } else { 0 } {
+            let id = if g.below(40) == 0 { g.g.u32() as u16 } else { g.below(nmat.max(1)) as u16 };
+            b.extend_from_slice(&id.to_le_bytes());
+        }
+        if g.below(8) == 0 {
+            b.truncate(g.below(b.len() as u32 + 1) as usize);
+        }
+        parts.push(chunk(g, W3D_CHUNK_PER_TRI_MATERIALS, false, &b));
+    }
+    if g.below(3) == 0 {
+        let b = floats(g, 2 * verts as usize);
+        parts.push(chunk(g, W3D_CHUNK_TEXCOORDS, false, &b));
+    }
+    if g.below(4) == 0 {
+        let b = rand_bytes(g, 4 * verts as usize);
+        parts.push(chunk(g, W3D_CHUNK_VERTEX_COLORS, false, &b));
+    }
+    let after = g.below(6) == 0;
+    if after {
+        parts.push(gen_material_chunks(g, &mut mg, 0));
+    }
+    // the per-triangle ids after the legacy materials, mostly
+    if g.below(5) == 0 && parts.len() > 1 {
+        let i = g.below(parts.len() as u32) as usize;
+        let j = g.below(parts.len() as u32) as usize;
+        parts.swap(i, j);
+    }
+    for p in parts {
+        body.extend(p);
+    }
+    (chunk(g, W3D_CHUNK_MESH, true, &body), after && n_legacy > 0)
+}
+
+/// The material ids of the mesh's `W3D_CHUNK_PER_TRI_MATERIALS` chunks, by a
+/// plain walk of the mesh chunk's children (for the plant guard below), and
+/// whether a child claims more bytes than the file has.
+fn per_tri_ids(data: &[u8]) -> (Vec<u16>, bool) {
+    let rd = |o: usize| data.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let mut ids = Vec::new();
+    let mut huge = false;
+    let end = rd(4).map_or(0, |s| (8 + (s & 0x7FFF_FFFF) as usize).min(data.len()));
+    let mut o = 8;
+    while let (Some(id), Some(size)) = (rd(o), rd(o + 4)) {
+        let body = o + 8;
+        let next = body.saturating_add((size & 0x7FFF_FFFF) as usize);
+        huge |= next > data.len();
+        if id == W3D_CHUNK_PER_TRI_MATERIALS {
+            let b = &data[body.min(data.len())..next.min(data.len())];
+            ids.extend(b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])));
+        }
+        if next >= end {
+            break;
+        }
+        o = next;
+    }
+    (ids, huge)
+}
+
+/// #67: meshes with legacy materials, loaded by `MeshModelClass::Load_W3D`
+/// (meshmdlio.cpp, compiled whole) on both sides; compared as in
+/// `mesh_load_matches_upstream`, with the vertex materials' `D3DMATERIAL8`,
+/// the context's `VertexMaterialCrcs` and `LegacyMaterials` added to the
+/// log (both tests): vertex materials, shaders, texture names, pass 0's
+/// single and per-vertex/per-polygon material, shader and texture indices,
+/// the UV arrays, the result code and the reader's position.
+///
+/// Methodology: 20,000 generated meshes (half well-formed, half also with
+/// wrong chunk sizes, truncations and byte mutations; seed 0x67), each
+/// loaded in a random pre-lit mode. Inputs the Rust reports as undefined
+/// upstream are not given to the C++ (counted by kind).
+///
+/// Results (2026-11-14): 20,000 inputs, 13,740 compared, **0 mismatches**
+/// (12,928 loaded, 793 load errors; 16,693 legacy materials read, 14,079
+/// vertex materials and 6,482 textures from them; 6,225 excluded as
+/// undefined upstream: IndexOutOfRange 3,534, NullPointer 1,878, ChunkIo
+/// BufferOverrun 412, UninitialisedRead 377, Allocation 19, NonTerminating
+/// 5; 35 too large). 0 mismatches from the first run.
+///
+/// Plants (`L9_PLANT`, `logic::modules::plant`), 20 of 20 caught
+/// (mismatching inputs of the compared ones, with the guard below): 10076
+/// no SORT for a blending legacy shader 3,089 of 6,074; 10077 the SI map
+/// read whatever the diffuse 1,585 of 5,885; 10078 the SI map leaves the
+/// destination blend 1,076; 10079 no move of an untextured diffuse to
+/// ambient 3,320; 10080 the move leaves the diffuse 2,671; 10081 no shader
+/// de-duplication 1,904; 10082 "not found" against `VertexMaterialCrcs`
+/// instead of `VertexMaterials` 196; 10083 case-sensitive texture names
+/// 180; 10084 no default texture after the loop 1,587; 10085 diffuse
+/// without its coefficients 3,837 of 6,146; 10086 opacity not set 3,539;
+/// 10087 alpha keeps depth writes 2,955; 10088 vertex materials merged by
+/// name instead of CRC 1,213; 10089 a 512-byte file name accepted 228 of
+/// 6,187; 10090 a DC map does not enable texturing 2,098; 10091 one shader
+/// counts as several (per-triangle) 151; 10092 a triangle's material on its
+/// first vertex only 883; 10093 no single texture in the per-triangle chunk
+/// 312; 10094 a short map info accepted 579 of 6,304; 10095 an empty map
+/// name gives a texture 292 (of 6,074 where not given). Under a
+/// plant the Rust is no longer a sound judge of which inputs upstream
+/// leaves undefined: a plant that changes how many vertex materials,
+/// textures or shaders the legacy chunk adds changes whether upstream's
+/// `Set_Material` of a triangle's vertex, or a later material pass's id,
+/// reaches past an array (the first planted runs crashed the C++ so). So
+/// with `L9_PLANT` set, inputs whose loaded triangles index past the
+/// vertices, whose current material chunks follow the legacy ones, or whose
+/// per-triangle ids reach past the legacy materials the Rust read (a plant
+/// that merges two vertex materials or shaders can make the Rust skip the
+/// lookup of an id that upstream makes), or with a chunk claiming more
+/// bytes than the file has (a plant that stops the reading earlier lets
+/// through a mesh whose later chunk upstream allocates gigabytes for, which
+/// the unplanted Rust excludes as too large), are not given to the C++
+/// (counted as "plant guard").
+#[test]
+fn mesh_legacy_materials_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = Gn { g: Gen::new(0x67), clean: false };
+    let mut check = Check::new("read_v3_materials, legacy materials (#67)");
+    let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+    let (mut ok, mut failed, mut large, mut legacy, mut vmats, mut textures) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let planted = std::env::var_os("L9_PLANT").is_some();
+    let mut guarded = 0u64;
+    const CASES: usize = 20_000;
+    for case in 0..CASES {
+        g.clean = case % 2 == 0;
+        let (m, after) = gen_legacy_mesh(&mut g);
+        let data = mutate(&mut g, m);
+        let prelit = g.below(3) as i32;
+        let rust = match rust_load_mesh(&data, prelit) {
+            Ok(l) => l,
+            Err(e) => {
+                let k = match e {
+                    W3dError::Undefined(u) => format!("{u:?}"),
+                    e => format!("{e:?}"),
+                };
+                *excluded.entry(k).or_default() += 1;
+                continue;
+            }
+        };
+        if mesh_too_large(&rust) {
+            large += 1;
+            continue;
+        }
+        let mut guard = planted && after;
+        match rust.get(2) {
+            Some(b'S') => {
+                ok += 1;
+                // the legacy counts, from the Rust's own load
+                let mut c = ChunkLoad::new(GameFile::new(&data).unwrap());
+                c.open_chunk().unwrap();
+                let mode = [PrelitMode::Vertex, PrelitMode::LightmapMultiPass, PrelitMode::LightmapMultiTexture][prelit as usize];
+                if let Ok(Some(m)) = mesh::load_w3d(&mut c, &MeshLoadOptions { prelit_mode: mode }) {
+                    legacy += m.legacy_materials.len() as u64;
+                    vmats += m.vertex_materials.iter().filter(|v| v.legacy.is_some()).count() as u64;
+                    textures += m.textures.len() as u64;
+                    let past = |p: [u16; 3]| p.iter().any(|&v| i32::from(v) >= m.vertex_count);
+                    guard |= planted && m.polys.as_ref().is_some_and(|a| a.to_vec().into_iter().any(past));
+                    let (ids, huge) = per_tri_ids(&data);
+                    guard |= planted && (huge || ids.iter().any(|&i| usize::from(i) >= m.legacy_materials.len()));
+                }
+            }
+            Some(b'e') => failed += 1,
+            _ => {}
+        }
+        if guard {
+            guarded += 1;
+            continue;
+        }
+        if std::env::var_os("W3D_TRACE").is_some() {
+            eprintln!("legacy case {case}: {:02x?}", data);
+        }
+        let c = cpp_log(|log, cap, n| unsafe {
+            cpp::ref_w3d_load_mesh(data.as_ptr() as *const _, data.len() as i32, prelit, log, cap, n)
+        });
+        check.eq(&rust, &c, || format!("case {case} (prelit mode {prelit}): {:02x?}", data));
+    }
+    println!(
+        "read_v3_materials: {CASES} inputs, {ok} loaded, {failed} load errors; legacy materials {legacy}, their vertex \
+         materials {vmats}, textures {textures}; excluded (undefined upstream): {} {excluded:?}; excluded (too large): {large}; \
+         plant guard: {guarded}",
+        excluded.values().sum::<u64>()
+    );
+    if std::env::var_os("L9_PLANT").is_some() {
+        check.finish_planted();
+    } else {
+        check.finish();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -8028,3 +8438,4 @@ mod part16 {
         check.finish();
     }
 }
+

@@ -23,9 +23,16 @@
 **     AABTreeClass::Load_W3D) are TRANSCRIBED in wrap_w3d_mesh.cpp from
 **     vertmaterial.cpp, texture.cpp and aabtree.cpp, which cannot be
 **     compiled here (Direct3D; the collision system), and they record what
-**     they read so the test can compare it. The material methods that
+**     they read so the test can compare it. ~~The material methods that
 **     meshmatdesc.cpp's post-load processing calls do nothing here: that
-**     processing is not part of what is compared (see wrap_w3d_mesh.cpp).
+**     processing is not part of what is compared (see wrap_w3d_mesh.cpp).~~
+**     Corrected 2026-11-14 (#67): VertexMaterialClass now has upstream's
+**     private members (vertmaterial.h: the D3DMATERIAL8 behind MaterialDyn,
+**     Flags, the colour sources, Mapper, UVSource, UniqueID, CRC, CRCDirty,
+**     UseLighting) and its accessors, Compute_CRC and Init_From_Material3
+**     are vertmaterial.cpp's own text (build.rs cuts them VERBATIM into
+**     w3d_gen/vertmaterial_def.h), for the legacy materials of
+**     read_v3_materials. D3DMATERIAL8 and D3DMCS_* are d3d8types.h's.
 **
 ** The MeshGeometryClass functions of meshgeometry.cpp the loader calls
 ** (Reset_Geometry, Set_Name, read_vertices, ...) are likewise transcribed in
@@ -56,6 +63,8 @@
 #include "multilist.h"
 #include "vector_this.h"
 #include "ww3dformat.h"
+#include "meshbuild.h"
+#include <assert.h>
 #include <string>
 #include <vector>
 
@@ -103,7 +112,15 @@ public:
 	static DX8Caps *Get_Current_Caps() { abort(); }
 };
 
+/* ---- d3d8types.h: what vertmaterial.cpp uses -------------------- */
+typedef struct _D3DCOLORVALUE { float r; float g; float b; float a; } D3DCOLORVALUE;
+typedef struct _D3DMATERIAL8 { D3DCOLORVALUE Diffuse; D3DCOLORVALUE Ambient; D3DCOLORVALUE Specular; D3DCOLORVALUE Emissive; float Power; } D3DMATERIAL8;
+typedef enum _D3DMATERIALCOLORSOURCE { D3DMCS_MATERIAL = 0, D3DMCS_COLOR1 = 1, D3DMCS_COLOR2 = 2 } D3DMATERIALCOLORSOURCE;
+
 /* ---- vertmaterial.h ------------------------------------------------- */
+#define DYN_MAT8
+class DynD3DMATERIAL8;
+class TextureMapperClass;
 class VertexMaterialClass : public W3DMPO, public RefCountClass
 {
 	W3DMPO_GLUE(VertexMaterialClass)
@@ -115,30 +132,62 @@ public:
 	~VertexMaterialClass();
 	WW3DErrorType Load_W3D(ChunkLoadClass &cload);
 	WW3DErrorType Save_W3D(ChunkSaveClass &) { abort(); }
-	void Set_Name(const char *) { abort(); }
-	void Init_From_Material3(const W3dMaterial3Struct &) { abort(); }
-	unsigned long Get_CRC(void) const { abort(); }
-	/* used by meshmatdesc.cpp's post-load processing (not compared): no-ops */
-	void Get_Ambient(Vector3 *set) const { *set = Vector3(0, 0, 0); }
-	void Get_Diffuse(Vector3 *set) const { *set = Vector3(0, 0, 0); }
-	void Get_Specular(Vector3 *set) const { *set = Vector3(0, 0, 0); }
-	void Get_Emissive(Vector3 *set) const { *set = Vector3(0, 0, 0); }
-	float Get_Opacity(void) const { return 1.0f; }
-	void Set_Ambient(const Vector3 &) {}
-	void Set_Diffuse(const Vector3 &) {}
-	void Set_Specular(const Vector3 &) {}
-	void Set_Emissive(const Vector3 &) {}
-	void Set_Ambient(float, float, float) {}
-	void Set_Diffuse(float, float, float) {}
-	void Set_Specular(float, float, float) {}
-	void Set_Emissive(float, float, float) {}
-	void Set_Lighting(bool) {}
-	void Set_Ambient_Color_Source(ColorSourceType) {}
-	void Set_Diffuse_Color_Source(ColorSourceType) {}
-	void Set_Emissive_Color_Source(ColorSourceType) {}
-	void Set_UV_Source(int, int) {}
-	int Get_UV_Source(int) { return 0; }
+	/* vertmaterial.h: `Name = name;` (Name is a std::string here) */
+	void Set_Name(const char *name) { HasName = true; Name = name; }
+	void Init_From_Material3(const W3dMaterial3Struct &mat3);
+	/* vertmaterial.h */
+	inline unsigned long Get_CRC(void) const
+	{
+		if (CRCDirty) {
+			CRC=Compute_CRC();
+			CRCDirty=false;
+		}
+		return CRC;
+	}
+	/* vertmaterial.cpp (w3d_gen/vertmaterial_def.h) */
+	void Get_Ambient(Vector3 *set) const;
+	void Get_Diffuse(Vector3 *set) const;
+	void Get_Specular(Vector3 *set) const;
+	void Get_Emissive(Vector3 *set) const;
+	float Get_Shininess(void) const;
+	float Get_Opacity(void) const;
+	void Set_Ambient(const Vector3 &color);
+	void Set_Diffuse(const Vector3 &color);
+	void Set_Specular(const Vector3 &color);
+	void Set_Emissive(const Vector3 &color);
+	void Set_Ambient(float r, float g, float b);
+	void Set_Diffuse(float r, float g, float b);
+	void Set_Specular(float r, float g, float b);
+	void Set_Emissive(float r, float g, float b);
+	void Set_Shininess(float shin);
+	void Set_Opacity(float o);
+	void Set_Ambient_Color_Source(ColorSourceType src);
+	void Set_Diffuse_Color_Source(ColorSourceType src);
+	void Set_Emissive_Color_Source(ColorSourceType src);
+	ColorSourceType Get_Ambient_Color_Source(void);
+	ColorSourceType Get_Emissive_Color_Source(void);
+	ColorSourceType Get_Diffuse_Color_Source(void);
+	void Set_UV_Source(int stage, int array_index);
+	int Get_UV_Source(int stage);
+	/* used by meshmatdesc.cpp's post-load processing (not reached: the
+	** snapshot is taken before it) */
+	void Set_Lighting(bool lighting) { CRCDirty=true; UseLighting=lighting; }
 	bool Do_Mappers_Need_Normals(void) const { return false; }
+	unsigned long Compute_CRC(void) const;
+
+	/* vertmaterial.h's private members (the layout is not used: Compute_CRC
+	** hashes each member by its own size) */
+	DynD3DMATERIAL8 *MaterialDyn;
+	unsigned int Flags;
+	unsigned int AmbientColorSource;
+	unsigned int EmissiveColorSource;
+	unsigned int DiffuseColorSource;
+	TextureMapperClass *Mapper[MeshBuilderClass::MAX_STAGES];
+	unsigned int UVSource[MeshBuilderClass::MAX_STAGES];
+	unsigned int UniqueID;
+	mutable unsigned long CRC;
+	mutable bool CRCDirty;
+	bool UseLighting;
 
 	/* what Load_W3D read */
 	int Serial;

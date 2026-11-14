@@ -127,6 +127,48 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#67 (2026-11-14, GitHub #67): the legacy materials (`W3D_CHUNK_MATERIALS3`) and the per-triangle material ids.**
+- **Upstream:** WW3D2/meshmdlio.cpp (`read_chunks`' case, `read_v3_materials`, `read_per_tri_materials`,
+  `MeshLoadContextClass::Add_Legacy_Material`, `Peek_Legacy_Shader/Vertex_Material/Texture`), vertmaterial.cpp/.h
+  (the constructor, `Init_From_Material3`, `Compute_CRC`, the members it hashes), shader.cpp/.h (`Init_From_Material3`,
+  `Reset`, the setters), w3d_obsolete.h (`W3dMaterial3Struct`, `W3dMap3Struct`, the `MATERIAL3*`/`MAP3*` chunk ids,
+  `W3DMATERIAL_*`), w3d_util.cpp (`Convert_Color`), meshmatdesc.cpp (`Set_Single_*`, `Set_Material/Shader/Texture`),
+  assetmgr.cpp and GameEngineDevice's W3DAssetManager.cpp (`Get_Texture`: null for an empty name). Each legacy material
+  becomes a vertex material, a shader and a texture, de-duplicated (shader bits; vertex-material CRC, the name left out;
+  texture name by `stricmp`), with the kept quirk that "not found" is tested against `VertexMaterials.Count()` while the
+  search runs over `VertexMaterialCrcs`.
+- **Port:** `formats::w3d::mesh`: `read_v3_materials`, `read_map3`, `get_map3_texture`, `get_texture`,
+  `shader_init_from_material3`, `D3dMaterial8` (`init_from_material3`), `vertex_material_crc`,
+  `Mesh::add_legacy_material`, the `peek_legacy_*`, and the whole of `read_per_tri_materials`; new fields
+  `VertexMaterial::legacy`, `Mesh::legacy_materials`, `Mesh::vertex_material_crcs`; `Shader::raw` is an `Option`
+  (`None` for a legacy shader); `w3d_file` has the `W3DMATERIAL_*` flags; `VertexMaterialState::from_w3d` takes a legacy
+  material. The mesh loader has no `Unsupported` left.
+- **Defects found (pre-existing):** (1) port and harness: `Get_Texture` returns null for an empty name, so a texture
+  chunk named "" without an info chunk ends `read_textures` (with one it is undefined); both sides made a texture of it,
+  so the differential agreed with itself. Fixed in both; the existing mesh test moved from 10,215 compared (8,835
+  loaded) to 10,118 (8,738), NullPointer exclusions 1,521 -> 1,672, 0 mismatches. (2) harness: `read_v3_materials` could
+  never run in the C++: the stand-in `Init_From_Material3` aborted, so the compiler dropped the rest of the function
+  (which is also why the undefined `ShaderClass::Init_From_Material3` linked). (3) README's "all chunk ids, flags" missed
+  `W3DMATERIAL_*`.
+- **Differential:** build.rs cuts vertmaterial.cpp (from `#ifdef DYN_MAT8` to "VertexMaterialClass Implementation", and
+  from `Compute_CRC` to `Load_W3D`) and shader.cpp (`Init_From_Material3` to the comment of `Enable_Fog`) into
+  `w3d_gen/vertmaterial_def.h`, each anchor asserted once; the `VertexMaterialClass` stand-in (mesh_prelude.h) has
+  upstream's members; the snapshot also logs each vertex material's `D3DMATERIAL8`, the context's `VertexMaterialCrcs`
+  and `LegacyMaterials`. New test `mesh_legacy_materials_match_upstream` (generator `gen_legacy_mesh`, seed 0x67).
+- **Predicted** (`issue67_predictions.md`): 1-3 causes of mismatch on the first run, 2 rounds. **Result:** 0 mismatches
+  from the first run (a miss). 20,000 inputs, 13,740 compared, 12,928 loaded, 793 load errors, 16,693 legacy materials,
+  **0 mismatches, max ULP 0**. `differential_w3d` 40 tests, 0 mismatches; lib 1,244 passed; client 102 passed; gate (a)
+  PASS, last CRC `0bf44067`.
+- **Plants** 10076-10095: 20 of 20 caught (counts in the test's doc comment). The first round crashed the C++ on 7: a
+  planted Rust no longer judges which inputs upstream leaves undefined (e.g. merging two vertex materials makes it skip a
+  per-triangle id lookup that upstream makes out of range). With `L9_PLANT` set the test now keeps those inputs from the
+  C++ (a plant guard, documented on the test); unplanted runs compare them.
+- **Not done (gaps):** whether any shipped file carries this chunk (needs the owner's files, #23); legacy meshes'
+  post-load processing is not compared (the snapshot stops at `Is_Empty`, as for every mesh); textures stay names (the
+  asset manager's lower-casing and sharing are not modelled; `stricmp` gives the same de-duplication); a CRC collision
+  between different materials is reproduced by construction but never generated; the other flag groups of
+  w3d_file.h/w3d_obsolete.h were not re-checked against the README's claim.
+
 **#181 item 3, #163 item 2 (2026-11-14): the embedded animation sounds (`AnimatedSoundMgrClass`), and the union's reads
 (#181 item 5).**
 - **Upstream:** WW3D2/animatedsoundmgr.cpp/.h, soundlibrarybridge.h, animobj.cpp's three `Set_Animation`s

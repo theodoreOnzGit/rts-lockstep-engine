@@ -157,8 +157,11 @@
 //! ([`super::distlod`]) and the particle emitter ([`super::part_ldr`]; the
 //! texture question of a version-1 emitter is answered by
 //! [`AssetManager::alpha_textures`]). No prototype loader is missing any
-//! more (the mesh loader still reports the legacy `W3D_CHUNK_MATERIALS3`
-//! as [`W3dError::Unsupported`], see [`super::mesh`]).
+//! more ~~(the mesh loader still reports the legacy `W3D_CHUNK_MATERIALS3`
+//! as [`W3dError::Unsupported`], see [`super::mesh`])~~. **Corrected
+//! 2026-11-14 (#67):** the mesh loader reads `W3D_CHUNK_MATERIALS3` too (see
+//! [`super::mesh`]); no W3D loader reports [`W3dError::Unsupported`] for a
+//! chunk any more.
 //!
 //! # Representation
 //!

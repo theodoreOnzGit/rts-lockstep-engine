@@ -14,7 +14,9 @@
 **     get_planes (the scratch array is reset for each mesh, see below);
 **   meshmdl.cpp: the MeshModelClass constructor and Reset;
 **   vertmaterial.cpp: VertexMaterialClass::Load_W3D (the reading; the file
-**     data is kept instead of being converted);
+**     data is kept instead of being converted) and the constructor (#67:
+**     its other functions that the legacy materials use are VERBATIM, see
+**     build.rs);
 **   texture.cpp: Load_Texture;
 **   aabtree.cpp: AABTreeClass::Load_W3D, Read_Poly_Indices, Read_Nodes,
 **     Reset;
@@ -335,12 +337,34 @@ void MeshModelClass::Reset(int polycount, int vertcount, int passcount)
 }
 
 /* ---- vertmaterial.cpp ------------------------------------------------ */
-VertexMaterialClass::VertexMaterialClass() : Serial(g_serial++), HasName(false)
+/* #67: DynD3DMATERIAL8, the `Material` macro, Compute_CRC, the accessors and
+** Init_From_Material3 of vertmaterial.cpp, and ShaderClass::
+** Init_From_Material3 of shader.cpp, VERBATIM (cut by build.rs). */
+#include "vertmaterial_def.h"
+
+/* VertexMaterialClass::VertexMaterialClass (transcribed: the same
+** initialisation), plus what the test records. */
+VertexMaterialClass::VertexMaterialClass() :
+	MaterialDyn(NULL), Flags(0), AmbientColorSource(D3DMCS_MATERIAL), EmissiveColorSource(D3DMCS_MATERIAL),
+	DiffuseColorSource(D3DMCS_MATERIAL), UniqueID(0), CRC(0), CRCDirty(true), UseLighting(false), Serial(g_serial++), HasName(false)
 {
+	int i;
+	for (i = 0; i < MeshBuilderClass::MAX_STAGES; i++) {
+		Mapper[i] = NULL;
+		UVSource[i] = i;
+	}
+	MaterialDyn = W3DNEW DynD3DMATERIAL8;
+	memset(Material, 0, sizeof(D3DMATERIAL8));
+	Set_Ambient(1.0f, 1.0f, 1.0f);
+	Set_Diffuse(1.0f, 1.0f, 1.0f);
+	Set_Opacity(1.0f);
 	memset(&Info, 0, sizeof(Info));
 	HasArgs[0] = HasArgs[1] = false;
 	Add_Ref(); /* kept alive past the context's release, for logging */
 }
+/* the macros of vertmaterial_def.h would rewrite MeshMatDescClass::Material below */
+#undef Material
+#undef SRCMATPTR
 VertexMaterialClass::VertexMaterialClass(const VertexMaterialClass &) { abort(); }
 VertexMaterialClass::~VertexMaterialClass() {}
 
@@ -405,13 +429,19 @@ TextureClass::TextureClass(const char *name, MipCountType mips, WW3DFormat forma
 	Add_Ref(); /* kept alive past the context's release, for logging */
 }
 
-/* The asset manager's texture lookups: a new texture object per call. */
+/* The asset manager's texture lookups: a new texture object per call.
+** Corrected 2026-11-14 (#67): after upstream's first test (assetmgr.cpp,
+** WW3DAssetManager::Get_Texture: "Bail if the user isn't really asking for
+** anything"), NULL for a null or empty name; these stand-ins made a texture
+** of it. */
 TextureClass *WW3DAssetManager::Get_Texture(const char *filename)
 {
+	if ((filename == NULL) || (strlen(filename) == 0)) return NULL;
 	return NEW_REF(TextureClass, (filename, MIP_LEVELS_ALL, WW3D_FORMAT_UNKNOWN));
 }
 TextureClass *WW3DAssetManager::Get_Texture(const char *filename, int mip_level_count, int texture_format)
 {
+	if ((filename == NULL) || (strlen(filename) == 0)) return NULL;
 	return NEW_REF(TextureClass, (filename, (MipCountType)mip_level_count, (WW3DFormat)texture_format));
 }
 
@@ -702,6 +732,16 @@ void snapshot(MeshLoadContextClass *c)
 			put8(v->HasArgs[a] ? 1 : 0);
 			putStr(v->Args[a].data(), v->Args[a].size());
 		}
+		put(&v->MaterialDyn->Mat, sizeof(D3DMATERIAL8)); /* #67 */
+	}
+	/* #67: the legacy material table and the vertex-material CRCs */
+	put32((uint32_t)c->VertexMaterialCrcs.Count());
+	for (int i = 0; i < c->VertexMaterialCrcs.Count(); ++i) put32((uint32_t)c->VertexMaterialCrcs[i]);
+	put32((uint32_t)c->LegacyMaterials.Count());
+	for (int i = 0; i < c->LegacyMaterials.Count(); ++i) {
+		put32((uint32_t)c->LegacyMaterials[i]->VertexMaterialIdx);
+		put32((uint32_t)c->LegacyMaterials[i]->ShaderIdx);
+		put32((uint32_t)c->LegacyMaterials[i]->TextureIdx);
 	}
 	put32((uint32_t)c->Textures.Count());
 	for (int i = 0; i < c->Textures.Count(); ++i) {

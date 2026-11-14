@@ -4,7 +4,9 @@
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/meshmdlio.cpp
 //   (MeshModelClass::Load_W3D and the read_* functions it calls, the
-//   MeshLoadContextClass members they use)
+//   MeshLoadContextClass members they use; since #67 read_v3_materials,
+//   read_per_tri_materials and the legacy-material members Add_Legacy_Material,
+//   Peek_Legacy_Shader, Peek_Legacy_Vertex_Material, Peek_Legacy_Texture)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/meshgeometry.cpp, .h
 //   (Reset_Geometry, Set_Name, read_vertices, read_vertex_normals,
 //   read_triangles, read_user_text, read_vertex_influences,
@@ -13,7 +15,12 @@
 //   (the MeshMatDescClass state the loader sets and queries:
 //   Reset, Install_UV_Array, the Set_/Has_/Get_ functions)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/vertmaterial.cpp
-//   (VertexMaterialClass::Load_W3D, the reading)
+//   (VertexMaterialClass::Load_W3D, the reading; #67: the constructor's
+//   D3DMATERIAL8, Init_From_Material3, Compute_CRC)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/shader.cpp
+//   (#67: ShaderClass::Init_From_Material3)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/assetmgr.cpp
+//   (#67: WW3DAssetManager::Get_Texture's refusal of an empty name)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/texture.cpp
 //   (Load_Texture, the reading)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/aabtree.cpp
@@ -95,28 +102,51 @@
 //!   setters OR the whole value in: out-of-range values spill into other
 //!   fields).
 //! - Pre-3.0 skins add 1 to every bone index after loading.
+//! - (#67) A texture chunk whose name is empty and that has no info chunk
+//!   ends the textures chunk: `Get_Texture` returns null for an empty name
+//!   and `read_textures` stops at a null texture. A legacy map with an empty
+//!   name leaves its material without a texture (and still enables
+//!   texturing).
+//! - (#67) Legacy materials: the vertex-material search of
+//!   `Add_Legacy_Material` (see `Mesh::add_legacy_material`); the SORT flag
+//!   is set from the shader before an SI map makes it additive; the SI map is
+//!   read only when the diffuse colour times its coefficients is black, and
+//!   is otherwise skipped unread; the per-triangle chunk's single-kind
+//!   defaults peek legacy material 0 whatever the ids say.
 //! - The mesh's sort level is a `char`: the header's `int` truncated.
 //! - Arrays are the size the header gives: whatever the file does not
 //!   fill keeps the allocator's zeros (the game's allocator zero-fills).
 //!
 //! # Where this differs from upstream (only where upstream is undefined)
 //!
-//! [`W3dError::Undefined`]: a pass index of 4 or more, or a stage of 2 or
+//! [`W3dError::Undefined`](super::W3dError::Undefined): a pass index of 4 or more, or a stage of 2 or
 //! more, used on the material arrays; an id at or past the number of
 //! vertex materials, shaders or textures loaded; an uninitialised value read
 //! (above); a name chunk over 256 bytes, or a name with no terminator in
 //! what was read; a C string running past the end of the header; a negative
 //! count or an allocation the 32-bit original cannot make; a ninth distinct
 //! texture-coordinate array (`Get_UV_Array_Count` reads `UV[8]`); writes past
-//! the temporary UV array; geometry chunks with no geometry arrays.
+//! the temporary UV array; geometry chunks with no geometry arrays; (#67) a
+//! legacy material id at or past the legacy materials read (`Peek_Legacy_*`
+//! assert only), including legacy material 0 of a mesh that read none; a
+//! legacy material or map name with no terminator in what was read; a
+//! texture chunk with an info chunk and an empty name (`Get_Texture` returns
+//! null and its filter is set).
 //!
 //! # What is left out
 //!
-//! - The legacy (pre-W3D 3) material system: `W3D_CHUNK_MATERIALS3`
+//! - ~~The legacy (pre-W3D 3) material system: `W3D_CHUNK_MATERIALS3`
 //!   (`read_v3_materials`, with its legacy material table de-duplicated by
 //!   vertex-material CRC) and multi-material `W3D_CHUNK_PER_TRI_MATERIALS`.
-//!   These give [`W3dError::Unsupported`]. (Single-material files skip the
-//!   per-triangle chunk upstream, which is reproduced.)
+//!   These give `W3dError::Unsupported`. (Single-material files skip the
+//!   per-triangle chunk upstream, which is reproduced.)~~ **Corrected
+//!   2026-11-14 (#67):** both are translated (`read_v3_materials`,
+//!   `read_per_tri_materials`, `Add_Legacy_Material` as
+//!   `Mesh::add_legacy_material`): a legacy material becomes a vertex
+//!   material ([`VertexMaterial::legacy`], its CRC in
+//!   [`Mesh::vertex_material_crcs`]), a shader and a texture, de-duplicated
+//!   as upstream does, and indexed by [`Mesh::legacy_materials`]. The mesh
+//!   loader has no `Unsupported` left.
 //! - Everything after the chunks are read: generating an AABTree for
 //!   collidable meshes without one (flagged:
 //!   [`Mesh::needs_generated_cull_tree`]), `install_materials`
@@ -138,8 +168,9 @@
 //!   [`super::render::load_texture_image`].
 
 use super::w3d_file::*;
-use super::{c_string, W3dError, W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
+use super::{c_string, W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
 use crate::ww::chunkio::ChunkLoad;
+use crate::logic::modules::plant;
 use crate::ww::realcrc;
 
 // ---------------------------------------------------------------------------
@@ -608,7 +639,8 @@ impl MatDesc {
         }
         Ok(self.color_array[index].as_mut().unwrap())
     }
-    fn set_material(&mut self, vidx: usize, vmat: u32, pass: i32) -> W3dResult<()> {
+    /// `Set_Material(vidx, vmat, pass)` (`None`: a null material).
+    fn set_material(&mut self, vidx: usize, vmat: Option<u32>, pass: i32) -> W3dResult<()> {
         let n = self.vertex_count;
         let p = &mut self.passes[pass_index(pass)?];
         if p.material_array.is_none() {
@@ -618,7 +650,7 @@ impl MatDesc {
         if vidx >= a.len() {
             return Err(W3dUndefined::IndexOutOfRange.into());
         }
-        a.set(vidx, Some(vmat));
+        a.set(vidx, vmat);
         Ok(())
     }
     fn shader_array(&mut self, pass: i32) -> W3dResult<&mut Arr<u32>> {
@@ -737,27 +769,104 @@ fn crc_feed_repeated(state: u32, block: &[u8], times: usize) -> u32 {
 // Vertex materials, textures, the AABTree
 // ---------------------------------------------------------------------------
 
-/// A vertex material as `VertexMaterialClass::Load_W3D` reads it.
+/// A vertex material as `VertexMaterialClass::Load_W3D` reads it, or (#67)
+/// as `read_v3_materials` makes it from a legacy material.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VertexMaterial {
     /// The name (`Set_Name`), if a name chunk was read.
     pub name: Option<Vec<u8>>,
-    /// `W3D_CHUNK_VERTEX_MATERIAL_INFO`.
+    /// `W3D_CHUNK_VERTEX_MATERIAL_INFO` (all zeros for a legacy material).
     pub info: W3dVertexMaterialStruct,
     /// The mapper argument strings (`W3D_CHUNK_VERTEX_MAPPER_ARGS0`, `ARGS1`),
     /// as read (the last chunk of each kind).
     pub mapper_args: [Option<Vec<u8>>; 2],
+    /// A legacy material's `D3DMATERIAL8`: `VertexMaterialClass()`, then
+    /// `Init_From_Material3` and `read_v3_materials`' move of an untextured
+    /// diffuse to ambient (#67). `None` for a material of
+    /// `W3D_CHUNK_VERTEX_MATERIALS`, whose `info` is converted later
+    /// ([`super::vertmaterial::VertexMaterialState::from_w3d`]).
+    pub legacy: Option<D3dMaterial8>,
 }
 
-/// A 256-byte `char name[256]` on the stack, read by name chunks.
-struct NameBuf {
-    b: [u8; 256],
+/// `D3DMATERIAL8` (d3d8types.h), the colours `VertexMaterialClass` keeps
+/// behind `MaterialDyn`: `[r, g, b, a]` each.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct D3dMaterial8 {
+    pub diffuse: [f32; 4],
+    pub ambient: [f32; 4],
+    pub specular: [f32; 4],
+    pub emissive: [f32; 4],
+    pub power: f32,
+}
+
+impl D3dMaterial8 {
+    /// `VertexMaterialClass::VertexMaterialClass`: `memset` to zero, then
+    /// `Set_Ambient(1,1,1)`, `Set_Diffuse(1,1,1)`, `Set_Opacity(1)`.
+    pub const NEW: D3dMaterial8 =
+        D3dMaterial8 { diffuse: [1.0; 4], ambient: [1.0, 1.0, 1.0, 0.0], specular: [0.0; 4], emissive: [0.0; 4], power: 0.0 };
+
+    /// The 68 bytes, in `D3DMATERIAL8`'s order.
+    pub fn to_bytes(&self) -> [u8; 68] {
+        let mut b = [0u8; 68];
+        for (i, v) in self.diffuse.iter().chain(&self.ambient).chain(&self.specular).chain(&self.emissive).chain([&self.power]).enumerate() {
+            b[4 * i..4 * i + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        b
+    }
+
+    /// `VertexMaterialClass::Init_From_Material3(mat3)` on a new material:
+    /// diffuse and specular are the colour times its coefficients
+    /// (`Convert_Color` of each, a `float` product per channel), emissive
+    /// and ambient the coefficients, then shininess and opacity (the diffuse
+    /// alpha).
+    pub fn init_from_material3(mat3: &W3dMaterial3Struct) -> Self {
+        let cc = super::vertmaterial::convert_color;
+        let mul = |a: [f32; 3], b: [f32; 3]| [a[0] * b[0], a[1] * b[1], a[2] * b[2]];
+        let mut m = D3dMaterial8::NEW;
+        let d = if plant(10085) { cc(&mat3.diffuse_color) } else { mul(cc(&mat3.diffuse_color), cc(&mat3.diffuse_coefficients)) };
+        m.diffuse[..3].copy_from_slice(&d);
+        let sp = mul(cc(&mat3.specular_color), cc(&mat3.specular_coefficients));
+        m.specular[..3].copy_from_slice(&sp);
+        m.emissive[..3].copy_from_slice(&cc(&mat3.emissive_coefficients));
+        m.ambient[..3].copy_from_slice(&cc(&mat3.ambient_coefficients));
+        m.power = mat3.shininess;
+        if !plant(10086) {
+            m.diffuse[3] = mat3.opacity;
+        }
+        m
+    }
+}
+
+/// `VertexMaterialClass::Compute_CRC` of a material whose other members
+/// are the constructor's (`Flags` 0, the three colour sources
+/// `D3DMCS_MATERIAL`, `UVSource[i] = i`, `UseLighting` false, `UniqueID` 0,
+/// no mapper), as every legacy material is when `Add_Legacy_Material` asks:
+/// `CRC_Memory` over the `D3DMATERIAL8`, then each member by its own size,
+/// chained from 0.
+pub fn vertex_material_crc(m: &D3dMaterial8) -> u32 {
+    let mut crc = realcrc::crc_memory(&m.to_bytes(), 0);
+    for v in [0u32, 0, 0, 0] {
+        // Flags, DiffuseColorSource, AmbientColorSource, EmissiveColorSource
+        crc = realcrc::crc_memory(&v.to_le_bytes(), crc);
+    }
+    let mut uv = [0u8; 32];
+    for i in 0..8 {
+        uv[4 * i..4 * i + 4].copy_from_slice(&(i as u32).to_le_bytes());
+    }
+    crc = realcrc::crc_memory(&uv, crc);
+    crc = realcrc::crc_memory(&[0u8], crc); // UseLighting
+    realcrc::crc_memory(&0u32.to_le_bytes(), crc) // UniqueID
+}
+
+/// A `char name[N]` on the stack, read by name chunks.
+struct NameBuf<const N: usize> {
+    b: [u8; N],
     init: usize,
 }
 
-impl NameBuf {
+impl<const N: usize> NameBuf<N> {
     fn new() -> Self {
-        NameBuf { b: [0; 256], init: 0 }
+        NameBuf { b: [0; N], init: 0 }
     }
     /// `cload.Read(&name, cload.Cur_Chunk_Length())` (result not used).
     fn read(&mut self, cload: &mut ChunkLoad<'_>) -> W3dResult<()> {
@@ -780,7 +889,7 @@ impl NameBuf {
 /// `VertexMaterialClass::Load_W3D(cload)`. `Ok(None)` is
 /// `WW3D_ERROR_LOAD_FAILED`.
 fn load_vertex_material(cload: &mut ChunkLoad<'_>) -> W3dResult<Option<VertexMaterial>> {
-    let mut name = NameBuf::new();
+    let mut name = NameBuf::<256>::new();
     let mut hasname = false;
     let mut vmat: Option<W3dVertexMaterialStruct> = None;
     let mut args: [Option<Vec<u8>>; 2] = [None, None];
@@ -816,7 +925,7 @@ fn load_vertex_material(cload: &mut ChunkLoad<'_>) -> W3dResult<Option<VertexMat
     let name = if hasname { Some(name.string()?) } else { None };
     // Parse_W3dVertexMaterialStruct(vmat): uninitialised without an info chunk
     let info = vmat.ok_or(W3dUndefined::UninitialisedRead)?;
-    Ok(Some(VertexMaterial { name, info, mapper_args: args }))
+    Ok(Some(VertexMaterial { name, info, mapper_args: args, legacy: None }))
 }
 
 /// A texture as `Load_Texture` asks the asset manager for it.
@@ -836,13 +945,28 @@ pub struct Texture {
     pub clamp: Option<(bool, bool)>,
 }
 
+/// `WW3DAssetManager::Get_Texture(filename)` with the default arguments, as
+/// the legacy materials call it: `None` (null) for an empty name, which
+/// upstream's first test refuses; otherwise the texture by its name (the
+/// asset manager's lower-casing and sharing are not modelled: a name stands
+/// for the texture, see [`super::render`]).
+fn get_texture(name: Vec<u8>) -> Option<Texture> {
+    if name.is_empty() {
+        return None;
+    }
+    Some(Texture { name, attributes: None, mip_count: 0, no_lod: false, clamp: None })
+}
+
 /// `Load_Texture(cload)`: `Ok(None)` is a null texture (the end of the
-/// textures chunk, or a chunk that is not a texture, left open).
+/// textures chunk, or a chunk that is not a texture, left open; **corrected
+/// 2026-11-14 (#67)**: or an empty name without an info chunk, for which
+/// `Get_Texture` returns null; with an info chunk the null texture's filter
+/// is then set, which is undefined).
 fn load_texture(cload: &mut ChunkLoad<'_>) -> W3dResult<Option<Texture>> {
     if !cload.open_chunk()? || cload.cur_chunk_id()? != W3D_CHUNK_TEXTURE {
         return Ok(None);
     }
-    let mut name = NameBuf::new();
+    let mut name = NameBuf::<256>::new();
     let mut texinfo = Stale::<{ W3dTextureInfoStruct::SIZE }>::new();
     let mut hastexinfo = false;
     while cload.open_chunk()? {
@@ -878,7 +1002,15 @@ fn load_texture(cload: &mut ChunkLoad<'_>) -> W3dResult<Option<Texture>> {
     } else {
         (None, 0, false, None)
     };
-    Ok(Some(Texture { name: name.string()?, attributes, mip_count, no_lod, clamp }))
+    let name = name.string()?;
+    if name.is_empty() {
+        // Get_Texture returned null
+        if hastexinfo {
+            return Err(W3dUndefined::NullPointer.into());
+        }
+        return Ok(None);
+    }
+    Ok(Some(Texture { name, attributes, mip_count, no_lod, clamp }))
 }
 
 /// `AABTreeClass::CullNodeStruct`, as read from a [`W3dMeshAABTreeNode`].
@@ -1011,8 +1143,20 @@ use mesh_flags::*;
 /// A shader of the mesh: as read and as `ShaderClass` bits.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shader {
-    pub raw: W3dShaderStruct,
+    /// The file's struct; `None` for a legacy material's shader (#67), which
+    /// `read_v3_materials` builds from `ShaderClass()` and the material.
+    pub raw: Option<W3dShaderStruct>,
     pub bits: u32,
+}
+
+/// `MeshLoadContextClass::LegacyMaterialClass` (#67): one material of
+/// `W3D_CHUNK_MATERIALS3`, as indices into the context's de-duplicated
+/// shaders, vertex materials and textures (-1: none).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LegacyMaterial {
+    pub vertex_material_idx: i32,
+    pub shader_idx: i32,
+    pub texture_idx: i32,
 }
 
 /// `class MeshModelClass` (with its `MeshGeometryClass` part) and the
@@ -1061,6 +1205,11 @@ pub struct Mesh {
     pub shaders: Vec<Shader>,
     pub vertex_materials: Vec<VertexMaterial>,
     pub textures: Vec<Texture>,
+    /// The context's `LegacyMaterials` (#67).
+    pub legacy_materials: Vec<LegacyMaterial>,
+    /// The context's `VertexMaterialCrcs` (#67): one per vertex material a
+    /// legacy material added.
+    pub vertex_material_crcs: Vec<u32>,
     /// `DefMatDesc`.
     pub default_mat: MatDesc,
     /// The context's `AlternateMatDesc`.
@@ -1109,6 +1258,85 @@ impl Mesh {
         } else {
             &mut self.default_mat
         }
+    }
+
+    /// `MeshLoadContextClass::Add_Legacy_Material(shader, vmat, tex)`: adds
+    /// the shader unless one with the same bits is there, the vertex
+    /// material unless one of the same CRC is ([`vertex_material_crc`]; the
+    /// name is not part of it), and the texture unless one of the same name
+    /// is (`stricmp`; the asset manager returns one object per lower-cased
+    /// name, so the pointer test adds nothing), and records the three
+    /// indices.
+    ///
+    /// Kept quirk: the CRC search runs over `VertexMaterialCrcs` (only the
+    /// legacy materials' vertex materials) but "not found" is tested against
+    /// `VertexMaterials.Count()`. When `W3D_CHUNK_VERTEX_MATERIALS` added
+    /// materials first, a new legacy material is not added and gets the
+    /// index `VertexMaterialCrcs.Count()`, another material's.
+    fn add_legacy_material(&mut self, shader: u32, vmat: VertexMaterial, tex: Option<Texture>) {
+        let found = if plant(10081) { None } else { self.shaders.iter().position(|s| s.bits == shader) };
+        let shader_idx = match found {
+            Some(si) => si,
+            None => {
+                self.shaders.push(Shader { raw: None, bits: shader });
+                self.shaders.len() - 1
+            }
+        };
+        let legacy = vmat.legacy.expect("a legacy material");
+        let crc = vertex_material_crc(&legacy);
+        let vi = if plant(10088) {
+            let n = self.vertex_material_crcs.len();
+            (0..n).find(|&k| self.vertex_materials.get(k).map(|v| &v.name) == Some(&vmat.name)).unwrap_or(n)
+        } else {
+            self.vertex_material_crcs.iter().position(|&c| c == crc).unwrap_or(self.vertex_material_crcs.len())
+        };
+        let not_found = if plant(10082) { self.vertex_material_crcs.len() } else { self.vertex_materials.len() };
+        let vertex_material_idx = if vi == not_found {
+            self.vertex_materials.push(vmat);
+            self.vertex_material_crcs.push(crc);
+            self.vertex_materials.len() - 1
+        } else {
+            vi
+        };
+        let texture_idx = match tex {
+            None => -1,
+            Some(t) => {
+                let same = |a: &[u8], b: &[u8]| if plant(10083) { a == b } else { a.eq_ignore_ascii_case(b) };
+                match self.textures.iter().position(|x| same(&x.name, &t.name)) {
+                    Some(ti) => ti as i32,
+                    None => {
+                        self.textures.push(t);
+                        self.textures.len() as i32 - 1
+                    }
+                }
+            }
+        };
+        self.legacy_materials.push(LegacyMaterial { vertex_material_idx: vertex_material_idx as i32, shader_idx: shader_idx as i32, texture_idx });
+    }
+
+    /// The legacy material `i` (`WWASSERT`s only: out of range is undefined).
+    fn legacy_material(&self, i: i32) -> W3dResult<LegacyMaterial> {
+        usize::try_from(i).ok().and_then(|i| self.legacy_materials.get(i).copied()).ok_or(W3dUndefined::IndexOutOfRange.into())
+    }
+
+    /// `MeshLoadContextClass::Peek_Legacy_Shader(i)`: the shader's bits.
+    fn peek_legacy_shader(&self, i: i32) -> W3dResult<u32> {
+        let si = self.legacy_material(i)?.shader_idx;
+        Ok(self.shaders[si as usize].bits)
+    }
+
+    /// `MeshLoadContextClass::Peek_Legacy_Vertex_Material(i)`: its index, or
+    /// `None` (null) for -1.
+    fn peek_legacy_vertex_material(&self, i: i32) -> W3dResult<Option<u32>> {
+        let vi = self.legacy_material(i)?.vertex_material_idx;
+        Ok(if vi != -1 { Some(vi as u32) } else { None })
+    }
+
+    /// `MeshLoadContextClass::Peek_Legacy_Texture(i)`: its index, or `None`
+    /// (null) for -1.
+    fn peek_legacy_texture(&self, i: i32) -> W3dResult<Option<u32>> {
+        let ti = self.legacy_material(i)?.texture_idx;
+        Ok(if ti != -1 { Some(ti as u32) } else { None })
     }
 }
 
@@ -1176,6 +1404,8 @@ pub fn load_w3d(cload: &mut ChunkLoad<'_>, options: &MeshLoadOptions) -> W3dResu
         shaders: Vec::new(),
         vertex_materials: Vec::new(),
         textures: Vec::new(),
+        legacy_materials: Vec::new(),
+        vertex_material_crcs: Vec::new(),
         default_mat,
         alternate_mat,
     };
@@ -1262,7 +1492,7 @@ fn read_chunks(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &mut Ctx) -> Rd {
             W3D_CHUNK_VERTICES => read_vertices(cload, m)?,
             W3D_CHUNK_SURRENDER_NORMALS | W3D_CHUNK_VERTEX_NORMALS => read_vertex_normals(cload, m)?,
             W3D_CHUNK_TEXCOORDS => read_texcoords(cload, m, ctx)?,
-            W3D_CHUNK_MATERIALS3 => return Err(W3dError::Unsupported("W3D_CHUNK_MATERIALS3 (legacy materials)")),
+            W3D_CHUNK_MATERIALS3 => read_v3_materials(cload, m)?,
             W3D_CHUNK_TRIANGLES => read_triangles(cload, m)?,
             W3D_CHUNK_PER_TRI_MATERIALS => read_per_tri_materials(cload, m)?,
             W3D_CHUNK_MESH_USER_TEXT => read_user_text(cload, m)?,
@@ -1391,25 +1621,218 @@ fn read_triangles(cload: &mut ChunkLoad<'_>, m: &mut Mesh) -> Rd {
     Ok(true)
 }
 
+/// `MeshModelClass::read_per_tri_materials(cload, context)`: unless the
+/// header has one material, each kind (vertex material, texture, shader)
+/// that the context holds at most one of is set for the whole of pass 0 from
+/// legacy material 0; then one `uint16` legacy material id per polygon sets
+/// the others, per polygon (shaders, textures) or on its three vertices
+/// (vertex materials). #67: the legacy table is `read_v3_materials`'.
 fn read_per_tri_materials(cload: &mut ChunkLoad<'_>, m: &mut Mesh) -> Rd {
     if m.header.num_materials == 1 {
         return Ok(true);
     }
-    // The legacy material table is only filled by W3D_CHUNK_MATERIALS3
-    // (unsupported), so here it is empty: Peek_Legacy_*(i) of an empty
-    // table is undefined, and is reached unless the vertex material,
-    // texture and shader counts are all above 1 and no polygon id is read.
+    // get_polys(): Poly->Get_Array() of a null Poly is undefined
     need(&mut m.polys)?;
-    let multi = m.vertex_materials.len() > 1 && m.textures.len() > 1 && m.shaders.len() > 1;
-    if !multi {
-        return Err(W3dUndefined::IndexOutOfRange.into());
+    let multi_mtl = m.vertex_materials.len() > 1;
+    let multi_tex = m.textures.len() > 1;
+    let multi_shad = if plant(10091) { !m.shaders.is_empty() } else { m.shaders.len() > 1 };
+    if !multi_mtl {
+        let v = m.peek_legacy_vertex_material(0)?;
+        m.default_mat.passes[0].material = v;
     }
-    if m.poly_count > 0 {
+    if !multi_tex && !plant(10093) {
+        let t = m.peek_legacy_texture(0)?;
+        m.default_mat.passes[0].texture[0] = t;
+    }
+    if !multi_shad {
+        let sh = m.peek_legacy_shader(0)?;
+        m.default_mat.passes[0].shader = sh;
+    }
+    for i in 0..m.poly_count.max(0) as usize {
         let mut b = [0u8; 2];
         if cload.read_into(&mut b)? != 2 {
             return Ok(false);
         }
-        return Err(W3dUndefined::IndexOutOfRange.into());
+        let matid = i32::from(u16::from_le_bytes(b));
+        if multi_shad {
+            let sh = m.peek_legacy_shader(matid)?;
+            m.default_mat.shader_array(0)?.set(i, sh);
+        }
+        if multi_tex {
+            let t = m.peek_legacy_texture(matid)?;
+            m.default_mat.texture_array(0, 0)?.set(i, t);
+        }
+        if multi_mtl {
+            let v = m.peek_legacy_vertex_material(matid)?;
+            let p = m.polys.as_ref().unwrap().get(i);
+            let corners: &[u16] = if plant(10092) { &p[..1] } else { &p };
+            for &vidx in corners {
+                m.default_mat.set_material(usize::from(vidx), v, 0)?;
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// `ShaderClass::Init_From_Material3(mat3)` (shader.cpp) on the bits of a
+/// shader: a material that uses alpha disables depth writes and blends
+/// `SRC_ALPHA`, `ONE_MINUS_SRC_ALPHA`.
+pub fn shader_init_from_material3(bits: &mut u32, mat3: &W3dMaterial3Struct) {
+    if mat3.attributes & W3DMATERIAL_USE_ALPHA != 0 {
+        if !plant(10087) {
+            shader_set(bits, MASK_DEPTHMASK, SHIFT_DEPTHMASK, 0); // DEPTH_WRITE_DISABLE
+        }
+        shader_set(bits, MASK_DSTBLEND, SHIFT_DSTBLEND, 5); // DSTBLEND_ONE_MINUS_SRC_ALPHA
+        shader_set(bits, MASK_SRCBLEND, SHIFT_SRCBLEND, 2); // SRCBLEND_SRC_ALPHA
+    }
+}
+
+/// `char filename[_MAX_FNAME + _MAX_EXT]` (MSVC: 256 + 256).
+const MAP3_FILENAME_SIZE: usize = 512;
+
+/// The two chunks of a legacy map (`read_v3_materials`, the same for the DC
+/// and SI maps): `W3D_CHUNK_MAP3_FILENAME` into the filename buffer (a chunk
+/// of the buffer's size or more is an error), then `W3D_CHUNK_MAP3_INFO`, a
+/// [`W3dMap3Struct`] that must read whole (its frame count only prints a
+/// debug message). `Ok(None)` is the `goto Error` (the chunks it opened are
+/// left open).
+fn read_map3(cload: &mut ChunkLoad<'_>) -> W3dResult<Option<NameBuf<MAP3_FILENAME_SIZE>>> {
+    let mut filename = NameBuf::<MAP3_FILENAME_SIZE>::new();
+    if !cload.open_chunk()? || cload.cur_chunk_id()? != W3D_CHUNK_MAP3_FILENAME {
+        return Ok(None);
+    }
+    let len = cload.cur_chunk_length()? as usize;
+    let too_long = if plant(10089) { len > MAP3_FILENAME_SIZE } else { len >= MAP3_FILENAME_SIZE };
+    if too_long {
+        return Ok(None);
+    }
+    filename.read(cload)?;
+    if !cload.close_chunk()? {
+        return Ok(None);
+    }
+    if !cload.open_chunk()? || cload.cur_chunk_id()? != W3D_CHUNK_MAP3_INFO {
+        return Ok(None);
+    }
+    let mut b = [0u8; W3dMap3Struct::SIZE];
+    if cload.read_into(&mut b)? != W3dMap3Struct::SIZE as u32 && !plant(10094) {
+        return Ok(None);
+    }
+    if !cload.close_chunk()? {
+        return Ok(None);
+    }
+    Ok(Some(filename))
+}
+
+/// `WW3DAssetManager::Get_Texture(filename)` of a legacy map: the C string
+/// in the buffer (undefined without a terminator in what was read).
+fn get_map3_texture(filename: &NameBuf<MAP3_FILENAME_SIZE>) -> W3dResult<Option<Texture>> {
+    let name = filename.string()?;
+    if plant(10095) && name.is_empty() {
+        return Ok(Some(Texture { name, attributes: None, mip_count: 0, no_lod: false, clamp: None }));
+    }
+    Ok(get_texture(name))
+}
+
+/// `MeshModelClass::read_v3_materials(cload, context)`: the header's
+/// `NumMaterials` legacy materials, each a `W3D_CHUNK_MATERIAL3` holding a
+/// name chunk, an info chunk (a [`W3dMaterial3Struct`]) and maps. Each
+/// becomes a new vertex material (`Init_From_Material3`, named), a shader
+/// (`ShaderClass()` and `Init_From_Material3`; a blending one sets the
+/// mesh's `SORT` flag) and a texture: a DC map's, or an SI map's when the
+/// diffuse colour is black (it also makes the shader additive and turns the
+/// primary gradient off); a map enables texturing, and an untextured
+/// material moves its diffuse colour to ambient. `Add_Legacy_Material` keeps
+/// them; then pass 0 gets the context's first vertex material, texture and
+/// shader. A missing or wrong chunk is `WW3D_ERROR_LOAD_FAILED` (`Ok(false)`),
+/// leaving open the chunks opened so far.
+fn read_v3_materials(cload: &mut ChunkLoad<'_>, m: &mut Mesh) -> Rd {
+    for _mi in 0..m.header.num_materials {
+        if !cload.open_chunk()? || cload.cur_chunk_id()? != W3D_CHUNK_MATERIAL3 {
+            return Ok(false);
+        }
+        let mut shader = shader_reset();
+        let mut tex: Option<Texture> = None;
+        let mut name = NameBuf::<256>::new();
+
+        // the material name
+        if !cload.open_chunk()? || cload.cur_chunk_id()? != W3D_CHUNK_MATERIAL3_NAME {
+            return Ok(false);
+        }
+        name.read(cload)?;
+        if !cload.close_chunk()? {
+            return Ok(false);
+        }
+
+        // the vertex material parameters
+        if !cload.open_chunk()? || cload.cur_chunk_id()? != W3D_CHUNK_MATERIAL3_INFO {
+            return Ok(false);
+        }
+        let mut b = [0u8; W3dMaterial3Struct::SIZE];
+        if cload.read_into(&mut b)? != W3dMaterial3Struct::SIZE as u32 {
+            return Ok(false);
+        }
+        let mat = W3dMaterial3Struct::from_bytes(&b);
+        let mut vmat = D3dMaterial8::init_from_material3(&mat);
+        let vname = name.string()?; // vmat->Set_Name(name)
+        shader_init_from_material3(&mut shader, &mat);
+        if (shader & MASK_DSTBLEND) >> SHIFT_DSTBLEND != 0 && !plant(10076) {
+            m.set_flag(SORT, true);
+        }
+        if !cload.close_chunk()? {
+            return Ok(false);
+        }
+
+        // the maps
+        while cload.open_chunk()? {
+            let id = cload.cur_chunk_id()?;
+            if id == W3D_CHUNK_MATERIAL3_DC_MAP {
+                let Some(filename) = read_map3(cload)? else { return Ok(false) };
+                tex = get_map3_texture(&filename)?;
+                if !plant(10090) {
+                    shader_set(&mut shader, MASK_TEXTURING, SHIFT_TEXTURING, 1); // TEXTURING_ENABLE
+                }
+            } else if id == W3D_CHUNK_MATERIAL3_SI_MAP {
+                // Vector3 == Vector3(0,0,0): every component equal
+                let black = vmat.diffuse[0] == 0.0 && vmat.diffuse[1] == 0.0 && vmat.diffuse[2] == 0.0;
+                if black || plant(10077) {
+                    let Some(filename) = read_map3(cload)? else { return Ok(false) };
+                    tex = get_map3_texture(&filename)?;
+                    shader_set(&mut shader, MASK_TEXTURING, SHIFT_TEXTURING, 1); // TEXTURING_ENABLE
+                    if !plant(10078) {
+                        shader_set(&mut shader, MASK_DSTBLEND, SHIFT_DSTBLEND, 1); // DSTBLEND_ONE
+                    }
+                    shader_set(&mut shader, MASK_SRCBLEND, SHIFT_SRCBLEND, 1); // SRCBLEND_ONE
+                    shader_set(&mut shader, MASK_PRIGRADIENT, SHIFT_PRIGRADIENT, 0); // GRADIENT_DISABLE
+                }
+            }
+            cload.close_chunk()?;
+        }
+
+        // not texturing: the diffuse colour moves to ambient (the old behaviour)
+        if (shader & MASK_TEXTURING) >> SHIFT_TEXTURING == 0 && !plant(10079) {
+            let color = [vmat.diffuse[0], vmat.diffuse[1], vmat.diffuse[2]];
+            vmat.ambient[..3].copy_from_slice(&color);
+            if !plant(10080) {
+                vmat.diffuse[..3].copy_from_slice(&[0.0; 3]);
+            }
+        }
+        let info = W3dVertexMaterialStruct::from_bytes(&[0; W3dVertexMaterialStruct::SIZE]);
+        let vm = VertexMaterial { name: Some(vname), info, mapper_args: [None, None], legacy: Some(vmat) };
+        m.add_legacy_material(shader, vm, tex);
+
+        // close the W3D_CHUNK_MATERIAL3
+        cload.close_chunk()?;
+    }
+
+    // the defaults in the absence of an array
+    if !m.vertex_materials.is_empty() {
+        m.default_mat.passes[0].material = Some(0);
+    }
+    if !m.textures.is_empty() && !plant(10084) {
+        m.default_mat.passes[0].texture[0] = Some(0);
+    }
+    if !m.shaders.is_empty() {
+        m.default_mat.passes[0].shader = m.shaders[0].bits;
     }
     Ok(true)
 }
@@ -1500,7 +1923,7 @@ fn read_shaders(cload: &mut ChunkLoad<'_>, m: &mut Mesh) -> Rd {
             return Ok(false);
         }
         let raw = W3dShaderStruct::from_bytes(&b);
-        m.shaders.push(Shader { raw, bits: convert_shader(&raw) });
+        m.shaders.push(Shader { raw: Some(raw), bits: convert_shader(&raw) });
     }
     Ok(true)
 }
@@ -1558,7 +1981,7 @@ fn read_vertex_material_ids(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &Ctx) 
         for i in 0..n {
             let ok = vmat.read(cload)?;
             let id = Mesh::check_index(u32le(&vmat.get()?), count)?;
-            m.alt(use_alt).set_material(i, id, pass)?;
+            m.alt(use_alt).set_material(i, Some(id), pass)?;
             if !ok {
                 let a = m.alt(use_alt).passes[pass_index(pass)?].material_array.as_mut().unwrap();
                 a.fill_from(i, Some(id));
@@ -1810,6 +2233,165 @@ fn read_prelit_material(cload: &mut ChunkLoad<'_>, m: &mut Mesh, ctx: &mut Ctx) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::formats::w3d::synth::{chunk, chunk_sub};
+    use crate::ww::chunkio::GameFile;
+
+    /// A mesh of 4 vertices and 2 triangles (0,1,2), (0,2,3) with `num_materials`
+    /// in the header, followed by `extra` chunks.
+    fn legacy_mesh(num_materials: u32, extra: &[Vec<u8>]) -> Vec<u8> {
+        let mut h = W3dMeshHeader3Struct::from_bytes(&[0; W3dMeshHeader3Struct::SIZE]);
+        h.version = w3d_make_version(4, 2);
+        h.num_tris = 2;
+        h.num_vertices = 4;
+        h.num_materials = num_materials;
+        h.mesh_name[0] = b'm';
+        let mut body = chunk(W3D_CHUNK_MESH_HEADER3, &h.to_bytes());
+        body.extend(chunk(W3D_CHUNK_VERTICES, &[0u8; 48]));
+        let mut tris = Vec::new();
+        for t in [[0u32, 1, 2], [0, 2, 3]] {
+            for v in t {
+                tris.extend_from_slice(&v.to_le_bytes());
+            }
+            tris.extend_from_slice(&[0u8; 20]);
+        }
+        body.extend(chunk(W3D_CHUNK_TRIANGLES, &tris));
+        for c in extra {
+            body.extend_from_slice(c);
+        }
+        chunk_sub(W3D_CHUNK_MESH, &body)
+    }
+
+    fn load(bytes: &[u8]) -> W3dResult<Mesh> {
+        let mut c = ChunkLoad::new(GameFile::new(bytes).unwrap());
+        assert!(c.open_chunk().unwrap());
+        Ok(load_w3d(&mut c, &MeshLoadOptions::default())?.expect("loaded"))
+    }
+
+    /// A `W3D_CHUNK_MATERIAL3`: name, info (attributes, diffuse colour,
+    /// diffuse coefficients, ambient coefficients; the rest zero, opacity
+    /// 0.5) and maps (`(map chunk id, file name)`).
+    fn material3(name: &[u8], attributes: u32, diffuse: [u8; 3], diffuse_coef: [u8; 3], maps: &[(u32, &[u8])]) -> Vec<u8> {
+        let mut info = [0u8; W3dMaterial3Struct::SIZE];
+        info[0..4].copy_from_slice(&attributes.to_le_bytes());
+        info[4..7].copy_from_slice(&diffuse);
+        info[20..23].copy_from_slice(&diffuse_coef);
+        info[32..36].copy_from_slice(&0.5f32.to_le_bytes());
+        let mut nm = name.to_vec();
+        nm.push(0);
+        let mut b = chunk(W3D_CHUNK_MATERIAL3_NAME, &nm);
+        b.extend(chunk(W3D_CHUNK_MATERIAL3_INFO, &info));
+        for (id, file) in maps {
+            let mut f = file.to_vec();
+            f.push(0);
+            let mut mb = chunk(W3D_CHUNK_MAP3_FILENAME, &f);
+            mb.extend(chunk(W3D_CHUNK_MAP3_INFO, &[0, 0, 1, 0, 0, 0, 0, 0]));
+            b.extend(chunk_sub(*id, &mb));
+        }
+        chunk_sub(W3D_CHUNK_MATERIAL3, &b)
+    }
+
+    /// #67. Predictions (written before the first run): A (alpha, red
+    /// diffuse, no map) and B (A's info under another name) share one shader
+    /// and one vertex material (the CRC leaves the name out), A's diffuse
+    /// moved to ambient; C (a DC map "Tex.TGA") and D (black diffuse, an SI
+    /// map "tex.tga") add a shader and a vertex material each and share one
+    /// texture (stricmp). The alpha shader sets SORT. Pass 0 takes vertex
+    /// material 0, texture 0 and shader 0; the per-triangle chunk then sees
+    /// one texture (not "multi"), so pass 0's texture becomes legacy
+    /// material 0's, none, and no texture array is made; the ids 2, 3 give
+    /// polygon shaders 1, 2 and vertex materials 2, 1, 2, 2 (the second
+    /// triangle overwrites 0 and 2).
+    #[test]
+    fn legacy_materials_load_dedupe_and_index() {
+        let mats = [
+            material3(b"a", W3DMATERIAL_USE_ALPHA, [255, 0, 0], [255, 255, 255], &[]),
+            material3(b"b", W3DMATERIAL_USE_ALPHA, [255, 0, 0], [255, 255, 255], &[]),
+            material3(b"c", 0, [0, 255, 0], [255, 255, 255], &[(W3D_CHUNK_MATERIAL3_DC_MAP, b"Tex.TGA")]),
+            material3(b"d", 0, [0, 0, 0], [255, 255, 255], &[(W3D_CHUNK_MATERIAL3_SI_MAP, b"tex.tga")]),
+        ];
+        let per_tri = chunk(W3D_CHUNK_PER_TRI_MATERIALS, &[2, 0, 3, 0]);
+        let m = load(&legacy_mesh(4, &[chunk_sub(W3D_CHUNK_MATERIALS3, &mats.concat()), per_tri])).unwrap();
+        let li: Vec<_> = m.legacy_materials.iter().map(|l| (l.vertex_material_idx, l.shader_idx, l.texture_idx)).collect();
+        assert_eq!(li, vec![(0, 0, -1), (0, 0, -1), (1, 1, 0), (2, 2, 0)]);
+        assert_eq!(m.textures.len(), 1);
+        assert_eq!(m.textures[0].name, b"Tex.TGA");
+        assert_eq!(m.vertex_materials.len(), 3);
+        assert_eq!(m.vertex_material_crcs.len(), 3);
+        for (v, c) in m.vertex_materials.iter().zip(&m.vertex_material_crcs) {
+            assert_eq!(vertex_material_crc(v.legacy.as_ref().unwrap()), *c);
+        }
+        let a = m.vertex_materials[0].legacy.unwrap();
+        assert_eq!((a.ambient, a.diffuse), ([1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.5]));
+        assert_eq!(m.vertex_materials[0].name.as_deref(), Some(&b"a"[..]));
+        assert!(m.flags & SORT != 0);
+        let alpha = m.shaders[0].bits;
+        assert_eq!(((alpha & MASK_DSTBLEND) >> SHIFT_DSTBLEND, (alpha & MASK_SRCBLEND) >> SHIFT_SRCBLEND, alpha & MASK_DEPTHMASK), (5, 2, 0));
+        let si = m.shaders[2].bits;
+        assert_eq!(((si & MASK_DSTBLEND) >> SHIFT_DSTBLEND, (si & MASK_TEXTURING) >> SHIFT_TEXTURING, si & MASK_PRIGRADIENT), (1, 1, 0));
+        assert!(m.shaders.iter().all(|s| s.raw.is_none()));
+        let p = &m.default_mat.passes[0];
+        assert_eq!((p.material, p.texture[0], p.shader), (Some(0), None, alpha));
+        assert_eq!(p.shader_array.as_ref().unwrap().to_vec(), vec![m.shaders[1].bits, si]);
+        assert!(p.texture_array[0].is_none());
+        assert_eq!(p.material_array.as_ref().unwrap().to_vec(), vec![Some(2), Some(1), Some(2), Some(2)]);
+        // the client's view of a legacy material
+        let st = super::super::vertmaterial::VertexMaterialState::from_w3d(&m.vertex_materials[0]);
+        assert_eq!((st.ambient, st.diffuse, st.opacity), ([1.0, 0.0, 0.0], [0.0; 3], 0.5));
+    }
+
+    /// #67. Predictions: a vertex material read from `W3D_CHUNK_VERTEX_MATERIALS`
+    /// first makes the CRC search's "not found" (`VertexMaterials.Count()`,
+    /// 1) unreachable while `VertexMaterialCrcs` is empty, so the legacy
+    /// material is not added and gets index 0 (the other material); a wrong
+    /// chunk inside the legacy chunk fails the read (the mesh still loads,
+    /// with nothing from it); a per-triangle id past the table is undefined.
+    #[test]
+    fn legacy_material_quirks() {
+        let mut vm = chunk(W3D_CHUNK_VERTEX_MATERIAL_NAME, b"v\0");
+        vm.extend(chunk(W3D_CHUNK_VERTEX_MATERIAL_INFO, &[0u8; W3dVertexMaterialStruct::SIZE]));
+        let vms = chunk_sub(W3D_CHUNK_VERTEX_MATERIALS, &chunk_sub(W3D_CHUNK_VERTEX_MATERIAL, &vm));
+        let mats = chunk_sub(W3D_CHUNK_MATERIALS3, &material3(b"a", 0, [1, 2, 3], [255, 255, 255], &[]));
+        let m = load(&legacy_mesh(1, &[vms, mats])).unwrap();
+        assert_eq!(m.vertex_materials.len(), 1);
+        assert!(m.vertex_materials[0].legacy.is_none());
+        assert_eq!(m.vertex_material_crcs.len(), 0);
+        assert_eq!(m.legacy_materials[0].vertex_material_idx, 0);
+
+        let bad = chunk_sub(W3D_CHUNK_MATERIALS3, &chunk_sub(W3D_CHUNK_MATERIAL3_NAME, &[]));
+        let m = load(&legacy_mesh(1, &[bad])).unwrap();
+        assert!(m.legacy_materials.is_empty() && m.shaders.is_empty());
+
+        let mats = chunk_sub(W3D_CHUNK_MATERIALS3, &[material3(b"a", 0, [1, 0, 0], [255; 3], &[]), material3(b"b", 0, [2, 0, 0], [255; 3], &[])].concat());
+        let per_tri = chunk(W3D_CHUNK_PER_TRI_MATERIALS, &[0, 0, 7, 0]);
+        assert_eq!(load(&legacy_mesh(2, &[mats, per_tri])), Err(W3dUndefined::IndexOutOfRange.into()));
+    }
+
+    /// #67. Predictions: `Get_Texture` refuses an empty name, so a texture
+    /// chunk named "" without an info chunk ends `read_textures` (the next
+    /// texture is not read), and with an info chunk it is undefined (the
+    /// null texture's filter is set); a legacy DC map named "" leaves no
+    /// texture but enables texturing (no move to ambient).
+    #[test]
+    fn empty_texture_names_give_null_textures() {
+        let tex = |name: &[u8], info: bool| {
+            let mut t = chunk(W3D_CHUNK_TEXTURE_NAME, name);
+            if info {
+                t.extend(chunk(W3D_CHUNK_TEXTURE_INFO, &[0u8; 12]));
+            }
+            chunk_sub(W3D_CHUNK_TEXTURE, &t)
+        };
+        let both = chunk_sub(W3D_CHUNK_TEXTURES, &[tex(b"\0", false), tex(b"x\0", false)].concat());
+        assert!(load(&legacy_mesh(1, &[both])).unwrap().textures.is_empty());
+        let with_info = chunk_sub(W3D_CHUNK_TEXTURES, &tex(b"\0", true));
+        assert_eq!(load(&legacy_mesh(1, &[with_info])), Err(W3dUndefined::NullPointer.into()));
+
+        let mats = chunk_sub(W3D_CHUNK_MATERIALS3, &material3(b"a", 0, [9, 0, 0], [255; 3], &[(W3D_CHUNK_MATERIAL3_DC_MAP, b"")]));
+        let m = load(&legacy_mesh(1, &[mats])).unwrap();
+        assert!(m.textures.is_empty());
+        assert_eq!(m.legacy_materials[0].texture_idx, -1);
+        assert_eq!((m.shaders[0].bits & MASK_TEXTURING) >> SHIFT_TEXTURING, 1);
+        assert_eq!(m.vertex_materials[0].legacy.unwrap().diffuse[0], 9.0 / 255.0);
+    }
 
     #[test]
     fn repeated_crc_feed_matches_bytewise() {
