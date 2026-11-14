@@ -2388,7 +2388,9 @@ struct ParticleDraw {
 /// (`WorldDrawables::render_line_runs` at `Camera::view_matrix`, and `particles::line_chunk_batches` at its transform,
 /// all tested there) into the same batches; this glue only hands them the camera (Bevy systems need a window).
 /// (#65 batch e) The line-group emitters' tetrahedra and prisms likewise (`WorldDrawables::render_line_groups` at the
-/// camera's transform, `particles::line_group_batches`, tested there).
+/// camera's transform, `particles::line_group_batches`, tested there). (#169) The laser beams likewise
+/// (`WorldDrawables::render_lasers` at the camera's view, `particles::line_chunk_batches`, tested there); without the
+/// game camera (`Rig`) they are not drawn, as the lines are not (~~`particles::laser_quads`, camera-facing quads~~).
 #[allow(clippy::too_many_arguments)]
 fn draw_particles(
     mut commands: Commands,
@@ -2416,6 +2418,10 @@ fn draw_particles(
             let eye_to_world = r.cam.view.camera_transform();
             let groups = g.models.render_line_groups(&eye_to_world);
             crate::particles::merge_batches(&mut lines, crate::particles::line_group_batches(&groups, &eye_to_world));
+            // (#169) the laser beams' lines through the translated SegmentedLineClass and segment-line renderer, with the
+            // game camera's view
+            let (beams, camera) = g.models.render_lasers(&r.cam.view_matrix(), &eye_to_world);
+            crate::particles::merge_batches(&mut lines, crate::particles::line_chunk_batches(beams, &camera));
             lines
         }
         None => Default::default(),
@@ -2425,10 +2431,8 @@ fn draw_particles(
     // the W3D models' emitters (#49), in the same batches
     let w3d = crate::particles::emitter_quads(g.models.emitter_models(), crate::particles::point_tables(), right.to_array(), up.to_array());
     crate::particles::merge_batches(&mut quads, w3d);
-    // the laser beams' lines (#168), in the same batches
-    let clock = g.models_clock;
-    let lasers = crate::particles::laser_quads(&mut g.models.drawables, clock, right.to_array(), up.to_array());
-    crate::particles::merge_batches(&mut quads, lasers);
+    // ~~the laser beams' lines (#168), in the same batches~~ (#169: drawn with the lines above, through the segment-line
+    // renderer)
     // the batches no particle uses this frame are hidden, not freed
     for (key, (e, _)) in &pd.batches {
         if !quads.contains_key(key) {

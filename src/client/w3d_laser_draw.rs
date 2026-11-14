@@ -8,9 +8,10 @@
 //   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/Module/W3DLaserDraw.h (the classes)
 //   GeneralsMD/Code/GameEngine/Source/Common/Thing/DrawModule.cpp (DrawModule::xfer, its version byte)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/Color.cpp (GameGetColorComponentsReal)
-//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/segline.cpp and seglinerenderer.cpp/.h (the setters W3DLaserDraw
-//     calls: Set_Width's clamp, Set_Texture_Tile_Factor's clamp, Set_UV_Offset_Rate's scale; Render's UV offset advance
-//     and the tiled mapping's U and V)
+//   (#169: the lines are formats::w3d::segline's SegmentedLineClass, translated there from WW3D2/segline.cpp, and
+//     formats::w3d::seglinerenderer's SegLineRendererClass; nothing of segline.cpp or seglinerenderer.cpp is in this
+//     file any more)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/shader.cpp (_PresetAdditiveShader, formats::w3d::shader)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -22,7 +23,7 @@
 // Translated to Rust and modified; not the original program.
 
 //! The laser's draw module (GitHub #168): `W3DLaserDraw`, the `LaserDrawInterface` that `LaserUpdate` asks for its
-//! width, and the beam geometry it hands its `SegmentedLineClass` lines.
+//! width, and the beam geometry it hands its `SegmentedLineClass` lines (GitHub #169: the translated ones).
 //!
 //! # As upstream does it
 //!
@@ -55,6 +56,12 @@
 //!   (`WW3D::Get_Sync_Time()`) and keeps its fraction; the tiled mapping's U is 0 on one edge and 1 on the other, V is
 //!   the point's index times the tile factor, both plus the offset. The scene shows a line its camera does not cull: the
 //!   constructor's `Set_Visible(0)` lasts until the first scene update, by which time the line has its points.
+//!   **Corrected 2026-11-14 (#169):** these are the translated `SegmentedLineClass`'s
+//!   ([`crate::formats::w3d::segline`]) and `SegLineRendererClass`'s ([`crate::formats::w3d::seglinerenderer`]), which
+//!   the module now drives as upstream does. Two details the stand-in had wrong: a render object is made **not**
+//!   visible (`RenderObjClass`'s `DEFAULT_BITS` has no `IS_VISIBLE`, so `Set_Visible(0)` changes nothing), and
+//!   `SegmentedLineClass::Render` does not read the visibility bit at all (only `Is_Not_Hidden_At_All`): the bit is the
+//!   scene's culling pass's, which decides whether `Render` is called.
 //!
 //! # Upstream quirks that are kept
 //!
@@ -73,11 +80,16 @@
 //!
 //! # Where this differs from upstream
 //!
-//! - **The W3D lines** are [`SegmentedLine`]: what `W3DLaserDraw` gives them (as given, the clamps in their getters) and
-//!   the renderer's UV state; [`SegmentedLine::render_strip`] is the part of `SegLineRendererClass::Render` the client
+//! - ~~**The W3D lines** are [`SegmentedLine`]: what `W3DLaserDraw` gives them (as given, the clamps in their getters) and
+//!   the renderer's UV state; `SegmentedLine::render_strip` is the part of `SegLineRendererClass::Render` the client
 //!   draws (one quad per line: upstream's renderer subdivides, adds noise, merges intersections and builds a camera
 //!   space strip with end caps; none of that applies to a two-point line with no subdivision or noise but the quad's
-//!   orientation, which the Bevy glue makes).
+//!   orientation, which the Bevy glue makes).~~ **Corrected 2026-11-14 (#169):** the lines are the translated
+//!   `SegmentedLineClass` ([`SegmentedLine`], `formats::w3d::segline`), set through its own setters as upstream sets
+//!   them, and drawn by [`W3DLaserDraw::render_lines`] through `SegmentedLineClass::Render` and the translated
+//!   `SegLineRendererClass::Render` into eye-space chunks (the stand-in and its `render_strip` are removed).
+//! - **The scene** is a flag ([`W3DLaserDraw::in_scene`]): every line is added by the constructor and removed by the
+//!   destructor together; its culling pass is not modelled (`render_lines`).
 //! - **The ground** is the caller's ([`W3DLaserDraw::do_draw_module`]'s `ground`: `TheTerrainLogic->getGroundHeight`).
 //! - **The drawable's `LaserUpdate`** is the caller's to find (`findClientUpdateModule`, which upstream never advances
 //!   past the first client update module: [`crate::client::drawable`]).
@@ -89,15 +101,19 @@ use crate::common::base_type::{Coord3D, PI};
 use crate::common::ini::{BlockParse, FieldParse, Ini, IniLoadType, IniResult, UserData};
 use crate::common::thing_template::ClientModuleData;
 use crate::common::xfer::{Xfer, XferResult, XferVersion};
+use crate::formats::w3d::seglinerenderer::{SegLineChunk, TILED_TEXTURE_MAP};
+use crate::formats::w3d::segline::SegmentedLine;
+use crate::formats::w3d::shader::PRESET_ADDITIVE_SHADER;
+use crate::formats::w3d::W3dResult;
 use crate::logic::modules::plant;
+use crate::ww::matrix3d::Matrix3D;
+use crate::ww::random::Random3;
+use crate::ww::vector2::Vector2;
 use crate::ww::vector3::Vector3;
 
 /// The module's name (`Draw = W3DLaserDraw`).
 pub const W3D_LASER_DRAW: &[u8] = b"W3DLaserDraw";
 
-
-/// `SegLineRendererClass::Set_Texture_Tile_Factor`'s `MAX_LINE_TILING_FACTOR`.
-pub const MAX_LINE_TILING_FACTOR: f32 = 50.0;
 
 /// `MissingTexture`'s size (missingtexture.cpp:25-26): what `Get_Texture` gives for a file that is not there.
 pub const MISSING_TEXTURE_SIZE: (u32, u32) = (128, 128);
@@ -209,142 +225,6 @@ pub enum LaserDrawUndefined {
     LinesWrap,
 }
 
-/// `SegmentedLineClass` (and its `SegLineRendererClass`) as `W3DLaserDraw` sets it: each setter's argument as given
-/// (the clamps upstream's setters apply are in the getters), and the renderer's UV offset state.
-#[derive(Clone, Debug, PartialEq)]
-pub struct SegmentedLine {
-    /// `Set_Texture(m_texture)`: the texture's name (`None`: `NULL`).
-    pub texture: Option<Vec<u8>>,
-    /// `Set_Shader(ShaderClass::_PresetAdditiveShader)` (the renderer's default is the additive sprite shader).
-    pub additive: bool,
-    /// `Set_Width(width)`'s argument (the renderer keeps `MAX(width, 0)`: [`SegmentedLine::width`]).
-    pub width_set: f32,
-    /// `Set_Color(color)` (the renderer's default is white).
-    pub color: [f32; 3],
-    /// `Set_UV_Offset_Rate(rate)`'s argument (per second: [`SegmentedLine::uv_offset_delta_per_ms`]).
-    pub uv_offset_rate: [f32; 2],
-    /// `Set_Texture_Mapping_Mode(TILED_TEXTURE_MAP)` was called (else `UNIFORM_WIDTH_TEXTURE_MAP`, the default).
-    pub tiled: bool,
-    /// `Set_Visible(onoff)`'s last argument.
-    pub visible: bool,
-    /// `W3DDisplay::m_3DScene->Add_Render_Object(line)` (and not removed since).
-    pub in_scene: bool,
-    /// `Set_Texture_Tile_Factor(factor)`'s last argument, `None` before any (the renderer's default is 1).
-    pub texture_tile_factor_set: Option<f32>,
-    /// `Set_Points(n, locs)`: the line's points (none before the first call).
-    pub points: Vec<Vector3>,
-    /// The renderer's `CurrentUVOffset` and `LastUsedSyncTime`.
-    pub current_uv_offset: [f32; 2],
-    pub last_used_sync_time: u32,
-}
-
-/// One line as the client draws it: [`SegmentedLine::render_strip`].
-#[derive(Clone, Debug, PartialEq)]
-pub struct BeamStrip {
-    /// The line's points (two for a laser's).
-    pub points: Vec<Vector3>,
-    /// The renderer's width (`MAX(width, 0)`).
-    pub width: f32,
-    /// The diffuse colour and opacity (`Convert_Color(Color, Opacity)`, the opacity 1).
-    pub rgba: [f32; 4],
-    /// The texture's name, `None` for an untextured line.
-    pub texture: Option<Vec<u8>>,
-    /// The U of the two edges (`u_values`) and the V of each point (`base_tex_v`), the UV offset added.
-    pub u: [f32; 2],
-    pub v: Vec<f32>,
-    /// The additive shader.
-    pub additive: bool,
-}
-
-impl SegmentedLine {
-    /// `new SegmentedLineClass`: the renderer's defaults (seglinerenderer.cpp:76-93), `sync_time` its
-    /// `LastUsedSyncTime`.
-    pub fn new(sync_time: u32) -> Self {
-        SegmentedLine {
-            texture: None,
-            additive: false,
-            width_set: 0.0,
-            color: [1.0, 1.0, 1.0],
-            uv_offset_rate: [0.0, 0.0],
-            tiled: false,
-            visible: true,
-            in_scene: false,
-            texture_tile_factor_set: None,
-            points: Vec::new(),
-            current_uv_offset: [0.0, 0.0],
-            last_used_sync_time: sync_time,
-        }
-    }
-
-    /// `Get_Width()`: `Set_Width` keeps `MAX(width, 0.0f)` (segline.cpp:240-247).
-    pub fn width(&self) -> f32 {
-        let w = self.width_set;
-        if w > 0.0 {
-            w
-        } else {
-            0.0
-        }
-    }
-
-    /// The renderer's `TextureTileFactor`: `Set_Texture_Tile_Factor` keeps at most 50, else `MAX(factor, 0.0f)`
-    /// (seglinerenderer.cpp:192-205); 1 before any call.
-    pub fn texture_tile_factor(&self) -> f32 {
-        match self.texture_tile_factor_set {
-            None => 1.0,
-            Some(f) if f > MAX_LINE_TILING_FACTOR => MAX_LINE_TILING_FACTOR,
-            Some(f) => {
-                if f > 0.0 {
-                    f
-                } else {
-                    0.0
-                }
-            }
-        }
-    }
-
-    /// The renderer's `UVOffsetDeltaPerMS`: `rate * 0.001f` (seglinerenderer.h:205-208).
-    pub fn uv_offset_delta_per_ms(&self) -> [f32; 2] {
-        [self.uv_offset_rate[0] * 0.001, self.uv_offset_rate[1] * 0.001]
-    }
-
-    /// `SegLineRendererClass::Render`'s UV offset advance (seglinerenderer.cpp:232-245) at sync time `sync_time`, and the
-    /// line's points, width, colour and texture mapping as the renderer reads them (its lines 300-330 for the mapping):
-    /// `None` for a line not drawn (hidden, out of the scene, or with fewer than two points). Subdivision, noise,
-    /// intersection merging and the camera-space strip are not modelled (module docs).
-    pub fn render_strip(&mut self, sync_time: u32) -> Option<BeamStrip> {
-        if !self.in_scene || self.points.len() < 2 {
-            return None;
-        }
-        // Handle texture UV offset animation (done once for entire line).
-        let delta = sync_time.wrapping_sub(self.last_used_sync_time);
-        let del = delta as f32;
-        let rate = self.uv_offset_delta_per_ms();
-        let mut uv = [self.current_uv_offset[0] + rate[0] * del, self.current_uv_offset[1] + rate[1] * del];
-        // ensure offsets are in [0, 1] range:
-        uv[0] -= crate::ww::wwmath::floor(uv[0]);
-        uv[1] -= crate::ww::wwmath::floor(uv[1]);
-        self.current_uv_offset = uv;
-        self.last_used_sync_time = sync_time;
-        let tile = self.texture_tile_factor();
-        let n = self.points.len();
-        let (u, v): ([f32; 2], Vec<f32>) = if self.tiled {
-            ([0.0, 1.0], (0..n).map(|p| p as f32 * tile).collect())
-        } else {
-            // UNIFORM_WIDTH_TEXTURE_MAP: all 0
-            ([0.0, 1.0], vec![0.0; n])
-        };
-        Some(BeamStrip {
-            points: self.points.clone(),
-            width: self.width(),
-            rgba: [self.color[0], self.color[1], self.color[2], 1.0],
-            texture: self.texture.clone(),
-            u: [u[0] + uv[0], u[1] + uv[0]],
-            v: v.into_iter().map(|t| t + uv[1]).collect(),
-            additive: self.additive,
-        })
-    }
-}
-
 /// `class W3DLaserDraw`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct W3DLaserDraw {
@@ -357,6 +237,9 @@ pub struct W3DLaserDraw {
     pub texture_aspect_ratio: f32,
     /// `m_selfDirty` (not saved).
     pub self_dirty: bool,
+    /// (#169) The lines are in the scene (`W3DDisplay::m_3DScene->Add_Render_Object`, every line by the constructor;
+    /// `Remove_Render_Object` by the destructor): the scene renders them ([`W3DLaserDraw::render_lines`]).
+    pub in_scene: bool,
 }
 
 impl W3DLaserDraw {
@@ -399,30 +282,54 @@ impl W3DLaserDraw {
                     blue = inner_blue + scale * (outer_blue - inner_blue) * inner_alpha;
                 }
                 let line = &mut lines[index];
-                line.texture = has_texture.then(|| d.texture_name.clone());
-                line.additive = true;
-                line.width_set = width;
-                line.color = [red, green, blue];
-                line.uv_offset_rate = if plant(9634) { [d.scroll_rate, 0.0] } else { [0.0, d.scroll_rate] };
+                line.set_texture(has_texture.then(|| d.texture_name.clone()));
+                //pick the alpha blending mode you want - see shader.h for others.
+                line.set_shader(PRESET_ADDITIVE_SHADER);
+                line.set_width(width);
+                line.set_color(&Vector3::new(red, green, blue));
+                //amount to scroll texture on each draw
+                line.set_uv_offset_rate(&if plant(9634) { Vector2::new(d.scroll_rate, 0.0) } else { Vector2::new(0.0, d.scroll_rate) });
                 if has_texture || plant(9635) {
-                    line.tiled = true;
+                    //this tiles the texture across the line
+                    line.set_texture_mapping_mode(TILED_TEXTURE_MAP);
                 }
-                // add to scene
-                line.in_scene = true;
+                // add to scene (`in_scene`, below)
                 // hide the render object until the first time we come to draw it and set the correct position
-                line.visible = plant(9656);
+                line.set_visible(plant(9656));
                 i -= 1;
             }
         }
-        Ok(W3DLaserDraw { data, lines, has_texture, texture_aspect_ratio, self_dirty: true })
+        Ok(W3DLaserDraw { data, lines, has_texture, texture_aspect_ratio, self_dirty: true, in_scene: true })
     }
 
     /// `~W3DLaserDraw()` (W3DLaserDraw.cpp:224-240): each line out of the scene and released.
     pub fn destroy(&mut self) {
-        for l in &mut self.lines {
-            l.in_scene = false;
-        }
+        // remove line from scene, delete line
+        self.in_scene = false;
         self.lines.clear();
+    }
+
+    /// (#169) The scene's render of the module's lines (each `SegmentedLineClass::Render`, in the order the constructor
+    /// made them: segment by segment, a segment's beams from the last to the first, as `Add_Render_Object` added them to
+    /// the scene's list) at the WW3D sync time `sync_time`, with the camera's view `view` and the randomizers' generator
+    /// `v3` (a laser's lines have no subdivision levels and draw nothing from it): their chunks, in that order. Nothing
+    /// out of the scene. The scene's culling of each line by its bounding sphere is not modelled (the client draws every
+    /// line; Bevy culls).
+    pub fn render_lines(&mut self, sync_time: u32, view: &Matrix3D, v3: &mut Random3) -> W3dResult<Vec<SegLineChunk>> {
+        let mut out = Vec::new();
+        if !self.in_scene {
+            return Ok(out);
+        }
+        let d = self.data.clone();
+        for segment in 0..d.segments {
+            let mut i = d.num_beams as i32 - 1;
+            while i >= 0 {
+                let index = segment.wrapping_mul(d.num_beams).wrapping_add(i as u32) as usize;
+                out.extend(self.lines[index].render(sync_time, view, v3)?);
+                i -= 1;
+            }
+        }
+        Ok(out)
     }
 
     /// `getLaserTemplateWidth()` (W3DLaserDraw.cpp:244-248), the `LaserDrawInterface`.
@@ -535,10 +442,11 @@ impl W3DLaserDraw {
                     let length = line_vector.length();
                     // Adjust tile factor so texture is NOT stretched but tiled equally in both width and length.
                     let tile_factor = if plant(9649) { length / width * d.tiling_scalar } else { length / width * self.texture_aspect_ratio * d.tiling_scalar };
-                    self.lines[index].texture_tile_factor_set = Some(tile_factor);
+                    //number of times to tile texture across each segment
+                    self.lines[index].set_texture_tile_factor(tile_factor);
                 }
-                self.lines[index].width_set = width;
-                self.lines[index].points = laser_points.to_vec();
+                self.lines[index].set_width(width);
+                self.lines[index].set_points(&laser_points);
                 i -= 1;
             }
         }
@@ -647,23 +555,29 @@ mod tests {
         });
         let mut m = W3DLaserDraw::new(d, None, 0).unwrap();
         assert_eq!(m.lines.len(), 2);
-        assert_eq!((m.lines[0].width_set, m.lines[0].color), (2.0, [0.0, 1.0, 0.0]));
-        assert_eq!((m.lines[1].width_set, m.lines[1].color), (6.0, [1.0, 0.0, 0.0]));
-        assert!(m.lines.iter().all(|l| l.in_scene && !l.visible && l.points.is_empty() && !l.tiled));
+        // (#169: read through the translated line's getters)
+        assert_eq!((m.lines[0].get_width(), m.lines[0].get_color()), (2.0, Vector3::new(0.0, 1.0, 0.0)));
+        assert_eq!((m.lines[1].get_width(), m.lines[1].get_color()), (6.0, Vector3::new(1.0, 0.0, 0.0)));
+        assert!(m.in_scene);
+        assert!(m.lines.iter().all(|l| !l.is_visible() && l.point_locations.is_empty() && l.get_texture_mapping_mode() != TILED_TEXTURE_MAP));
+        assert!(m.lines.iter().all(|l| l.get_shader() == PRESET_ADDITIVE_SHADER));
         let mut u = LaserUpdate::new(LaserUpdateModuleData::default());
         u.start_pos = Coord3D { x: 1.0, y: 2.0, z: 3.0 };
         u.end_pos = Coord3D { x: 4.0, y: 5.0, z: 6.0 };
         u.current_width_scalar = 0.5;
         m.do_draw_module(Some(&mut u), &mut |_, _| 0.0);
-        assert_eq!((m.lines[1].width_set, m.lines[1].points[1]), (3.0, Vector3::new(4.0, 5.0, 6.0)));
+        assert_eq!((m.lines[1].get_width(), m.lines[1].point_locations[1]), (3.0, Vector3::new(4.0, 5.0, 6.0)));
         assert!(!m.self_dirty && !u.dirty);
         u.current_width_scalar = 1.0;
         m.do_draw_module(Some(&mut u), &mut |_, _| 0.0);
-        assert_eq!(m.lines[1].width_set, 3.0, "not dirty: not drawn again");
+        assert_eq!(m.lines[1].get_width(), 3.0, "not dirty: not drawn again");
         assert_eq!(m.get_laser_template_width(), 3.0);
         m.load_post_process();
         m.do_draw_module(Some(&mut u), &mut |_, _| 0.0);
-        assert_eq!(m.lines[1].width_set, 6.0);
+        assert_eq!(m.lines[1].get_width(), 6.0);
+        m.destroy();
+        assert!(!m.in_scene && m.lines.is_empty());
+        assert!(m.render_lines(0, &Matrix3D::identity(), &mut Random3::default()).unwrap().is_empty());
     }
 
     /// Predicted: an arc of two segments over flat ground 0 from (0,0,0) to (100,0,0) of height 10: the middle point is
@@ -682,17 +596,21 @@ mod tests {
         let mut u = LaserUpdate::new(LaserUpdateModuleData::default());
         u.end_pos = Coord3D { x: 100.0, y: 0.0, z: 0.0 };
         m.do_draw_module(Some(&mut u), &mut |_, _| 0.0);
-        assert_eq!(m.lines[0].points[0].z, 2.0);
-        assert_eq!(m.lines[0].points[1], Vector3::new(50.0, 0.0, 10.0));
-        assert_eq!(m.lines[1].points[1].z, 2.0);
-        let len = Vector3::subtract_vectors(&m.lines[0].points[1], &m.lines[0].points[0]).length();
-        assert_eq!(m.lines[0].texture_tile_factor_set, Some(len / 5.0 * 2.0 * 1.0));
-        assert!(m.lines[0].tiled);
+        let p = |k: usize| m.lines[k].point_locations.clone();
+        assert_eq!(p(0)[0].z, 2.0);
+        assert_eq!(p(0)[1], Vector3::new(50.0, 0.0, 10.0));
+        assert_eq!(p(1)[1].z, 2.0);
+        let len = Vector3::subtract_vectors(&p(0)[1], &p(0)[0]).length();
+        assert_eq!(m.lines[0].get_texture_tile_factor(), len / 5.0 * 2.0 * 1.0);
+        assert_eq!(m.lines[0].get_texture_mapping_mode(), TILED_TEXTURE_MAP);
     }
 
     /// Predicted: the save is 4 version bytes and loads back; the line's strip scrolls its V by the rate per second over
     /// the milliseconds since its last render and keeps the fraction. (First run: a miss of the test's, not the code's:
-    /// it expected exactly 0.5, and `0.5 * 0.001` in a float gives 0.5000001 after 3000 ms.)
+    /// it expected exactly 0.5, and `0.5 * 0.001` in a float gives 0.5000001 after 3000 ms.) **(#169)** Now through
+    /// [`W3DLaserDraw::render_lines`] and the translated renderer: no chunk before the first draw (no points); after it,
+    /// one chunk of 4 vertices whose V is the offset (the uniform-width mapping, no texture) and whose U is 0 and 1 plus
+    /// the U offset (0).
     #[test]
     fn the_save_and_the_scroll() {
         let mut m = W3DLaserDraw::new(data(|d| d.scroll_rate = 0.5), None, 1000).unwrap();
@@ -703,15 +621,24 @@ mod tests {
         let mut ld = crate::common::xfer_load::XferLoad::new(vec![1, 1, 1, 1]);
         ld.open(b"t").unwrap();
         m.xfer(&mut ld).unwrap();
-        let l = &mut m.lines[0];
-        assert_eq!(l.render_strip(3000), None, "no points yet");
-        l.points = vec![Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)];
-        let strip = l.render_strip(4000).unwrap();
-        // 0.5 * 0.001 per ms is not exact in a float: 1.5000001 after 3000 ms, the fraction kept
+        let mut view = Matrix3D::identity();
+        view.translate(0.0, 0.0, -20.0);
+        let mut g = Random3::default();
+        assert!(m.render_lines(3000, &view, &mut g).unwrap().is_empty(), "no points yet");
+        m.lines[0].set_points(&[Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)]);
+        m.lines[0].set_width(0.5);
+        // a line of fewer than two points never reaches the renderer (`Render_Seg_Line`), so the render at 3000 did not
+        // advance the offset: 3000 ms from the made time 1000. (First run: a miss of the test's: it had the first render
+        // advance it.)
+        let chunks = m.render_lines(4000, &view, &mut g).unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].vertices.len(), 4);
         let off = 0.5f32 * 0.001 * 3000.0;
         let off = off - crate::ww::wwmath::floor(off);
-        assert_eq!(strip.v, vec![off, off]);
+        assert!(chunks[0].vertices.iter().all(|v| v.v == off), "{:?}", chunks[0].vertices);
         assert!((off - 0.5).abs() < 1e-6);
-        assert_eq!(strip.u, [0.0, 1.0]);
+        let mut us: Vec<f32> = chunks[0].vertices.iter().map(|v| v.u).collect();
+        us.sort_by(f32::total_cmp);
+        assert_eq!(us, vec![0.0, 0.0, 1.0, 1.0]);
     }
 }

@@ -127,6 +127,61 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#169 / #65 (2026-11-14, GitHub #169, #65): `SegmentedLineClass` translated; the laser beams drawn through it.**
+- **Upstream read first:** WW3D2/segline.cpp and segline.h (the whole class); W3DLaserDraw.cpp's constructor (each
+  line's `Set_Texture`, `Set_Shader(_PresetAdditiveShader)`, `Set_Width`, `Set_Color`, `Set_UV_Offset_Rate(0,
+  ScrollRate)`, `Set_Texture_Mapping_Mode(TILED)` with a texture, `Add_Render_Object`, `Set_Visible(0)`) and
+  `doDrawModule` (`Set_Texture_Tile_Factor`, `Set_Width`, `Set_Points(2, ...)` per beam per segment); rendobj.h/.cpp
+  (`DEFAULT_BITS` has no `IS_VISIBLE`; `Render` reads only `Is_Not_Hidden_At_All`; the copy constructor and
+  `operator=`); simplevec.h (no copy constructor or assignment); ww3d.cpp (sorting is never turned off in the game, so
+  `Render` always draws at once); shader.cpp's `SC_ADDITIVE` (the gradient modulating, unlike the sprite preset).
+- **Before:** `client::w3d_laser_draw` kept a stand-in `SegmentedLine` (what the module gave each line) and a
+  `render_strip`; the client (`particles::laser_quads`) drew one camera-facing quad per line.
+- **Core** (`src/formats/w3d/segline.rs`, new): `SegmentedLine`, function by function (the points, every getter and
+  setter with `Set_Width`'s and `Set_Noise_Amplitude`'s clamps, `Set_Subdivision_Levels`' cap, `Get_Num_Polys`, `Render`,
+  `Render_Seg_Line`, the bounding box and sphere, `Prepare_LOD`, `Increment_LOD`, `Decrement_LOD`, the cost, value and
+  post-increment value, `Set_LOD_Level`, the copy and the assignment) and the render-object bits it uses; `Render`
+  returns the translated renderer's `SegLineChunk`s. `formats::w3d::shader::PRESET_ADDITIVE_SHADER` added.
+  `W3DLaserDraw` drives its lines through these setters as upstream does and renders them (`render_lines`, in the
+  constructor's order); the stand-in and `render_strip` are removed.
+- **Client:** `WorldDrawables::render_lasers(view, camera)`: every laser module's lines once per W3D frame at the
+  frame's clock, with the camera's view and the client's own `v3` generator, kept for the frame as the line runs are;
+  `app::draw_particles` (glue) merges `particles::line_chunk_batches` of them into the line batches; `laser_quads` and
+  its `strip` are removed.
+- **Defects found:** (1) upstream, latent: the copy constructor and `operator=` share the points' array
+  (`SimpleDynVecClass` is copied memberwise), a double delete when both lines go; the first differential run aborted on
+  it. Nothing in the game copies a line; the Rust's copy is independent, and the driver detaches the source's array.
+  (2) the verified renderer treated any mapping mode but the first two as tiled, with the comment "Set_Texture_Mapping_
+  Mode only ever stores the three modes", true of `Init` but not of `SegmentedLineClass`'s setter; upstream's switch has
+  no default and reads `u_values` and `base_tex_v` uninitialised. Now `W3dUndefined::UninitialisedRead`, the comment
+  struck through. Neither is reachable in the game.
+- **Differential:** (a) `tests/differential_segline_obj.rs`, `differential/wrap_segline_obj.cpp`,
+  `shim_w3d/segline_obj_prelude.h`: segline.cpp cut verbatim by build.rs from its first `#include` to its end, and
+  shader.cpp's `SC_ADDITIVE` preset, each anchor asserted once, on the verbatim renderer of `differential_segline`;
+  20,000 sequences of set calls, points, LOD, bits, copies and `Render`, every chunk and the whole state compared. (b)
+  `tests/differential_laser_draw.rs`: the wrapper's `SegmentedLineClass` stand-in now forwards each call to the real one
+  (`differential/laser_segl_api.h`), its state is read through the real getters, and a step renders the scene's lines:
+  the whole chain from `W3DLaserDraw`'s set calls to the chunks.
+- **Results:** (a) **0 mismatching of 20,000**, 406,087 operations, 81,149 renders, 46,120 chunks, 1,820,793 vertices
+  (6,153 renders drew from the generator), 528 sequences stopped at an undefined render (a fourth mapping mode),
+  38,269,878 words (733 NaN on both sides with different bits), max ULP 0; plants 10176-10195 **20 of 20 caught**
+  (weakest: `Prepare_LOD` not clamping the level, 285; the copy keeping the bits, 1,314). (b) **0 mismatching of
+  20,000**, 310,095 steps (124,234 draws, 15,498 scene renders: 58,640 chunks, 234,560 vertices), 34,268,488 words,
+  82 undefined (the lines' count wraps); the save and 20,001 loads 0 mismatches; plants 9631-9660 **30 of 30 still
+  caught** (9649 down from 3,524 to 2,481 cases: the tile factor is now read clamped at 50). Lib 1,260 passed (3 new);
+  client 107 passed (one laser test removed with `laser_quads`, one added: 60 frames, the mesh equals the direct chunks,
+  no generator draws, 6 chunks of 4 vertices a frame, CRCs equal with and without the client); client native release
+  build clean; `differential_segline` (345,222,657 words), `differential_linegroup`, `differential_client_update` 0
+  mismatches, `differential_w3d` 40 passed; gate (a) PASS, 300 frames, last CRC 0bf44067; `src/logic` unchanged.
+  Prediction misses: the lines are not visible after construction (predicted, held) but the chunk goes to the sorting
+  renderer (first predicted otherwise, amended before any run); the weakest plants were the LOD clamp and the copy's
+  bits, not the bounding box's noise term or the last-point delete; client tests 107, not 108-109; the two defects and
+  the first link failure (stand-ins of the same names as the particle buffer's) were not foreseen.
+- **Gaps** (each wants an issue under #169): `Cast_Ray` (no `LineSegClass` in the port; compiled but never called in
+  the differential); `Get_Screen_Size` and the predictive LOD optimizer (the caller gives the screen size); the scene's
+  culling and its render order across objects; the static sort list (unreachable in the game); the sorting renderer's
+  key (the bounding sphere is not passed to the client); `Clone`'s reference counting; no look in a window.
+
 **#65 batch e (2026-11-14, GitHub #65): the line groups, `LineGroupClass`, translated and drawn.**
 - **Upstream read first:** WW3D2/linegrp.cpp, linegrp.h (the whole class); part_buf.cpp's constructor for
   `LINEGRP_TETRA`/`_PRISM` (`Set_Flag(TRANSFORM, true)`, texture, shader, mode), `Render`'s switch,
@@ -870,7 +925,8 @@ first frame.** The logic's change is described in `docs/phase1-porting-graph.md`
   constructor's lines, `getLaserTemplateWidth`, `doDrawModule`'s segments, arcs, ground skim, widths and tile factors,
   `crc`, `xfer`, `loadPostProcess`), Color.cpp's `GameGetColorComponentsReal`, DrawModule.cpp's `xfer`, and the parts of
   `SegmentedLineClass` / `SegLineRendererClass` the module drives (the setters' clamps, the UV scroll and the tiled
-  mapping's U and V: `SegmentedLine::render_strip`). Drawables make their `W3DLaserDraw` modules
+  mapping's U and V: ~~`SegmentedLine::render_strip`~~ **Corrected 2026-11-14 (#169):** the stand-in is replaced by the
+  translated `SegmentedLineClass`, `formats::w3d::segline`). Drawables make their `W3DLaserDraw` modules
   (`Drawable::laser_draws`), draw them each frame after the model draws, save them in the module list, and answer
   `LaserUpdate::getCurrentLaserRadius` with the template's width.
 - **The logic's object-less drawables:** the logic now emits `ClientNewDrawable` (the logic's id and the template's name)
@@ -880,13 +936,16 @@ first frame.** The logic's change is described in `docs/phase1-porting-graph.md`
   and gives them `LaserDrawInit` and `LaserSetDecayFrames`. The logic answers `findClientUpdateModule("LaserUpdate")` of
   such a drawable from the template's first `ClientUpdate` (INI data) as well as from its test table. Gate (a)'s CRC is
   unchanged (0bf44067).
-- **Drawn** (`client/src/particles.rs::laser_quads`): one camera-facing quad per line in the particles' batches.
+- **Drawn** ~~(`client/src/particles.rs::laser_quads`): one camera-facing quad per line in the particles' batches.~~
+  **Corrected 2026-11-14 (#169):** through the translated `SegmentedLineClass::Render` and segment-line renderer
+  (`WorldDrawables::render_lasers`, `particles::line_chunk_batches`); `laser_quads` is removed.
 - **Compared with the compiled upstream** (`tests/differential_laser_draw.rs`, `differential/wrap_laser_draw.cpp`): 20,000
   sequences (311,757 steps, 125,145 draws; 98 undefined upstream), 0 mismatches, max ULP 0; the save and 20,000 loads, 0
   mismatches; 30 of 30 planted bugs caught.
 - **Not yet** (#168's gaps): ~~the segment-line renderer's own strip (end caps, sorting)~~ **Corrected 2026-11-14
   (#65):** the segment-line renderer's strip and sorting are translated (`formats::w3d::seglinerenderer`; upstream's
-  `Render` never reads the end-caps bit), but the laser lines are not yet drawn through it; and the scene's culling of the
+  `Render` never reads the end-caps bit), ~~but the laser lines are not yet drawn through it~~ **Corrected 2026-11-14
+  (#169):** and the laser lines are drawn through it; and the scene's culling of the
   lines; the logic-made drawables in a save; a client attached mid-game; the logic's laser radius (still the test table's,
   0 in a game).
 

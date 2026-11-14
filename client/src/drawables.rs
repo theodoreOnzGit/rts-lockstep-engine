@@ -181,6 +181,8 @@ pub struct WorldDrawables<D: LocalDevice> {
     /// frame count, and the camera's transform they were made under), kept so that a second draw of the same frame
     /// draws nothing again.
     line_chunks: Option<(u32, Matrix3D, Vec<SegLineChunk>)>,
+    /// (#169) The laser beams' chunks of the W3D frame [`Self::render_lasers`] last drew, as [`Self::line_chunks`].
+    laser_chunks: Option<(u32, Matrix3D, Vec<SegLineChunk>)>,
 }
 
 impl<D: LocalDevice> WorldDrawables<D> {
@@ -197,6 +199,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
             particle_clock: None,
             removed: Vec::new(),
             line_chunks: None,
+            laser_chunks: None,
         }
     }
 
@@ -339,6 +342,35 @@ impl<D: LocalDevice> WorldDrawables<D> {
             self.line_chunks = Some((clock.frame_count, *camera, out));
         }
         self.line_chunks.as_ref().map_or((&[], *camera), |(_, c, v)| (v.as_slice(), *c))
+    }
+
+    /// (#169) The laser beams of the last W3D frame ([`Self::draw`]): every `W3DLaserDraw` module of the drawables (the
+    /// objects', then the logic's object-less ones, each in its id order) renders its `SegmentedLineClass` lines
+    /// (`W3DLaserDraw::render_lines`: the translated `SegmentedLineClass::Render` and `SegLineRendererClass::Render`) at
+    /// the frame's clock with the camera's view `view` (game axes, `Camera::view_matrix`), drawing from the client's own
+    /// generator ([`Self::particle_random`]'s `v3`; a laser's lines have no subdivision and draw nothing): eye-space
+    /// chunks, returned with the camera's transform `camera` they are placed by. Once per W3D frame, as
+    /// [`Self::render_line_runs`] (the UV scroll advances once a frame). A module whose render is undefined upstream (none
+    /// can be: its lines are set by `W3DLaserDraw` alone) is recorded in the drawables' errors and draws nothing.
+    /// **Differs from upstream:** the scene renders its render objects in its own list's order, interleaved with the
+    /// models, and culls each line by its bounding sphere first; here the lasers are drawn after the emitters' runs and
+    /// never culled (Bevy culls), and the order across drawables is the client's.
+    pub fn render_lasers(&mut self, view: &Matrix3D, camera: &Matrix3D) -> (&[SegLineChunk], Matrix3D) {
+        let Some(clock) = self.particle_clock else { return (&[], *camera) };
+        if self.laser_chunks.as_ref().is_none_or(|(f, ..)| *f != clock.frame_count) {
+            let mut out = Vec::new();
+            let ds = &mut self.drawables;
+            for d in ds.drawables.values_mut().chain(ds.logic_drawables.values_mut()) {
+                for m in &mut d.laser_draws {
+                    match m.render_lines(clock.sync_time, view, &mut self.particle_random.v3) {
+                        Ok(chunks) => out.extend(chunks),
+                        Err(e) => ds.errors.push((d.template.clone(), b"W3DLaserDraw".to_vec(), format!("{e:?}"))),
+                    }
+                }
+            }
+            self.laser_chunks = Some((clock.frame_count, *camera, out));
+        }
+        self.laser_chunks.as_ref().map_or((&[], *camera), |(_, c, v)| (v.as_slice(), *c))
     }
 
     /// (#65 batch e) The line-group emitters of the last W3D frame ([`Self::draw`]) through the translated
@@ -2135,5 +2167,109 @@ UniformAxialDamping = 1.0\n BounceAmount = 30\n AccelerationPitchLimit = 10\n De
         assert!(r.roll_frames > 3);
         assert!(r.back.is_some());
         assert_eq!(r.fired, [true, true]);
+    }
+
+    /// (#169) A laser on an object-less logic drawable (`ClientNewDrawable`, a `LaserUpdate` and a `W3DLaserDraw` of 3
+    /// beams and 2 arcing segments with a tiled, scrolling texture, `LaserDrawInit` growing over 30 frames, then a decay
+    /// from frame 40), 60 frames at 33 ms with a camera over the map; and the same game without the client.
+    ///
+    /// *Predictions, written before the first run (issue169b P5, P7):* the logic's CRCs are equal frame for frame with and
+    /// without the client; every frame, [`WorldDrawables::render_lasers`] at the camera's view gives exactly the chunks
+    /// the laser module's `render_lines` gives on a copy of it with a copy of the client's generator at the same view and
+    /// clock, draws nothing from the generator (no subdivision), and a second call in the frame (the camera moved) gives
+    /// the same chunks with the camera they were made under; the batches ([`crate::particles::line_chunk_batches`]) hold
+    /// every chunk's vertices at the camera's transform in Bevy's axes and its triangles, in the additive batch of the
+    /// texture; there are 6 lines (3 beams x 2 segments), 6 chunks of 4 vertices a frame once the beams have points
+    /// (from the first frame: `LaserDrawInit` makes the update dirty).
+    #[test]
+    fn a_laser_draws_through_the_segmented_line_without_changing_the_crcs() {
+        use rts_lockstep_engine::client::beacon_client_update::{ClientUpdateModule, TaggedClientUpdateModule};
+        use rts_lockstep_engine::client::laser_update::{LaserUpdate, LaserUpdateModuleData};
+        use rts_lockstep_engine::client::w3d_laser_draw::{W3DLaserDraw, W3DLaserDrawModuleData};
+        use rts_lockstep_engine::logic::world::object_events::ObjectClientEvent;
+        let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+        let play = |drawn_client: bool| {
+            let mut w = gate_world();
+            let mut d = WorldDrawables::<MemoryDevice>::new(None);
+            let cam = crate::camera::Camera::new(&w, at(100.0, 50.0), 200.0, (800, 600));
+            let (view, eye_to_world) = (cam.view_matrix(), cam.view.camera_transform());
+            let ev = w.take_client_events();
+            let (mut crcs, mut counts) = (Vec::new(), Vec::new());
+            if drawn_client {
+                d.update(&mut w, &ev, 0);
+                let template = d.drawables.drawables.values().next().unwrap().template.clone();
+                let new = ClientEvent::Object(ObjectClientEvent::ClientNewDrawable { drawable: 1000, template });
+                d.update(&mut w, &[new], 0);
+                let dr = d.drawables.logic_drawables.get_mut(&1000).expect("the laser's drawable");
+                dr.client_update_modules =
+                    vec![TaggedClientUpdateModule { module_tag: b"ModuleTag_L".to_vec(), module: ClientUpdateModule::Laser(LaserUpdate::new(LaserUpdateModuleData::default())) }];
+                let data = W3DLaserDrawModuleData {
+                    num_beams: 3,
+                    segments: 2,
+                    inner_beam_width: 1.0,
+                    outer_beam_width: 4.0,
+                    inner_color: 0xFF20_80FFu32 as i32,
+                    outer_color: 0x8000_00FFu32 as i32,
+                    texture_name: b"EXLaser.tga".to_vec(),
+                    tile: true,
+                    scroll_rate: 0.75,
+                    arc_height: 12.0,
+                    segment_overlap_ratio: 0.05,
+                    ..Default::default()
+                };
+                dr.laser_draws = vec![W3DLaserDraw::new(std::sync::Arc::new(data), Some((64, 16)), 0).unwrap()];
+                let init = ClientEvent::Object(ObjectClientEvent::LaserDrawInit { drawable: 1000, start: at(60.0, 40.0), end: at(140.0, 70.0), growth_frames: 30 });
+                d.update(&mut w, &[init], 0);
+            }
+            for f in 1..=60u32 {
+                w.logic_update().expect("a frame");
+                let mut ev = w.take_client_events();
+                if drawn_client {
+                    if f == 40 {
+                        ev.push(ClientEvent::Object(ObjectClientEvent::LaserSetDecayFrames { drawable: 1000, frames: 15 }));
+                    }
+                    d.update(&mut w, &ev, f * 33);
+                    assert!(d.drawables.errors.is_empty(), "{:?}", d.drawables.errors);
+                    let clock = d.particle_clock.expect("a frame drawn");
+                    // the chunks drawn directly, on copies
+                    let mut v3 = d.particle_random.v3.clone();
+                    let mut laser = d.drawables.logic_drawables[&1000].laser_draws[0].clone();
+                    assert_eq!(laser.lines.len(), 6);
+                    let direct = laser.render_lines(clock.sync_time, &view, &mut v3).unwrap();
+                    let (chunks, made_under) = d.render_lasers(&view, &eye_to_world);
+                    let chunks = chunks.to_vec();
+                    assert_eq!((&chunks, made_under), (&direct, eye_to_world), "frame {f}");
+                    assert_eq!(d.particle_random.v3, v3, "frame {f}: no draws");
+                    assert_eq!(d.drawables.logic_drawables[&1000].laser_draws[0], laser, "frame {f}: the lines end as the copy's");
+                    // a second call in the frame, the camera moved: the same chunks, with the camera they were made under
+                    let moved = Matrix3D::from_translation(&rts_lockstep_engine::ww::vector3::Vector3::new(1.0, 2.0, 3.0));
+                    let again = d.render_lasers(&moved, &moved);
+                    assert_eq!((again.0, again.1), (chunks.as_slice(), eye_to_world), "a second call, frame {f}");
+                    // the mesh data against the direct chunks
+                    let q = crate::particles::line_chunk_batches(&chunks, &eye_to_world);
+                    let (mut pos, mut idx) = (Vec::new(), Vec::new());
+                    for c in &direct {
+                        let base = pos.len() as u32;
+                        for v in &c.vertices {
+                            let p = Matrix3D::transform_vector(&eye_to_world, &v.position);
+                            pos.push(crate::view::to_bevy([p.x, p.y, p.z]));
+                        }
+                        idx.extend(c.triangles.iter().flat_map(|t| t.map(|i| base + u32::from(i))));
+                    }
+                    assert_eq!(q.keys().cloned().collect::<Vec<_>>(), vec![(b"exlaser.tga".to_vec(), crate::particles::Blend::Add)]);
+                    let b = &q[&(b"exlaser.tga".to_vec(), crate::particles::Blend::Add)];
+                    assert_eq!((&b.positions, &b.indices), (&pos, &idx), "frame {f}");
+                    assert_eq!((b.uvs.len(), b.colors.len()), (pos.len(), pos.len()));
+                    counts.push((chunks.len(), pos.len()));
+                }
+                crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
+            }
+            (crcs, counts)
+        };
+        let (plain, _) = play(false);
+        let (crcs, counts) = play(true);
+        println!("laser chunks and vertices per frame {counts:?}");
+        assert_eq!(crcs, plain);
+        assert!(counts.iter().all(|&(c, v)| c == 6 && v == 24), "{counts:?}");
     }
 }

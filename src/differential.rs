@@ -3659,6 +3659,12 @@ extern "C" {
     // compiled verbatim over a recording device.
     pub fn ref_segline_seq(input: *const c_uint, nin: c_int, out: *mut c_uint, cap: c_int) -> c_int;
 
+    // GitHub #169: SegmentedLineClass (differential/wrap_segline_obj.cpp, which documents the words): segline.cpp
+    // compiled verbatim on the renderer above. ref_laser_segl_bind points W3DLaserDraw's lines
+    // (ref_laser_draw_seq) at it; call it before that test's sequences.
+    pub fn ref_segline_obj_seq(input: *const c_uint, nin: c_int, out: *mut c_uint, cap: c_int) -> c_int;
+    pub fn ref_laser_segl_bind();
+
     // GitHub #65 (batch e): LineGroupClass (differential/wrap_linegrp.cpp, which documents the words): linegrp.cpp
     // compiled verbatim over a recording device.
     pub fn ref_linegrp_seq(input: *const c_uint, nin: c_int, out: *mut c_uint, cap: c_int) -> c_int;

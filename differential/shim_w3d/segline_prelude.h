@@ -5,7 +5,9 @@
 ** WW3D2/seglinerenderer.cpp is compiled VERBATIM (w3d_gen/segline_def.cpp,
 ** from its first #include to the end). What it needs from the renderer is
 ** replaced here, the real headers' include guards defined first:
-**   ww3d.h (WW3D_H): WW3D::Get_Sync_Time, the wrapper's clock.
+**   ww3d.h (WW3D_H): WW3D::Get_Sync_Time, the wrapper's clock (and, #169,
+**     the sorting statics SegmentedLineClass::Render reads: see
+**     segline_obj_prelude.h).
 **   rinfo.h (RINFO_H): RenderInfoClass, only passed by reference.
 **   texture.h (TEXTURE_H): TextureClass, reference counting only (a stand-in
 **     the test makes or not; Render only tests it for NULL and hands it on).
@@ -75,6 +77,11 @@ class WW3D
 {
 public:
 	static unsigned int Get_Sync_Time(void);
+	/* #169: what SegmentedLineClass::Render reads (declared here, defined by wrap_segline_obj.cpp; the renderer reads
+	** none of them) */
+	static bool Is_Sorting_Enabled(void);
+	static bool Are_Static_Sort_Lists_Enabled(void);
+	static void Add_To_Static_Sort_List(void *robj, unsigned int sort_level); /* a RenderObjClass * */
 };
 
 /* texture.h */

@@ -218,6 +218,10 @@ const fn shade_cnst(
 /// `CULL_MODE_ENABLE`, `DETAILCOLOR_DISABLE`, `DETAILALPHA_DISABLE`.
 pub const PRESET_ADDITIVE_SPRITE_SHADER: ShaderClass =
     ShaderClass(shade_cnst(PASS_LEQUAL, 0, 1, SRCBLEND_ONE, DSTBLEND_ONE, FOG_DISABLE, GRADIENT_DISABLE, 0, 1, 0, 1, 0, 0));
+/// `ShaderClass::_PresetAdditiveShader` (`SC_ADDITIVE`, shader.cpp; #169: `W3DLaserDraw`'s lines): as the additive
+/// sprite with `GRADIENT_MODULATE`.
+pub const PRESET_ADDITIVE_SHADER: ShaderClass =
+    ShaderClass(shade_cnst(PASS_LEQUAL, 0, 1, SRCBLEND_ONE, DSTBLEND_ONE, FOG_DISABLE, GRADIENT_MODULATE, 0, 1, 0, 1, 0, 0));
 /// `ShaderClass::_PresetAlphaSpriteShader` (`SC_ALPHA_SPRITE`): as the
 /// additive sprite with `SRCBLEND_SRC_ALPHA`, `DSTBLEND_ONE_MINUS_SRC_ALPHA`.
 pub const PRESET_ALPHA_SPRITE_SHADER: ShaderClass = ShaderClass(shade_cnst(

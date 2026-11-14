@@ -20,7 +20,9 @@
 **   ld_w3d.inc          W3DLaserDraw.cpp, the module's constructor to the file's end (destructor,
 **                       getLaserTemplateWidth, doDrawModule, crc, xfer, loadPostProcess).
 ** No edit. Compiled on stand-ins (namespace ld): the module bases' declarations (Module.h's, DrawModule.h's), one
-** drawable with its draw module list and its client update module, `SegmentedLineClass` (records what it is given),
+** drawable with its draw module list and its client update module, `SegmentedLineClass` (~~records what it is given~~
+** (#169, 2026-11-14) forwards every call to a REAL SegmentedLineClass, segline.cpp verbatim on the real renderer:
+** differential/wrap_segline_obj.cpp, through laser_segl_api.h's table; it keeps only the scene membership),
 ** `TextureClass` and the asset manager (a texture of the case's size for a non-empty name), the scene, the terrain
 ** (8 heights picked by the port's `terrain_cell` hash of the point) and the particle system manager; on the REAL
 ** XferSave / XferLoad (upstream_xfer), WWMath's Vector3 (its Length is WWMath::Sqrt) and Vector2. LaserUpdate's
@@ -34,10 +36,15 @@
 **     [other, laser], 2 [other]), the update's start xyz, end xyz, dirty, width scalar] (32 words), then steps of 8 words
 **     [op, a1..a7]: 0 doDrawModule; 1 start = (a1, a2, a3), end = (a4, a5, a6); 2 setDirty(a1); 3 width scalar = a1;
 **     4 loadPostProcess; 5 getCurrentLaserRadius (records [9, radius]); 6 getLaserTemplateWidth (records [8, width]);
-**     7 has a LaserUpdate = a1. Records: after the constructor [200, has texture, aspect ratio] and the state; after
-**     each step [100] and the state. State: [update dirty, selfDirty, line count], then per line [texture, additive,
+**     7 has a LaserUpdate = a1; (#169) 8 the scene renders every line (in the constructor's order) at WW3D sync time
+**     a1 with the view [1 0 0 a2; 0 a5 -a6 a3; 0 a6 a5 a4] (records [7], then every line's chunks, wrap_segline.cpp's
+**     words, then 'E'). Records: after the constructor [200, has texture, aspect ratio] and the state; after
+**     each step [100] and the state. State: [update dirty, selfDirty, line count], then per line ~~[texture, additive,
 **     width, r, g, b, uv rate x, y, tiled, visible, in scene, tile factor set, tile factor, point count, then the
-**     points' xyz]. A case whose numBeams * segments wraps is undefined upstream: [999] and no run.
+**     points' xyz]~~ (#169) [in scene, then the real line's getters: texture, shader bits, Get_Width, Get_Color (3),
+**     Get_UV_Offset_Rate (2), Get_Texture_Mapping_Mode, Is_Visible, Get_Texture_Tile_Factor, point count, the points'
+**     xyz, Bits]. A case whose numBeams * segments wraps is undefined upstream: [999] and no run. The test calls
+**     ref_laser_segl_bind first. The lines are made at WW3D sync time 0.
 **   ref_laser_draw_xfer(mode, path, out, cap): mode 0 saves a fresh module to `path` (XferSave), mode 1 loads `path`
 **     (XferLoad) into one. out = [status (0, or the XferStatus + 1), selfDirty]. */
 #include <stdio.h>
@@ -53,6 +60,9 @@
 #include "matrix3d.h"
 #include "vector3.h"
 #include "vector2.h"
+#include "laser_segl_api.h"
+
+extern "C" { struct LdSeglApi g_ld_segl_api; }
 
 /* Libraries/Include/Lib/BaseType.h:86 (the shim's BaseType.h does not carry it) */
 #ifndef PI
@@ -158,31 +168,45 @@ public:
 class ShaderClass { public: Int m_n; static ShaderClass _PresetAdditiveShader; };
 ShaderClass ShaderClass::_PresetAdditiveShader = { 1 };
 class SegLineRendererClass { public: enum TextureMapMode { UNIFORM_WIDTH_TEXTURE_MAP = 0, UNIFORM_LENGTH_TEXTURE_MAP, TILED_TEXTURE_MAP }; };
+/* (#169) The lines are REAL SegmentedLineClass objects (differential/wrap_segline_obj.cpp, compiled on the WW3D2
+** headers, which do not mix with these): this stand-in forwards each call through g_ld_segl_api (laser_segl_api.h),
+** filled by ref_laser_segl_bind. It keeps only the scene membership. */
 class SegmentedLineClass
 {
 public:
-	Bool texture, additive, tiled, visible, inScene, tileSet;
-	Real width, color[3], rate[2], tile;
-	std::vector<Vector3> points;
-	SegmentedLineClass() : texture(FALSE), additive(FALSE), tiled(FALSE), visible(TRUE), inScene(FALSE), tileSet(FALSE), width(0.0f), tile(0.0f)
+	void *real;
+	Bool inScene;
+	SegmentedLineClass() : inScene(FALSE) { real = g_ld_segl_api.make(); }
+	~SegmentedLineClass() { g_ld_segl_api.release(real); }
+	void Set_Texture( TextureClass *t ) { g_ld_segl_api.set_texture(real, t != NULL); }
+	void Set_Shader( ShaderClass s ) { if (s.m_n != 1) abort(); g_ld_segl_api.set_shader_additive(real); }
+	void Set_Width( float w ) { g_ld_segl_api.set_width(real, w); }
+	void Set_Color( const Vector3 &c ) { g_ld_segl_api.set_color(real, c.X, c.Y, c.Z); }
+	void Set_UV_Offset_Rate( const Vector2 &r ) { g_ld_segl_api.set_uv_offset_rate(real, r.X, r.Y); }
+	void Set_Texture_Mapping_Mode( SegLineRendererClass::TextureMapMode m ) { g_ld_segl_api.set_texture_mapping_mode(real, (int)m); }
+	void Set_Visible( int onoff ) { g_ld_segl_api.set_visible(real, onoff); }
+	void Set_Texture_Tile_Factor( float f ) { g_ld_segl_api.set_texture_tile_factor(real, f); }
+	void Set_Points( unsigned int n, Vector3 *locs )
 	{
-		color[0] = color[1] = color[2] = 1.0f;
-		rate[0] = rate[1] = 0.0f;
+		std::vector<float> xyz(3 * n + 1);
+		for (unsigned int i = 0; i < n; ++i) { xyz[3 * i] = locs[i].X; xyz[3 * i + 1] = locs[i].Y; xyz[3 * i + 2] = locs[i].Z; }
+		g_ld_segl_api.set_points(real, n, &xyz[0]);
 	}
-	void Set_Texture( TextureClass *t ) { texture = t != NULL; }
-	void Set_Shader( ShaderClass s ) { additive = s.m_n == 1; }
-	void Set_Width( float w ) { width = w; }
-	void Set_Color( const Vector3 &c ) { color[0] = c.X; color[1] = c.Y; color[2] = c.Z; }
-	void Set_UV_Offset_Rate( const Vector2 &r ) { rate[0] = r.X; rate[1] = r.Y; }
-	void Set_Texture_Mapping_Mode( SegLineRendererClass::TextureMapMode m ) { tiled = m == SegLineRendererClass::TILED_TEXTURE_MAP; }
-	void Set_Visible( int onoff ) { visible = onoff != 0; }
-	void Set_Texture_Tile_Factor( float f ) { tileSet = TRUE; tile = f; }
-	void Set_Points( unsigned int n, Vector3 *locs ) { points.assign(locs, locs + n); }
 	void state()
 	{
-		rec({texture ? 1 : 0, additive ? 1 : 0, bits(width), bits(color[0]), bits(color[1]), bits(color[2]), bits(rate[0]), bits(rate[1]),
-			tiled ? 1 : 0, visible ? 1 : 0, inScene ? 1 : 0, tileSet ? 1 : 0, bits(tile), (int)points.size()});
-		for (size_t i = 0; i < points.size(); ++i) rec({bits(points[i].X), bits(points[i].Y), bits(points[i].Z)});
+		static std::vector<int> buf(1 << 12);
+		int n = g_ld_segl_api.state(real, &buf[0], (int)buf.size());
+		if (n > (int)buf.size()) abort();
+		rec({inScene ? 1 : 0});
+		g_out.insert(g_out.end(), buf.begin(), buf.begin() + n);
+	}
+	/* the scene's render of this line */
+	void render(unsigned sync, const float *view)
+	{
+		static std::vector<int> buf(1 << 16);
+		int n = g_ld_segl_api.render(real, sync, view, &buf[0], (int)buf.size());
+		if (n > (int)buf.size()) abort();
+		g_out.insert(g_out.end(), buf.begin(), buf.begin() + n);
 	}
 };
 class Scene
@@ -312,6 +336,12 @@ struct DrawPeek : public W3DLaserDraw
 		for (int i = 0; i < n; ++i) m_line3D[i]->state();
 	}
 	void head() { rec({m_texture != NULL ? 1 : 0, bits(m_textureAspectRatio)}); }
+	/* (#169) the scene renders the lines in the order the constructor added them */
+	void render(const W3DLaserDrawModuleData *d, unsigned sync, const float *view)
+	{
+		for (int segment = 0; segment < (int)d->m_segments; segment++)
+			for (int i = (int)d->m_numBeams - 1; i >= 0; i--) m_line3D[segment * d->m_numBeams + i]->render(sync, view);
+	}
 	void doXfer(Xfer *x) { xfer(x); }
 	void doLoadPostProcess() { loadPostProcess(); }
 	Bool selfDirty() const { return m_selfDirty; }
@@ -365,6 +395,7 @@ int ref_laser_draw_seq(const int *in, int nin, int *out, int cap)
 	update->setDirty(in[30] != 0);
 	LaserPeek::p(update)->width(in[31]);
 	g_drawable.m_update = update;
+	g_ld_segl_api.clock(0); /* (#169) the lines are made at sync time 0, as the Rust's */
 	W3DLaserDraw *draw = new W3DLaserDraw(&thing, &data);
 	OtherDraw other;
 	switch (g_w.list) {
@@ -385,7 +416,16 @@ int ref_laser_draw_seq(const int *in, int nin, int *out, int cap)
 		case 4: DrawPeek::p(draw)->doLoadPostProcess(); break;
 		case 5: rec({9, bits(update->getCurrentLaserRadius())}); break;
 		case 6: rec({8, bits(draw->getLaserTemplateWidth())}); break;
-		default: g_w.hasUpdate = a[1] != 0; break;
+		case 7: g_w.hasUpdate = a[1] != 0; break;
+		default: {
+			/* (#169) the scene's render at sync a1 with the view [1 0 0 a2; 0 a5 -a6 a3; 0 a6 a5 a4] */
+			float c = real(a[5]), sn = real(a[6]);
+			float view[12] = {1.0f, 0.0f, 0.0f, real(a[2]), 0.0f, c, -sn, real(a[3]), 0.0f, sn, c, real(a[4])};
+			rec({7});
+			DrawPeek::p(draw)->render(&data, (unsigned)a[1], view);
+			rec({'E'});
+			break;
+		}
 		}
 		rec({100});
 		DrawPeek::p(draw)->state((int)n);
@@ -403,6 +443,7 @@ int ref_laser_draw_xfer(int mode, const char *path, int *out, int cap)
 	memset(&g_w, 0, sizeof g_w);
 	W3DLaserDrawModuleData data;
 	Thing thing;
+	g_ld_segl_api.clock(0);
 	W3DLaserDraw *draw = new W3DLaserDraw(&thing, &data);
 	int status = 0;
 	XferSave xs;

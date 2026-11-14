@@ -107,6 +107,11 @@
 //!   normalized). **A deliberate deviation from upstream**, whose value there
 //!   is undefined; the differential test's C++ makes the same substitution
 //!   (one asserted edit to the verbatim cut in `build.rs`).
+//! - **A texture mapping mode other than the three** (#169, 2026-11-14:
+//!   `SegmentedLineClass::Set_Texture_Mapping_Mode` stores any; `Init`
+//!   only the three): `Render`'s switch has no default, so `u_values` and
+//!   `base_tex_v` are read uninitialised: [`W3dUndefined::UninitialisedRead`]
+//!   (after the UV offset has advanced, as upstream's runs first).
 //! - **A subdivision level over 7** (`MAX_SEGLINE_SUBDIV_LEVELS`): the chunks
 //!   are 1 point (the loop never advances) and the buffers overflow;
 //!   **no points** (`num_points - 1` wraps): [`W3dUndefined::IndexOutOfRange`].
@@ -501,13 +506,20 @@ impl SegLineRenderer {
                     }
                     u_values = [0.0, 0.0];
                 }
-                _ => {
-                    // TILED_TEXTURE_MAP (Set_Texture_Mapping_Mode only ever stores the three modes)
+                TILED_TEXTURE_MAP => {
+                    // ~~TILED_TEXTURE_MAP (Set_Texture_Mapping_Mode only ever stores the three modes)~~
+                    // **Corrected 2026-11-14 (#169):** `SegmentedLineClass::Set_Texture_Mapping_Mode` stores whatever
+                    // mode it is given (`Init` only the three): any other leaves `u_values` and `base_tex_v`
+                    // uninitialised (the switch has no default), below.
                     for (pidx, v) in base_tex_v.iter_mut().enumerate() {
                         let k = if plant(10098) { pidx as u32 } else { pidx as u32 + chidx };
                         *v = k as f32 * self.texture_tile_factor;
                     }
                     u_values = [0.0, 1.0];
+                }
+                _ => {
+                    // (#169) no case: u_values and base_tex_v are read uninitialised
+                    return Err(W3dUndefined::UninitialisedRead.into());
                 }
             }
 

@@ -1974,13 +1974,13 @@ mod tests {
         c.apply_events(&w, &[ClientEvent::Object(ObjectClientEvent::LaserDrawInit { drawable: 1000, start, end, growth_frames: 4 })], &mut NoAssets, 0);
         c.draw(&w, &mut NoAssets, 33);
         let line = &c.logic_drawables[&1000].laser_draws[0].lines[0];
-        assert_eq!((line.points[0].x, line.points[1].z, line.width_set), (1.0, 6.0, 0.0));
+        assert_eq!((line.point_locations[0].x, line.point_locations[1].z, line.get_width()), (1.0, 6.0, 0.0));
         for _ in 0..4 {
             w.logic_update().expect("a frame");
         }
         assert_eq!(w.frame(), frame + 4);
         c.draw(&w, &mut NoAssets, 66);
-        assert_eq!(c.logic_drawables[&1000].laser_draws[0].lines[0].width_set, 2.0);
+        assert_eq!(c.logic_drawables[&1000].laser_draws[0].lines[0].get_width(), 2.0);
         assert_eq!(c.logic_drawables[&1000].laser_template_width(), Some(3.0));
         c.apply_events(&w, &[ClientEvent::Object(ObjectClientEvent::LaserSetDecayFrames { drawable: 1000, frames: 10 })], &mut NoAssets, 0);
         let ClientUpdateModule::Laser(l) = &c.logic_drawables[&1000].client_update_modules[0].module else { unreachable!() };

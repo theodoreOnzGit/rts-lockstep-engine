@@ -49,6 +49,7 @@ pub mod part_ldr;
 pub mod prim_anim;
 pub mod render;
 pub mod ringobj;
+pub mod segline; // #169: SegmentedLineClass (segline.cpp)
 pub mod seglinerenderer;
 pub mod shader;
 pub mod sphereobj;

@@ -260,4 +260,29 @@ int ref_segline_seq(const unsigned *in, int nin, unsigned *out, int cap)
 	return (int)g_out.size();
 }
 
+/* #169: what differential/wrap_segline_obj.cpp (SegmentedLineClass, the library upstream_w3d_segline_obj, linked
+** before this one) reaches of this recorder: the clock, the view, the shared generator, and the words the draws logged
+** (taken and cleared). */
+void ref_segline_clock(unsigned sync) { g_sync = sync; }
+void ref_segline_view(const float *v)
+{
+	g_view.Init(Vector4(v[0], v[1], v[2], v[3]), Vector4(v[4], v[5], v[6], v[7]), Vector4(v[8], v[9], v[10], v[11]),
+		Vector4(0, 0, 0, 1));
+}
+void ref_segline_seed(unsigned a, unsigned b) { SeglineSeedAccess::Gen() = Random3Class(a, b); }
+void ref_segline_gen(unsigned *seed_index)
+{
+	Random3Class &g = SeglineSeedAccess::Gen();
+	seed_index[0] = (uint32_t)g.Seed;
+	seed_index[1] = (uint32_t)g.Index;
+}
+int ref_segline_take(unsigned *out, int cap)
+{
+	int n = (int)g_out.size();
+	int m = n > cap ? cap : n;
+	if (m > 0) memcpy(out, &g_out[0], 4 * m);
+	g_out.clear();
+	return n;
+}
+
 } /* extern "C" */
