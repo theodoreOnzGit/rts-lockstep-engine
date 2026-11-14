@@ -152,7 +152,9 @@ pub struct RenderModel {
     /// Whether it is an HLOD (`Class_ID() == CLASSID_HLOD`), not a lone mesh.
     pub is_hlod: bool,
     /// The hierarchy (posed by [`RenderModel::update_render_obj`] or [`RenderModel::update`]); `None` for a lone
-    /// mesh, or when the HLOD's could not be found.
+    /// mesh, or when the HLOD's could not be found. **(#181 items 9, 10)** The client's drawn model instead takes the
+    /// live render object's pivots, in the world (`client::w3d_model_draw::RenderObj::pose_render_model`), and an HLOD
+    /// whose hierarchy was not found takes upstream's default one there ([`HTree::init_default`]).
     pub htree: Option<HTree>,
     pub sub_objects: Vec<SubObject>,
     /// Sub-objects that are not drawn: name, and why.
@@ -375,7 +377,9 @@ impl RenderModel {
     /// ~~The hierarchy update a render does~~ **Corrected 2026-11-13 (#180):** the hierarchy posed through the
     /// *virtual* `HTreeClass::Anim_Update(root, motion, frame)` ([`HTree::anim_update`], which interpolates a raw
     /// animation between frames), or the base pose, under `root`. A render does not do this upstream: a render object
-    /// takes animobj.h's inline update, [`RenderModel::update_render_obj`], which the client's drawn pose uses. This one
+    /// takes animobj.h's inline update, [`RenderModel::update_render_obj`], ~~which the client's drawn pose uses~~
+    /// **Corrected 2026-11-14 (#181 item 9):** whose dispatch the live render object runs, and the client's drawn pose
+    /// copies the live render object's hierarchy (`client::w3d_model_draw::RenderObj::pose_render_model`). This one
     /// stays for [`crate::client::w3d_model_draw::W3dFiles::skeleton`] (the pristine bones, which also feed the
     /// logic's art bones, #175): those ask only integer frames (0 or `NumFrames - 1`), where the two paths agree bit
     /// for bit under the default `Float_To_Long` ([`FloatToLongMode::Win32Fistp`](crate::ww::wwmath::FloatToLongMode);
@@ -393,8 +397,11 @@ impl RenderModel {
     /// an animation, animobj.h's inline `Anim_Update(Transform, Motion, Frame)` ([`HTree::anim_update_animobj`], the
     /// code the live render object `RenderObj` runs: a raw animation through the raw fast path at one integer frame,
     /// `Float_To_Long(frame)`, the others through the virtual update); without one, `Base_Update(root)`. `root` is the
-    /// render object's `Transform`. Nothing without a hierarchy. The client's drawn pose
-    /// (`rts_client::drawables::WorldDrawables`).
+    /// render object's `Transform`. Nothing without a hierarchy. ~~The client's drawn pose
+    /// (`rts_client::drawables::WorldDrawables`).~~ **Corrected 2026-11-14 (#181 item 9):** the client's drawn pose no
+    /// longer calls this: it takes the live render object's hierarchy as its own last update left it
+    /// (`client::w3d_model_draw::RenderObj::pose_render_model`), which runs this same dispatch
+    /// ([`HTree::anim_update_animobj`]) under the render object's `Transform`. Kept for `differential_w3d`'s op 50.
     pub fn update_render_obj<P: super::hmorphanim::PoseLookup>(&mut self, root: &Matrix3D, anim: Option<(&HAnim, &P, f32)>) -> W3dResult<()> {
         if crate::logic::modules::plant(9831) {
             return self.update(root, anim);
@@ -443,12 +450,27 @@ impl RenderModel {
 
     /// The transform sub-object `i` is drawn with: its bone's, or the
     /// identity for a skin (whose vertices [`Self::deformed`] moves).
+    /// **(#181 item 9)** In the client's drawn model the bones are in the world (the live render object's), so this is
+    /// the world transform upstream's renderer gives the sub-object; a lone mesh's is the render object's `Transform`,
+    /// which `RenderObj::pose_render_model` returns.
     pub fn sub_object_transform(&self, i: usize) -> W3dResult<Matrix3D> {
         let s = self.sub_objects.get(i).ok_or(W3dUndefined::IndexOutOfRange)?;
         if s.is_skin() {
             Ok(Matrix3D::IDENTITY)
         } else {
             self.bone_transform(s.bone_index)
+        }
+    }
+
+    /// (#181 item 9) `!Is_Not_Animation_Hidden()` of sub-object `i`: hidden by its bone's animated visibility
+    /// (`HLodClass::Update_Sub_Object_Transforms`'s `Set_Animation_Hidden(!HTree->Get_Visibility(bone))`, hlod.cpp:
+    /// 3370-3382); never without a hierarchy, or for a bone out of range (undefined upstream). The visibility is the
+    /// hierarchy's last update's (the client's drawn model: the live render object's).
+    pub fn sub_object_animation_hidden(&self, i: usize) -> bool {
+        let Some(s) = self.sub_objects.get(i) else { return false };
+        match &self.htree {
+            Some(t) => !t.get_visibility(s.bone_index).unwrap_or(true),
+            None => false,
         }
     }
 

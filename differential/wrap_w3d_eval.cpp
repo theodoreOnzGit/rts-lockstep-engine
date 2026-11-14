@@ -474,6 +474,16 @@ RecBridge g_rec;
 class RenderInfoClass {};
 class SpecialRenderInfoClass {};
 
+/* (#181 item 10) WW3DAssetManager for the constructor from a name (ao_ctor.inc): Get_HTree answers the tree op 62 named
+** (one of the loaded ones), or NULL for a name the script says is not found. */
+HTreeClass *g_found_htree;
+class WW3DAssetManager
+{
+public:
+	static WW3DAssetManager *Get_Instance(void) { static WW3DAssetManager m; return &m; }
+	HTreeClass *Get_HTree(const char *) { return g_found_htree; }
+};
+
 class CompositeRenderObjClass
 {
 public:
@@ -494,7 +504,10 @@ class Animatable3DObjClass : public CompositeRenderObjClass
 {
 public:
 	Animatable3DObjClass(const HTreeClass *source, float scale);
-	~Animatable3DObjClass(void)
+	/* (#181 item 10) animobj.cpp:82-121, verbatim (ao_ctor.inc) */
+	Animatable3DObjClass(const char *htree_name);
+	/* (#181 item 9) virtual, as upstream's (rendobj.h): op 62's HLODs are deleted through this class */
+	virtual ~Animatable3DObjClass(void)
 	{
 		Release();
 		if (HTree) delete HTree;
@@ -521,7 +534,9 @@ public:
 	bool Is_Bone_Captured(int boneindex) const;
 	void Control_Bone(int bindex, const Matrix3D &objtm, bool world_space_translation = false);
 	float Compute_Current_Frame(float *newDirection = NULL) const;
-	void Update_Sub_Object_Transforms(void);
+	/* (#181 item 9) virtual, as upstream's (rendobj.h): an HLOD's (HLodClass's, op 62) gives its sub-objects their bones'
+	** transforms after the hierarchy's update; Render and Get_Bone_Transform reach it through `this` */
+	virtual void Update_Sub_Object_Transforms(void);
 	void Base_Update(const Matrix3D &root);
 	void Anim_Update(const Matrix3D &root, HAnimClass *motion, float frame);
 	void Blend_Update(const Matrix3D &root, HAnimClass *motion0, float frame0, HAnimClass *motion1, float frame1, float percentage);
@@ -537,6 +552,63 @@ public:
 #include "ao_body.inc"
 #include "ao_progress.inc"
 #include "ao_inline.inc"
+#include "ao_ctor.inc"
+
+/* (#181 item 9) an HLOD's sub-object (MeshClass, as far as HLodClass::Update_Sub_Object_Transforms reaches it):
+** RenderObjClass's Set_Transform (the assignment), Set_Animation_Hidden (rendobj.h:474, the IS_NOT_ANIMATION_HIDDEN bit,
+** kept here as a flag) and Update_Sub_Object_Transforms (nothing: a mesh has no sub-objects). Its transform starts as
+** RenderObjClass()'s identity, not animation-hidden. */
+class RenderObjClass
+{
+public:
+	Matrix3D Transform;
+	bool AnimHidden;
+	RenderObjClass() : Transform(true), AnimHidden(false) {}
+	void Set_Transform(const Matrix3D &m) { Transform = m; }
+	void Set_Animation_Hidden(int onoff) { AnimHidden = onoff != 0; }
+	void Update_Sub_Object_Transforms(void) {}
+};
+
+/* (#181 items 9, 10) HLodClass as far as its drawn sub-objects: made from its definition (hlod.cpp:1082-1083 passes
+** HierarchyTreeName to the constructor above), one LOD (Lod[0]) and the additional models, each a sub-object on a bone;
+** hlod.cpp's Update_Sub_Object_Transforms verbatim (hl_update.inc) with hlod.h's ModelNodeClass and ModelArrayClass
+** (hl_nodes.inc); Set_Sub_Object_Transforms_Dirty nothing (the base's Are_Sub_Object_Transforms_Dirty is false, see the
+** header); then Create_Render_Obj's scale as the other constructor (HLodClass::Scale's hierarchy part). */
+class HLodClass : public Animatable3DObjClass
+{
+public:
+#include "hl_nodes.inc"
+	int LodCount;
+	int CurLod;
+	ModelArrayClass *Lod;
+	ModelArrayClass AdditionalModels;
+	std::vector<RenderObjClass *> Subs;
+	HLodClass(const char *htree_name, float scale, const std::vector<int> &lod_bones, const std::vector<int> &add_bones)
+		: Animatable3DObjClass(htree_name), LodCount(1), CurLod(0), Lod(new ModelArrayClass[1])
+	{
+		for (size_t i = 0; i < lod_bones.size() + add_bones.size(); ++i) {
+			ModelNodeClass n;
+			n.Model = new RenderObjClass;
+			n.BoneIndex = i < lod_bones.size() ? lod_bones[i] : add_bones[i - lod_bones.size()];
+			Subs.push_back(n.Model);
+			if (i < lod_bones.size()) Lod[0].Add(n); else AdditionalModels.Add(n);
+		}
+		bool reallyscale = (WWMath::Fabs(scale - 1.0f) > 0.01f);
+		if (reallyscale && scale != 1.0f) {
+			HTree->Scale(scale);
+			Set_Hierarchy_Valid(false);
+		}
+	}
+	~HLodClass(void)
+	{
+		delete[] Lod;
+		for (size_t i = 0; i < Subs.size(); ++i) delete Subs[i];
+	}
+	void Set_Sub_Object_Transforms_Dirty(bool) {}
+	virtual void Update_Sub_Object_Transforms(void);
+};
+
+#include "hl_update.inc"
 
 /* animobj.cpp:82-111's initialisation, the hierarchy copied from a loaded one; then Create_Render_Obj's scale (see the
 ** header) */
@@ -890,6 +962,45 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 		case 41:
 			ao::g_sync_time = rd.u();
 			break;
+		/* (#181 items 9, 10) 62 kind tree scale nlod nadd bones...: a new HLOD (kind 0: on loaded tree `tree`, by its name;
+		** 1: an empty name; 2: a name not found: both the default hierarchy), at `scale`, with nlod sub-objects in its LOD
+		** and nadd additional ones on the given bones; then the state (put_robj). 63 robj: an HLOD's drawn sub-objects as
+		** its last Update_Sub_Object_Transforms left them: the count, then each one's Transform (12 floats) and animation
+		** hidden flag (1 byte); then the render object's Transform (12 floats). */
+		case 62: {
+			uint32_t kind = rd.u();
+			uint32_t t = rd.u();
+			float scale = rd.f();
+			uint32_t nlod = rd.u();
+			uint32_t nadd = rd.u();
+			std::vector<int> lb, ab;
+			for (uint32_t k = 0; k < nlod; ++k) lb.push_back((int)rd.u());
+			for (uint32_t k = 0; k < nadd; ++k) ab.push_back((int)rd.u());
+			char name[W3D_NAME_LEN + 1];
+			memset(name, 0, sizeof(name));
+			if (kind == 0) {
+				memcpy(name, g_trees[t]->Get_Name(), W3D_NAME_LEN);
+				ao::g_found_htree = g_trees[t];
+			} else if (kind == 2) {
+				strcpy(name, "NOSUCHTREE");
+				ao::g_found_htree = NULL;
+			}
+			ao::g_robjs.push_back(new ao::HLodClass(name, scale, lb, ab));
+			ao::g_found_htree = NULL;
+			ao::g_clean.push_back(true);
+			ao::put_robj(ao::g_robjs.size() - 1);
+			break;
+		}
+		case 63: {
+			ao::HLodClass *h = (ao::HLodClass *)ao::g_robjs[rd.u()];
+			put32((uint32_t)h->Subs.size());
+			for (size_t k = 0; k < h->Subs.size(); ++k) {
+				putM(h->Subs[k]->Transform);
+				put8(h->Subs[k]->AnimHidden ? 1 : 0);
+			}
+			putM(h->Get_Transform());
+			break;
+		}
 		/* (#180) 50 tree anim frame: the client's drawn pose. A fresh render object on the tree (scale 1), in SINGLE_ANIM
 		** (Set_Animation(anim, frame), ANIM_MODE_MANUAL), then the update its Update_Sub_Object_Transforms runs, animobj.h's
 		** inline Anim_Update(Transform, ModeAnim.Motion, ModeAnim.Frame) (the raw fast path for CLASSID_HRAWANIM); its

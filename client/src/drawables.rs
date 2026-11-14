@@ -7,7 +7,9 @@
 //! them over a `World` after each logic frame, loads the chosen models through the W3D asset manager from the game's
 //! files when there are any ([`Art`]), and poses one render model per object (its hierarchy at the animation's frame,
 //! ~~`Anim_Update`~~ **Corrected 2026-11-13 (#180):** animobj.h's inline `Anim_Update`, which poses a raw animation
-//! through `HTreeClass`'s raw fast path at one integer frame, as upstream's render object does). The Bevy app draws those; an object with no model (no files, no `Draw` block, or a model that is not
+//! through `HTreeClass`'s raw fast path at one integer frame, as upstream's render object does) ~~.~~ **Corrected
+//! 2026-11-14 (#181 item 9):** posed from its draw module's render object's live hierarchy, as that object's own render
+//! left it (the pose its bone queries answer, in the world; `RenderObj::pose_render_model`), not posed again. The Bevy app draws those; an object with no model (no files, no `Draw` block, or a model that is not
 //! found) is drawn as its primitive shape (`view`).
 //!
 //! **Reading only.** The drawables take the World's client events (`take_client_events`, which only drains the queue
@@ -171,7 +173,11 @@ pub struct WorldDrawables<D: LocalDevice> {
     pub drawables: ClientDrawables,
     pub art: Option<Art<D>>,
     /// Each object's render model (its first draw module's), posed, with the name it was made for.
+    /// **(#181 item 9)** Posed from the render object's live hierarchy, in the world ([`Self::drawn_root`]).
     instances: BTreeMap<ObjectId, (Vec<u8>, RenderModel)>,
+    /// (#181 item 9) The transform each object's drawn model was posed under: its render object's `Transform` at the
+    /// last pose ([`RenderObj::pose_render_model`](rts_lockstep_engine::client::w3d_model_draw::RenderObj::pose_render_model)).
+    drawn_roots: BTreeMap<ObjectId, Matrix3D>,
     /// Models that could not be made (`RenderModel::create` gave none or failed), by name, and why.
     pub missing: BTreeMap<Vec<u8>, String>,
     /// Models and animations a module asked for while their files were being fetched ([`Deferred`]).
@@ -201,6 +207,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
             drawables: ClientDrawables::new(),
             art,
             instances: BTreeMap::new(),
+            drawn_roots: BTreeMap::new(),
             missing: BTreeMap::new(),
             waiting_models: BTreeSet::new(),
             waiting_anims: BTreeSet::new(),
@@ -290,9 +297,11 @@ impl<D: LocalDevice> WorldDrawables<D> {
     }
 
     /// The posed models' particle emitters, one W3D frame at `sync_time` ms (#49): the clock advances as `WW3D::Sync`
-    /// does (frame time = the time since the last draw, frame count + 1), and each emitter runs on its bone under its
-    /// object's transform (position, orientation, and the client-side physics transform the mesh is drawn with), since
-    /// W3D particles live in the world. Reading only: the World is not written.
+    /// does (frame time = the time since the last draw, frame count + 1), and each emitter runs on its bone ~~under its
+    /// object's transform (position, orientation, and the client-side physics transform the mesh is drawn with)~~
+    /// **Corrected 2026-11-14 (#181 item 9):** as the drawn model holds it, already in the world (the live render
+    /// object's hierarchy, under its `Transform`), since W3D particles live in the world. Reading only: the World is not
+    /// written.
     fn update_emitters(&mut self, w: &World, sync_time: u32) {
         let clock = match self.particle_clock {
             Some(c) => Ww3dClock { sync_time, frame_time: sync_time.wrapping_sub(c.sync_time), frame_count: c.frame_count.wrapping_add(1) },
@@ -301,13 +310,13 @@ impl<D: LocalDevice> WorldDrawables<D> {
         self.particle_clock = Some(clock);
         let ids: Vec<ObjectId> = self.instances.keys().copied().collect();
         for id in ids {
-            let Some(o) = w.find_object(id) else { continue };
-            let p = o.get_position();
-            let mut world = Matrix3D::from_translation(&rts_lockstep_engine::ww::vector3::Vector3::new(p.x, p.y, p.z));
-            world.rotate_z(o.thing.orientation());
-            if let Some(x) = self.draw_xform(id) {
-                world = Matrix3D::multiply(&world, &x);
+            // ~~the object's world: its position, orientation and draw transform, times each emitter's bone~~ **Corrected
+            // 2026-11-14 (#181 item 9):** the drawn model's bones are in the world already (the live render object's,
+            // under its `Transform`), as the transforms `HLodClass::Update_Sub_Object_Transforms` gives its emitters
+            if w.find_object(id).is_none() {
+                continue;
             }
+            let world = Matrix3D::IDENTITY;
             if let Some((_, m)) = self.instances.get_mut(&id) {
                 if !m.emitters.is_empty() {
                     m.update_emitters(&world, &clock, &mut self.particle_random);
@@ -414,7 +423,9 @@ impl<D: LocalDevice> WorldDrawables<D> {
     /// - **Its models** (new, see `pick_drawable`'s module docs): with the art, each shown sub-object mesh of the posed
     ///   model as the oriented box of its vertices in its bone's frame (a skin's deformed vertices in the model's frame),
     ///   under the object's transform (its position, its orientation about z, the drawable's physics transform), as the
-    ///   model is drawn. **Without the art (the demo), the fallback:** the object's logic geometry as the one box (a
+    ///   model is drawn. **Corrected 2026-11-14 (#181 item 9):** the drawn model is in the world (its render object's live
+    ///   hierarchy, under the drawable's root): each mesh under its drawn transform
+    ///   ([`Self::drawn_sub_object_transform`]), a skin's deformed vertices as they are. **Without the art (the demo), the fallback:** the object's logic geometry as the one box (a
     ///   sphere's or cylinder's radius as the box's half-widths, a box's own half-lengths, standing on its position but
     ///   a sphere's, centred on it; at least the sizes the shapes are drawn with).
     /// - **Its bounding sphere** is the sphere around its boxes.
@@ -461,11 +472,14 @@ impl<D: LocalDevice> WorldDrawables<D> {
                         if sub.hidden {
                             continue;
                         }
+                        // ~~under the object's transform~~ **Corrected 2026-11-14 (#181 item 9):** the drawn model is in
+                        // the world (the live render object's hierarchy): a skin's deformed vertices as they are, a mesh
+                        // under its drawn transform
                         let (points, tm) = if sub.is_skin() {
-                            (m.deformed(i).map(|(p, _)| p).unwrap_or_default(), world)
+                            (m.deformed(i).map(|(p, _)| p).unwrap_or_default(), Matrix3D::IDENTITY)
                         } else {
-                            let Ok(t) = m.sub_object_transform(i) else { continue };
-                            (sub.model.vertices.clone(), Matrix3D::multiply(&world, &t))
+                            let Some(t) = self.drawn_sub_object_transform(id, i) else { continue };
+                            (sub.model.vertices.clone(), t)
                         };
                         let (basis, origin) = basis_of(&tm);
                         if let Some(b) = oriented_bounds(points.iter().map(|p| Vector3::new(p[0], p[1], p[2])), basis, origin, coll_type::ALL) {
@@ -618,20 +632,44 @@ impl<D: LocalDevice> WorldDrawables<D> {
         self.instances.get(&id).map(|(_, m)| m)
     }
 
+    /// (#181 item 9) The transform the object's drawn model was posed under: its render object's `Transform` at the last
+    /// pose (the drawable's root: position, orientation, instance and physics transforms). The model's sub-objects are
+    /// in the world under it; the app, which draws each object under its own interpolated transform, takes it off.
+    pub fn drawn_root(&self, id: ObjectId) -> Option<Matrix3D> {
+        self.drawn_roots.get(&id).copied()
+    }
+
+    /// (#181 item 9) Sub-object `i` of the object's drawn model, in the world, as upstream's renderer draws it: its bone's
+    /// transform in the live hierarchy (`HTree->Get_Transform(bone)`, the identity for a skin, whose vertices
+    /// [`RenderModel::deformed`] puts in the world), or, for a lone mesh (no hierarchy), the render object's `Transform`
+    /// ([`Self::drawn_root`]). `None` without a drawn model, or for a sub-object it does not have.
+    pub fn drawn_sub_object_transform(&self, id: ObjectId, i: usize) -> Option<Matrix3D> {
+        let m = self.instance(id)?;
+        if m.htree.is_some() {
+            return m.sub_object_transform(i).ok();
+        }
+        m.sub_objects.get(i)?;
+        Some(self.drawn_root(id).unwrap_or(Matrix3D::IDENTITY))
+    }
+
     /// The last draw's client-side physics transform of the object's drawable, in the model's own frame (GitHub #41,
     /// `Drawable::applyPhysicsXform`: the suspension's height, pitch, roll and yaw, `PhysicsXformInfo::apply` to the
     /// identity), for the app to put after the object's own transform; `None` when none applied.
     /// **Corrected 2026-11-13 (#179 item 3):** renamed from `physics_xform`: the drawable's instance matrix (the sway's,
     /// never drawn before), then the physics transform, as `Drawable::draw` puts them on its root
     /// (`Drawable::draw_local_matrix`); `None` when both are the identity. The draw modules' render objects take the
-    /// whole root themselves (the live bones follow it); the app's posed model is posed under the identity, so this is
-    /// applied once.
+    /// whole root themselves (the live bones follow it); ~~the app's posed model is posed under the identity, so this is
+    /// applied once.~~ **Corrected 2026-11-14 (#181 item 9):** so does the posed model now (it is the live hierarchy's,
+    /// in the world, [`Self::drawn_root`]); the app draws the object under its own interpolated transform times this,
+    /// and takes the drawn root off the model's parts.
     pub fn draw_xform(&self, id: ObjectId) -> Option<Matrix3D> {
         self.drawables.drawables.get(&id)?.draw_local_matrix()
     }
 
-    /// Each object's render model made (when its model changes) and posed at its animation's frame
-    /// ([`RenderModel::update_render_obj`], #180: a raw animation at one integer frame, as upstream's render object).
+    /// Each object's render model made (when its model changes) and posed ~~at its animation's frame
+    /// ([`RenderModel::update_render_obj`], #180: a raw animation at one integer frame, as upstream's render object)~~
+    /// **Corrected 2026-11-14 (#181 item 9):** from its render object's live hierarchy
+    /// (`RenderObj::pose_render_model`), whose own render the client draw has just run.
     fn pose(&mut self) {
         let Some(art) = &mut self.art else { return };
         // ~~retained~~ (#65 batch c) the models of drawables gone are retired
@@ -671,25 +709,19 @@ impl<D: LocalDevice> WorldDrawables<D> {
                 }
             }
             let (_, m) = self.instances.get_mut(&id).expect("made above");
-            // the draw module's bone captures (turrets, recoil) and hidden sub-objects, on the model drawn for it
+            // ~~(#180) posed as upstream's render object poses itself (animobj.h's inline `Anim_Update`): a raw animation
+            // through the raw fast path at one integer frame, as the live render object (`RenderObj`) does~~
+            // **Corrected 2026-11-14 (#181 item 9):** not posed again: the draw module's render object, which the client
+            // draw has just rendered (`Render`: its hierarchy updated when not valid), gives the model its live hierarchy
+            // (the pose its bone queries answer, under its `Transform`, with its bone captures), each sub-object's
+            // animation visibility, its hidden sub-objects and material overrides, as `HLodClass::Update_Sub_Object_
+            // Transforms` gives its sub-objects; the model is then in the world
             if let Some(r) = self.drawables.drawables.get(&id).and_then(|d| d.draw_modules.first()).and_then(|dm| dm.render_object.as_ref()) {
-                r.pose_render_model(m);
-            }
-            // (#180) posed as upstream's render object poses itself (animobj.h's inline `Anim_Update`): a raw animation
-            // through the raw fast path at one integer frame, as the live render object (`RenderObj`) does
-            let root = Matrix3D::IDENTITY;
-            let posed = match &c.anim {
-                Some((name, frame)) => match art.assets.peek_anim(name) {
-                    Some(a) => m.update_render_obj(&root, Some((a, &art.assets, *frame))),
-                    None => m.update_render_obj::<AssetManager>(&root, None),
-                },
-                None => m.update_render_obj::<AssetManager>(&root, None),
-            };
-            if let Err(e) = posed {
-                self.missing.insert(c.model.clone(), format!("posing: {e}"));
-                Self::retire(&mut self.instances, &mut self.removed, id);
+                let root = r.pose_render_model(m);
+                self.drawn_roots.insert(id, root);
             }
         }
+        self.drawn_roots.retain(|id, _| self.instances.contains_key(id));
     }
 }
 
@@ -776,11 +808,16 @@ mod tests {
         asm::shutdown();
     }
 
-    /// The gate INI's `Object name` block renamed `Drawn<name>`, with `draw` (a `Draw` block) added.
+    /// The gate INI's `Object name` block renamed `Drawn<name>`, with `draw` (a `Draw` block) added. **(#181 item 9)**
+    /// And `Scale = 1.0`: the gate's templates set no `Scale`, so their asset scale is the constructor's 0 (as upstream's
+    /// `ThingTemplate()`, which leaves `m_assetScale` to its zero-filled pool; `initForLTA` sets 1), and `doDrawModule`
+    /// scales the render object's transform by it (`transformMtx.Scale(scale)` when it is not 1). The drawn model, now the
+    /// render object's live hierarchy under that transform, would be flattened to a point; the game's own templates set
+    /// `Scale`. Before #181 item 9 the drawn model ignored the transform and the zero did not show.
     fn drawn(name: &str, draw: &str) -> String {
         let start = INI.find(&format!("Object {name}\n")).expect("the template");
         let end = start + INI[start..].find("\nEnd\n").expect("its end") + 1;
-        format!("{}{draw}End\n", INI[start..end].replacen(&format!("Object {name}"), &format!("Object Drawn{name}"), 1))
+        format!("{}{draw}End\n", INI[start..end].replacen(&format!("Object {name}\n"), &format!("Object Drawn{name}\n  Scale = 1.0\n"), 1))
     }
 
     const RUNNER_DRAW: &str = " Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = Runner\n   IdleAnimation = Runner.Idle\n  End\n  \
@@ -823,6 +860,12 @@ ConditionState = FIRING_A\n   Model = SoldierFr\n   Animation = SoldierFr.Fire\n
     /// *Results (2026-11-13), first run:* 131 frames of `RUNNERMV.ROLL` drawn, every one equal to the fast path's; the
     /// interpolating path differs on 130 of them (the one whole frame agrees). With the pre-#180 call (`update`) put back
     /// by hand, the test failed at logic frame 3 (animation frame 0.33), as predicted.
+    ///
+    /// **#181 item 9 (2026-11-14):** the drawn hierarchy is now the render object's live one, in the world: it is
+    /// compared with the render object's own pivots (`RenderObj::live_pivot_transforms`, bit for bit, every pivot), and
+    /// the fast and interpolating poses are taken under the drawn root (`WorldDrawables::drawn_root`, the render object's
+    /// `Transform`) instead of the identity. Predicted before the run: as before (about 130 frames, all on the fast path
+    /// and equal to the live pivots, the interpolating path differing on at least 90 %).
     #[test]
     fn the_drawn_pose_of_a_raw_animation_takes_the_fast_path() {
         use rts_lockstep_engine::formats::w3d::assetmgr::HAnim;
@@ -855,10 +898,16 @@ ConditionState = FIRING_A\n   Model = SoldierFr\n   Animation = SoldierFr.Fire\n
             let a = art.assets.peek_anim(&name).expect("the roll is loaded");
             let HAnim::Raw(raw) = a else { panic!("a raw animation") };
             let drawn_tree = m.htree.as_ref().expect("an HLOD's hierarchy");
+            // (#181 item 9) the live hierarchy's pivots, and its root
+            let r = d.drawables.drawables.get(&runner).and_then(|x| x.draw_modules.first()).and_then(|dm| dm.render_object.as_ref()).expect("its render object");
+            let live: Vec<Vec<u32>> = r.live_pivot_transforms().iter().map(|m| m.to_array().iter().map(|v| v.to_bits()).collect()).collect();
+            assert_eq!(bits(drawn_tree).into_iter().map(|(m, _)| m).collect::<Vec<_>>(), live, "logic frame {f}: the live hierarchy");
+            let root = d.drawn_root(runner).expect("posed");
+            assert_eq!(root, r.transform);
             let mut fast = drawn_tree.clone();
-            fast.anim_update_raw(&Matrix3D::IDENTITY, raw, frame).unwrap();
+            fast.anim_update_raw(&root, raw, frame).unwrap();
             let mut interp = drawn_tree.clone();
-            interp.anim_update(&Matrix3D::IDENTITY, a, &art.assets, frame).unwrap();
+            interp.anim_update(&root, a, &art.assets, frame).unwrap();
             assert_eq!(bits(drawn_tree), bits(&fast), "logic frame {f}, animation frame {frame}: the raw fast path");
             seen += 1;
             interp_differs += usize::from(bits(drawn_tree) != bits(&interp));
@@ -1971,7 +2020,10 @@ UniformAxialDamping = 1.0\n BounceAmount = 30\n AccelerationPitchLimit = 10\n De
                     if let Some(i) = d.instance(truck) {
                         let tire = i.sub_objects.iter().position(|s| s.name.eq_ignore_ascii_case(b"TRUCKT.TIREFL")).unwrap();
                         let x = i.sub_object_transform(tire).unwrap();
-                        if (x.row[0][0] - 1.0).abs() > 1e-3 {
+                        // (#181 item 9) the drawn model is in the world: the tire's rotation against its root's (the
+                        // tire's bone is not turned in the base pose)
+                        let root = d.drawn_root(truck).expect("posed");
+                        if (0..3).any(|r| (0..3).any(|c| (x.row[r][c] - root.row[r][c]).abs() > 1e-3)) {
                             moved_tire = true;
                         }
                     }

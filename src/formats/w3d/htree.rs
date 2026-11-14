@@ -222,6 +222,17 @@ pub struct HTree {
 }
 
 impl HTree {
+    /// (#181 item 10) `new HTreeClass` then `Init_Default()` (htree.cpp:78-83, 85-104): the hierarchy an
+    /// `Animatable3DObjClass` gets when its definition names none (`htree_name[0] == 0`) or names one the asset manager
+    /// cannot find (animobj.cpp:107-121): one pivot, `Index` 0, no parent, `BaseTransform` and `Transform` the identity,
+    /// visible, named "RootTransform"; the tree's name empty (`Name[0] = 0`; the other bytes 0 here, as the zero-filled
+    /// allocation leaves them); `ScaleFactor` 1 (`Free()`).
+    pub fn init_default() -> HTree {
+        let mut name = [0u8; W3D_NAME_LEN];
+        name[..13].copy_from_slice(b"RootTransform");
+        HTree { name: [0; W3D_NAME_LEN], num_pivots: 1, pivots: vec![Pivot::new(name, None, Matrix3D::IDENTITY, 0)], scale_factor: 1.0 }
+    }
+
     /// `Num_Pivots()`.
     pub fn num_pivots(&self) -> i32 {
         self.num_pivots

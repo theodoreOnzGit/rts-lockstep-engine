@@ -243,7 +243,10 @@
 //! - **The render object** ([`RenderObj`]) is not the drawn one: it keeps the
 //!   bone captures and controls (`Capture_Bone`, `Control_Bone`) and the
 //!   sub-objects' hidden flags, and the client puts them on the render model
-//!   it draws ([`RenderObj::pose_render_model`]) before posing it. What the
+//!   it draws ([`RenderObj::pose_render_model`]) ~~before posing it~~
+//!   **Corrected 2026-11-14 (#181 item 9):** with its live hierarchy (the
+//!   pose the render object's own update left, in the world), which the
+//!   client draws as it stands. What the
 //!   bone functions read of a render object (bone and sub-object names, bone
 //!   indices, parents, transforms) is its [`Skeleton`], from the asset source.
 //! - **The pristine pose** is a fresh render object's (the asset source's),
@@ -2898,9 +2901,40 @@ impl RenderObj {
         self
     }
 
-    /// `Get_HTree()` is not `NULL`: an HLOD with a hierarchy.
+    /// `Get_HTree()` is not `NULL`: ~~an HLOD with a hierarchy~~ **Corrected 2026-11-14 (#181 item 10):** every HLOD.
+    /// An HLOD made from its definition (`HLodClass(const HLodDefClass &)`, hlod.cpp:1082-1083, which every HLOD the
+    /// game creates is) passes `HierarchyTreeName` to `Animatable3DObjClass`'s constructor, which gives it the default
+    /// hierarchy (`Init_Default`, [`HTree::init_default`]) when the name is empty or not found (animobj.cpp:107-121), so
+    /// its `HTree` is never `NULL`. Before, an HLOD whose source gave no hierarchy had none here.
     fn has_htree(&self) -> bool {
-        self.is_hlod && self.skeleton.as_ref().is_some_and(|k| k.has_htree())
+        if plant(10258) {
+            return self.is_hlod && self.skeleton.as_ref().is_some_and(|k| k.has_htree());
+        }
+        self.is_hlod
+    }
+
+    /// (#181 item 10) Whether the hierarchy is the default one (`Init_Default`): an HLOD whose skeleton has no bones (its
+    /// source named no hierarchy, or one the asset manager could not find) or whose asset source gave no skeleton.
+    fn has_default_htree(&self) -> bool {
+        self.has_htree() && !self.skeleton.as_ref().is_some_and(|k| k.has_htree())
+    }
+
+    /// (#181 item 10) `Get_Num_Bones()` (animobj.cpp:385-392: `HTree->Num_Pivots()`, 1 without a hierarchy; 0 for a
+    /// render object that is not an HLOD, `RenderObjClass`'s, rendobj.h:352): the skeleton's bones, or 1 for the
+    /// default hierarchy.
+    pub fn get_num_bones(&self) -> i32 {
+        if !self.is_hlod {
+            return 0;
+        }
+        if self.has_default_htree() && !plant(10259) {
+            return 1;
+        }
+        self.skeleton.as_ref().map_or(1, |k| k.bones.len() as i32)
+    }
+
+    /// (#181 item 10) Whether `bone` is one of the hierarchy's pivots (`0 <= bone < Num_Pivots()`).
+    fn bone_in_range(&self, bone: i32) -> bool {
+        self.has_htree() && bone >= 0 && bone < self.get_num_bones()
     }
 
     /// (#171) `Get_Bone_Index(bonename)`: an HLOD's hierarchy's (`HTreeClass::Get_Bone_Index`, htree.cpp:922-930: the
@@ -2922,7 +2956,9 @@ impl RenderObj {
         if !self.has_htree() {
             return Matrix3D::IDENTITY;
         }
-        let k = self.skeleton.as_ref().expect("a hierarchy");
+        // (#181 item 10) the default hierarchy has no skeleton bones: the identity, as before (only planted paths read
+        // this; see the gaps of #181 item 10)
+        let Some(k) = self.skeleton.as_ref() else { return Matrix3D::IDENTITY };
         usize::try_from(boneindex).ok().and_then(|b| k.bones.get(b)).map_or(Matrix3D::IDENTITY, |b| b.transform)
     }
 
@@ -2945,19 +2981,39 @@ impl RenderObj {
     /// transforms of the last update; before the first one, the identity for each of the skeleton's bones (upstream's
     /// `new HTreeClass(*source)` copies the loaded tree, whose pivots' `Transform` is the identity, `PivotClass()`).
     /// Empty without a skeleton.
+    ///
+    /// **(#181 item 10)** An HLOD with the default hierarchy has its one pivot (the identity before the first update);
+    /// a render object that is not an HLOD, none.
     pub fn live_pivot_transforms(&self) -> Vec<Matrix3D> {
-        match (&self.live_tree, &self.skeleton) {
-            (Some(t), _) => t.pivots.iter().map(|p| p.transform).collect(),
-            (None, Some(k)) => vec![Matrix3D::IDENTITY; k.bones.len()],
-            (None, None) => Vec::new(),
+        match &self.live_tree {
+            Some(t) => t.pivots.iter().map(|p| p.transform).collect(),
+            None if self.has_htree() => vec![Matrix3D::IDENTITY; self.get_num_bones().max(0) as usize],
+            None => Vec::new(),
         }
     }
 
     /// (#179) The live hierarchy, made from the skeleton the first time (`new HTreeClass(*source)`: the pivots as the
     /// asset source scaled them, their transforms the identity), with the render object's bone captures and controls on
-    /// its pivots (`Capture_Bone`/`Control_Bone`/`Release_Bone` wrote them to the pivots upstream). `None` without a
-    /// skeleton with bones (an HLOD whose source gave none, a mesh).
+    /// its pivots (`Capture_Bone`/`Control_Bone`/`Release_Bone` wrote them to the pivots upstream). ~~`None` without a
+    /// skeleton with bones (an HLOD whose source gave none, a mesh).~~ **Corrected 2026-11-14 (#181 item 10):** an HLOD
+    /// without a skeleton with bones (its source named no hierarchy, or one not found) has upstream's default one
+    /// ([`HTree::init_default`], `Init_Default`); `None` only for a render object that is not an HLOD (a mesh).
     fn prepared_tree(&mut self) -> Option<&mut HTree> {
+        if self.has_default_htree() {
+            if self.live_tree.as_ref().is_none_or(|t| t.num_pivots != 1) {
+                self.live_tree = Some(HTree::init_default());
+            }
+            let c = self.bone_controls.get(&0).copied().unwrap_or_default();
+            let tree = self.live_tree.as_mut().expect("made above");
+            let p = &mut tree.pivots[0];
+            p.is_captured = c.captured;
+            p.cap_transform = c.transform;
+            p.world_space_translation = c.world_space_translation;
+            return Some(tree);
+        }
+        if !self.is_hlod {
+            return None;
+        }
         let k = self.skeleton.clone().filter(|k| !k.bones.is_empty())?;
         let stale = self.live_tree.as_ref().is_none_or(|t| t.num_pivots as usize != k.bones.len()) || plant(9819);
         if stale {
@@ -3118,7 +3174,9 @@ impl RenderObj {
         }
         match &self.live_tree {
             Some(t) => t.get_transform(boneindex),
-            // an HLOD whose source gave no hierarchy (upstream's default one: pivot 0, the transform)
+            // ~~an HLOD whose source gave no hierarchy (upstream's default one: pivot 0, the transform)~~ **Corrected
+            // 2026-11-14 (#181 item 10):** an HLOD always has its live hierarchy after the update (the default one,
+            // `Init_Default`, when its source gave none); not reached
             None => Ok(self.transform),
         }
     }
@@ -3155,7 +3213,7 @@ impl RenderObj {
     /// out of range is an upstream assertion, ignored). (#179) The hierarchy stays valid (upstream's does not invalidate
     /// it: the capture shows at the next update).
     pub fn capture_bone(&mut self, boneindex: i32) {
-        if self.has_htree() && self.skeleton.as_ref().is_some_and(|k| boneindex >= 0 && (boneindex as usize) < k.bones.len()) {
+        if self.bone_in_range(boneindex) {
             self.bone_controls.entry(boneindex).or_default().captured = true;
         }
     }
@@ -3163,7 +3221,7 @@ impl RenderObj {
     /// (#179) `Release_Bone(boneindex)` (animobj.cpp:710-715, htree.cpp:1016-1031: `IsCaptured = false`, the control kept;
     /// the hierarchy stays valid).
     pub fn release_bone(&mut self, boneindex: i32) {
-        if self.has_htree() && self.skeleton.as_ref().is_some_and(|k| boneindex >= 0 && (boneindex as usize) < k.bones.len()) && !plant(9817) {
+        if self.bone_in_range(boneindex) && !plant(9817) {
             self.bone_controls.entry(boneindex).or_default().captured = false;
         }
     }
@@ -3176,7 +3234,7 @@ impl RenderObj {
     /// (#179) `Control_Bone(bindex, objtm, world_space_translation)` (animobj.cpp:752-765): the pivot's control, and
     /// with a hierarchy (an HLOD) the hierarchy no longer valid.
     pub fn control_bone_world(&mut self, bindex: i32, objtm: &Matrix3D, world_space_translation: bool) {
-        if self.has_htree() && self.skeleton.as_ref().is_some_and(|k| bindex >= 0 && (bindex as usize) < k.bones.len()) {
+        if self.bone_in_range(bindex) {
             let c = self.bone_controls.entry(bindex).or_default();
             c.transform = *objtm;
             c.world_space_translation = world_space_translation;
@@ -3203,22 +3261,61 @@ impl RenderObj {
         self.sub_object_hidden.get(i).copied().unwrap_or(false)
     }
 
-    /// The render object's bone controls and sub-object visibility put on a render model made
+    /// ~~The render object's bone controls and sub-object visibility put on a render model made
     /// for the same name (the client's): every pivot of its hierarchy captured and controlled
     /// as this object's are (the others released, their control the identity), and each
     /// sub-object hidden as this object's is, and given this object's material overrides' UV
     /// offsets (GitHub #41; none on the others). Call before posing it ([`RenderModel::update`]).
-    /// New (upstream's render object is the drawn one).
-    pub fn pose_render_model(&self, m: &mut RenderModel) {
-        if let Some(tree) = &mut m.htree {
-            for i in 0..tree.num_pivots().max(0) {
-                let c = self.bone_controls.get(&i).copied().unwrap_or_default();
-                let as_made = tree.pivot(i as usize).is_some_and(|p| !p.is_captured && p.cap_transform == Matrix3D::IDENTITY && !p.world_space_translation);
-                if c == BoneControl::default() && as_made {
-                    continue;
+    /// New (upstream's render object is the drawn one).~~ **Corrected 2026-11-14 (#181 item 9):** the render object's
+    /// drawn state put on a render model made for the same name (the client's, [`RenderModel::create`]), which is then
+    /// drawn as it stands (not posed again). The sub-object part of `HLodClass::Update_Sub_Object_Transforms`
+    /// (hlod.cpp:3351-3388: each sub-object `Set_Transform(HTree->Get_Transform(bone))` and
+    /// `Set_Animation_Hidden(!HTree->Get_Visibility(bone))`): the model's hierarchy takes the live hierarchy's pivots
+    /// ([`RenderObj::live_pivot_transforms`] and their visibility; the default hierarchy, `Init_Default`, for an HLOD whose
+    /// source gave none, #181 item 10), so the sub-objects' transforms ([`RenderModel::bone_transform`]) and animation
+    /// visibility ([`RenderModel::sub_object_animation_hidden`]) are what the render object's own last update left them,
+    /// in the world (under its `Transform`), as upstream draws them; a skin deforms over the same pivots. Then, as before,
+    /// each sub-object hidden as this object's is (`Is_Hidden()`) and given this object's material overrides' UV offsets
+    /// (GitHub #41; none on the others). Returns the transform a lone mesh (no hierarchy) is drawn at: the render
+    /// object's `Transform` (`MeshClass` draws at its own). The model's pivots are those of the last update: call after
+    /// the render (`Render`, which updates a hierarchy that is not valid). The hierarchy's pivots are copied, not their
+    /// bone controls: the live update already applied them. New (upstream's render object is the drawn one); the port's
+    /// drawn model is a separate object because it carries the meshes, which the render object does not.
+    pub fn pose_render_model(&self, m: &mut RenderModel) -> Matrix3D {
+        if plant(10256) {
+            // the pre-#181-item-9 drawn pose: the model's own hierarchy posed at the animation's frame, under the identity
+            if let Some(tree) = &mut m.htree {
+                for i in 0..tree.num_pivots().max(0) {
+                    let c = self.bone_controls.get(&i).copied().unwrap_or_default();
+                    let _ = tree.control_bone(i, &c.transform, c.world_space_translation);
+                    let _ = if c.captured { tree.capture_bone(i) } else { tree.release_bone(i) };
                 }
-                let _ = tree.control_bone(i, &c.transform, c.world_space_translation);
-                let _ = if c.captured { tree.capture_bone(i) } else { tree.release_bone(i) };
+            }
+            let _ = match self.anim.as_ref().and_then(|a| a.motion.data.clone().map(|d| (d, a.frame))) {
+                Some((d, frame)) => m.update_render_obj(&Matrix3D::IDENTITY, Some((&*d.motion, &*d, frame))),
+                None => m.update_render_obj::<AnimData>(&Matrix3D::IDENTITY, None),
+            };
+        } else if self.is_hlod {
+            let live = match &self.live_tree {
+                Some(t) => t.pivots.iter().map(|p| (p.transform, p.is_visible || plant(10257))).collect(),
+                None => self.live_pivot_transforms().into_iter().map(|t| (t, true)).collect::<Vec<_>>(),
+            };
+            let fits = m.htree.as_ref().is_some_and(|t| t.num_pivots() as usize == live.len() && t.pivots.len() == live.len());
+            if !fits {
+                // the model's source gave no hierarchy (or another): the render object's own (the default one)
+                m.htree = match &self.live_tree {
+                    Some(t) => Some(t.clone()),
+                    None if self.has_default_htree() && !plant(10258) => Some(HTree::init_default()),
+                    None => m.htree.take(),
+                };
+            }
+            if let Some(tree) = &mut m.htree {
+                if tree.pivots.len() == live.len() {
+                    for (p, (t, v)) in tree.pivots.iter_mut().zip(live) {
+                        p.transform = t;
+                        p.is_visible = v;
+                    }
+                }
             }
         }
         if m.sub_objects.len() == self.sub_object_hidden.len() {
@@ -3228,6 +3325,11 @@ impl RenderObj {
         }
         for (i, s) in m.sub_objects.iter_mut().enumerate() {
             s.uv_offset = self.material_overrides.get(&i).copied();
+        }
+        if plant(10260) {
+            Matrix3D::IDENTITY
+        } else {
+            self.transform
         }
     }
 
@@ -5775,11 +5877,14 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
                 let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false, particles: None };
                 m.replace_model_condition_state(&flags(bits), &mut env);
             }
-            /// The render model the client draws for `m`, with `m`'s controls and visibility, posed.
+            /// The render model the client draws for `m`, with `m`'s controls and visibility, posed. **(#181 item 9)**
+            /// As the client poses it: the render object rendered (its hierarchy updated, here on a copy), then its live
+            /// hierarchy put on the model (under its transform, the identity here).
             fn posed(&mut self, m: &W3DModelDraw) -> RenderModel {
                 let mut model = RenderModel::create(&mut self.am, &self.fs, b"gunt").unwrap().unwrap();
-                m.render_object.as_ref().unwrap().pose_render_model(&mut model);
-                model.update::<AssetManager>(&Matrix3D::IDENTITY, None).unwrap();
+                let mut r = m.render_object.clone().unwrap();
+                r.render(0);
+                r.pose_render_model(&mut model);
                 model
             }
         }
@@ -6943,6 +7048,110 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         assert_eq!(combo.read().unwrap().get_prev_frame(0).unwrap(), 2.0);
         asm::shutdown();
         asm::set_sound_library(None);
+    }
+
+    /// GitHub #181 items 9 and 10: the client's drawn model is the render object's live hierarchy (hlod.cpp:3351-3388,
+    /// `HLodClass::Update_Sub_Object_Transforms`: each sub-object at `HTree->Get_Transform(bone)`, animation-hidden by
+    /// `!HTree->Get_Visibility(bone)`), and an HLOD whose source names no hierarchy has the default one (animobj.cpp:
+    /// 107-121, htree.cpp:85-104 `Init_Default`). Synthetic files: hierarchy `VIS` (ROOTTRANSFORM, ARM at (0, 0, 5)),
+    /// HLOD `VIS` (a box on the arm, a base on the root), HLOD `NOH` naming no hierarchy (the base on bone 0); a raw
+    /// animation moving the arm along x by 0, 1, 2 whose visibility channel hides the arm at frame 1.
+    ///
+    /// Predictions, written before the first run: at frame 1 under the transform T (a turn of 0.5 about z, then
+    /// (100, 200, 0)) the drawn model's pivots are the live ones bit for bit, the box at T (1, 0, 5) and animation-hidden,
+    /// the base not; the posing returns T. `NOH`: 1 bone, the default hierarchy's pivot the identity before an update and
+    /// T after; its drawn model (no hierarchy of its own) gets the default one, the base at T; capturing bone 0 is kept;
+    /// its animation moves on in a render (frame 0 to 3 at 100 ms, 30 frames a second, looping over 3: frame 0, wrapping;
+    /// at 50 ms frame 1.5). A lone mesh's drawn transform is its render object's.
+    #[test]
+    fn the_drawn_model_is_the_live_hierarchy() {
+        use crate::common::file_system::MemoryDevice;
+        use crate::formats::w3d::assetmgr::W3dFileFactory;
+        use crate::formats::w3d::hanim::NodeMotion;
+        use crate::formats::w3d::motchan::{BitChannel, MotionChannel};
+        use crate::formats::w3d::synth::{hlod_w3d, htree_w3d, MeshSpec, PivotSpec};
+        use crate::formats::w3d::w3d_file::ANIM_CHANNEL_X;
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let mut f = htree_w3d(b"VIS", &[
+            PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
+            PivotSpec { name: b"ARM".to_vec(), parent: 0, translation: [0.0, 0.0, 5.0], rotation: ident },
+        ]);
+        f.extend(MeshSpec::cuboid(b"VIS", b"BOX", [-1.0; 3], [1.0; 3]).to_w3d());
+        f.extend(MeshSpec::cuboid(b"VIS", b"BASE", [-2.0; 3], [2.0; 3]).to_w3d());
+        f.extend(hlod_w3d(b"VIS", b"VIS", &[(b"VIS.BOX", 1), (b"VIS.BASE", 0)]));
+        let mut d = MemoryDevice::new();
+        d.insert(b"Art/W3D/vis.w3d", f);
+        d.insert(b"Art/W3D/noh.w3d", hlod_w3d(b"NOH", b"", &[(b"VIS.BASE", 0)]));
+        let fs = FileSystem::new(d);
+        let mut am = AssetManager::new_game(W3dFileFactory::default());
+        let mut raw = crate::formats::w3d::hanim::tests::raw_anim();
+        let x = MotionChannel { pivot_idx: 1, type_: ANIM_CHANNEL_X, vector_len: 1, first_frame: 0, last_frame: 2, data: vec![0.0, 1.0, 2.0] };
+        let vis = BitChannel { pivot_idx: 1, type_: 0, default_val: 1, first_frame: 0, last_frame: 2, bits: vec![0b101] };
+        raw.node_motion.insert(1, NodeMotion { x: Some(x), vis: Some(vis), ..Default::default() });
+        let data = Arc::new(AnimData { motion: Arc::new(HAnim::Raw(raw)), poses: Vec::new(), embedded_sound_bone_index: Default::default() });
+        let handle = AnimHandle { name: b"VIS.WAVE".to_vec(), num_frames: 3, frame_rate: 30.0, data: Some(data) };
+        let mut t = Matrix3D::IDENTITY;
+        t.translate(100.0, 200.0, 0.0);
+        t.rotate_z(0.5);
+        let bits = |m: &Matrix3D| m.to_array().map(f32::to_bits);
+
+        // an HLOD with its hierarchy
+        let k = W3dFiles { assets: &mut am, fs: &fs }.skeleton(b"VIS", None, 1.0);
+        let mut r = RenderObj::new(b"VIS", true).with_skeleton(k);
+        assert_eq!(r.get_num_bones(), 2);
+        r.set_transform(&t);
+        r.set_animation(Some(handle.clone()), 1.0, AnimMode::Manual, 0);
+        r.render(0);
+        let mut model = RenderModel::create(&mut am, &fs, b"VIS").unwrap().unwrap();
+        let root = r.pose_render_model(&mut model);
+        assert_eq!(bits(&root), bits(&t));
+        let live = r.live_pivot_transforms();
+        let drawn: Vec<Matrix3D> = (0..2).map(|b| model.bone_transform(b).unwrap()).collect();
+        assert_eq!(drawn.iter().map(bits).collect::<Vec<_>>(), live.iter().map(bits).collect::<Vec<_>>(), "the live hierarchy");
+        let arm = r.get_bone_transform(1, 0);
+        assert_eq!(bits(&drawn[1]), bits(&arm));
+        let want = t.mul_vector3(&crate::ww::vector3::Vector3::new(1.0, 0.0, 5.0));
+        let got = drawn[1].get_translation();
+        assert!((got.x - want.x).abs() < 1e-4 && (got.y - want.y).abs() < 1e-4 && (got.z - want.z).abs() < 1e-4, "{got:?} {want:?}");
+        let (box_i, base_i) = (0usize, 1usize);
+        assert!(model.sub_object_animation_hidden(box_i), "the arm is hidden at frame 1");
+        assert!(!model.sub_object_animation_hidden(base_i));
+        assert_eq!(bits(&model.sub_object_transform(base_i).unwrap()), bits(&t));
+        // frame 2: shown again
+        r.set_animation(Some(handle.clone()), 2.0, AnimMode::Manual, 0);
+        r.render(0);
+        r.pose_render_model(&mut model);
+        assert!(!model.sub_object_animation_hidden(box_i));
+
+        // an HLOD whose source names no hierarchy: the default one
+        let k = W3dFiles { assets: &mut am, fs: &fs }.skeleton(b"NOH", None, 1.0);
+        assert!(k.as_ref().is_some_and(|k| k.bones.is_empty()), "the pristine skeleton is as before: no bones");
+        let mut r = RenderObj::new(b"NOH", true).with_skeleton(k);
+        assert_eq!(r.get_num_bones(), 1);
+        assert_eq!(r.live_pivot_transforms(), vec![Matrix3D::IDENTITY]);
+        r.capture_bone(0);
+        assert!(r.bone_controls.get(&0).is_some_and(|c| c.captured), "Capture_Bone(0) on the default hierarchy");
+        r.release_bone(0);
+        r.set_transform(&t);
+        r.set_animation(Some(handle.clone()), 0.0, AnimMode::Loop, 0);
+        r.render(50);
+        assert_eq!(r.anim.as_ref().unwrap().frame, 30.0f32 * 50.0 * 0.001, "the animation moves on in a render");
+        assert_eq!(r.live_pivot_transforms().iter().map(bits).collect::<Vec<_>>(), vec![bits(&t)]);
+        let mut model = RenderModel::create(&mut am, &fs, b"NOH").unwrap().unwrap();
+        assert!(model.htree.is_none(), "the model's own source gives none");
+        r.pose_render_model(&mut model);
+        assert_eq!(model.htree.as_ref().map(|h| h.num_pivots), Some(1));
+        assert_eq!(bits(&model.sub_object_transform(0).unwrap()), bits(&t));
+        assert!(!model.sub_object_animation_hidden(0));
+        assert_eq!(bits(&r.get_bone_transform(0, 50)), bits(&t));
+
+        // a lone mesh: drawn at its render object's transform
+        let mut r = RenderObj::new(b"VIS.BASE", false);
+        assert_eq!(r.get_num_bones(), 0);
+        r.set_transform(&t);
+        let mut model = RenderModel::create(&mut am, &fs, b"VIS.BASE").unwrap().unwrap();
+        assert_eq!(bits(&r.pose_render_model(&mut model)), bits(&t));
+        assert!(model.htree.is_none());
     }
 
     #[test]

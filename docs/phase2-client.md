@@ -127,6 +127,43 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#181 items 9 and 10 (2026-11-14, GitHub #181): the drawn model is the render object's live hierarchy; an HLOD with
+no hierarchy in its source has upstream's default one.**
+- **What was still open.** Item 9: after #180 (92c07cc) the client's `WorldDrawables::pose` still posed its own
+  `RenderModel` copy with `update_render_obj` at the live render object's `(animation, frame)`, under the identity, with
+  the bone controls copied: blends and combos were drawn as the base pose, a bone controlled with a world-space
+  translation and the rounding of the root differed, the animation's visibility never hid a sub-object, and the
+  emitters were placed by the snapshot's transform. Item 10: `RenderObj::has_htree` was false for an HLOD whose
+  skeleton had no bones, so it had no hierarchy (`Get_Num_Bones` 0, captures of bone 0 ignored, no live pivots); its
+  animation already moved on in queries and renders, as upstream's does.
+- **Upstream:** hlod.cpp:3351-3388 `HLodClass::Update_Sub_Object_Transforms` gives each sub-object
+  `Set_Transform(HTree->Get_Transform(bone))` and `Set_Animation_Hidden(!HTree->Get_Visibility(bone))` after the
+  hierarchy's update (`Render`, `Get_Bone_Transform`); hlod.cpp:1082-1083 passes `HierarchyTreeName` to
+  `Animatable3DObjClass(const char *)`, which (animobj.cpp:107-121) makes `new HTreeClass` + `Init_Default()`
+  (htree.cpp:85-104: one pivot "RootTransform", identity, visible) for an empty name or one not found; `HTree` is
+  `NULL` only for a `NULL` name. `Get_Num_Bones` answers `Num_Pivots()` (1 for the default tree).
+- **Translated / changed:** `HTree::init_default`; `RenderObj::has_htree` is `is_hlod`, the live hierarchy of an HLOD
+  without skeleton bones is the default one, `RenderObj::get_num_bones`; `RenderObj::pose_render_model` now copies the
+  live hierarchy's pivots and visibility (in the world, under the render object's `Transform`) into the drawn model
+  and returns that transform; `RenderModel::sub_object_animation_hidden`. The client (`client/src/drawables.rs`) no
+  longer poses the model: it keeps the root (`drawn_root`), gives the emitters and the pick the world transforms
+  (`drawn_sub_object_transform`); the app takes the root off each part and hides animation-hidden parts.
+  `W3dFiles::skeleton` and `RenderModel::update` (the logic's art bones, #175) are untouched.
+- **Results:** `differential_w3d::drawn_sub_objects_match_upstream` (new ops 62, 63; animobj.cpp's constructor,
+  hlod.cpp's `Update_Sub_Object_Transforms` and hlod.h's node classes cut verbatim by build.rs): 20,000 files, 576,218
+  ops, 64,575 HLODs (33,970 on the default hierarchy), 205,024 drawn sub-objects (1,306 animation-hidden), **0
+  mismatches, max ULP 0**. Plants 10256-10260 caught (173, 8, 128, 112, 174 of 300 files) and by the lib test
+  `the_drawn_model_is_the_live_hierarchy`. The other 41 `differential_w3d` tests unchanged (42 passed). Client:
+  `the_drawn_pose_of_a_raw_animation_takes_the_fast_path` now also checks the drawn pivots equal the live ones: 131
+  frames, all equal, 130 differ from the interpolated pose. Lib 1,271 passed; client 108 passed; `differential_model_draw_anim` 20,000, 0
+  mismatches; `differential_logic_bones` 0 / 0 (unchanged); gate (a) PASS, last CRC 0bf44067; `src/logic` unchanged.
+- **Found:** the gate's templates set no `Scale`, so their asset scale is 0 (as upstream's `ThingTemplate()`), which
+  `doDrawModule` puts on the render object's transform; with the drawn model now that transform's, three client tests
+  drew collapsed units. Their fixture (`drawn()`) now sets `Scale = 1.0`.
+- **Gaps:** `get_bone_transform_scaled` (plant paths only) answers the identity for the default hierarchy;
+  `Get_Bone_Name`, the LOD switch and skin sub-objects' own transforms not translated; the pick does not leave out
+  animation-hidden sub-objects; the app's matrices are not tested (GUI glue).
+
 **#163 item 3 (2026-11-14, GitHub #163, the gaps of #162): `HAnimComboDataClass`'s copy constructor and `Copy()`
 against upstream; which of #163's items are still open.**
 - **Which items were open.** Done before this change: item 8 (the beacon in saved games) and item 10 (`SwayClientUpdate`,
@@ -949,8 +986,10 @@ changed), and a drawable with no object.**
   sway as upstream's do. `DrawFacts::drawable_transform` keeps `getTransformMatrix()` apart for `nukeCurrentRender`.
 - **The renderer:** the Bevy app puts `Drawable::draw_local_matrix` (the instance matrix, then the physics) after the
   object's interpolated transform (`WorldDrawables::draw_xform`, formerly `physics_xform`). The physics is applied once:
-  the drawn model is posed under the identity root and never reads `RenderObj::transform`. The sway's tilt is drawn for
-  the first time.
+  ~~the drawn model is posed under the identity root and never reads `RenderObj::transform`.~~ **Corrected 2026-11-14
+  (#181 item 9):** the drawn model is now the render object's live hierarchy, under `RenderObj::transform` (the root,
+  physics included); the app takes that root off each part (`WorldDrawables::drawn_root`), so the physics is still
+  applied once. The sway's tilt is drawn for the first time.
 - **Left as it was:** a bone query outside a draw still puts the render object at the drawable's transform first
   (`reactToTransformChange`'s, no instance matrix or physics), upstream's answer only for an object the logic moved
   since the last draw (#179 item 3's gaps).
@@ -964,8 +1003,10 @@ changed), and a drawable with no object.**
   (`CLASSID_HRAWANIM`) through `HTreeClass`'s raw fast path at one integer frame (`Float_To_Long(frame)`), the others
   through the virtual `Anim_Update`. The dispatch #179 wrote inside `RenderObj::update_sub_object_transforms` is now one
   helper, `HTree::anim_update_animobj`, used by the live render object and by the new
-  `RenderModel::update_render_obj`, which `WorldDrawables::pose` (`client/src/drawables.rs`) now calls instead of
-  `RenderModel::update`. Before, the drawn pose interpolated a raw animation between frames.
+  `RenderModel::update_render_obj`, which `WorldDrawables::pose` (`client/src/drawables.rs`) ~~now calls~~ called
+  instead of `RenderModel::update`. Before, the drawn pose interpolated a raw animation between frames. **Corrected
+  2026-11-14 (#181 item 9):** `WorldDrawables::pose` no longer poses the model itself: it copies the live render
+  object's hierarchy (`RenderObj::pose_render_model`); `update_render_obj` stays for `differential_w3d`'s op 50.
 - **Left alone:** `RenderModel::update` and `W3dFiles::skeleton`, which feed the logic's art bones (#175). Their
   callers ask only frame 0 or `NumFrames - 1`, and at integer frames the two paths agree bit for bit under the
   default `Win32Fistp` (lib test `integer_frames_agree_on_both_paths_in_win32`: 94,308 poses, 0 differ; under the

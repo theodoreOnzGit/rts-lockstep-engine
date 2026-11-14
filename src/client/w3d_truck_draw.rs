@@ -836,8 +836,11 @@ mod tests {
         assert_eq!(truck(&m2).front_wheel_rotation, 1.0);
 
         let mut model = crate::formats::w3d::render::RenderModel::create(&mut rig.am, &rig.fs, b"truckt").unwrap().unwrap();
-        m.render_object.as_ref().unwrap().pose_render_model(&mut model);
-        model.update::<AssetManager>(&Matrix3D::IDENTITY, None).unwrap();
+        // (#181 item 9) as the client poses it: the render object rendered (a copy), then its live hierarchy put on the
+        // model (under its transform, the identity here)
+        let mut r = m.render_object.clone().unwrap();
+        r.render(0);
+        r.pose_render_model(&mut model);
         let tire = model.sub_objects.iter().position(|s| s.name.eq_ignore_ascii_case(b"TRUCKT.TIREFL")).unwrap();
         let posed = model.sub_object_transform(tire).unwrap();
         let mut want = Matrix3D::IDENTITY;

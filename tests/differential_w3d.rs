@@ -4272,6 +4272,8 @@ struct EvalWorld {
     /// (#179) the animations as the render objects share them (one object each, as upstream's `HAnimClass`: their
     /// channels' caches carry over from one render object's evaluation to another's), made on first use
     anim_datas: Vec<std::sync::Arc<md::AnimData>>,
+    /// (#181 items 9, 10) the drawn model of each HLOD op 62 made, by its render object's index
+    drawn: BTreeMap<usize, rts_lockstep_engine::formats::w3d::render::RenderModel>,
 }
 
 /// wrap_w3d_eval.cpp's pose hook: the first raw or compressed animation of
@@ -4286,7 +4288,7 @@ impl PoseLookup for EvalWorld {
 /// with `mode`'s `Float_To_Long` (#19).
 fn rust_eval_load(data: &[u8], mode: FloatToLongMode) -> W3dResult<(Log, EvalWorld)> {
     let mut log = vec![b'L'];
-    let mut w = EvalWorld { trees: Vec::new(), anims: Vec::new(), combos: Vec::new(), maps: Vec::new(), datas: Vec::new(), robjs: Vec::new(), now: 0, anim_datas: Vec::new(), sound_log: false };
+    let mut w = EvalWorld { trees: Vec::new(), anims: Vec::new(), combos: Vec::new(), maps: Vec::new(), datas: Vec::new(), robjs: Vec::new(), now: 0, anim_datas: Vec::new(), sound_log: false, drawn: BTreeMap::new() };
     let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
     while c.open_chunk()? {
         let trees = &w.trees;
@@ -4460,6 +4462,8 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
         // (#163 item 3) the entries' copy constructor and Copy()
         59..=61 => rust_combo_data_op(w, r, log, op)?,
         40..=49 | 51 | 52 => rust_robj_op(w, r, log, op)?,
+        // (#181 items 9, 10) HLODs and their drawn sub-objects
+        62 | 63 => rust_hlod_op(w, r, log, op)?,
         // (#181 item 3) the embedded sounds
         53..=58 => rust_sound_op(w, r, log, op)?,
         // (#180) the client's drawn pose: `RenderModel::update_render_obj` on a copy of the tree, under the identity
@@ -4832,6 +4836,13 @@ fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
             // (#163 item 3)
             59 | 61 => 2,
             60 => 4,
+            // (#181 items 9, 10) kind, tree, scale, the two counts, then the bones
+            62 => {
+                let mut r = ScriptReader { s: script, i: i + 1 };
+                let (_, _, _) = (r.u(), r.u(), r.u());
+                5 + (r.u() + r.u()) as usize
+            }
+            63 => 1,
             _ => unreachable!(),
         };
         v.push((i, i + 1 + 4 * words));
@@ -4970,10 +4981,11 @@ fn rust_robj_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: 
                     let combo = (c >= 0).then(|| md::ModeCombo { combo: w.combos[c as usize].clone(), motions: std::sync::Arc::new(w.anim_datas.clone()) });
                     w.robjs[ri].0.set_animation_combo(combo);
                 }
-                // (#18) every bone's `Get_Bone_Transform`, 0 to `Get_Num_Bones()` (the hierarchy's pivots)
+                // (#18) every bone's `Get_Bone_Transform`, 0 to `Get_Num_Bones()` (the hierarchy's pivots; #181 item 10:
+                // the render object's own answer, 1 for the default hierarchy)
                 52 => {
                     let ro = &mut w.robjs[ri].0;
-                    let n = ro.skeleton.as_ref().map_or(0, |k| k.bones.len());
+                    let n = ro.get_num_bones().max(0) as usize;
                     let mut ms = Vec::with_capacity(n);
                     for b in 0..n {
                         ms.push(ro.try_get_bone_transform(b as i32, now)?);
@@ -5012,6 +5024,84 @@ fn rust_robj_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: 
             }
             let (ro, clean) = &w.robjs[ri];
             log_robj(log, ro, *clean);
+        }
+    }
+    Ok(())
+}
+
+/// (#181 items 9, 10) What the HLOD ops reached: HLODs made with a loaded hierarchy and with the default one, drawn
+/// sub-objects compared, and of them animation-hidden ones (for the test's report).
+static HLOD_COVERAGE: [std::sync::atomic::AtomicU64; 4] =
+    [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)];
+
+/// (#181 items 9, 10) A mesh for the drawn models' sub-objects (any: the comparison reads only their bones): a cube.
+fn hlod_sub_mesh() -> MeshModel {
+    static M: std::sync::OnceLock<MeshModel> = std::sync::OnceLock::new();
+    M.get_or_init(|| {
+        let data = rts_lockstep_engine::formats::w3d::synth::MeshSpec::cuboid(b"H", b"SUB", [-1.0; 3], [1.0; 3]).to_w3d();
+        let mut c = ChunkLoad::new(GameFile::new(&data).unwrap());
+        assert!(c.open_chunk().unwrap());
+        let m = mesh::load_w3d(&mut c, &MeshLoadOptions { prelit_mode: PrelitMode::Vertex }).unwrap().expect("a mesh");
+        MeshModel::from_mesh(&m).unwrap()
+    })
+    .clone()
+}
+
+/// (#181 items 9, 10) Ops 62 and 63 (see `ref_w3d_eval`) on the port: 62 an HLOD render object (`RenderObj`, its
+/// skeleton the loaded tree's scaled as op 40's, or none for the default hierarchy: what `W3dFiles::skeleton` gives an
+/// HLOD whose hierarchy is not found) and its drawn model as `RenderModel::create` makes it (the loaded tree unscaled,
+/// or no hierarchy; one sub-object per bone, the LOD's then the additional ones); 63 the drawn model posed by
+/// `RenderObj::pose_render_model` (the client's drawn pose), each sub-object's `sub_object_transform` and
+/// `sub_object_animation_hidden`, then the transform `pose_render_model` returns.
+fn rust_hlod_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: u8) -> W3dResult<()> {
+    use rts_lockstep_engine::formats::w3d::render::{RenderModel, SubObject};
+    match op {
+        62 => {
+            let kind = r.u();
+            let t = r.u() as usize;
+            let scale = r.f();
+            let (nlod, nadd) = (r.u(), r.u());
+            let bones: Vec<i32> = (0..nlod + nadd).map(|_| r.u() as i32).collect();
+            // `htree_name[0] == 0` (an empty name) or not found: the default hierarchy
+            let tree = (kind == 0 && w.trees[t].name[0] != 0).then(|| w.trees[t].clone());
+            HLOD_COVERAGE[usize::from(tree.is_none())].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let k = match &tree {
+                Some(t0) => {
+                    let mut tr = t0.clone();
+                    md::scale_render_obj_hierarchy(&mut tr, scale);
+                    md::Skeleton { bones: md::Skeleton::bones_of(&tr), sub_objects: Vec::new(), scale_factor: tr.scale_factor }
+                }
+                None => md::Skeleton::default(),
+            };
+            w.robjs.push((md::RenderObj::new(b"H", true).with_skeleton(Some(k)).with_union_pointer_bytes(8), true));
+            let model = RenderModel {
+                name: b"H".to_vec(),
+                is_hlod: true,
+                htree: tree,
+                sub_objects: bones.iter().map(|&b| SubObject { name: b"H.SUB".to_vec(), bone_index: b, hidden: false, model: hlod_sub_mesh(), uv_offset: None }).collect(),
+                not_drawn: Vec::new(),
+                emitters: Vec::new(),
+                orphans: Vec::new(),
+                release_list: Vec::new(),
+                updates: 0,
+            };
+            w.drawn.insert(w.robjs.len() - 1, model);
+            let (ro, clean) = w.robjs.last().expect("pushed");
+            log_robj(log, ro, *clean);
+        }
+        _ => {
+            let ri = r.u() as usize;
+            let ro = &w.robjs[ri].0;
+            let m = w.drawn.get_mut(&ri).expect("an HLOD op 62 made");
+            let root = ro.pose_render_model(m);
+            p32(log, m.sub_objects.len() as u32);
+            for i in 0..m.sub_objects.len() {
+                log_m(log, &m.sub_object_transform(i)?);
+                log.push(u8::from(m.sub_object_animation_hidden(i)));
+                HLOD_COVERAGE[2].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                HLOD_COVERAGE[3].fetch_add(u64::from(m.sub_object_animation_hidden(i)), std::sync::atomic::Ordering::Relaxed);
+            }
+            log_m(log, &root);
         }
     }
     Ok(())
@@ -5966,6 +6056,181 @@ fn animobj_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
         }
     }
     s
+}
+
+/// GitHub #181 items 9 and 10: a script of HLODs (op 62) and the ops of [`animobj_script`] on them, with their drawn
+/// sub-objects (op 63) after any op one time in six. Each HLOD is made on a hierarchy a skeleton can hold ([`robj_ok`]) by
+/// its name (half the time when the file has one), or with an empty name or one not found (the default hierarchy), at
+/// [`animobj_script`]'s scales, with 0 to 3 sub-objects in its LOD and 0 to 2 additional ones, each on a bone of its
+/// hierarchy (bone 0 for the default one). The ops on it: the sync time, `Set_Animation` of any animation (or `NULL`)
+/// in any mode, `Set_Animation()`, a blend, `Get_Bone_Transform` of a bone in range, every bone (op 52, from
+/// `Get_Num_Bones`), `Set_Transform`, a bone captured and controlled or released, `Render` (hidden 1 in 5) and the
+/// frame-rate multiplier.
+fn hlod_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    let mut s = Vec::new();
+    let na = w.anims.len() as u32;
+    let ok: Vec<u32> = (0..w.trees.len() as u32).filter(|&t| robj_ok(&w.trees[t as usize])).collect();
+    if na == 0 {
+        return s;
+    }
+    let mut robjs: Vec<u32> = Vec::new();
+    let mut now = g.below(1000);
+    s.push(41);
+    w32(&mut s, now);
+    for _ in 0..1 + g.below(60) {
+        if robjs.is_empty() || g.below(12) == 0 {
+            let (kind, t) = if !ok.is_empty() && g.coin() { (0, ok[g.below(ok.len() as u32) as usize]) } else { (1 + g.below(2), 0) };
+            let npiv = if kind == 0 && w.trees[t as usize].name[0] != 0 { w.trees[t as usize].num_pivots as u32 } else { 1 };
+            s.push(62);
+            w32(&mut s, kind);
+            w32(&mut s, t);
+            let scale = match g.below(8) {
+                0..=2 => 1.0f32,
+                3 => 0.5,
+                4 => 2.0,
+                5 => [0.995f32, 1.005, 0.9899, 1.0101][g.below(4) as usize],
+                _ => g.g.uniform(0.25, 4.0),
+            };
+            w32(&mut s, scale.to_bits());
+            let (nlod, nadd) = (g.below(4), g.below(3));
+            w32(&mut s, nlod);
+            w32(&mut s, nadd);
+            for _ in 0..nlod + nadd {
+                w32(&mut s, g.below(npiv));
+            }
+            robjs.push(npiv);
+            continue;
+        }
+        let ri = g.below(robjs.len() as u32);
+        let npiv = robjs[ri as usize];
+        let anim = |g: &mut Gn| g.below(na);
+        if g.below(6) == 0 {
+            s.push(63);
+            w32(&mut s, ri);
+            continue;
+        }
+        match g.below(100) {
+            0..=14 => {
+                now = match g.below(if g.clean { 8 } else { 10 }) {
+                    0 => now,
+                    1..=3 => now.wrapping_add(g.below(50)),
+                    4 | 5 => now.wrapping_add(33),
+                    6 => now.wrapping_add(100 + g.below(2000)),
+                    7 => now.wrapping_add(g.below(100_000)),
+                    8 => now.wrapping_sub(1 + g.below(200)),
+                    _ => g.g.u32(),
+                };
+                s.push(41);
+                w32(&mut s, now);
+            }
+            15..=32 => {
+                s.push(42);
+                w32(&mut s, ri);
+                let a = if g.below(12) == 0 { u32::MAX } else { anim(g) };
+                w32(&mut s, a);
+                let nf = if a == u32::MAX { 10 } else { w.anims[a as usize].0.get_num_frames() };
+                w32(&mut s, ev_frame(g, nf).to_bits());
+                w32(&mut s, g.below(6));
+            }
+            33..=35 => {
+                s.push(43);
+                w32(&mut s, ri);
+            }
+            36..=40 => {
+                s.push(44);
+                w32(&mut s, ri);
+                for _ in 0..2 {
+                    let a = anim(g);
+                    w32(&mut s, a);
+                    w32(&mut s, ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits());
+                }
+                let pct = match g.below(6) {
+                    0 => 0.0f32,
+                    1 => 1.0,
+                    _ => g.g.uniform(-0.2, 1.2),
+                };
+                w32(&mut s, pct.to_bits());
+            }
+            41..=52 => {
+                s.push(45);
+                w32(&mut s, ri);
+                w32(&mut s, g.below(npiv));
+            }
+            53..=57 => {
+                s.push(52);
+                w32(&mut s, ri);
+            }
+            58..=67 => {
+                s.push(46);
+                w32(&mut s, ri);
+                ev_matrix(g, &mut s);
+            }
+            68..=75 => {
+                s.push(47);
+                w32(&mut s, ri);
+                w32(&mut s, g.below(npiv));
+                w32(&mut s, u32::from(g.below(4) != 0));
+                w32(&mut s, g.below(2));
+                ev_matrix(g, &mut s);
+            }
+            76..=94 => {
+                s.push(48);
+                w32(&mut s, ri);
+                w32(&mut s, u32::from(g.below(5) == 0));
+            }
+            _ => {
+                s.push(49);
+                w32(&mut s, ri);
+                let m = match g.below(6) {
+                    0 => 1.0f32,
+                    1 => 0.5,
+                    2 => 2.0,
+                    3 => -1.0,
+                    4 => 0.0,
+                    _ => g.g.uniform(-3.0, 3.0),
+                };
+                w32(&mut s, m.to_bits());
+            }
+        }
+    }
+    s
+}
+
+/// GitHub #181 items 9 and 10: the client's drawn sub-objects against upstream's. Upstream (compiled from its text,
+/// `wrap_w3d_eval.cpp`): `Animatable3DObjClass`'s constructor from a hierarchy's name (animobj.cpp:82-121, verbatim:
+/// `Init_Default`'s one-pivot hierarchy for an empty name or one not found), `HLodClass::Update_Sub_Object_Transforms`
+/// (hlod.cpp:3351-3388, verbatim: each sub-object `Set_Transform(HTree->Get_Transform(bone))` and
+/// `Set_Animation_Hidden(!HTree->Get_Visibility(bone))`) with hlod.h's `ModelNodeClass`/`ModelArrayClass`, over
+/// [`animatable_bones_match_upstream`]'s render object, the real `htree.cpp` and the loaders. The port: `RenderObj`
+/// (`client::w3d_model_draw`, the default hierarchy since #181 item 10) and the client's drawn model,
+/// `RenderObj::pose_render_model` on a `RenderModel` as `RenderModel::create` makes it (#181 item 9). Over section 13's
+/// random files with [`hlod_script`]'s scripts, the portable `Float_To_Long` on both sides. Compared as raw bits after
+/// every op: the render object's state, bones (op 45, op 52 from `Get_Num_Bones`), and op 63's drawn sub-objects (each
+/// one's transform and animation-hidden flag) and the transform the port's posing returns against the render object's
+/// `Transform`. A script stops before an op the Rust reports undefined upstream.
+///
+/// Predictions (`issue181i910_predictions.md`, before the first run): 0 mismatches, max ULP 0; scripts stopped as in
+/// [`animatable_bones_match_upstream`]. With the default hierarchy undone (plant 10258) more than 20 % of the files
+/// mismatch; with the pre-#181 drawn pose (plant 10256) more than 30 %; the animation visibility not copied (10257) a few
+/// %; `Get_Num_Bones` from the skeleton (10259) through op 52; the returned transform the identity (10260) through op 63.
+///
+/// Results (2026-11-14), first run: 20,000 files, all run (9,762 tame scripts to the end), 576,218 of 628,970 ops
+/// compared (41: 81,449; 42: 74,572; 43: 12,328; 44: 20,624; 45: 48,649; 46: 41,204; 47: 33,042; 48: 76,887; 49:
+/// 20,476; 52: 20,507; 62: 64,575 HLODs, 30,605 on a loaded hierarchy and 33,970 on the default one; 63: 81,905 dumps),
+/// 205,024 drawn sub-objects compared (1,306 animation-hidden):
+/// **0 mismatches, max ULP 0** (hit). Scripts stopped where upstream is undefined: 2,418 (ops 45, 48 and 52:
+/// `IndexOutOfRange` 1,245, `FloatToInt` 676, `NonTerminating` 225, `UninitialisedRead` 148, `NullPointer` 124: the
+/// wild files' evaluations, as [`animatable_bones_match_upstream`]'s). Planted bugs (mismatching files of 300): 10256
+/// (the pre-#181 drawn pose) 173; 10257 (no animation visibility) 8; 10258 (no default hierarchy) 128; 10259
+/// (`Get_Num_Bones` from the skeleton) 112; 10260 (the identity returned) 174. Each is also caught by the lib test
+/// `the_drawn_model_is_the_live_hierarchy` (`--features differential`).
+#[test]
+fn drawn_sub_objects_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let n = std::env::var("W3D_HLOD_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
+    eval_cases(FloatToLongMode::PortableTruncate, 0x181_910, n, "W3D HLODs' drawn sub-objects (hlod.cpp, animobj.cpp)", hlod_script);
+    let c: Vec<u64> = HLOD_COVERAGE.iter().map(|a| a.load(std::sync::atomic::Ordering::Relaxed)).collect();
+    println!("HLODs made (Rust side, scripts run): {} on a loaded hierarchy, {} on the default one; drawn sub-objects compared {}, of them animation-hidden {}", c[0], c[1], c[2], c[3]);
 }
 
 /// GitHub #179: `Animatable3DObjClass`'s bone query with the animation's current pose (animobj.cpp:658-675
