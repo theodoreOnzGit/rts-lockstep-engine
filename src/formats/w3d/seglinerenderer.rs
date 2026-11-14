@@ -95,11 +95,18 @@
 //!
 //! - **A parallel merge of a parallel intersection** reads the merged
 //!   direction before setting it (`new_direction` is a `Vector3` with no
-//!   constructor): [`W3dUndefined::UninitialisedRead`].
+//!   constructor): ~~[`W3dUndefined::UninitialisedRead`].~~
 //!   Not rare: 8,520 of the 14,527 merging sequences of the differential test's
 //!   20,000 random sequences reach it (2026-11-14). Upstream most likely
-//!   meant the current intersection's direction; what to draw instead is
-//!   the owner's decision (none is drawn here).
+//!   meant the current intersection's direction; ~~what to draw instead is
+//!   the owner's decision (none is drawn here).~~
+//!   **Corrected 2026-11-14 (#185):** the owner's decision on GitHub #185
+//!   (2026-11-14, option (b)): `new_direction` starts as the current
+//!   intersection's own direction (`curr_int->Direction`) at that read, and
+//!   the merge goes on (`new_direction - pl * Dot(pl, new_direction)`,
+//!   normalized). **A deliberate deviation from upstream**, whose value there
+//!   is undefined; the differential test's C++ makes the same substitution
+//!   (one asserted edit to the verbatim cut in `build.rs`).
 //! - **A subdivision level over 7** (`MAX_SEGLINE_SUBDIV_LEVELS`): the chunks
 //!   are 1 point (the loop never advances) and the buffers overflow;
 //!   **no points** (`num_points - 1` wraps): [`W3dUndefined::IndexOutOfRange`].
@@ -110,6 +117,10 @@
 //!   shader, material and sorting are returned ([`SegLineChunk`]) for the
 //!   client to draw, in eye space as upstream hands them to the device with
 //!   identity world and view transforms. The texture is its name.
+//! - A parallel merge of a parallel intersection starts its direction from
+//!   the current intersection's (`curr_int->Direction`), where upstream reads
+//!   an uninitialised `new_direction`: the owner's decision on GitHub #185
+//!   (2026-11-14, option (b)); see the undefined cases above.
 
 use super::mesh::dx8_convert_color;
 use super::mesh::shader_bits::{MASK_PRIGRADIENT, MASK_TEXTURING, SHIFT_PRIGRADIENT, SHIFT_TEXTURING};
@@ -701,6 +712,12 @@ impl SegLineRenderer {
 
     /// `Render`'s intersection merging (`if (Is_Merge_Intersections())`),
     /// in place over the intersections of both edges.
+    ///
+    /// A parallel merge of a parallel intersection starts `new_direction` from
+    /// the current intersection's direction, a deliberate deviation from
+    /// upstream (whose value is undefined there): the owner's decision on
+    /// GitHub #185 (2026-11-14, option (b)). Plant 10147 restores the skip
+    /// before it (`W3dUndefined::UninitialisedRead`).
     fn merge_intersections(
         &self,
         intersection: &mut [[LineSegmentIntersection; 2]],
@@ -769,11 +786,19 @@ impl SegLineRenderer {
                             };
                             pl.normalize();
                             if c.parallel {
-                                // new_direction - pl * Dot(pl, new_direction): read before it is set
-                                return Err(W3dUndefined::UninitialisedRead.into());
+                                if plant(10147) {
+                                    // the skip before #185: upstream reads new_direction before it is set
+                                    return Err(W3dUndefined::UninitialisedRead.into());
+                                }
+                                // #185, owner's decision 2026-11-14 (option b), a deliberate deviation from upstream
+                                // (whose new_direction is undefined here): new_direction starts as curr_int->Direction.
+                                new_direction = c.direction;
+                                new_direction = new_direction - pl * Vector3::dot_product(&pl, &new_direction);
+                                new_direction.normalize();
+                            } else {
+                                new_direction = Vector3::cross_product(&curr_seg.edge_plane[edge], &pl);
+                                new_direction.normalize();
                             }
-                            new_direction = Vector3::cross_product(&curr_seg.edge_plane[edge], &pl);
-                            new_direction.normalize();
                             new_parallel = true;
                         }
 

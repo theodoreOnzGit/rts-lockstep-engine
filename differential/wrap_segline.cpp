@@ -5,7 +5,11 @@
 **     Init, Set_Texture, Get_Texture, Set_Current_UV_Offset,
 **     Set_Texture_Tile_Factor, Reset_Line, Render, subdivision_util, Scale,
 **     getVertexBuffer), COMPILED VERBATIM (w3d_gen/segline_def.cpp, see
-**     build.rs), with seglinerenderer.h, vp.h, Vector3i.h, random.h and
+**     build.rs) but for ONE named edit, the owner's decision on GitHub #185
+**     (2026-11-14, option (b)): Render's parallel merge of a parallel
+**     intersection reads new_direction before setting it (undefined); the
+**     cut sets `new_direction = curr_int->Direction;` just before that read,
+**     as the Rust does (a deliberate deviation from upstream), with seglinerenderer.h, vp.h, Vector3i.h, random.h and
 **     v3_rnd.h unchanged; random.cpp and v3_rnd.cpp come from the emitter
 **     library (upstream_w3d_emit), VectorProcessorClass::Transform from the
 **     deformation library (upstream_w3d_deform, vp.cpp verbatim),

@@ -127,6 +127,40 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#185 (2026-11-14, GitHub #185, the owner's decision of 2026-11-14, option (b)): the segment-line renderer's parallel
+merge of a parallel intersection.**
+- **Upstream read first:** seglinerenderer.cpp, `SegLineRendererClass::Render`'s merge loop: in the parallel branch,
+  `if (curr_int->Parallel) { new_direction = new_direction - pl * Vector3::Dot_Product(pl, new_direction); ... }` reads
+  `new_direction`, a `Vector3` declared without a value, before anything sets it (undefined). The comment above it says
+  what was meant: the direction on the average plane closest to the current intersection's direction.
+- **The substitution, a deliberate deviation from upstream:** `new_direction` starts as `curr_int->Direction` just
+  before that read; the rest is upstream's (`new_direction - pl * Dot(pl, new_direction)`, normalized; `Parallel` set).
+  Rust (`formats::w3d::seglinerenderer`, `merge_intersections`): `new_direction = c.direction;` where it returned
+  `W3dUndefined::UninitialisedRead` (that return is gone for this case only; a level over 7 and an empty line are
+  still undefined). C++ (`build.rs`, `differential/wrap_segline.cpp`): one named edit to the verbatim cut, the anchor
+  `new_direction = new_direction - pl * Vector3::Dot_Product(pl, new_direction);` asserted once (through `patch_copy`)
+  and prefixed by `new_direction = curr_int->Direction;` with a comment naming #185. Same computation on both sides
+  (`c` is the current intersection read at the top of the same merge step, `curr_int` after any earlier merge).
+- **The undefined-case filter removed** (`tests/differential_segline.rs`): a render the Rust reports undefined no
+  longer ends the comparison; every sequence is compared to its end, and one that stops short mismatches. The old
+  filter also stopped drawing a sequence's remaining operations, so the sequences after the first hit are not the same
+  as before.
+- **Plant 10147** restores the skip (the Rust reports the read undefined again).
+- **Predictions** (written before the runs, `issue185_predictions.md`): 8,520 sequences newly reach the end, 0
+  undefined, 0 mismatching, about 300 million words; plant 10147 caught in exactly 8,520; lib, client, part_lod,
+  hlod_release and gate (a) unchanged.
+- **Results:** `differential_segline` **20,000 sequences, 0 mismatching, 345,222,657 words** (0 NaN-only), 200,374
+  chunks, 38,166,767 vertices, **0 undefined**, 14,538 merging; the substituted branch taken 2,163,857 times in 8,525
+  sequences (a temporary trace, removed), all compared to the end. Plant 10147: **caught, 8,520 mismatching sequences**
+  (its stream is the old one exactly: 8,520 undefined of 14,527 merging, 91,961 chunks, 18,904,757 vertices).
+  lib 1,250 passed (unchanged); client 102 passed; `differential_part_lod` 20,000, 0 mismatching, 89,951,959 words,
+  4,288 ended at upstream undefined (all as before; its documented undefined cases are the LOD arrays, not this read);
+  `differential_hlod_release` 20,000, 0 mismatching, 130,199,808 words, 0 undefined (as before); gate (a) PASS, 300
+  frames, last CRC 0bf44067; `src/logic` unchanged.
+- **Prediction misses:** 8,525 sequences reach the substituted branch, not 8,520 (the removal of the filter moved the
+  random stream, which was not foreseen); 345 million words against about 300 million (inside the 230 to 400 million
+  range given).
+
 **#65 batch c (2026-11-14, GitHub #65): an HLOD's emitters in the scene, their release, and the buffers they leave
 drawing.**
 - **Upstream read first:** hlod.cpp (`Remove_Sub_Object`, `Notify_Added`, `Notify_Removed`, `Free`,
@@ -233,14 +267,17 @@ removal.**
   `ParticleBuffer::render_line_runs` draws `ParticleDraw::Lines`' runs through it with the camera's view (the caller
   calls it after `render`: upstream's `Render_Line` calls the renderer inside `Render`, which has no camera here).
 - **Undefined upstream, and often:** a parallel merge of a parallel intersection reads `new_direction` before setting
-  it. Reported as `W3dUndefined::UninitialisedRead` (nothing drawn); 8,520 of the 14,527 merging random sequences
-  reach it. What to draw instead needs the owner's decision.
+  it. ~~Reported as `W3dUndefined::UninitialisedRead` (nothing drawn); 8,520 of the 14,527 merging random sequences
+  reach it. What to draw instead needs the owner's decision.~~ **Corrected 2026-11-14 (#185):** 8,520 of the 14,527
+  merging random sequences reached it; the owner decided (#185, option (b)) that it starts from the current
+  intersection's direction, on both sides of the differential test (the entry above).
 - **Compared with the compiled upstream** (`tests/differential_segline.rs`, `differential/wrap_segline.cpp`,
   `differential/shim_w3d/segline_prelude.h`; seglinerenderer.cpp from its first `#include` to the end, verbatim, over a
   recording device): 20,000 sequences, 171,364,292 words (every vertex's position, colour, U and V, every triangle's
   indices, each chunk's shader, material, texture and sorting, the renderer's state and the generator's after each
-  operation), 91,961 chunks, 18,904,757 vertices: **0 mismatches** (the first run); 8,520 sequences end at the
-  undefined read (compared up to it). 20 of 20 plants caught (10096-10115; the weakest, the merge's copy taking
+  operation), 91,961 chunks, 18,904,757 vertices: **0 mismatches** (the first run); ~~8,520 sequences end at the
+  undefined read (compared up to it)~~ **Corrected 2026-11-14 (#185):** 8,520 sequences ended at the undefined read
+  then; since #185 nothing is cut (345,222,657 words, the entry above). 20 of 20 plants caught (10096-10115; the weakest, the merge's copy taking
   `Parallel`, in 39 sequences).
 - **Not yet** (#65's gaps): the client draws line-mode runs as ribbons still (drawing the chunks needs the camera's
   game-axes view and mutable emitters in `draw_particles`); ~~the emitters' LOD (`Prepare_LOD`, the cost and value

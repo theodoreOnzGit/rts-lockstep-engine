@@ -31,8 +31,16 @@
 //! vertex (position, packed colour, U, V), every triangle's indices, the shader, material and texture; after every
 //! operation the renderer's state and the shared generator's seed and index.
 //!
-//! A render where the Rust reports upstream undefined (a parallel merge of a parallel intersection reads an
-//! uninitialised direction) ends the sequence: the C++ words up to that render are compared, the rest not.
+//! ~~A render where the Rust reports upstream undefined (a parallel merge of a parallel intersection reads an
+//! uninitialised direction) ends the sequence: the C++ words up to that render are compared, the rest not.~~
+//! **Corrected 2026-11-14 (#185):** the owner's decision on GitHub #185 (option (b)) gives that read a value on both
+//! sides: `new_direction` starts as the current intersection's `Direction` (the Rust in
+//! `formats::w3d::seglinerenderer`; the C++ by one asserted edit to the verbatim cut, `build.rs`), a deliberate
+//! deviation from upstream, whose value is undefined. The filter is removed: every sequence is compared to its end, and
+//! a render the Rust still reports undefined is counted and mismatches (its output is shorter than the C++'s).
+//! Because the old filter also stopped drawing the sequence's remaining operations from the generator, the 20,000
+//! sequences after the first that hit the read are not the same ones as before #185 (plant 10147 restores both the skip
+//! and the old stream).
 //!
 //! # Predictions (written before the first run, `issue65_predictions.md`)
 //!
@@ -42,17 +50,31 @@
 //! # Results (2026-11-14)
 //!
 //! - First run (after the C++ build was fixed: seglinerenderer.cpp reaches `w3d_file.h` through `meshgeometry.h`, which
-//!   the prelude replaces; the prelude now includes it): **0 mismatching sequences of 20,000**; 171,364,292 words
-//!   compared (0 NaN-only), 91,961 chunks, 18,904,757 vertices. The prediction of a first-run mismatch missed.
-//! - **Undefined upstream: 8,520 sequences**, every one of them among the 14,527 that merge intersections (59 %;
+//!   the prelude replaces; the prelude now includes it): **0 mismatching sequences of 20,000**; ~~171,364,292 words
+//!   compared (0 NaN-only), 91,961 chunks, 18,904,757 vertices~~ (**Corrected 2026-11-14 (#185):** these were measured
+//!   with the sequences cut at the undefined read; the run after #185 is below). The prediction of a first-run mismatch
+//!   missed.
+//! - ~~**Undefined upstream: 8,520 sequences**, every one of them among the 14,527 that merge intersections (59 %;
 //!   predicted under 5 %: a large miss). Upstream's parallel merge of a parallel intersection reads the uninitialised
 //!   `new_direction` that often on these lines (short segments relative to the width, nearly straight runs); the words
-//!   before that render are compared, the rest not.
+//!   before that render are compared, the rest not.~~ **Corrected 2026-11-14 (#185):** the read now has the owner's
+//!   value on both sides and nothing is cut (below). The 8,520 of 14,527 stands as the pre-#185 measurement (predicted
+//!   under 5 %: a large miss).
 //! - **Plants**, mismatching sequences of 20,000: 10096 11,292; 10097 3,133; 10098 746; 10099 6,748; 10100 13,676;
 //!   10101 2,721; 10102 1,490; 10103 885; 10104 7,195; 10105 767; 10106 2,030; 10107 2,046; 10108 3,068; 10109 3,691;
 //!   10110 39; 10111 12,222; 10112 9,444; 10113 1,896; 10114 12,235; 10115 3,764. **20 of 20 caught.** 10097 was first
 //!   planted as a chunk size halved once more, which at level 7 made 1-point chunks and panicked the Rust (caught, but not
-//!   measured); replanted as one point longer.
+//!   measured); replanted as one point longer. (Measured before #185, on the cut sequences.)
+//! - **#185 (2026-11-14).** Predictions (`issue185_predictions.md`, before the runs): the 8,520 sequences reach the end;
+//!   0 undefined; 0 mismatching; about 300 million words (230 to 400 million); plant 10147 caught in exactly 8,520.
+//!   **Results:** **0 mismatching sequences of 20,000**; **345,222,657 words** compared (0 NaN-only), 200,374 chunks,
+//!   38,166,767 vertices; **0 undefined** (no other undefined case is reachable here: levels 0 to 7, 1 point or more);
+//!   14,538 merging. The substituted branch is taken 2,163,857 times in **8,525 sequences** (counted once with a
+//!   temporary trace, since removed), all now compared to their end. They are not the same 8,520 as before: the stream
+//!   moved (see the methodology). **Plant 10147 caught in 8,520 sequences**, its stream exactly the old one (8,520
+//!   undefined of 14,527 merging, 91,961 chunks, 18,904,757 vertices; each Rust output stops at the read). Prediction
+//!   misses: 8,525 sequences, not 8,520 (the stream moved, which was not foreseen); 345 million words against about 300
+//!   million (inside the range given).
 //!
 //! # Planted bugs
 //!
@@ -80,6 +102,7 @@
 //! | 10113 | a top fan vertex leaves out the V offset |
 //! | 10114 | the vertices are reversed |
 //! | 10115 | the tile factor is clamped at 40 |
+//! | 10147 | #185: a parallel merge of a parallel intersection is skipped again (the Rust reports it undefined) |
 
 mod support;
 
@@ -167,7 +190,8 @@ fn rotation(g: &mut Gen) -> Matrix3D {
 struct Case {
     input: Vec<u32>,
     rust: Vec<Word>,
-    /// Output words before the render that was undefined (compare only these).
+    /// Output words before the render that was undefined, if one was (counted; since #185 not a filter: the sequence
+    /// is still compared to the C++'s end, and the shorter Rust output mismatches).
     undefined_at: Option<usize>,
     merged: bool,
     chunks: u64,
@@ -340,7 +364,8 @@ fn build_case(g: &mut Gen) -> Case {
     Case { input, rust, undefined_at, merged, chunks: nchunks, verts: nverts }
 }
 
-/// *Results (2026-11-14):* 20,000 sequences, 0 mismatching, 8,520 ended at upstream's uninitialised read (see the module
+/// *Results (2026-11-14):* 20,000 sequences, 0 mismatching, ~~8,520 ended at upstream's uninitialised read~~
+/// **Corrected 2026-11-14 (#185):** 345,222,657 words, every sequence compared to its end, 0 undefined (see the module
 /// docs).
 #[test]
 fn segline_renderer_matches_upstream() {
@@ -358,21 +383,16 @@ fn segline_renderer_matches_upstream() {
         if c.merged {
             merging += 1;
         }
-        let upto = match c.undefined_at {
-            Some(k) => {
-                undefined += 1;
-                if c.merged {
-                    undefined_merging += 1;
-                }
-                k
+        // #185: an undefined render no longer ends the comparison (the filter that did is removed): every sequence is
+        // compared to its end, so a Rust that stops at an undefined render is a mismatch (its output is shorter).
+        if c.undefined_at.is_some() {
+            undefined += 1;
+            if c.merged {
+                undefined_merging += 1;
             }
-            None => c.rust.len(),
-        };
-        let mut bad = c.undefined_at.is_none() && cpp_words.len() != c.rust.len();
-        if cpp_words.len() < upto {
-            bad = true;
         }
-        for (i, (rw, cw)) in c.rust[..upto.min(cpp_words.len())].iter().zip(cpp_words).enumerate() {
+        let mut bad = cpp_words.len() != c.rust.len();
+        for (i, (rw, cw)) in c.rust.iter().zip(cpp_words).enumerate() {
             words += 1;
             if rw.0 != *cw {
                 if rw.1 && f32::from_bits(rw.0).is_nan() && f32::from_bits(*cw).is_nan() {
