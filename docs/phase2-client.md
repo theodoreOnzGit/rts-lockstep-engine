@@ -127,6 +127,45 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#163 item 3 (2026-11-14, GitHub #163, the gaps of #162): `HAnimComboDataClass`'s copy constructor and `Copy()`
+against upstream; which of #163's items are still open.**
+- **Which items were open.** Done before this change: item 8 (the beacon in saved games) and item 10 (`SwayClientUpdate`,
+  `AnimatedParticleSysBoneClientUpdate`, `LaserUpdate`) in #165 (112e5bb; upstream's GameClient/Drawable/Update/ has
+  only `AnimatedParticleSysBoneClientUpdate.cpp`, `BeaconClientUpdate.cpp` and `SwayClientUpdate.cpp`, plus
+  `LaserUpdate`, all four made and saved); item 2 (the combos' embedded sounds) in #181 item 3 (c6eee30), with
+  `Set_Animation(HAnimComboClass *)` kept as the caller's pointer in #18 (edba039). Open: 1, 3, 4, 5, 6, 7, 9 and 11.
+- **Item 4 is unreachable upstream, not a gap of the port.** `DistLODPrototypeClass::Create` (distlod.cpp:99-128)
+  makes a `DistLODClass` only to take its sub-objects out, releases it, and returns an `HLodClass` ("OBSOLETE Dist-LOD
+  model found!"); no other code makes one (a grep of GeneralsMD/Code for `DistLODClass` finds only distlod.cpp/.h
+  and a forward declaration in hlod.h). No render object the game holds is a `DistLODClass`, so its
+  `Set_Animation(HAnimComboClass *)` (distlod.cpp:736) is never called.
+- **Item 3, upstream:** hanim.cpp:117-125 (the copy constructor: the animation and the map through `Get_HAnim` and
+  `Get_Pivot_Map`, which add a reference, so the copy shares both; then `Shared`, `Frame`, `PrevFrame`, `Weight`) and
+  127-142 (`Copy(src)`: the same but not `Shared`, without releasing the old animation and map, a leak; `Copy(NULL)`:
+  no animation, no map, frames 0, weight 1). Nothing in Zero Hour calls either.
+- **Port:** `HAnimComboData`'s `#[derive(Clone)]` became a written `Clone`, the copy constructor's translation (same
+  behaviour; written out so it carries upstream's name and plants), and `HAnimComboData::copy`'s doc names its lines.
+  No defect: the port matched upstream on reading and on the run. New lib test
+  `copies_share_the_map_and_only_the_constructor_copies_shared`.
+- **Differential:** no new cut: `wrap_w3d_eval.cpp` gains ops 59 (the copy constructor of a script entry or of a
+  combo's entry), 60 (`Copy` into either from either, from itself or from NULL) and 61 (an entry's dump: `Is_Shared`,
+  the frames, the weight, the animation, the map) on the existing verbatim hanim.cpp build. New test
+  `combo_data_copies_match_upstream` (generator `combo_data_script`): copies, then edits of the source, the
+  destination or a map they share, dumps and `Combo_Update`s.
+- **Predicted** (`issue163_predictions.md`): 0 mismatches, max ULP 0. **Result:** 20,000 files, 824,004 of 1,133,311 ops
+  compared (36,141 copy constructions, 48,153 `Copy`s, 36,014 entry dumps, 19,047 `Combo_Update`s), **0 mismatches,
+  max ULP 0**; 10,765 scripts stopped where upstream is undefined (counts in the test's doc comment).
+- **Plants** 10216-10229: 14 of 14 caught (counts in the test's doc comment), with a plant guard: under `L9_PLANT` the
+  scripts lose their `Combo_Update`s, because a planted copy let the C++ reach an undefined one (five plants killed or
+  hung it in the first round).
+- **Not done (gaps):** item 1 (no game code makes a combo; a caller would be new code), item 5 (`drawHeroIcon`'s
+  null-image branch: the lookup is a function `static`, so it needs a test binary of its own whose first call finds no
+  image; also not modelled: upstream keeps the first lookup's answer for the process, the port reads
+  `W3dRadar::hero_reticle` at each draw, which differs only if the image were missing at the first draw and set
+  later), item 6 (texture filtering: the radar is a software image), item 7 (the glow's cadence: an owner decision,
+  equal at upstream's 30 fps limit), item 9 (no shadows drawn) and item 11 (screenshots need the owner's files).
+  `Copy`'s leaked references are not modelled (handles, not counts).
+
 **#173 (2026-11-14, GitHub #173, the gaps of #171): the logic's object-less drawables' bone particle systems.**
 - **Which gaps were open.** Item 1 (the base pose) was done by #179 and #181 item 7: the update reads
   `RenderObj::get_bone_transform` at the sync time and the recalc `get_bone_transform_under(Scale(getScale()))`

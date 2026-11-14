@@ -230,7 +230,7 @@ fn stricmp_eq(pivot_name: &[u8], name: &[u8]) -> W3dResult<bool> {
 }
 
 /// `HAnimComboDataClass`: one animation of a combo.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct HAnimComboData<M> {
     /// `HAnim` (a handle the caller resolves; `None` for null).
     pub hanim: Option<M>,
@@ -241,6 +241,23 @@ pub struct HAnimComboData<M> {
     pub pivot_map: Option<PivotMapRef>,
     /// `Shared`: not made by the combo (set by the caller).
     pub shared: bool,
+}
+
+/// `HAnimComboDataClass(const HAnimComboDataClass &src)` (hanim.cpp:117-125): the animation and the map through
+/// `Get_HAnim`/`Get_Pivot_Map` (each adds a reference: the copy shares both with `src`), then `Shared`, `Frame`,
+/// `PrevFrame` and `Weight`. Unlike [`HAnimComboData::copy`], `Shared` is copied. Nothing upstream calls it; compared
+/// with the C++ by `differential_w3d`'s `combo_data_copies_match_upstream` (#163 item 3).
+impl<M: Clone> Clone for HAnimComboData<M> {
+    fn clone(&self) -> Self {
+        HAnimComboData {
+            hanim: if plant(10224) { None } else { self.hanim.clone() },
+            pivot_map: if plant(10225) { self.pivot_map.as_ref().map(|m| m.read().expect("pivot map lock").clone().shared()) } else { self.pivot_map.clone() },
+            shared: self.shared && !plant(10226),
+            frame: self.frame,
+            prev_frame: if plant(10227) { self.frame } else { self.prev_frame },
+            weight: if plant(10228) { 1.0 } else { self.weight },
+        }
+    }
 }
 
 impl<M: Clone> HAnimComboData<M> {
@@ -255,23 +272,36 @@ impl<M: Clone> HAnimComboData<M> {
         Arc::new(RwLock::new(self))
     }
 
-    /// `Copy(src)`: everything but `Shared` from `src`, or the defaults
-    /// (`Shared` kept) without one.
+    /// `Copy(src)` (hanim.cpp:127-142): everything but `Shared` from `src` (the animation and the map through
+    /// `Get_HAnim`/`Get_Pivot_Map`, so shared with `src`; the old ones are not released, a leak upstream), or the
+    /// defaults (`Shared` kept) without one. `Copy(this)` is defined upstream and changes nothing; Rust's borrows
+    /// make the caller pass a copy of itself. Nothing upstream calls it; compared with the C++ by `differential_w3d`'s
+    /// `combo_data_copies_match_upstream` (#163 item 3).
     pub fn copy(&mut self, src: Option<&HAnimComboData<M>>) {
         match src {
             Some(s) => {
-                self.hanim = s.hanim.clone();
-                self.pivot_map = s.pivot_map.clone();
-                self.frame = s.frame;
-                self.prev_frame = s.prev_frame;
-                self.weight = s.weight;
+                if !plant(10216) {
+                    self.hanim = s.hanim.clone();
+                }
+                self.pivot_map = if plant(10217) { s.pivot_map.as_ref().map(|m| m.read().expect("pivot map lock").clone().shared()) } else { s.pivot_map.clone() };
+                if !plant(10218) {
+                    self.frame = s.frame;
+                }
+                self.prev_frame = if plant(10219) { s.frame } else { s.prev_frame };
+                if !plant(10220) {
+                    self.weight = s.weight;
+                }
+                if plant(10221) {
+                    self.shared = s.shared;
+                }
             }
+            None if plant(10222) => {}
             None => {
                 self.hanim = None;
-                self.pivot_map = None;
+                self.pivot_map = if plant(10223) { self.pivot_map.clone() } else { None };
                 self.frame = 0.0;
                 self.prev_frame = 0.0;
-                self.weight = 1.0;
+                self.weight = if plant(10229) { 0.0 } else { 1.0 };
             }
         }
     }
@@ -635,5 +665,30 @@ mod tests {
         assert_eq!(c.get_num_anims(), 2);
         assert!(c.get_weight(2).is_err());
         assert!(needs_normalizing(2.0) && !needs_normalizing(1.00001) && !needs_normalizing(0.0));
+    }
+
+    /// (#163 item 3) The copy constructor (`Clone`) copies `Shared`, `Copy` does not; both share the map with the
+    /// source (upstream's `Get_Pivot_Map` adds a reference), and `Copy(NULL)` gives the defaults.
+    #[test]
+    fn copies_share_the_map_and_only_the_constructor_copies_shared() {
+        let mut src: HAnimComboData<usize> = HAnimComboData::new(true);
+        src.set_hanim(Some(3));
+        src.set_frame(2.0);
+        src.set_frame(5.0);
+        src.set_weight(0.25);
+        let mut map = PivotMap::new();
+        map.add(0.5);
+        src.set_pivot_map(Some(map.shared()));
+        let made = src.clone();
+        assert!(made.shared && made.hanim == Some(3) && (made.frame, made.prev_frame, made.weight) == (5.0, 2.0, 0.25));
+        let mut dst: HAnimComboData<usize> = HAnimComboData::new(false);
+        dst.copy(Some(&src));
+        assert!(!dst.shared && dst.hanim == Some(3) && (dst.frame, dst.prev_frame, dst.weight) == (5.0, 2.0, 0.25));
+        src.pivot_map.as_ref().unwrap().write().unwrap().add(1.0);
+        for d in [&made, &dst] {
+            assert_eq!(d.pivot_map.as_ref().unwrap().read().unwrap().count(), 2);
+        }
+        dst.copy(None);
+        assert!(!dst.shared && dst.hanim.is_none() && dst.pivot_map.is_none() && (dst.frame, dst.prev_frame, dst.weight) == (0.0, 0.0, 1.0));
     }
 }

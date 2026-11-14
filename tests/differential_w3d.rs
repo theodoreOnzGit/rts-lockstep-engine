@@ -4457,6 +4457,8 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
             }
         }
         12..=31 => rust_combo_op(w, r, log, op)?,
+        // (#163 item 3) the entries' copy constructor and Copy()
+        59..=61 => rust_combo_data_op(w, r, log, op)?,
         40..=49 | 51 | 52 => rust_robj_op(w, r, log, op)?,
         // (#181 item 3) the embedded sounds
         53..=58 => rust_sound_op(w, r, log, op)?,
@@ -4729,6 +4731,66 @@ fn rust_combo_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op:
     Ok(())
 }
 
+/// (#163 item 3) An entry as ops 59-61 name it (`ref_w3d_eval`): `c = -1` the script's shared entry `i`, else entry `i`
+/// of combo `c` (`Peek_Anim_Combo_Data`, undefined out of range).
+fn combo_data_entry(w: &EvalWorld, c: u32, i: u32) -> W3dResult<ComboDataRef<usize>> {
+    if c as i32 == -1 {
+        Ok(w.datas[i as usize].clone())
+    } else {
+        w.combos[c as usize].read().unwrap().peek_anim_combo_data(i as i32)
+    }
+}
+
+/// (#163 item 3) The entries' copies in Rust (see `ref_w3d_eval`, ops 59-61): 59 the copy constructor
+/// (`HAnimComboData`'s `Clone`), 60 [`HAnimComboData::copy`], 61 the entry's dump.
+fn rust_combo_data_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: u8) -> W3dResult<()> {
+    let c = r.u();
+    let i = r.u();
+    let d = combo_data_entry(w, c, i)?;
+    match op {
+        59 => {
+            let copy = d.read().unwrap().clone();
+            w.datas.push(copy.into_ref());
+        }
+        60 => {
+            let sc = r.u();
+            let si = r.u();
+            if sc as i32 == -2 {
+                d.write().unwrap().copy(None);
+            } else {
+                let src = combo_data_entry(w, sc, si)?;
+                if std::sync::Arc::ptr_eq(&src, &d) {
+                    // `Copy(this)`: the source read before the entry is written (Rust's borrows), field by field, not
+                    // through the copy constructor (whose plants would reach this op)
+                    let mut g = d.write().unwrap();
+                    let same = HAnimComboData {
+                        hanim: g.hanim,
+                        frame: g.frame,
+                        prev_frame: g.prev_frame,
+                        weight: g.weight,
+                        pivot_map: g.pivot_map.clone(),
+                        shared: g.shared,
+                    };
+                    g.copy(Some(&same));
+                } else {
+                    let s = src.read().unwrap();
+                    d.write().unwrap().copy(Some(&s));
+                }
+            }
+        }
+        _ => {
+            let g = d.read().unwrap();
+            log.push(u8::from(g.shared));
+            p32(log, g.frame.to_bits());
+            p32(log, g.prev_frame.to_bits());
+            p32(log, g.weight.to_bits());
+            p32(log, g.hanim.map_or(0xFFFF_FFFF, |a| a as u32));
+            log_map(log, &g.pivot_map);
+        }
+    }
+    Ok(())
+}
+
 /// The ops of a script, as byte ranges.
 fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
     let mut v = Vec::new();
@@ -4777,6 +4839,9 @@ fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
             54 | 56 => 0,
             55 | 58 => 1,
             57 => 3 + 12,
+            // (#163 item 3)
+            59 | 61 => 2,
+            60 => 4,
             _ => unreachable!(),
         };
         v.push((i, i + 1 + 4 * words));
@@ -5576,6 +5641,221 @@ fn combo_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
 fn combo_evaluation_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     eval_cases(FloatToLongMode::PortableTruncate, 0xC0B0, 20_000, "W3D anim combos (hanim.cpp, Combo_Update)", combo_script);
+}
+
+/// (#163 item 3) Scripts for `HAnimComboDataClass`'s copy constructor and `Copy()` (ops 59-61): combos of 0 to 4
+/// entries and shared entries (op 25) with animations, frames, weights and pivot maps; then copies (the copy
+/// constructor of a shared or a combo's entry; `Copy` into either from either, from itself or from NULL), each
+/// followed now and then by edits of the source, the destination or a map they may share, dumps of entries
+/// (op 61) and combos (op 30), and `Combo_Update`s. A copy of a combo's own entry is not shared, so it is never
+/// appended: a combo's `Reset` would delete it while the script still holds it.
+fn combo_data_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    let mut s = Vec::new();
+    let na = w.anims.len() as u32;
+    let nt = w.trees.len() as u32;
+    if na == 0 || nt == 0 {
+        return s;
+    }
+    let op = |s: &mut Vec<u8>, code: u8, words: &[u32]| {
+        s.push(code);
+        for &v in words {
+            w32(s, v);
+        }
+    };
+    let weight = |g: &mut Gn| -> f32 {
+        match g.below(6) {
+            0 => 0.0,
+            1 | 2 => 1.0,
+            3 => 0.5,
+            _ => g.g.uniform(-0.5, 1.5),
+        }
+    };
+    // the generator's view: each combo's entry count, each script entry's `Shared`, the maps
+    let mut combos: Vec<Vec<Option<u32>>> = Vec::new();
+    let mut shared: Vec<bool> = Vec::new();
+    let mut maps = 0u32;
+    let new_map = |g: &mut Gn, s: &mut Vec<u8>, maps: &mut u32| -> u32 {
+        op(s, 18, &[0]);
+        let m = *maps;
+        *maps += 1;
+        for _ in 0..if g.clean { 8 } else { g.below(9) } {
+            let v = match g.below(3) {
+                0 => 0.0,
+                1 => 1.0,
+                _ => g.g.uniform(0.0, 1.0),
+            };
+            op(s, 19, &[m, v.to_bits()]);
+        }
+        m
+    };
+    let fill = |g: &mut Gn, s: &mut Vec<u8>, c: u32, i: u32, maps: &mut u32| {
+        if !g.chance(8) {
+            op(s, 13, &[c, i, g.below(na)]);
+        }
+        let a = g.below(na);
+        op(s, 14, &[c, i, ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits()]);
+        if g.coin() {
+            op(s, 14, &[c, i, ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits()]);
+        }
+        op(s, 16, &[c, i, weight(g).to_bits()]);
+        if g.below(3) == 0 {
+            let m = new_map(g, s, maps);
+            op(s, 17, &[c, i, m]);
+        }
+    };
+    for _ in 0..1 + g.below(2) {
+        let n = g.below(5);
+        op(&mut s, 12, &[n]);
+        let c = combos.len() as u32;
+        combos.push(vec![None; n as usize]);
+        for i in 0..n {
+            fill(g, &mut s, c, i, &mut maps);
+        }
+    }
+    // an entry: (-1, a script entry) or (a combo, one of its entries; now and then one out of range)
+    let pick = |g: &mut Gn, combos: &[Vec<Option<u32>>], shared: &[bool]| -> (u32, u32) {
+        // a tame script names a combo with entries when there is one
+        let full: Vec<u32> = (0..combos.len() as u32).filter(|&c| !combos[c as usize].is_empty()).collect();
+        let c = if g.clean && !full.is_empty() { full[g.below(full.len() as u32) as usize] } else { g.below(combos.len() as u32) };
+        let n = combos[c as usize].len() as u32;
+        if !shared.is_empty() && (n == 0 || g.coin()) {
+            (u32::MAX, g.below(shared.len() as u32))
+        } else if n == 0 || g.chance(25) {
+            (c, n + g.below(2))
+        } else {
+            (c, g.below(n))
+        }
+    };
+    for _ in 0..4 + g.below(36) {
+        match g.below(20) {
+            0 | 1 => {
+                // a shared entry, set up through a combo it joins
+                op(&mut s, 25, &[]);
+                let d = shared.len() as u32;
+                shared.push(true);
+                let c = g.below(combos.len() as u32);
+                op(&mut s, 26, &[c, d]);
+                combos[c as usize].push(Some(d));
+                let i = combos[c as usize].len() as u32 - 1;
+                fill(g, &mut s, c, i, &mut maps);
+            }
+            2..=4 => {
+                // the copy constructor
+                let (c, i) = pick(g, &combos, &shared);
+                op(&mut s, 59, &[c, i]);
+                // `Shared` is copied: a script entry's own, or a combo's entry that is a script entry
+                let sh = if c == u32::MAX { shared[i as usize] } else { combos[c as usize].get(i as usize).is_some_and(|e| e.is_some()) };
+                shared.push(sh);
+            }
+            5..=8 => {
+                // Copy(): from NULL, itself, or another entry
+                let (dc, di) = pick(g, &combos, &shared);
+                let (sc, si) = match g.below(6) {
+                    0 => (u32::MAX - 1, 0),
+                    1 => (dc, di),
+                    _ => pick(g, &combos, &shared),
+                };
+                op(&mut s, 60, &[dc, di, sc, si]);
+            }
+            9..=11 => {
+                let (c, i) = pick(g, &combos, &shared);
+                op(&mut s, 61, &[c, i]);
+            }
+            12 if maps > 0 => {
+                // a map edited after a copy shared it
+                op(&mut s, 19, &[g.below(maps), weight(g).to_bits()]);
+            }
+            13 => {
+                let c = g.below(combos.len() as u32);
+                let n = combos[c as usize].len() as u32;
+                if n > 0 {
+                    let i = g.below(n);
+                    match g.below(4) {
+                        0 => op(&mut s, 14, &[c, i, g.g.uniform(0.0, 30.0).to_bits()]),
+                        1 => op(&mut s, 16, &[c, i, weight(g).to_bits()]),
+                        2 => op(&mut s, 13, &[c, i, g.below(na)]),
+                        _ => {
+                            let m = if maps > 0 && g.coin() { g.below(maps) } else { new_map(g, &mut s, &mut maps) };
+                            op(&mut s, 17, &[c, i, m]);
+                        }
+                    }
+                }
+            }
+            14 => {
+                // a script entry appended (only a shared one) or removed
+                let c = g.below(combos.len() as u32);
+                let sh: Vec<u32> = (0..shared.len() as u32).filter(|&d| shared[d as usize]).collect();
+                if !sh.is_empty() {
+                    let d = sh[g.below(sh.len() as u32) as usize];
+                    if g.coin() {
+                        op(&mut s, 26, &[c, d]);
+                        combos[c as usize].push(Some(d));
+                    } else {
+                        // `Remove_Anim_Combo_Data`: the first entry that is `d`, if any
+                        op(&mut s, 27, &[c, d]);
+                        if let Some(k) = combos[c as usize].iter().position(|&e| e == Some(d)) {
+                            combos[c as usize].remove(k);
+                        }
+                    }
+                }
+            }
+            15 | 16 => {
+                op(&mut s, 24, &[g.below(nt), g.below(combos.len() as u32)]);
+                ev_matrix(g, &mut s);
+            }
+            17 if !g.clean || g.below(4) == 0 => {
+                let c = g.below(combos.len() as u32);
+                op(&mut s, 29, &[c]);
+                combos[c as usize].clear();
+            }
+            _ => op(&mut s, 30, &[g.below(combos.len() as u32)]),
+        }
+    }
+    s
+}
+
+/// GitHub #163 item 3: `HAnimComboDataClass`'s copy constructor and `Copy()` (hanim.cpp:117-142), which nothing in
+/// Zero Hour calls (a grep of GeneralsMD/Code finds only their definitions), compared with the port's
+/// `HAnimComboData` `Clone` and [`HAnimComboData::copy`].
+///
+/// **Methodology.** The C++ is hanim.cpp itself (the existing verbatim build of section 13; no new cut); ops 59-61 of
+/// `ref_w3d_eval` run the copy constructor, `Copy` (from an entry, from itself, or from NULL) and dump an entry
+/// (`Is_Shared`, frame, previous frame, weight, animation index, pivot map's weights). The scripts are
+/// [`combo_data_script`]'s over section 13's files (the same generator, another seed); every result compared as raw
+/// bits. Upstream's getters add a reference to the animation and the map, so a copy shares both with its source: a
+/// map edited after the copy shows in both, which the Rust's shared `PivotMapRef` must reproduce. Undefined upstream,
+/// and stopped at by the Rust: an entry out of range (`Peek_Anim_Combo_Data`) and the other combo ops' cases.
+///
+/// Predicted before the run (`issue163_predictions.md`): 0 mismatches, max ULP 0. **Results (2026-11-14):** 20,000
+/// files, all run (6,965 tame scripts to the end), 824,004 of 1,133,311 ops compared (op 59: 36,141 copy
+/// constructions, op 60: 48,153 `Copy`s, op 61: 36,014 dumps, op 24: 19,047 `Combo_Update`s), **0 mismatches, max ULP
+/// 0** from the first run. Scripts stopped where upstream is undefined: 10,765 (entries out of range at ops 59-61:
+/// 4,735; at `Combo_Update`: `NullPointer` 4,118, mostly an entry `Copy(NULL)` emptied, `IndexOutOfRange` 1,542,
+/// `FloatToInt` 193, `NonTerminating` 93, `UninitialisedRead` 74, and 10 NaN results).
+///
+/// Planted bugs (`L9_PLANT`, mismatching files of 20,000, run with [`combo_data_script_planted`]): `Copy` 10216 (the
+/// animation not copied) 5,242; 10217 (the map deep-copied) 1,065; 10218 (the frame not copied) 6,745; 10219 (the
+/// previous frame taken from the frame) 9,807; 10220 (the weight not copied) 5,830; 10221 (`Shared` copied) 1,620;
+/// 10222 (`Copy(NULL)` does nothing) 4,169; 10223 (`Copy(NULL)` keeps the map) 1,552; 10229 (`Copy(NULL)` weight 0)
+/// 4,140; the copy constructor 10224 (no animation) 6,789; 10225 (the map deep-copied) 631; 10226 (`Shared` not copied)
+/// 2,321; 10227 (the previous frame from the frame) 6,942; 10228 (weight 1) 5,034: **14 of 14 caught**. The first
+/// round ran the full scripts: 10216, 10218, 10220, 10222 and 10229 then killed or hung the C++ (the planted Rust let
+/// it reach an undefined `Combo_Update`), hence the guard.
+#[test]
+fn combo_data_copies_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let planted = std::env::var_os("L9_PLANT").is_some();
+    let gen: fn(&mut Gn, &EvalWorld) -> Vec<u8> = if planted { combo_data_script_planted } else { combo_data_script };
+    eval_cases(FloatToLongMode::PortableTruncate, 0x163_C0B0, 20_000, "W3D combo entries' copies (hanim.cpp, HAnimComboDataClass)", gen);
+}
+
+/// The plant guard of [`combo_data_copies_match_upstream`]: [`combo_data_script`]'s scripts (the same draws) without
+/// their `Combo_Update`s (op 24). A planted copy makes the Rust judge an entry's animation, frame or weight wrongly,
+/// so it lets the C++ run a `Combo_Update` that is undefined upstream (a NULL motion: the process dies; a frame out
+/// of range or zero weights: it hangs). The plants are then caught by the dumps (ops 30 and 61) alone.
+fn combo_data_script_planted(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    let s = combo_data_script(g, w);
+    script_ops(&s).into_iter().filter(|&(a, _)| s[a] != 24).flat_map(|(a, b)| s[a..b].to_vec()).collect()
 }
 
 /// (#179) A script of render-object ops (40-49; see `ref_w3d_eval`) over the file's hierarchies and animations: render

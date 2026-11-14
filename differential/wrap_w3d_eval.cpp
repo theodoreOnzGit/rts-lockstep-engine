@@ -592,6 +592,7 @@ extern "C" {
 **  28 / 29 combo              Clear / Reset
 **  30 combo                   -> the combo
 **  31 map                     -> the map
+**  (#163 item 3) 59 / 60 / 61: HAnimComboDataClass's copy constructor, Copy() and an entry's dump (at the ops)
 ** "The combo" is Get_Num_Anims, then per entry its frame, previous frame and
 ** weight, its animation's index (0xFFFFFFFF: none) and its map's Count() and
 ** elements (0xFFFFFFFF: none). "The tree" is every pivot's Get_Transform (12 floats) and Get_Visibility
@@ -969,6 +970,32 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 				putF(r->ModeInterp.Frame0); putF(r->ModeInterp.Frame1); putF(r->ModeInterp.PrevFrame0); putF(r->ModeInterp.PrevFrame1);
 			} else {
 				putF(0.0f); putF(0.0f); putF(0.0f); putF(0.0f);
+			}
+			break;
+		}
+		/* (#163 item 3) HAnimComboDataClass's copy constructor and Copy(), hanim.cpp:117-142 (verbatim through the
+		** existing hanim.cpp build). An entry is named by two words (c, i): c = -1 g_datas[i], else
+		** g_combos[c]->Peek_Anim_Combo_Data(i); for Copy's source c = -2 is NULL. 59 c i: new HAnimComboDataClass(entry),
+		** kept in g_datas (the script never appends one that is not shared: a combo's Reset would delete it); 60 dc di
+		** sc si: entry(dc, di)->Copy(entry(sc, si)); 61 c i: the entry: Is_Shared (1 byte), Get_Frame, Get_Prev_Frame,
+		** Get_Weight, Peek_HAnim's index and Peek_Pivot_Map (put_map). */
+		case 59: case 60: case 61: {
+			int c = (int)rd.u();
+			int i = (int)rd.u();
+			HAnimComboDataClass *d = c == -1 ? g_datas[i] : g_combos[c]->Peek_Anim_Combo_Data(i);
+			if (op == 59) {
+				g_datas.push_back(new HAnimComboDataClass(*d));
+			} else if (op == 60) {
+				int sc = (int)rd.u();
+				int si = (int)rd.u();
+				d->Copy(sc == -2 ? NULL : sc == -1 ? g_datas[si] : g_combos[sc]->Peek_Anim_Combo_Data(si));
+			} else {
+				put8(d->Is_Shared() ? 1 : 0);
+				putF(d->Get_Frame());
+				putF(d->Get_Prev_Frame());
+				putF(d->Get_Weight());
+				put32(anim_index(d->Peek_HAnim()));
+				put_map(d->Peek_Pivot_Map());
 			}
 			break;
 		}
