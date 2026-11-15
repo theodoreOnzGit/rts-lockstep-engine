@@ -127,6 +127,56 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#57, the radar follow-ups (2026-11-15, GitHub #57): `CHUNK_Radar` compared byte for byte; a map's
+`WaterTransparency` override translated; the dozer's message blocked by the logic.**
+- **What was open (read first).** The issue's comments of 2026-11-12 tick the hero reticle, the attack glow and the
+  beacon pulse (#162, 338eb46) and the `CHUNK_Radar` save (#4). The save had a Rust round-trip test but no comparison
+  with upstream's bytes. Still open: the dozer's construction-complete message and voice, and a map's own
+  `WaterTransparency`. The glow's cadence (#163 item 7) is the owner's decision and was left alone.
+- **Upstream read.** Radar.cpp:164-196 and 1386-1534 (`RadarObject::xfer`, `xferRadarObjectList`, `Radar::xfer`):
+  a load links each new `RadarObject` into the list *before* `xferSnapshot`, and `m_object = findObjectByID(id)` is
+  set (NULL) before the `SC_INVALID_DATA` throw. INIWater.cpp:89-142 (`parseWaterTransparencyDefinition`): an override
+  load copies the **original** (`*wtOverride = *wt`, the non-overloaded pointer), `Overridable`'s members included,
+  marks it, hangs it off the final override, parses into the final override, then asks
+  `TheTerrainVisual->replaceSkyboxTextures(original's names, final's names)`; GameLogic.cpp:488-490 (`reset`) deletes
+  the overrides. So a second override before the reset copies the original's link to the first one and the chain
+  becomes a cycle (`friend_getFinalOverride` recurses for ever): undefined, which the port reports as `EndlessLoop`.
+  DozerAIUpdate.cpp:620-641: the message (`DOZER:ConstructionComplete` with the structure's display name, or
+  `INI:MissingDisplayName`), the dozer's `VoiceTaskComplete` and the radar event.
+- **Translated / changed.** `client::save_game::radar_xfer` (was `SaveHost::xfer_radar`), with the objects asked of a
+  `RadarXferObjects` host (the World in a game). `client::water`: `TheWaterTransparency` is now the original and its
+  override chain (`Overridable`), `load_text_as` (`INI_LOAD_CREATE_OVERRIDES`), `delete_overrides` (`GameLogic::reset`'s
+  lines), `transparency()`/`radar_color()` read the final override, `skybox_replacements` records the renderer's calls.
+- **Defects found and fixed (both on a failed load only):** (1) the radar's load pushed an entry only after it loaded,
+  so after a failure inside an entry the list was one short (predicted; the first run's 10,467 of 40,000 comparisons);
+  (2) a short read of an event's `type` (`xferUser`) dropped the bytes `fread` had copied (not predicted; 66 of 40,000
+  on the second run). Both are struck through where they lived (`save_game.rs`).
+- **Results.** `tests/differential_radar_xfer.rs` (wrap_radar_xfer.cpp; build.rs cuts GameState.h's `SaveCode`,
+  Radar.h's enums, `RadarObject` and the event members, Radar.cpp's `RadarObject` constructor, crc, xfer and
+  `loadPostProcess`, `xferRadarObjectList` and `Radar::xfer`, each anchor asserted once; the real `XferSave`/`XferLoad`):
+  20,000 radars saved (0 refused), 4,413 whole loads and 15,587 failing ones (`SC_INVALID_DATA` 12,483,
+  `XFER_READ_ERROR` 2,057, `XFER_INVALID_VERSION` 1,047), 13,897 Rust round trips byte-identical: **0 mismatches of 40,000**.
+  `tests/differential_water.rs` (wrap_water.cpp; Water.cpp from its globals to the end, INIWater.cpp's two handlers
+  renamed static, `reset`'s two lines; the real `Water.h`, `Overridable.h`, `Override.h` and `INI::load`; wrap_ini.cpp's
+  two water stubs became hooks): 20,000 sessions, 46,071 loads (16,185 as overrides, 26,881 threw), 14,935 resets,
+  4,848 skybox requests, 4,033 sessions stopped at the cycle (the C++ harness flags each one too): **0 mismatches** in
+  65,039 outcomes and 81,006 dumps. Plants 10296-10307: **12 of 12 caught** (10296 19,805; 10297 326; 10298 26,427;
+  10299 4,742; 10300 6,103; 10301 7,401; 10302 24,473 mismatching comparisons; 10303 13,864; 10304 3,304; 10305 5,572;
+  10306 3,304; 10307 13,038). A first 10304 (the override copying the final override) was an equivalent mutant (the
+  original is the final override whenever an override is defined): 0, replaced by "not marked as an override".
+  **Gates (2026-11-15, release):** lib 1,277 passed (+3; gate (b) among them); client 108 passed;
+  `differential_radar_draw`, `differential_client_update`, `differential_ini`, `differential_global_language`,
+  `differential_xfer`, `differential_iniclass` all 0 mismatches; gate (a) PASS, last CRC 0bf44067 (unchanged); clippy:
+  no warning in the files changed (7 earlier ones elsewhere); `src/logic` untouched.
+- **Prediction misses:** defect (2); the first plant 10300 was not caught until the test's entries without an object
+  kept a stale id (as a World's do); the water differential's first run matched (predicted).
+- **Blocked by the logic (not done; `src/logic` untouched):** (a) the dozer's message and voice: the logic sends only
+  `RadarCreateEvent { position, 1 }`, and no client event names the dozer or the structure; (b) a map's
+  `WaterTransparency` in a game: the logic reads `map.ini` (`World::load_ini_overrides`) with a block table that has no
+  `WaterTransparency` row, so a map whose `map.ini` holds one fails with `INI_UNKNOWN_TOKEN` (lib test
+  `the_logic_does_not_yet_take_a_maps_water_block`); the client side is ready to be called. **Gaps:** nothing draws a
+  skybox; the replay `forceOn` and the owner's confirmation item are unchanged; nothing checked with the owner's files.
+
 **#181, the HLOD remainder (2026-11-14, GitHub #181: the LOD switch, `Get_Bone_Name`, item 4): the drawn model is
 the LOD upstream's constructor selects; the sub-objects' dirty flag is kept.**
 - **What Zero Hour drives (read first).** `CurLod` changes only through `Set_LOD_Level`, `Increment_LOD`,
@@ -2300,7 +2350,9 @@ output).**
   the zoom column. The rest held on the first run, including `tryEvent`'s throttling read from upstream's unparenthesised
   distance (any two points of a map are "close").
 - **Not yet:** ~~`CHUNK_Radar` in the save;~~ (**corrected 2026-11-06, #4:** saved and loaded) ~~the hero icon's image (a white square stands in); `triggerRadarAttackGlow`;~~
-  the dozer's construction message and voice; a map's own `WaterTransparency`; ~~the beacon's radar pulse
+  the dozer's construction message and voice; ~~a map's own `WaterTransparency`;~~ **Corrected 2026-11-15 (#57):** the
+  override load is translated and compared (`client::water`), but no game reaches it yet (the logic's `map.ini` load
+  refuses the block: see the #57 entry); ~~the beacon's radar pulse
   (`BeaconClientUpdate`, not translated);~~ `GameLogic::startNewGame`'s replay `forceOn`. **Corrected 2026-11-12 (#162):**
   the hero icon is the `HeroReticle` mapped image (`client::w3d_radar::hero_icon_rect`, `RadarImage::draw_image`), the
   glow is `ControlBar.wnd:WinUAttack` flashed by `client::control_bar_glow` (its disabled image drawn by the bar), and

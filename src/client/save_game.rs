@@ -33,7 +33,7 @@
 //!
 //! | Block | Upstream | Here |
 //! |---|---|---|
-//! | `CHUNK_Radar` | `Radar::xfer` v1 | **Translated whole**: the hidden and forced flags, both object lists (each object's id and colour; a load gives each object its radar data back, `friend_setRadarData`, the World's `on_radar`), the 64 events, the two indices. `loadPostProcess` refreshes the terrain. |
+//! | `CHUNK_Radar` | `Radar::xfer` v1 | **Translated whole**: the hidden and forced flags, both object lists (each object's id and colour; a load gives each object its radar data back, `friend_setRadarData`, the World's `on_radar`), the 64 events, the two indices. `loadPostProcess` refreshes the terrain. Compared with upstream's bytes and loads (GitHub #57, `tests/differential_radar_xfer.rs`; [`radar_xfer`]). |
 //! | `CHUNK_TacticalView` | `View::xfer` v1 | **Translated whole**: the angle and the position, into [`TacticalViewSave`]; the application turns its camera to them (upstream's `setAngle`, `lookAt`). |
 //! | `CHUNK_GameClient` | `GameClient::xfer` v3 | ~~**The frame, the drawable table of contents, each drawable's object id and the briefing list translated; each drawable's own data (`Drawable::xfer`: its modules, model condition, animation, tint, ambient sound) read past** by its block's size, as upstream itself skips a drawable of an unknown template. A loaded game's drawables are made new from their objects (the client makes one for every object), so their looks start from their objects' state, not the save's. A save writes the frame, an empty table, no drawables and no briefing lines (upstream's load then leaves each object's drawable as it made it).~~ **Corrected 2026-11-06 (GitHub #59): translated whole.** The frame, the table of contents, each drawable (`Drawable::xfer` v7 with its modules, `client::drawable_save`) and the briefing list. A save writes the client's drawables ([`SaveDrawables`]); a load clears them, then for each saved drawable takes its object's drawable (made, as the object's creation makes it upstream; made again from the saved template when the object's has another, upstream's disguised bomb truck) or a new one without an object, and reads the save into it. A drawable of a template the port has not got is skipped by its size, as upstream. ~~The briefing list is kept as read and written back (the port keeps no briefing list).~~ **Corrected 2026-11-12, #151:** the briefing list is the client's briefing history (`client::diplomacy::xfer_briefing_list`): a save writes the list the client gives ([`GameClientSave::briefing`]), a load reads it through `UpdateDiplomacyBriefingText` and the client gives it to its history. Without [`SaveDrawables`] (the logic's tests) a save writes no drawables and a load reads them into drawables it then drops. |
 //! | `CHUNK_InGameUI` | `InGameUI::xfer` v3 | **Translated whole** into [`InGameUiSave`] (the named timers and the superweapon timers; a superweapon's special power must exist, as upstream). The port's in-game UI does not show these timers yet, so a load keeps what it read and a save writes it back. |
@@ -88,6 +88,7 @@ use crate::common::ini::game_make_color;
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferState, XferStatus, XferVersion};
 use crate::common::xfer_load::XferLoad;
 use crate::common::xfer_save::XferSave;
+use crate::logic::modules::plant;
 #[cfg(test)]
 use crate::client::drawable_save::KeptModule;
 use crate::logic::world::game_logic::World;
@@ -518,38 +519,9 @@ impl<'a> SaveHost<'a> {
         }
     }
 
-    /// `Radar::xfer` (version 1).
+    /// `Radar::xfer` (version 1): [`radar_xfer`] over the World.
     fn xfer_radar(&mut self, xfer: &mut dyn Xfer) -> Result<(), SaveError> {
-        let mut version: XferVersion = 1;
-        xfer.xfer_version(&mut version, 1)?;
-        xfer.xfer_bool(&mut self.radar.radar_hidden)?;
-        xfer.xfer_bool(&mut self.radar.radar_force_on)?;
-        xfer_radar_object_list(xfer, &mut self.radar.local_object_list, self.world)?;
-        xfer_radar_object_list(xfer, &mut self.radar.object_list, self.world)?;
-        let verify = MAX_RADAR_EVENTS as u16;
-        let mut count = verify;
-        xfer.xfer_unsigned_short(&mut count)?;
-        if count != verify {
-            return Err(SaveError::InvalidData);
-        }
-        for e in self.radar.event.iter_mut() {
-            // (`xferUser(&type, sizeof(RadarEventType))`: the enum's four bytes)
-            let mut t = e.event_type.to_le_bytes();
-            xfer.xfer_user(&mut t)?;
-            e.event_type = i32::from_le_bytes(t);
-            xfer.xfer_bool(&mut e.active)?;
-            xfer.xfer_unsigned_int(&mut e.create_frame)?;
-            xfer.xfer_unsigned_int(&mut e.die_frame)?;
-            xfer.xfer_unsigned_int(&mut e.fade_frame)?;
-            xfer.xfer_rgba_color_int(&mut e.color1)?;
-            xfer.xfer_rgba_color_int(&mut e.color2)?;
-            xfer.xfer_coord3d(&mut e.world_loc)?;
-            xfer.xfer_icoord2d(&mut e.radar_loc)?;
-            xfer.xfer_bool(&mut e.sound_played)?;
-        }
-        xfer.xfer_int(&mut self.radar.next_free_radar_event)?;
-        xfer.xfer_int(&mut self.radar.last_radar_event)?;
-        Ok(())
+        radar_xfer(xfer, self.radar, self.world)
     }
 
     /// `View::xfer` (version 1): the angle, then the position's x, y and z.
@@ -841,27 +813,109 @@ impl<'a> SaveHost<'a> {
     }
 }
 
+/// What `Radar::xfer`'s object lists reach of the game (GitHub #57): `RadarObject::m_object` is an object pointer
+/// upstream and an id here, so its three uses are asked of the host. The World answers in a game; the differential's
+/// stand-ins in `tests/differential_radar_xfer.rs`.
+pub trait RadarXferObjects {
+    /// `m_object ? m_object->getID() : INVALID_ID`'s test: whether the entry's object is there.
+    fn radar_object_exists(&self, id: ObjectId) -> bool;
+    /// `!radarObject->friend_getObject()->isDestroyed()` (the load's check of a list that is not empty); an id the
+    /// World no longer has counts as destroyed (the port's entries are ids, upstream's pointers).
+    fn radar_object_is_live(&self, id: ObjectId) -> bool;
+    /// `m_object = TheGameLogic->findObjectByID(objectID)` and, when it is found, `m_object->friend_setRadarData(this)`
+    /// (the World's `on_radar`). False when there is no such object.
+    fn radar_object_find_and_set_radar_data(&mut self, id: ObjectId) -> bool;
+}
+
+impl RadarXferObjects for World {
+    fn radar_object_exists(&self, id: ObjectId) -> bool {
+        self.find_object(id).is_some()
+    }
+    fn radar_object_is_live(&self, id: ObjectId) -> bool {
+        self.find_object(id).is_some_and(|x| !x.is_destroyed())
+    }
+    fn radar_object_find_and_set_radar_data(&mut self, id: ObjectId) -> bool {
+        match self.objects.find_mut(id) {
+            Some(obj) => {
+                obj.on_radar = true;
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+/// `Radar::xfer` (version 1): the hidden and forced flags, the local then the regular object list, the 64 events, the
+/// next free and the last event indices.
+pub fn radar_xfer(xfer: &mut dyn Xfer, radar: &mut Radar, objs: &mut impl RadarXferObjects) -> Result<(), SaveError> {
+    let mut version: XferVersion = 1;
+    xfer.xfer_version(&mut version, 1)?;
+    if plant(10296) {
+        xfer.xfer_bool(&mut radar.radar_force_on)?;
+        xfer.xfer_bool(&mut radar.radar_hidden)?;
+    } else {
+        xfer.xfer_bool(&mut radar.radar_hidden)?;
+        xfer.xfer_bool(&mut radar.radar_force_on)?;
+    }
+    xfer_radar_object_list(xfer, &mut radar.local_object_list, objs)?;
+    xfer_radar_object_list(xfer, &mut radar.object_list, objs)?;
+    let verify = MAX_RADAR_EVENTS as u16;
+    let mut count = verify;
+    xfer.xfer_unsigned_short(&mut count)?;
+    if count != verify && !plant(10297) {
+        return Err(SaveError::InvalidData);
+    }
+    for e in radar.event.iter_mut() {
+        // (`xferUser(&type, sizeof(RadarEventType))`: the enum's four bytes. ~~written back after a read that succeeded~~
+        // **Corrected 2026-11-14 (GitHub #57):** written back before the error is passed on, as `xfer_int` does: `fread`
+        // copies the bytes there are before a short read fails, so upstream's `type` keeps them. Found by
+        // `differential_radar_xfer`.)
+        let mut t = e.event_type.to_le_bytes();
+        let r = xfer.xfer_user(&mut t);
+        e.event_type = i32::from_le_bytes(t);
+        r?;
+        xfer.xfer_bool(&mut e.active)?;
+        xfer.xfer_unsigned_int(&mut e.create_frame)?;
+        xfer.xfer_unsigned_int(&mut e.die_frame)?;
+        xfer.xfer_unsigned_int(&mut e.fade_frame)?;
+        xfer.xfer_rgba_color_int(&mut e.color1)?;
+        xfer.xfer_rgba_color_int(&mut e.color2)?;
+        xfer.xfer_coord3d(&mut e.world_loc)?;
+        xfer.xfer_icoord2d(&mut e.radar_loc)?;
+        if !plant(10298) {
+            xfer.xfer_bool(&mut e.sound_played)?;
+        }
+    }
+    xfer.xfer_int(&mut radar.next_free_radar_event)?;
+    if !plant(10302) {
+        xfer.xfer_int(&mut radar.last_radar_event)?;
+    }
+    Ok(())
+}
+
 /// `xferRadarObjectList(xfer, head)` (version 1) with `RadarObject::xfer` (version 1) for each.
-fn xfer_radar_object_list(xfer: &mut dyn Xfer, list: &mut Vec<RadarObject>, world: &mut World) -> Result<(), SaveError> {
+fn xfer_radar_object_list(xfer: &mut dyn Xfer, list: &mut Vec<RadarObject>, objs: &mut impl RadarXferObjects) -> Result<(), SaveError> {
     let mut version: XferVersion = 1;
     xfer.xfer_version(&mut version, 1)?;
     let mut count = list.len() as u16;
     xfer.xfer_unsigned_short(&mut count)?;
     if xfer.get_xfer_mode() == XferMode::Save {
         for o in list.iter_mut() {
-            radar_object_xfer(xfer, o, world)?;
+            radar_object_xfer(xfer, o, objs)?;
         }
     } else {
-        // "the list should be empty at this point", or hold only destroyed objects (an id the World no longer has counts
-        // as one: the port's entries are ids, upstream's pointers)
-        if list.iter().any(|o| world.find_object(o.object).is_some_and(|x| !x.is_destroyed())) {
+        // "the list should be empty at this point", or hold only destroyed objects
+        if list.iter().any(|o| objs.radar_object_is_live(o.object)) && !plant(10299) {
             return Err(SaveError::InvalidData);
         }
         for _ in 0..count {
-            // (`newInstance(RadarObject)`, linked at the end)
-            let mut o = RadarObject { object: INVALID_ID, color: game_make_color(255, 255, 255, 255) };
-            radar_object_xfer(xfer, &mut o, world)?;
-            list.push(o);
+            // (`newInstance(RadarObject)`, linked at the end, then loaded: ~~loaded, then linked~~ **Corrected 2026-11-14
+            // (GitHub #57):** upstream links the new entry before `xferSnapshot`, so a load that fails inside an entry
+            // leaves it in the list (with no object, `m_object = NULL`, when the id was not found); the port pushed only
+            // entries that loaded, and its list was one short after such a failure. Found by `differential_radar_xfer`.)
+            list.push(RadarObject { object: INVALID_ID, color: game_make_color(255, 255, 255, 255) });
+            let o = list.last_mut().expect("the entry just linked");
+            radar_object_xfer(xfer, o, objs)?;
         }
     }
     Ok(())
@@ -869,17 +923,18 @@ fn xfer_radar_object_list(xfer: &mut dyn Xfer, list: &mut Vec<RadarObject>, worl
 
 /// `RadarObject::xfer` (version 1): the object's id (on a load the object must exist, and is given its radar data back:
 /// `friend_setRadarData`, the World's `on_radar`) and the colour.
-fn radar_object_xfer(xfer: &mut dyn Xfer, o: &mut RadarObject, world: &mut World) -> Result<(), SaveError> {
+fn radar_object_xfer(xfer: &mut dyn Xfer, o: &mut RadarObject, objs: &mut impl RadarXferObjects) -> Result<(), SaveError> {
     let mut version: XferVersion = 1;
     xfer.xfer_version(&mut version, 1)?;
-    let mut id = if world.find_object(o.object).is_some() { o.object } else { INVALID_ID };
+    let mut id = if objs.radar_object_exists(o.object) || plant(10300) { o.object } else { INVALID_ID };
     xfer.xfer_object_id(&mut id)?;
     if xfer.get_xfer_mode() == XferMode::Load {
-        let Some(obj) = world.objects.find_mut(id) else {
+        // `m_object = TheGameLogic->findObjectByID(objectID)`: NULL (here `INVALID_ID`) when it is not found, then the throw
+        let found = objs.radar_object_find_and_set_radar_data(id);
+        o.object = if found { id } else { INVALID_ID };
+        if !found && !plant(10301) {
             return Err(SaveError::InvalidData);
-        };
-        obj.on_radar = true;
-        o.object = id;
+        }
     }
     xfer.xfer_color(&mut o.color)?;
     Ok(())

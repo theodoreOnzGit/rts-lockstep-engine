@@ -3662,6 +3662,10 @@ extern "C" {
     pub fn ref_radar_glow_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
     pub fn ref_beacon_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #57: the radar's save, CHUNK_Radar (differential/wrap_radar_xfer.cpp, which documents the words):
+    // RadarObject::xfer, xferRadarObjectList and Radar::xfer on the real XferSave / XferLoad, verbatim.
+    pub fn ref_radar_xfer(mode: c_int, input: *const c_int, nin: c_int, path: *const std::os::raw::c_char, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #165: the client update modules (differential/wrap_client_update.cpp, which documents the words):
     // SwayClientUpdate, AnimatedParticleSysBoneClientUpdate and LaserUpdate (update sequences) and the four modules'
     // xfers (BeaconClientUpdate's too) on the real XferSave / XferLoad, verbatim.
@@ -3802,6 +3806,13 @@ extern "C" {
     pub fn ref_global_language_reset(x_resolution: c_int);
     pub fn ref_global_language_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
     pub fn ref_global_language_adjust(size: c_int) -> c_int;
+
+    // GitHub #57: Water.cpp's globals and field tables, INIWater.cpp's two handlers and GameLogic::reset's water
+    // transparency lines, verbatim, under the real INI::load (differential/wrap_water.cpp, which documents the dump).
+    pub fn ref_water_reset();
+    pub fn ref_water_undefined() -> c_int;
+    pub fn ref_water_delete_overrides() -> c_int;
+    pub fn ref_water_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
 
     // GitHub #148: Diplomacy.cpp's briefing history and window (UpdateDiplomacyBriefingText, Show/Hide/Reset/
     // ToggleDiplomacy, updateFunc, DiplomacyInput, DiplomacySystem), verbatim (differential/wrap_diplomacy.cpp).

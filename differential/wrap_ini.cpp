@@ -503,7 +503,11 @@ WEAK_STUB(INI::parsePlayerTemplateDefinition) /* p1w3-playertemplate: real in Pl
 WEAK_STUB(INI::parseRankDefinition) /* p1w2-science: real in RankInfo.cpp */ WEAK_STUB(INI::parseSpecialPowerDefinition) /* p1w2-upgrade: real in wrap_upgrade.cpp */
 STUB(INI::parseShellMenuSchemeDefinition) WEAK_STUB(INI::parseTerrainDefinition) /* p1w2-terrain */
 WEAK_STUB(INI::parseUpgradeDefinition) /* p1w2-upgrade: real in wrap_upgrade.cpp */ STUB(INI::parseVideoDefinition)
-STUB(INI::parseWaterSettingDefinition) STUB(INI::parseWaterTransparencyDefinition)
+/* GitHub #57: the WaterSet and WaterTransparency blocks reach INIWater.cpp's handlers (wrap_water.cpp, renamed there) when
+** that fixture sets the hooks (ref_water_reset); with none set they throw, as the stubs did. */
+extern "C" { void (*ref_water_set_block_hook)(INI *) = 0; void (*ref_water_transparency_block_hook)(INI *) = 0; }
+void INI::parseWaterSettingDefinition(INI *ini) { if (!ref_water_set_block_hook) throw ERROR_BUG; ref_water_set_block_hook(ini); }
+void INI::parseWaterTransparencyDefinition(INI *ini) { if (!ref_water_transparency_block_hook) throw ERROR_BUG; ref_water_transparency_block_hook(ini); }
 STUB(INI::parseWeatherDefinition) WEAK_STUB(INI::parseWebpageURLDefinition) /* p1w2-science: WEAK, wrap_science.cpp uses this block to reach parseScience */
 STUB(INI::parseHeaderTemplateDefinition)
 /* #160: the five blocks of GameLOD.cpp reach its handlers (wrap_game_lod.cpp, renamed there) when that fixture sets the
