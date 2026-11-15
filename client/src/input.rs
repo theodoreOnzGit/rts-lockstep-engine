@@ -78,6 +78,9 @@ pub struct Controls {
     pub client_frame: u32,
     /// #125: whether the application has tried to read the CommandMap for this game.
     pub meta_map_tried: bool,
+    /// #128: `W3DDisplay::takeScreenShot`'s `static int frame_number = 1` (here per game, not per process; the names it
+    /// skips are the files that exist, so a new count names no file twice).
+    pub screen_shot_frame_number: i32,
     /// #131: `TheKeyboard`'s printable key names (US English, the client's language and layout).
     pub key_names: KeyNames,
     /// #131: `TheHotKeyManager`, refilled from the control bar each frame ([`Controls::set_bar_hot_keys`]).
@@ -238,6 +241,7 @@ impl Controls {
             keyboard_mods: KeyboardModifiers::default(),
             client_frame: 0,
             meta_map_tried: false,
+            screen_shot_frame_number: 1,
             key_names: KeyNames::init_key_names(rts_lockstep_engine::client::keyboard::language_id::US, rts_lockstep_engine::client::keyboard::LAYOUT_US_ENGLISH),
             hot_keys: HotKeyManager::new(),
             hot_key_windows: Vec::new(),
@@ -341,6 +345,10 @@ impl Controls {
         // (the shell's keys are the shell's own window's: the application does not give them here)
         let ctx = KeyContext { client_frame: self.client_frame, shell_active: false, in_replay };
         let r = self.meta_event.translate_key(&self.meta_map, down, i32::from(dik), state, &ctx);
+        // (#128) the TiVO hack's toggle and its `GUI:FF_ON` / `GUI:FF_OFF` (the key is kept)
+        if r.fast_forward_toggled {
+            rts_lockstep_engine::client::command_xlat_meta::meta_event_toggle_tivo_fast_mode(&mut self.client);
+        }
         for m in r.metas {
             self.meta(m);
         }
@@ -467,6 +475,34 @@ impl Controls {
             return None;
         }
         self.meta_mouse(t, pixel)
+    }
+
+    /// #128: the logic's frames per second while `GameEngine::execute`'s frame limit holds (GameEngine.cpp:873-877, the
+    /// release branch): `!(TheGlobalData->m_TiVOFastMode && TheGameLogic->isInReplayGame())`, `base`; else the replay's
+    /// fast forward, where upstream runs its loop unlimited and `W3DDisplay::draw` draws one frame in 30
+    /// (W3DDisplay.cpp:1876, `getFrame() % 30 == 1`): `base` times 30, the application's fixed clock's rate (Bevy's clock
+    /// lets a slow machine fall behind instead of freezing, its largest step being a quarter second).
+    pub fn logic_hz(&self, base: f64) -> f64 {
+        use rts_lockstep_engine::client::command_xlat_meta::{CommandMetaHost, MetaWindowHost};
+        if self.client.tivo_fast_mode() && self.client.is_in_replay_game() {
+            base * 30.0
+        } else {
+            base
+        }
+    }
+
+    /// #128: `W3DDisplay::takeScreenShot`'s file name (W3DDisplay.cpp:3000-3011, the release's bitmap branch,
+    /// `CAPTURE_TO_TARGA` being defined nowhere): `sshot%.3d.bmp` of the next frame number, past every one `exists` has
+    /// in the user data folder (`_access(pathname, 0) != -1`). The display (DirectX's front buffer, `CreateBMPFile`) is
+    /// Bevy's here, which writes the name's PNG (`.png` for `.bmp`: the client's image codecs are PNG only).
+    pub fn next_screen_shot_leafname(&mut self, exists: impl Fn(&str) -> bool) -> String {
+        loop {
+            let leafname = format!("sshot{:03}.bmp", self.screen_shot_frame_number);
+            self.screen_shot_frame_number += 1;
+            if !exists(&leafname) {
+                return leafname;
+            }
+        }
     }
 
     /// #131: whether the CommandMap binds the meta message `meta` to some key usable in the game (the application's own
@@ -1004,6 +1040,51 @@ mod tests {
         assert_eq!(c.ui.all_selected_drawables(), &[o.dozer], "the selection is kept");
         assert_eq!(stops, 1, "the InGameUI's scroll is stopped once");
         assert!(!c.right_up_destroyed, "the destroyed release is used up");
+    }
+
+    /// #128, predicted before the run, with a CommandMap of this test's own (Escape: options; F: the replay's fast
+    /// forward; D: diplomacy; F12: the screenshot), after the first client frame: Escape is used up and queues one quit menu
+    /// toggle; D queues `ToggleDiplomacy(FALSE)`; F12 queues one screenshot; outside a replay F is not used (the TiVO hack
+    /// keeps the key) and the mode stays off; in a replay F is still not used, turns the mode on with `GUI:FF_ON`, and again
+    /// turns it off with `GUI:FF_OFF`, the logic's rate 30 times its own only while the mode is on in the replay; nothing
+    /// reaches the logic; the screenshot's names skip the files that exist.
+    #[test]
+    fn the_command_map_window_keys_queue_their_windows() {
+        let map = b"CommandMap OPTIONS\n Key = KEY_ESC\n Transition = DOWN\n Modifiers = NONE\n UseableIn = GAME\nEnd\n\
+CommandMap TOGGLE_FAST_FORWARD_REPLAY\n Key = KEY_F\n Transition = DOWN\n Modifiers = NONE\n UseableIn = GAME\nEnd\n\
+CommandMap DIPLOMACY\n Key = KEY_D\n Transition = DOWN\n Modifiers = NONE\n UseableIn = GAME\nEnd\n\
+CommandMap TAKE_SCREENSHOT\n Key = KEY_F12\n Transition = DOWN\n Modifiers = NONE\n UseableIn = GAME\nEnd\n";
+        let (esc, f_key, d_key, f12) = (0x01, 0x21, 0x20, 0x58);
+        let (w, _o) = demo_world();
+        let mut c = Controls::new(w, 1);
+        c.meta_map.load_text(b"Data\\INI\\CommandMap.ini", map, None).expect("the map reads");
+        assert!(c.meta_map_binds_meta(rts_lockstep_engine::common::message_types::MSG_META_OPTIONS));
+        c.frame_tick();
+        let press = |c: &mut Controls, k: u8| {
+            let used = c.key(k, true, false);
+            c.key(k, false, false);
+            used
+        };
+        assert!(press(&mut c, esc));
+        assert_eq!(c.client.quit_menu_toggles, 1);
+        assert!(press(&mut c, d_key));
+        assert_eq!(c.client.diplomacy_toggles, vec![false]);
+        assert!(press(&mut c, f12));
+        assert_eq!(c.client.screen_shots, 1);
+        assert!(!press(&mut c, f_key));
+        assert!(!c.client.tivo_fast_mode);
+        c.client.world.cuts.game_loop.game_mode = rts_lockstep_engine::common::recorder::game_mode::REPLAY;
+        assert_eq!(c.logic_hz(30.0), 30.0);
+        assert!(!press(&mut c, f_key));
+        assert!(c.client.tivo_fast_mode);
+        assert_eq!(c.logic_hz(30.0), 900.0);
+        assert!(!press(&mut c, f_key));
+        assert!(!c.client.tivo_fast_mode);
+        assert_eq!(c.client.ui_messages, vec![b"GUI:FF_ON".to_vec(), b"GUI:FF_OFF".to_vec()]);
+        assert!(c.client.sent.is_empty(), "sent {:?}", c.client.sent);
+        // the screenshot's names: the first free past the existing ones
+        assert_eq!(c.next_screen_shot_leafname(|n| n == "sshot001.bmp" || n == "sshot002.bmp"), "sshot003.bmp");
+        assert_eq!(c.next_screen_shot_leafname(|_| false), "sshot004.bmp");
     }
 
     /// #125, predicted before the run, with a CommandMap of this test's own (tab: the next unit; S: stop; ctrl alone: force

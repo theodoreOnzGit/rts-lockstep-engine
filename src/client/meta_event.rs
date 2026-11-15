@@ -64,9 +64,13 @@
 //!   modifier bits as Keyboard.cpp's `translateKey` does, but per event, not per frame's batch; an auto-repeat is the
 //!   window system's (Bevy's `repeat`), not `checkKeyRepeat`'s 10-frame delay.
 //! - The TiVO fast mode is the replay viewer's: [`KeyResult::fast_forward_toggled`] says the key asked for it, and the
-//!   message label; the client has no fast-forward yet (#125's gaps).
+//!   message label; ~~the client has no fast-forward yet (#125's gaps).~~ **Corrected 2026-11-15 (#128):** the toggle and
+//!   its `GUI:FF_ON`/`GUI:FF_OFF` message are
+//!   [`crate::client::command_xlat_meta::meta_event_toggle_tivo_fast_mode`], which the client calls on it; the mode is the
+//!   client's ([`crate::client::world_host::WorldClient::tivo_fast_mode`]), which speeds up a replay's logic frames.
 //! - The records' description and display name are translated with the game's text when one is given, as upstream; the
-//!   key-mapping dialog that shows them is not translated.
+//!   key-mapping dialog that shows them ~~is not translated.~~ **Corrected 2026-11-15 (#128):** is translated
+//!   (#160, `crate::client::keyboard_options_menu`, KeyboardOptionsMenu.cpp).
 //!
 //! # Representation
 //!
@@ -632,11 +636,11 @@ impl MetaEventTranslator {
                     // "THIS IS A GREASY HACK... MESSAGE SHOULD BE HANDLED IN A TRANSLATOR, BUT DURING CINEMATICS THE
                     // TRANSLATOR IS DISABLED"
                     if map.meta == MSG_META_TOGGLE_FAST_FORWARD_REPLAY {
-                        if ctx.in_replay {
+                        if ctx.in_replay || plant(10333) {
                             out.fast_forward_toggled = true;
                         }
                         // "cause for goodness sake, this key gets used a lot by non-replay hotkeys"
-                        out.disposition = Some(Disposition::Keep);
+                        out.disposition = Some(if plant(10334) { Disposition::Destroy } else { Disposition::Keep });
                         break;
                     }
                     out.metas.push(map.meta);

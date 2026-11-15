@@ -6,6 +6,9 @@
 //     meta-key cases: MSG_META_SELECT_MATCHING_UNITS to MSG_META_FOLLOW, MSG_META_PLACE_BEACON, MSG_META_REMOVE_BEACON,
 //     MSG_META_TOGGLE_ATTACKMOVE, MSG_META_TOGGLE_CAMERA_TRACKING_DRAWABLE, MSG_META_BEGIN/END_FORCEMOVE, WAYPOINTS,
 //     PREFER_SELECTION, FORCEATTACK, MSG_META_ALL_CHEER, (#136) MSG_META_TOGGLE_CONTROL_BAR (in control_bar_stage.rs);
+//     (#128) MSG_META_CHAT_ALLIES, CHAT_EVERYONE, DIPLOMACY, OPTIONS, TOGGLE_FAST_FORWARD_REPLAY, TAKE_SCREENSHOT;
+//   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/MetaEvent.cpp (#128: translateGameMessage's TiVO hack's
+//     toggle and message)
 //     findCommandCenterOrMostExpensiveBuilding, viewCommandCenter,
 //     amIAHero, iNeedAHero)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (kindOfUnitSelection, selectAllUnitsByTypeAcrossRegion,
@@ -60,6 +63,16 @@
 //!   ([`CameraMetaHost::reset_camera`]). Kept. [`CommandTranslator::camera_meta`].
 //! - **(#136)** `MSG_META_TOGGLE_CONTROL_BAR` (3168): the shell's top layout hidden or shown, else (not in a replay's
 //!   playback) `ToggleControlBar()`; destroyed ([`crate::client::control_bar_stage::toggle_control_bar_meta`]).
+//! - **(#128)** `MSG_META_CHAT_ALLIES` / `CHAT_EVERYONE` (3048), `DIPLOMACY` (3076), `OPTIONS` (3115),
+//!   `TOGGLE_FAST_FORWARD_REPLAY` (3244) and `TAKE_SCREENSHOT` (3505): the in-game chat, the briefing history (or GameSpy's
+//!   buddy overlay in the shell), the quit menu, the replay's TiVO fast mode and the display's screenshot, through
+//!   [`MetaWindowHost`]; all destroyed ([`CommandTranslator::window_meta`]). `MSG_META_TOGGLE_LOWER_DETAILS` (3122) is
+//!   not translated (it writes the World's `setShowBehindBuildingMarkers`). The other meta cases of the switch are not in
+//!   the release build: 3817-5128 (`_DEBUG` / `_INTERNAL`: every `MSG_META_DEMO_*` and `MSG_META_DEBUG_*` case, the help
+//!   key among them), `MSG_META_DEMO_TOGGLE_AUDIODEBUG` (`_INTERNAL` / `_DEBUG`), `MSG_META_DEMO_PERFORM_STATISTICAL_DUMP`
+//!   (`DUMP_PERF_STATS`, defined only for `_INTERNAL` / `_DEBUG`, GameCommon.h:63), `MSG_META_DEMO_INSTANT_QUIT`
+//!   (`ALLOW_ALT_F4`, defined nowhere) and the `MSG_CHEAT_*` cases (`_ALLOW_DEBUG_CHEATS_IN_RELEASE`, off: GameCommon.h:55
+//!   defines `DONT_ALLOW_DEBUG_CHEATS_IN_RELEASE`).
 //! - `MSG_META_TOGGLE_ATTACKMOVE` (3201), `TOGGLE_CAMERA_TRACKING_DRAWABLE` (3240), `BEGIN/END_FORCEMOVE` (3448),
 //!   `BEGIN/END_WAYPOINTS`, `BEGIN/END_PREFER_SELECTION`, `BEGIN/END_FORCEATTACK` (3460-3491): InGameUI's flags; kept.
 //! - `MSG_META_ALL_CHEER` (3493): in a multiplayer game, the misc audio's `AllCheerSound` and `MSG_DO_CHEER`, destroyed;
@@ -125,7 +138,7 @@ use crate::logic::modules::plant;
 
 /// What the meta cases ask beyond [`CommandXlatHost`]; **(#136)** `MSG_META_TOGGLE_CONTROL_BAR`'s shell, recorder and
 /// control bar ([`crate::client::control_bar_stage::ToggleControlBarHost`]).
-pub trait CommandMetaHost: CommandXlatHost + CameraMetaHost + crate::client::control_bar_stage::ToggleControlBarHost {
+pub trait CommandMetaHost: CommandXlatHost + CameraMetaHost + crate::client::control_bar_stage::ToggleControlBarHost + MetaWindowHost {
     /// `obj->isMobile()`.
     fn object_is_mobile(&self, obj: ObjectId) -> bool;
     /// `obj->isEffectivelyDead()`.
@@ -158,6 +171,64 @@ pub trait CommandMetaHost: CommandXlatHost + CameraMetaHost + crate::client::con
     fn place_beacon_button(&mut self) -> Option<GuiButton>;
     /// `TheAudio->addAudioEvent(&TheAudio->getMiscAudio()->m_allCheerSound)`.
     fn play_all_cheer_sound(&mut self);
+}
+
+/// #128: `enum InGameChatType` (GUICallbacks.h): the in-game chat's audience, `SetInGameChatType`'s argument.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InGameChatType {
+    /// `INGAME_CHAT_ALLIES`.
+    Allies = 0,
+    /// `INGAME_CHAT_EVERYONE`.
+    Everyone = 1,
+    /// `INGAME_CHAT_PLAYERS` (only the commented-out `MSG_META_CHAT_PLAYERS` would set it).
+    Players = 2,
+}
+
+/// #128: what the meta cases of the in-game windows, the replay's fast forward and the display ask
+/// ([`CommandTranslator::window_meta`]); the shell's activity is [`ToggleControlBarHost::shell_is_active`]
+/// (`crate::client::control_bar_stage`).
+///
+/// [`ToggleControlBarHost::shell_is_active`]: crate::client::control_bar_stage::ToggleControlBarHost::shell_is_active
+pub trait MetaWindowHost {
+    /// `ThePlayerList->getLocalPlayer() != NULL`.
+    fn local_player_exists(&self) -> bool;
+    /// `TheGlobalData->m_netMinPlayers`.
+    fn net_min_players(&self) -> i32;
+    /// `ToggleInGameChat()` (`immediate` defaults to `TRUE`) then `SetInGameChatType(chat_type)`.
+    fn toggle_in_game_chat(&mut self, chat_type: InGameChatType);
+    /// `TheGameLogic->isInGame()`.
+    fn is_in_game(&self) -> bool;
+    /// `TheGameLogic->isInShellGame()`.
+    fn is_in_shell_game(&self) -> bool;
+    /// `ToggleDiplomacy(immediate)` ([`crate::client::diplomacy::toggle_diplomacy`]).
+    fn toggle_diplomacy(&mut self, immediate: bool);
+    /// `TheGameSpyBuddyMessageQueue != NULL`: GameSpy's buddy queue (the online service's; none in this port).
+    fn game_spy_buddy_message_queue(&self) -> bool;
+    /// `GameSpyToggleOverlay(GSOVERLAY_BUDDY)`.
+    fn game_spy_toggle_buddy_overlay(&mut self);
+    /// `ToggleQuitMenu()` ([`crate::client::quit_menu::toggle_quit_menu`]).
+    fn toggle_quit_menu(&mut self);
+    /// `TheGlobalData->m_TiVOFastMode`.
+    fn tivo_fast_mode(&self) -> bool;
+    /// `TheWritableGlobalData->m_TiVOFastMode = on`.
+    fn set_tivo_fast_mode(&mut self, on: bool);
+    /// `TheInGameUI->message(text)`: `CommandTranslator`'s literal `UnicodeString(L"m_TiVOFastMode: %s")` with `L"ON"`
+    /// or `L"OFF"` (`label` `None`, `on` the word), or `MetaEventTranslator`'s `TheGameText->fetch("GUI:FF_ON")` /
+    /// `"GUI:FF_OFF"` (`label` that string).
+    fn tivo_message(&mut self, label: Option<&[u8]>, on: bool);
+    /// `if (TheDisplay) TheDisplay->takeScreenShot()`.
+    fn take_screen_shot(&mut self);
+}
+
+/// #128: `MetaEventTranslator::translateGameMessage`'s TiVO hack (MetaEvent.cpp:503-513), once
+/// [`crate::client::meta_event::KeyResult::fast_forward_toggled`] says the key asked for it (in a replay: the release
+/// build's `TheGlobalData && TheGameLogic->isInReplayGame()`): `m_TiVOFastMode = 1 - m_TiVOFastMode`, then
+/// `TheInGameUI->message(m_TiVOFastMode ? GUI:FF_ON : GUI:FF_OFF)` of the new mode.
+pub fn meta_event_toggle_tivo_fast_mode(h: &mut impl MetaWindowHost) {
+    let on = !h.tivo_fast_mode();
+    h.set_tivo_fast_mode(on);
+    let shown = if plant(10335) { !on } else { on };
+    h.tivo_message(Some(if shown { b"GUI:FF_ON" } else { b"GUI:FF_OFF" }), shown);
 }
 
 /// #131: what the camera's meta cases ask beyond the InGameUI's flags.
@@ -374,11 +445,109 @@ impl CommandTranslator {
         Some(Keep)
     }
 
+    /// #128: the release build's cases of `translateGameMessage` for the in-game windows, the replay's fast forward and
+    /// the display, after its input gate (which `MSG_META_OPTIONS` passes with the input off):
+    /// - `MSG_META_CHAT_ALLIES` / `CHAT_EVERYONE` (CommandXlat.cpp:3048-3073): in a multiplayer game, not a replay, when
+    ///   `localPlayer && localPlayer->isPlayerActive() || !TheGlobalData->m_netMinPlayers` (`&&` binds first),
+    ///   `ToggleInGameChat()` and `SetInGameChatType` of the audience. Destroyed.
+    /// - `MSG_META_DIPLOMACY` (3076): in a game that is not the shell's, `ToggleDiplomacy(FALSE)`; else, with the shell
+    ///   up and GameSpy's buddy queue, `GameSpyToggleOverlay(GSOVERLAY_BUDDY)`. Destroyed.
+    /// - `MSG_META_OPTIONS` (3115): `ToggleQuitMenu()`. Destroyed.
+    /// - `MSG_META_TOGGLE_FAST_FORWARD_REPLAY` (3244): (`_ALLOW_DEBUG_CHEATS_IN_RELEASE` is not defined in the release,
+    ///   GameCommon.h:55) in a replay game, `m_TiVOFastMode = 1 - m_TiVOFastMode` and the literal message
+    ///   `"m_TiVOFastMode: ON"` / `"OFF"` of the new mode. Destroyed.
+    /// - `MSG_META_TAKE_SCREENSHOT` (3505): `TheDisplay->takeScreenShot()`. Destroyed.
+    ///
+    /// `MSG_META_TOGGLE_LOWER_DETAILS` (3122) is not translated: it writes `TheGameLogic->setShowBehindBuildingMarkers`,
+    /// the World's (saved by `GameLogic::xfer`), which the client never writes (#128's gaps). `None` for another message.
+    pub fn window_meta(t: MessageType, ui: &mut InGameUiSelection, h: &mut impl CommandMetaHost) -> Option<Disposition> {
+        use Disposition::{Destroy, Keep};
+        let cases = [MSG_META_CHAT_ALLIES, MSG_META_CHAT_EVERYONE, MSG_META_DIPLOMACY, MSG_META_OPTIONS, MSG_META_TOGGLE_FAST_FORWARD_REPLAY, MSG_META_TAKE_SCREENSHOT];
+        if !cases.contains(&t) {
+            return None;
+        }
+        // "We want to always be able to get to the options menu even during no input times ..."
+        if input_disabled_destroys(t, ui.input_enabled()) || (plant(10326) && !ui.input_enabled()) {
+            return Some(Destroy);
+        }
+        let d = match t {
+            MSG_META_CHAT_ALLIES | MSG_META_CHAT_EVERYONE => {
+                if h.is_in_multiplayer_game() && (!h.is_in_replay_game() || plant(10316)) {
+                    let local_player = h.local_player_exists();
+                    let open = if plant(10317) {
+                        local_player && (h.local_player_active() || h.net_min_players() == 0)
+                    } else if plant(10320) {
+                        local_player && h.local_player_active()
+                    } else {
+                        local_player && h.local_player_active() || h.net_min_players() == 0
+                    };
+                    if open {
+                        let allies = t == MSG_META_CHAT_ALLIES && !plant(10318);
+                        h.toggle_in_game_chat(if allies { InGameChatType::Allies } else { InGameChatType::Everyone });
+                    }
+                }
+                if plant(10319) && t == MSG_META_CHAT_EVERYONE {
+                    Keep
+                } else {
+                    Destroy
+                }
+            }
+            MSG_META_DIPLOMACY => {
+                if h.is_in_game() && (!h.is_in_shell_game() || plant(10322)) {
+                    h.toggle_diplomacy(plant(10321));
+                    if plant(10324) && h.shell_is_active() && h.game_spy_buddy_message_queue() {
+                        h.game_spy_toggle_buddy_overlay();
+                    }
+                } else if h.shell_is_active() && (h.game_spy_buddy_message_queue() || plant(10323)) {
+                    h.game_spy_toggle_buddy_overlay();
+                }
+                Destroy
+            }
+            MSG_META_OPTIONS => {
+                h.toggle_quit_menu();
+                if plant(10325) {
+                    Keep
+                } else {
+                    Destroy
+                }
+            }
+            MSG_META_TOGGLE_FAST_FORWARD_REPLAY => {
+                // ("#if !defined(_ALLOW_DEBUG_CHEATS_IN_RELEASE)": the release's replay test)
+                if h.is_in_replay_game() || plant(10327) {
+                    let on = if plant(10330) { true } else { !h.tivo_fast_mode() };
+                    h.set_tivo_fast_mode(on);
+                    h.tivo_message(None, if plant(10328) { !on } else { on });
+                }
+                if plant(10329) {
+                    Keep
+                } else {
+                    Destroy
+                }
+            }
+            _ => {
+                // MSG_META_TAKE_SCREENSHOT ("if (TheDisplay)": the client always has its display)
+                if !plant(10332) {
+                    h.take_screen_shot();
+                }
+                if plant(10331) {
+                    Keep
+                } else {
+                    Destroy
+                }
+            }
+        };
+        Some(d)
+    }
+
     /// GitHub #125: `translateGameMessage` for the meta messages of the module docs (after its input gate): the
     /// disposition, or `None` for a message type this has no case for.
     pub fn meta(&self, t: MessageType, ui: &mut InGameUiSelection, h: &mut impl CommandMetaHost) -> Option<Disposition> {
         use Disposition::{Destroy, Keep};
         if let Some(d) = Self::camera_meta(t, ui, h) {
+            return Some(d);
+        }
+        // #128
+        if let Some(d) = Self::window_meta(t, ui, h) {
             return Some(d);
         }
         let handled = [
@@ -808,6 +977,57 @@ pub(crate) mod tests {
         pub cheers: u32,
         /// (#136) `ToggleControlBar` calls.
         pub bar_toggles: u32,
+        /// #128: `isInReplayGame`, the chats toggled, `ToggleDiplomacy` calls, `ToggleQuitMenu` and screenshot counts,
+        /// the TiVO mode and its messages.
+        pub replay: bool,
+        pub chats: Vec<InGameChatType>,
+        pub diplomacy: Vec<bool>,
+        pub quit_menus: u32,
+        pub shots: u32,
+        pub tivo: bool,
+        pub tivo_messages: Vec<(Option<Vec<u8>>, bool)>,
+    }
+
+    impl MetaWindowHost for Host {
+        fn local_player_exists(&self) -> bool {
+            true
+        }
+        fn net_min_players(&self) -> i32 {
+            1
+        }
+        fn toggle_in_game_chat(&mut self, chat_type: InGameChatType) {
+            self.meta.chats.push(chat_type);
+        }
+        fn is_in_game(&self) -> bool {
+            true
+        }
+        fn is_in_shell_game(&self) -> bool {
+            false
+        }
+        fn toggle_diplomacy(&mut self, immediate: bool) {
+            self.meta.diplomacy.push(immediate);
+        }
+        fn game_spy_buddy_message_queue(&self) -> bool {
+            false
+        }
+        fn game_spy_toggle_buddy_overlay(&mut self) {
+            unreachable!("no GameSpy");
+        }
+        fn toggle_quit_menu(&mut self) {
+            self.meta.quit_menus += 1;
+        }
+        fn tivo_fast_mode(&self) -> bool {
+            self.meta.tivo
+        }
+        fn set_tivo_fast_mode(&mut self, on: bool) {
+            self.meta.tivo = on;
+        }
+        fn tivo_message(&mut self, label: Option<&[u8]>, on: bool) {
+            self.meta.tivo_messages.push((label.map(<[u8]>::to_vec), on));
+        }
+        fn take_screen_shot(&mut self) {
+            self.meta.shots += 1;
+        }
     }
 
     impl CommandMetaHost for Host {
@@ -839,7 +1059,7 @@ pub(crate) mod tests {
             self.meta.multiplayer
         }
         fn is_in_replay_game(&self) -> bool {
-            false
+            self.meta.replay
         }
         fn local_player_active(&self) -> bool {
             true
@@ -932,5 +1152,41 @@ pub(crate) mod tests {
         ui.deselect_all_drawables(true, &mut h);
         assert_eq!(camera_tracking_look_at(&mut ui, &h), None);
         assert!(!ui.is_camera_tracking_drawable());
+    }
+    /// #128, predicted before the run: outside a multiplayer game the chat keys do nothing but are destroyed; in one, the
+    /// allies' key toggles the chat for the allies; the diplomacy key toggles the briefing history (`FALSE`, not
+    /// immediate); the options key toggles the quit menu, **also with the input off**, while the screenshot key is then
+    /// destroyed untaken; the fast-forward key does nothing outside a replay, and in one turns the mode on with the
+    /// literal message; the key part's TiVO hack turns it off again with `GUI:FF_OFF`; the lower-details key has no case.
+    #[test]
+    fn the_window_meta_keys_reach_their_windows() {
+        let x = CommandTranslator::default();
+        let mut h = Host::default();
+        let mut ui = InGameUiSelection::new();
+        assert_eq!(x.meta(MSG_META_CHAT_ALLIES, &mut ui, &mut h), Some(Disposition::Destroy));
+        assert!(h.meta.chats.is_empty());
+        h.meta.multiplayer = true;
+        x.meta(MSG_META_CHAT_ALLIES, &mut ui, &mut h);
+        x.meta(MSG_META_CHAT_EVERYONE, &mut ui, &mut h);
+        assert_eq!(h.meta.chats, vec![InGameChatType::Allies, InGameChatType::Everyone]);
+        assert_eq!(x.meta(MSG_META_DIPLOMACY, &mut ui, &mut h), Some(Disposition::Destroy));
+        assert_eq!(h.meta.diplomacy, vec![false]);
+        ui.set_input_enabled(false);
+        assert_eq!(x.meta(MSG_META_OPTIONS, &mut ui, &mut h), Some(Disposition::Destroy));
+        assert_eq!(h.meta.quit_menus, 1);
+        assert_eq!(x.meta(MSG_META_TAKE_SCREENSHOT, &mut ui, &mut h), Some(Disposition::Destroy));
+        assert_eq!(h.meta.shots, 0);
+        ui.set_input_enabled(true);
+        x.meta(MSG_META_TAKE_SCREENSHOT, &mut ui, &mut h);
+        assert_eq!(h.meta.shots, 1);
+        assert_eq!(x.meta(MSG_META_TOGGLE_FAST_FORWARD_REPLAY, &mut ui, &mut h), Some(Disposition::Destroy));
+        assert!(!h.meta.tivo);
+        h.meta.replay = true;
+        x.meta(MSG_META_TOGGLE_FAST_FORWARD_REPLAY, &mut ui, &mut h);
+        assert!(h.meta.tivo);
+        meta_event_toggle_tivo_fast_mode(&mut h);
+        assert!(!h.meta.tivo);
+        assert_eq!(h.meta.tivo_messages, vec![(None, true), (Some(b"GUI:FF_OFF".to_vec()), false)]);
+        assert_eq!(x.meta(MSG_META_TOGGLE_LOWER_DETAILS, &mut ui, &mut h), None);
     }
 }

@@ -470,6 +470,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .init_resource::<ParticleDraw>()
         .add_systems(Startup, (load_fonts, setup_scene, setup_ui))
         .add_systems(FixedUpdate, step_logic)
+        .add_systems(Update, replay_fast_forward)
         .insert_non_send(ShellState::default())
         .add_systems(Update, (poll_import, apply_save_action, saves_panel, pump_art, apply_campaign_action, campaign_flow, campaign_panel, update_terrain, load_shell, shell_ui).chain())
         .add_systems(
@@ -624,6 +625,15 @@ fn setup_scene(mut commands: Commands, game: NonSend<Game>) {
     // view's viewport (`W3DView::setHeight`), which the UI must not be cut to
     commands.spawn((Camera2d, Camera { order: 1, clear_color: ClearColorConfig::None, ..default() }, IsDefaultUiCamera));
     commands.insert_resource(rig);
+}
+
+/// (#128) GUI glue (Bevy's clock): the fixed clock at the logic's rate, which the replay's fast forward raises
+/// ([`crate::input::Controls::logic_hz`], tested there).
+fn replay_fast_forward(game: NonSend<Game>, mut fixed: ResMut<Time<Fixed>>) {
+    let hz = game.controls.logic_hz(LOGIC_HZ);
+    if fixed.timestep() != std::time::Duration::from_secs_f64(1.0 / hz) {
+        fixed.set_timestep_hz(hz);
+    }
 }
 
 fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Res<Time>, windows: Query<&Window>) {
@@ -1006,7 +1016,10 @@ fn dik_of(k: KeyCode) -> u8 {
 /// (`Data\English\`, then `Data\INI\`) is read once the game's files are up. A phone has no keyboard: none of it runs.
 ///
 /// (#87) Escape in a game (`MSG_META_OPTIONS`) cancels a placement or a pending command first (the client's, #6), else
-/// toggles the quit menu ([`crate::shell::ShellUi::toggle_quit_menu`], tested there) when the shell is loaded; while the
+/// ~~toggles the quit menu~~ **corrected 2026-11-15 (#128):** goes to the translators when the CommandMap binds it (the
+/// shipped map's `MSG_META_OPTIONS`, whose `ToggleQuitMenu()` the command translator queues,
+/// `rts_lockstep_engine::client::command_xlat_meta`, and which is made here), else, without a CommandMap, toggles the
+/// quit menu itself ([`crate::shell::ShellUi::toggle_quit_menu`], tested there) when the shell is loaded; while the
 /// in-game menus are up they have the keyboard, and an Escape their windows did not use toggles again (upstream's
 /// window manager sees the key before the meta map).
 fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Game>, mut taken: ResMut<UiKeyboard>, mut shell: NonSendMut<ShellState>) {
@@ -1034,10 +1047,16 @@ fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Ga
                 // (the client's cancel, #6)
                 c.ui.place_build_available(None, None, 0.0, &c.client);
                 c.ui.set_gui_command(None);
-            } else if let Some(s) = shell.ui.as_mut() {
-                s.toggle_quit_menu(crate::shell::quit_menu_game(&c.client.world, c.ui.input_enabled()));
+                continue;
             }
-            continue;
+            // (#128) a CommandMap that binds Escape has it, as upstream (the shipped map: `MSG_META_OPTIONS`, whose
+            // `ToggleQuitMenu()` is queued and made below); without one the key toggles the quit menu itself
+            if !c.meta_map_binds(0x01) {
+                if let Some(s) = shell.ui.as_mut() {
+                    s.toggle_quit_menu(crate::shell::quit_menu_game(&c.client.world, c.ui.input_enabled()));
+                }
+                continue;
+            }
         }
         keys.push(k.clone());
     }
@@ -1085,6 +1104,12 @@ fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Ga
             if !u && dik != 0 {
                 g.controls.key(dik, k.state == ButtonState::Pressed, k.repeat);
             }
+        }
+    }
+    // (#128) `MSG_META_OPTIONS`' `ToggleQuitMenu()` calls (the CommandMap's key, `Controls::meta`), on the shell's quit menu
+    for _ in 0..std::mem::take(&mut g.controls.client.quit_menu_toggles) {
+        if let Some(s) = shell.ui.as_mut() {
+            s.toggle_quit_menu(crate::shell::quit_menu_game(&g.controls.client.world, g.controls.ui.input_enabled()));
         }
     }
 }
@@ -2626,7 +2651,11 @@ fn game_ui(
     }
     // (#148) the bar's communicator (`NonCommand_BriefingHistory` outside a multiplayer game): `ToggleDiplomacy(FALSE)`, the
     // briefing history on the shell's window manager (`Diplomacy.wnd` from the player's files)
-    if g.ui.as_mut().is_some_and(|u| u.take_diplomacy_toggle()) {
+    // (#128: and `MSG_META_DIPLOMACY`'s, the CommandMap's key, `WorldClient::diplomacy_toggles`; its `immediate` is
+    // `FALSE` as the button's)
+    let key_toggles = std::mem::take(&mut g.controls.client.diplomacy_toggles).len();
+    let bar_toggle = g.ui.as_mut().is_some_and(|u| u.take_diplomacy_toggle());
+    for _ in 0..key_toggles + usize::from(bar_toggle) {
         if let Some(s) = shell.ui.as_mut() {
             let c = &g.controls;
             let game = rts_lockstep_engine::client::diplomacy::DiplomacyGame {
@@ -2637,6 +2666,15 @@ fn game_ui(
             };
             s.toggle_diplomacy(game);
         }
+    }
+    // (#128) `MSG_META_TAKE_SCREENSHOT`'s `TheDisplay->takeScreenShot()` (W3DDisplay.cpp:2994): the next free
+    // `sshotNNN` (`Controls::next_screen_shot_leafname`, tested there) of the window, natively in the working folder, in a
+    // browser downloaded (Bevy's `save_to_disk`), then `GUI:ScreenCapture`. PNG: the client's only image codec.
+    for _ in 0..std::mem::take(&mut g.controls.client.screen_shots) {
+        let leafname = g.controls.next_screen_shot_leafname(|n| std::path::Path::new(n).with_extension("png").exists());
+        let path = std::path::PathBuf::from(leafname).with_extension("png");
+        commands.spawn(bevy::render::view::screenshot::Screenshot::primary_window()).observe(bevy::render::view::screenshot::save_to_disk(path));
+        g.controls.client.ui_messages.push(b"GUI:ScreenCapture".to_vec());
     }
     // (#136) `MSG_META_TOGGLE_CONTROL_BAR`'s `ToggleControlBar()` calls (the key's, or the phone column's `B`), on the
     // game's bar; the stages hold still during a replay's playback. Without the game's files there is no bar: the

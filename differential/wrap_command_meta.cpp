@@ -22,7 +22,15 @@
 **   meta_names.inc         MetaEvent.cpp, GameMessageMetaTypeNames;
 **   meta_translate.inc     MetaEvent.cpp, MetaEventTranslator::translateGameMessage;
 **   meta_map.inc           MetaEvent.cpp, MetaMap::findGameMessageMetaType and getMetaMapRec;
-**   meta_ctor.inc          (#131) MetaEvent.cpp, MetaEventTranslator::MetaEventTranslator (to the destructor).
+**   meta_ctor.inc          (#131) MetaEvent.cpp, MetaEventTranslator::MetaEventTranslator (to the destructor);
+**   meta_chat_cases.inc    (#128) CommandXlat.cpp, MSG_META_CHAT_ALLIES to MSG_META_PLACE_BEACON (chat allies, chat
+**                          everyone, diplomacy);
+**   meta_options_case.inc  (#128) MSG_META_OPTIONS to MSG_META_TOGGLE_LOWER_DETAILS (not translated: it writes the logic);
+**   meta_fast_forward_case.inc (#128) MSG_META_TOGGLE_FAST_FORWARD_REPLAY to the cheats' `#if
+**                          defined(_ALLOW_DEBUG_CHEATS_IN_RELEASE)` (compiled without it, as the release);
+**   meta_screenshot_case.inc (#128) MSG_META_TAKE_SCREENSHOT to the selected-group cases;
+**   chat_type.inc          (#128) GUICallbacks.h, `enum InGameChatType`;
+**   gs_overlay.inc         (#128) GameSpyOverlay.h, `enum GSOverlayType`.
 ** They are compiled inside namespace cmx on stand-ins for the classes and singletons they name; the messages are the real
 ** GameMessage of the message stream build (wrap_message_stream.cpp), under its names.
 **
@@ -33,11 +41,15 @@
 **     bits)); -2; per lookAt the 3 float bits; -3; the selection after, front first; -4; per message() (label code, count);
 **     -5; per addAudioEvent (tag, object); -6; per setGUICommand the command's type (-2 for NULL); -7; attack move, force
 **     attack, force move, waypoint, prefer selection, camera tracking, displayed max warning, select count; -8;
-**     m_teamExists after.
+**     m_teamExists after; (#128) -9; per window call (ToggleInGameChat 1 immediate, SetInGameChatType 2 type,
+**     ToggleDiplomacy 3 immediate, GameSpyToggleOverlay 4 overlay, ToggleQuitMenu 5 0, takeScreenShot 6 0); -10;
+**     m_TiVOFastMode after. In words META_INGAME .. META_TIVO: isInGame, isInShellGame, the shell active, GameSpy's
+**     buddy queue present, m_TiVOFastMode.
 **   kind 1: one key message through MetaEventTranslator::translateGameMessage. in: type, key, state, client frame, shell
 **     active, replay, m_lastModState, m_lastKeyDown, m_TiVOFastMode, record count, then per record (meta, key,
 **     transition, modifiers, usable in) made with getMetaMapRec. out: disposition; -1; the appended metas; -2;
-**     m_lastModState, m_lastKeyDown, m_TiVOFastMode, messages; -3; the records' metas in list order.
+**     m_lastModState, m_lastKeyDown, m_TiVOFastMode, messages; -3; the records' metas in list order; (#128) -4; the
+**     messages' label codes.
 **   kind 2: in: i. out: GameMessageMetaTypeNames[i]'s value and name bytes (none past the end).
 **   kind 3 (#131): a sequence of raw mouse messages through one MetaEventTranslator (constructed by its constructor in
 **     zeroed storage: the constructor leaves m_mouseDownPosition unset, which the port starts at 0). in: TheMouse's
@@ -77,22 +89,25 @@ enum {
 	META_TYPE = 0, META_INPUT, META_NDRAW, META_LOCAL, META_MAXSEL, META_MAXWARN, META_RADAR, META_RADAR_X, META_RADAR_Y,
 	META_RADAR_Z, META_MP, META_REPLAY, META_ACTIVE, META_NETMIN, META_GAMEINFO_MP, META_BEACONS, META_MAXBEACONS,
 	META_BEACON_BUTTON, META_ATTACKMOVE, META_FORCEATTACK, META_FORCEMOVE, META_WAYPOINT, META_PREFER, META_TRACKING,
-	META_TEAM, META_NSEL, META_SEL0, META_NOBJ = META_SEL0 + 8, META_OBJ0, META_HEADER = 48,
+	META_TEAM, META_NSEL, META_SEL0, META_NOBJ = META_SEL0 + 8, META_OBJ0,
+	META_INGAME = 43, META_SHELLGAME, META_SHELL, META_BUDDY, META_TIVO, META_HEADER = 48,
 	DRAW_WORDS = 12, DRAW_HASOBJ = 0, DRAW_KINDS, DRAW_MOBILE, DRAW_LOCAL, DRAW_CONTAINER, DRAW_DEAD, DRAW_MASS, DRAW_OFFMAP,
 	DRAW_SCREEN, DRAW_TEMPLATE, DRAW_CARBOMB,
 	META_COSTS = META_HEADER + 8 * DRAW_WORDS,
 };
 
-std::vector<int> g_out, g_msgs, g_looks, g_uiMsgs, g_audio, g_gui;
+std::vector<int> g_out, g_msgs, g_looks, g_uiMsgs, g_audio, g_gui, g_calls;
 static Int realBits(Real r) { Int i; memcpy(&i, &r, sizeof i); return i; }
 
 /* ---- the stand-ins' text and kinds ---- */
-enum { LABEL_NONE, LABEL_NOTHING_SELECTED, LABEL_ACROSS_SCREEN, LABEL_ACROSS_MAP, LABEL_MAX_SELECTION, LABEL_FF_ON, LABEL_FF_OFF, LABEL_OTHER };
+enum { LABEL_NONE, LABEL_NOTHING_SELECTED, LABEL_ACROSS_SCREEN, LABEL_ACROSS_MAP, LABEL_MAX_SELECTION, LABEL_FF_ON, LABEL_FF_OFF, LABEL_OTHER, LABEL_TIVO };
 class UnicodeString
 {
 public:
 	Int m_label, m_count;
 	UnicodeString() : m_label(LABEL_NONE), m_count(0) {}
+	/* (#128) the fast-forward case's literal L"m_TiVOFastMode: %s" */
+	explicit UnicodeString(const wchar_t *) : m_label(LABEL_TIVO), m_count(0) {}
 	Int str() const { return m_label; }
 	void format(Int label, ...) { va_list a; va_start(a, label); m_label = label; m_count = va_arg(a, Int); va_end(a); }
 	void clear() { m_label = LABEL_NONE; }
@@ -278,11 +293,14 @@ class ThingFactory { public: const ThingTemplate *findTemplate(const char *) { r
 ThingFactory g_factory;
 ThingFactory *TheThingFactory = &g_factory;
 Bool g_mp, g_replay, g_gameInfoMp;
+Bool g_inGame, g_shellGame;
 class GameLogic
 {
 public:
 	Bool isInMultiplayerGame() { return g_mp; }
 	Bool isInReplayGame() { return g_replay; }
+	Bool isInGame() { return g_inGame; }
+	Bool isInShellGame() { return g_shellGame; }
 };
 GameLogic g_logic;
 GameLogic *TheGameLogic = &g_logic;
@@ -343,7 +361,17 @@ public:
 		m_selectedDrawables.clear();
 		if (postMsg) TheMessageStream->appendMessage(GameMessage::MSG_DESTROY_SELECTED_GROUP)->appendBooleanArgument(true);
 	}
-	void message(UnicodeString m, ...) { g_uiMsgs.push_back(m.m_label); g_uiMsgs.push_back(m.m_count); }
+	void message(UnicodeString m, ...)
+	{
+		g_uiMsgs.push_back(m.m_label);
+		if (m.m_label == LABEL_TIVO) {
+			/* (#128) the fast-forward case's L"ON" / L"OFF": 1 for on */
+			va_list a; va_start(a, m); const wchar_t *w = va_arg(a, const wchar_t *); va_end(a);
+			g_uiMsgs.push_back(w[1] == L'N' ? 1 : 0);
+		} else {
+			g_uiMsgs.push_back(m.m_count);
+		}
+	}
 	void setGUICommand(const CommandButton *c) { g_gui.push_back(c ? (Int)c->getCommandType() : -2); }
 	void toggleAttackMoveToMode() { m_attackMove = !m_attackMove; }
 	void setForceMoveMode(Bool b) { m_forceMove = b; }
@@ -373,6 +401,24 @@ InGameUI *TheInGameUI = &g_ui;
 
 static void pickAndPlayUnitVoiceResponse(const DrawableList *, GameMessage::Type, void * = NULL) {}
 
+/* ---- (#128) the windows and the display the window cases call ---- */
+#include "chat_type.inc"
+#include "gs_overlay.inc"
+static void windowCall(Int what, Int arg) { g_calls.push_back(what); g_calls.push_back(arg); }
+void ToggleInGameChat( Bool immediate = TRUE ) { windowCall(1, immediate ? 1 : 0); }
+void SetInGameChatType( InGameChatType chatType ) { windowCall(2, (Int)chatType); }
+void ToggleDiplomacy( Bool immediate = TRUE ) { windowCall(3, immediate ? 1 : 0); }
+void GameSpyToggleOverlay( GSOverlayType o ) { windowCall(4, (Int)o); }
+void ToggleQuitMenu() { windowCall(5, 0); }
+class Display { public: void takeScreenShot() { windowCall(6, 0); } };
+Display g_display;
+Display *TheDisplay = &g_display;
+Int g_buddyQueue;
+Int *TheGameSpyBuddyMessageQueue;
+class Shell { public: Bool m_active; Bool isShellActive() { return m_active; } };
+Shell g_shell;
+Shell *TheShell = &g_shell;
+
 class CommandTranslator : public GameMessageTranslator
 {
 public:
@@ -388,9 +434,13 @@ static Bool isSystemMessage( const GameMessage *msg );
 	switch (t)
 	{
 #include "meta_select_cases.inc"
+#include "meta_chat_cases.inc"
 #include "meta_beacon_cases.inc"
+#include "meta_options_case.inc"
 #include "meta_mode_cases.inc"
+#include "meta_fast_forward_case.inc"
 #include "meta_held_cases.inc"
+#include "meta_screenshot_case.inc"
 #include "group_cases.inc"
 		default:
 			break;
@@ -425,9 +475,6 @@ public:
 };
 MetaMap g_metaMap;
 MetaMap *TheMetaMap = &g_metaMap;
-class Shell { public: Bool m_active; Bool isShellActive() { return m_active; } };
-Shell g_shell;
-Shell *TheShell = &g_shell;
 UnsignedInt g_clientFrame;
 class GameClientFrame { public: UnsignedInt getFrame() { return g_clientFrame; } };
 /* (#131: UnsignedInt, Mouse.h's type, which the release's `abs(...) < m_dragTolerance` compares unsigned) */
@@ -494,8 +541,13 @@ extern "C" int ref_command_meta_case(int kind, const int *in, int nin, int *out,
 	(void)nin;
 	g_out.clear();
 	if (kind == 0) {
-		g_msgs.clear(); g_looks.clear(); g_uiMsgs.clear(); g_audio.clear(); g_gui.clear();
+		g_msgs.clear(); g_looks.clear(); g_uiMsgs.clear(); g_audio.clear(); g_gui.clear(); g_calls.clear();
 		g_stream.m_msgs.clear();
+		g_inGame = in[META_INGAME] != 0;
+		g_shellGame = in[META_SHELLGAME] != 0;
+		g_shell.m_active = in[META_SHELL] != 0;
+		TheGameSpyBuddyMessageQueue = in[META_BUDDY] ? &g_buddyQueue : NULL;
+		g_global.m_TiVOFastMode = in[META_TIVO];
 		g_ui.m_inputEnabled = in[META_INPUT] != 0;
 		g_ndraw = in[META_NDRAW];
 		g_hasLocal = in[META_LOCAL] != 0;
@@ -587,6 +639,9 @@ extern "C" int ref_command_meta_case(int kind, const int *in, int nin, int *out,
 		g_out.insert(g_out.end(), w, w + 8);
 		g_out.push_back(-8);
 		g_out.push_back((Int)x.m_teamExists);
+		g_out.push_back(-9);
+		putSection(g_calls, -10);
+		g_out.push_back(g_global.m_TiVOFastMode);
 	} else if (kind == 1) {
 		g_msgs.clear(); g_uiMsgs.clear();
 		g_stream.m_msgs.clear();
@@ -623,6 +678,9 @@ extern "C" int ref_command_meta_case(int kind, const int *in, int nin, int *out,
 		g_out.push_back((Int)(g_uiMsgs.size() / 2));
 		g_out.push_back(-3);
 		for (MetaMapRec *m = g_metaMap.m_metaMaps; m; m = m->m_next) g_out.push_back((Int)m->m_meta);
+		/* (#128) the messages' labels (GUI:FF_ON / GUI:FF_OFF) */
+		g_out.push_back(-4);
+		for (size_t i = 0; i < g_uiMsgs.size(); i += 2) g_out.push_back(g_uiMsgs[i]);
 	} else if (kind == 3) {
 		g_stream.m_msgs.clear();
 		while (g_metaMap.m_metaMaps) { MetaMapRec *n = g_metaMap.m_metaMaps->m_next; delete g_metaMap.m_metaMaps; g_metaMap.m_metaMaps = n; }

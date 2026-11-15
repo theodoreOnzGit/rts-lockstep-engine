@@ -2786,7 +2786,8 @@ mod differential {
             // (kindOfUnitSelection, similarUnitSelection; selectAllUnitsByTypeAcrossRegion to addFloatingText), ControlBar.h
             // (GUICommandType), MetaEvent.h (the key enums and names) and MetaEvent.cpp (GameMessageMetaTypeNames,
             // MetaEventTranslator::translateGameMessage, findGameMessageMetaType and getMetaMapRec; #131: the
-            // translator's constructor). No text is edited.
+            // translator's constructor); #128: the chat, diplomacy, options, fast-forward and screenshot cases, and
+            // GUICallbacks.h's InGameChatType and GameSpyOverlay.h's GSOverlayType. No text is edited.
             // Each anchor must occur once.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_command_meta.cpp");
@@ -2810,6 +2811,8 @@ mod differential {
                 let cb = rd("Include/GameClient/ControlBar.h");
                 let me = rd("Source/GameClient/MessageStream/MetaEvent.cpp");
                 let mh = rd("Include/GameClient/MetaEvent.h");
+                let gcb = rd("Include/GameClient/GUICallbacks.h");
+                let gso = rd("Include/GameNetwork/GameSpyOverlay.h");
                 let c = "CommandXlat.cpp";
                 let files = [
                     ("command_gate_open.inc", piece(&cx, c, "GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage *msg)\n{", Some("#if defined(_DEBUG) || defined(_INTERNAL)\n\tExtentModType extentModType"))),
@@ -2819,6 +2822,18 @@ mod differential {
                     ("meta_beacon_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_PLACE_BEACON:\n", Some("\t\tcase GameMessage::MSG_META_OPTIONS:\n"))),
                     ("meta_mode_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_TOGGLE_ATTACKMOVE:\n", Some("\t\tcase GameMessage::MSG_META_TOGGLE_FAST_FORWARD_REPLAY:\n"))),
                     ("meta_held_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_BEGIN_FORCEMOVE:\n", Some("\t\tcase GameMessage::MSG_META_TAKE_SCREENSHOT:\n"))),
+                    // (#128) the release's window cases: chat (allies, everyone) and diplomacy, to PLACE_BEACON; options, to
+                    // TOGGLE_LOWER_DETAILS (not translated); the replay's fast forward, to the cheats' `#if`; the screenshot,
+                    // to the selected-group cases; GUICallbacks.h's InGameChatType and GameSpyOverlay.h's GSOverlayType
+                    ("meta_chat_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_CHAT_ALLIES:\n", Some("\t\tcase GameMessage::MSG_META_PLACE_BEACON:\n"))),
+                    ("meta_options_case.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_OPTIONS:\n", Some("\t\tcase GameMessage::MSG_META_TOGGLE_LOWER_DETAILS:\n"))),
+                    (
+                        "meta_fast_forward_case.inc",
+                        piece(&cx, c, "\t\tcase GameMessage::MSG_META_TOGGLE_FAST_FORWARD_REPLAY:\n", Some("#if defined(_ALLOW_DEBUG_CHEATS_IN_RELEASE)//may be defined in GameCommon.h")),
+                    ),
+                    ("meta_screenshot_case.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_TAKE_SCREENSHOT:\n", Some("\t\tcase GameMessage::MSG_CREATE_SELECTED_GROUP:\n\t\tcase GameMessage::MSG_SELECT_TEAM0:\n"))),
+                    ("chat_type.inc", piece(&gcb, "GUICallbacks.h", "enum InGameChatType\n{", Some("extern void ToggleInGameChat("))),
+                    ("gs_overlay.inc", piece(&gso, "GameSpyOverlay.h", "enum GSOverlayType\n{", Some("void GameSpyOpenOverlay( GSOverlayType );"))),
                     ("group_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_CREATE_SELECTED_GROUP:\n\t\tcase GameMessage::MSG_SELECT_TEAM0:\n", Some("\t\t// An object is mouseover'd"))),
                     ("kind_of_selection.inc", piece(&ui, "InGameUI.cpp", "struct KindOfSelectionData\n", Some("void showReplayControls( void )"))),
                     (

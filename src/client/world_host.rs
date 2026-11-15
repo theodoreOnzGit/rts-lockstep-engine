@@ -151,6 +151,19 @@ pub struct WorldClient {
     /// #136: `ToggleControlBar(immediate)` calls (`MSG_META_TOGGLE_CONTROL_BAR`), for the application's control bar to
     /// make (`control_bar_stage::toggle_control_bar`) and clear.
     pub control_bar_toggles: Vec<bool>,
+    /// #128: `MSG_META_CHAT_ALLIES` / `CHAT_EVERYONE`'s `ToggleInGameChat()` + `SetInGameChatType` calls. The in-game chat
+    /// (InGameChat.cpp) is not translated and the client plays no multiplayer game, which the case needs: nothing takes
+    /// them but [`WorldClient::new`]'s next game.
+    pub in_game_chats: Vec<crate::client::command_xlat_meta::InGameChatType>,
+    /// #128: `MSG_META_DIPLOMACY`'s `ToggleDiplomacy(immediate)` calls, `MSG_META_OPTIONS`' `ToggleQuitMenu()` calls and
+    /// `MSG_META_TAKE_SCREENSHOT`'s `takeScreenShot()` calls, for the application's shell and display to make and clear.
+    pub diplomacy_toggles: Vec<bool>,
+    pub quit_menu_toggles: u32,
+    pub screen_shots: u32,
+    /// #128: `TheGlobalData->m_TiVOFastMode`, the replay's fast forward. The client keeps its own: the World's global
+    /// data is the logic's, which the client never writes (the logic's `GameLogic::startNewGame` clears it, GameLogic.cpp:1167;
+    /// a new game here makes a new `WorldClient`, whose mode starts off).
+    pub tivo_fast_mode: bool,
     /// `EVA_InsufficientFunds` plays.
     pub eva_insufficient_funds: u32,
     /// #51: the unit voices the translators played (`addAudioEvent`), for the client's audio to take.
@@ -206,6 +219,11 @@ impl WorldClient {
             all_cheers: 0,
             camera_resets: 0,
             control_bar_toggles: Vec::new(),
+            in_game_chats: Vec::new(),
+            diplomacy_toggles: Vec::new(),
+            quit_menu_toggles: 0,
+            screen_shots: 0,
+            tivo_fast_mode: false,
             eva_insufficient_funds: 0,
             voices: Vec::new(),
             double_click_attack_move_orders_given: 0,
@@ -636,6 +654,53 @@ impl crate::client::command_xlat_meta::CommandMetaHost for WorldClient {
     }
     fn play_all_cheer_sound(&mut self) {
         self.all_cheers += 1;
+    }
+}
+
+/// #128: the window meta keys' host. The game here is never the shell's and GameSpy's buddy queue is never there (no
+/// online service); the calls are queued for the application ([`WorldClient::diplomacy_toggles`], ...). The local player
+/// is the client's ([`WorldClient::player`]), always present.
+impl crate::client::command_xlat_meta::MetaWindowHost for WorldClient {
+    fn local_player_exists(&self) -> bool {
+        true
+    }
+    fn net_min_players(&self) -> i32 {
+        self.world.statics.global_data.the_global_data().map_or(0, |g| g.net_min_players)
+    }
+    fn toggle_in_game_chat(&mut self, chat_type: crate::client::command_xlat_meta::InGameChatType) {
+        self.in_game_chats.push(chat_type);
+    }
+    fn is_in_game(&self) -> bool {
+        self.world.cuts.game_loop.game_mode != crate::common::recorder::game_mode::NONE
+    }
+    fn is_in_shell_game(&self) -> bool {
+        self.world.cuts.game_loop.game_mode == crate::common::recorder::game_mode::SHELL
+    }
+    fn toggle_diplomacy(&mut self, immediate: bool) {
+        self.diplomacy_toggles.push(immediate);
+    }
+    fn game_spy_buddy_message_queue(&self) -> bool {
+        false
+    }
+    fn game_spy_toggle_buddy_overlay(&mut self) {}
+    fn toggle_quit_menu(&mut self) {
+        self.quit_menu_toggles += 1;
+    }
+    fn tivo_fast_mode(&self) -> bool {
+        self.tivo_fast_mode
+    }
+    fn set_tivo_fast_mode(&mut self, on: bool) {
+        self.tivo_fast_mode = on;
+    }
+    fn tivo_message(&mut self, label: Option<&[u8]>, on: bool) {
+        let text = match label {
+            Some(l) => l.to_vec(),
+            None => format!("m_TiVOFastMode: {}", if on { "ON" } else { "OFF" }).into_bytes(),
+        };
+        self.ui_messages.push(text);
+    }
+    fn take_screen_shot(&mut self) {
+        self.screen_shots += 1;
     }
 }
 

@@ -127,6 +127,46 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#128, the last release meta cases (2026-11-15, GitHub #128): chat, diplomacy, options, the replay's fast forward and
+the screenshot through the CommandMap; MetaEvent's TiVO hack applied.**
+- **What was open (read first).** Of the issue's list, #131 (f1a34ab) did the hot keys, MetaEventTranslator's mouse
+  part, the right button's `isClick` and the camera bindings; #136 (0fdf6ce) the control bar's toggle; #160 (722b3fb)
+  the key-mapping dialog (KeyboardOptionsMenu.cpp). Still open: `MSG_META_CHAT_ALLIES` / `CHAT_EVERYONE`,
+  `DIPLOMACY`, `OPTIONS` through the CommandMap, `TOGGLE_LOWER_DETAILS`, `TOGGLE_FAST_FORWARD_REPLAY` with the TiVO hack
+  (`KeyResult::fast_forward_toggled` was computed and dropped), `TAKE_SCREENSHOT`.
+- **Upstream read.** CommandXlat.cpp:3036-3120, 3244-3260, 3505-3511; MetaEvent.cpp:497-513; GameEngine.cpp:873-877 (the
+  frame limit off in a replay's fast mode); W3DDisplay.cpp:1876 (one frame drawn in 30 then) and 2994-3119
+  (`takeScreenShot`: `sshot%.3d.bmp`, the first name not in the user data folder, `CAPTURE_TO_TARGA` defined nowhere);
+  GameCommon.h:55-67 (the release defines `DONT_ALLOW_DEBUG_CHEATS_IN_RELEASE`, and `DUMP_PERF_STATS` only for
+  `_INTERNAL`/`_DEBUG`). **Debug-only, not translated:** every case at 3817-5128 (`_DEBUG`/`_INTERNAL`:
+  `MSG_META_DEMO_*`, `MSG_META_DEBUG_*`, the help key), `DEMO_TOGGLE_AUDIODEBUG`, `DEMO_PERFORM_STATISTICAL_DUMP`,
+  `MSG_CHEAT_*` (`_ALLOW_DEBUG_CHEATS_IN_RELEASE`) and `DEMO_INSTANT_QUIT` (`ALLOW_ALT_F4`, defined nowhere).
+- **Translated.** `CommandTranslator::window_meta` (src/client/command_xlat_meta.rs) with its host `MetaWindowHost`;
+  `meta_event_toggle_tivo_fast_mode` (the TiVO hack's toggle and `GUI:FF_ON`/`GUI:FF_OFF`). The client: the CommandMap's
+  Escape goes to the translators (its `ToggleQuitMenu()` made on the shell's quit menu; without a CommandMap the key
+  still toggles the menu itself), the diplomacy key toggles the briefing history like the communicator button, the
+  screenshot key saves `sshotNNN.png` (natively in the working folder, in a browser as a download; PNG because the
+  client's only image codec is PNG), and the fast mode (the client's own flag, `WorldClient::tivo_fast_mode`: the World's
+  global data is the logic's) runs a replay's logic at 30 times its rate (`Controls::logic_hz`). The chat calls are
+  queued and dropped: InGameChat.cpp is not translated, and the case needs a multiplayer game, which the client never
+  plays.
+- **Stopped:** `MSG_META_TOGGLE_LOWER_DETAILS` (3122) writes `TheGameLogic->setShowBehindBuildingMarkers`, the World's
+  (saved by `GameLogic::xfer`); src/logic is read-only and the client never writes the World.
+- **Differential** (`tests/differential_command_meta.rs`, `differential/wrap_command_meta.cpp`, six new verbatim cuts,
+  each anchor asserted once): meta cases 20,000, **0 mismatches** (905 with window calls, 61 fast-forward toggles); keys
+  20,000, **0** (101 toggles, labels compared); names 105, **0**. Plants 10316-10335: **20 of 20 caught** (fewest 9).
+  Neighbours re-run: `differential_meta_input`, `control_bar_stage`, `input_gate`, `hot_key`, all 0 mismatches.
+- **Gates (release, 1.97.1).** lib 1278 passed; client 109 passed (new: `the_command_map_window_keys_queue_their_windows`,
+  and lib's `the_window_meta_keys_reach_their_windows`); gate (a) PASS, 300 frames, last CRC **0bf44067**.
+- **Predictions.** All held: 0 mismatches on the first run (the ~40% harness risk did not happen); 20 of 20 plants.
+  The buddy-overlay plants were not missed but caught by few cases (10323: 26, 10324: 9).
+- **Doc claims corrected** (struck through, 2026-11-15 #128): `meta_event`'s "the client has no fast-forward yet" and
+  "the key-mapping dialog is not translated" (#160 had translated it); `command_xlat`'s list of meta cases still not
+  here; `keyboard_ui`'s Escape.
+- **Upstream quirk kept:** through a key, `MSG_META_TOGGLE_FAST_FORWARD_REPLAY` never reaches the command translator:
+  MetaEvent's hack toggles the mode and keeps the key without appending the meta message. Only a modifiers-only record
+  (`Key = KEY_NONE`) appends it.
+
 **#57, the radar follow-ups (2026-11-15, GitHub #57): `CHUNK_Radar` compared byte for byte; a map's
 `WaterTransparency` override translated; the dozer's message blocked by the logic.**
 - **What was open (read first).** The issue's comments of 2026-11-12 tick the hero reticle, the attack glow and the

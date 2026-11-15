@@ -9,6 +9,8 @@
 //     selectAllUnitsByType*, selectMatching*, selectUnitsMatchingCurrentSelection)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/MetaEvent.cpp (GameMessageMetaTypeNames,
 //     MetaEventTranslator::translateGameMessage's key part, MetaMap::getMetaMapRec)
+//   (#128) CommandXlat.cpp's chat, diplomacy, options, fast-forward and screenshot cases; GUICallbacks.h
+//     (InGameChatType); GameSpyOverlay.h (GSOverlayType)
 //
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only), with
 // the additional terms in NOTICE.md.
@@ -22,17 +24,21 @@
 //! compiled on stand-ins for the client's drawable list, the objects, the InGameUI's selection and modes, the tactical
 //! view, the radar, the players, the game logic, the audio and the stream, with the real `GameMessage`. Three families:
 //!
-//! - [`meta_cases_match_upstream`]: one meta message (the 28 types `CommandTranslator::meta` has cases for, the
-//!   selection walks weighted up) through `translateGameMessage`; each message it appends then goes through the
+//! - [`meta_cases_match_upstream`]: one meta message (~~the 28 types~~ **(#128) the 34 types** `CommandTranslator::meta` has
+//!   cases for, the selection walks weighted up) through `translateGameMessage`; each message it appends then goes through the
 //!   translator too, for `m_teamExists`. Random: 0 to 8 drawables in the list, each with or without an object (a third
 //!   of the time none past the first), 8 kinds (structure, aircraft, dozer, harvester, command center, hero, ignores
 //!   select all, no select), mobile, locally controlled, contained by another, dead, mass-selectable, off the map, on
 //!   the screen, one of 4 templates, a car bomb; 0 to 4 selected (each with an object), the local player present and its
 //!   objects in a random order, the selection cap (none, 1, 2 or 3) and its warning, the radar's last event, the
 //!   multiplayer, replay, active, net-min-players, game-info and beacon facts, the 6 InGameUI flags, `m_teamExists`, the
-//!   input on 7 times in 8. Compared: the disposition, every appended message with its arguments, every `lookAt`
+//!   input on 7 times in 8; **(#128)** `isInGame`, `isInShellGame` (a quarter of the time), the shell (a third), GameSpy's
+//!   buddy queue and the TiVO mode. Compared: the disposition, every appended message with its arguments, every `lookAt`
 //!   position's bits, the selection after (front first), the UI messages (label, count), the sounds (the template's
-//!   select voice, the cheer), the `setGUICommand` calls, the flags and select count after, and `m_teamExists` after.
+//!   select voice, the cheer), the `setGUICommand` calls, the flags and select count after, and `m_teamExists` after;
+//!   **(#128)** the window calls in order (`ToggleInGameChat`, `SetInGameChatType`, `ToggleDiplomacy` and its argument,
+//!   `GameSpyToggleOverlay`, `ToggleQuitMenu`, `takeScreenShot`), the fast-forward case's literal message (and its ON/OFF)
+//!   and `m_TiVOFastMode` after.
 //!   Not generated (upstream crashes, see `command_xlat_meta`'s docs): a selected drawable without an object, a list of
 //!   one selected drawable for the next walks, a beacon case without a local player.
 //! - [`meta_event_keys_match_upstream`]: one `MSG_RAW_KEY_DOWN` / `UP` through `MetaEventTranslator::translateGameMessage`
@@ -40,7 +46,9 @@
 //!   keys or `MK_NONE`, a transition (with `DOUBLEDOWN`), one of the 8 modifier states, usable in none / shell / game /
 //!   both; the key one of those 6 or a modifier key, its state up or down with random modifier and auto-repeat bits,
 //!   the client frame 0 or 1, the shell, the replay, the last modifiers, the TiVO mode. Compared: the disposition, the
-//!   metas appended, the last modifiers and key after, the TiVO mode, the message count, the records' list order.
+//!   metas appended, the last modifiers and key after, the TiVO mode, the message count, the records' list order;
+//!   **(#128)** the TiVO hack's toggle and message as the client makes them
+//!   (`command_xlat_meta::meta_event_toggle_tivo_fast_mode`), with the messages' labels (`GUI:FF_ON` / `GUI:FF_OFF`).
 //! - [`meta_names_match_upstream`]: every entry of `GameMessageMetaTypeNames` (name and value) against
 //!   `meta_event::GAME_MESSAGE_META_TYPE_NAMES`.
 //!
@@ -58,9 +66,22 @@
 //!   cases are now aimed at a record.
 //! - Names: 104 entries and the end, **0 mismatches**.
 //!
+//! # Results (2026-11-15, #128, `COMMAND_META_CASES=20000`)
+//!
+//! *Predicted before the first run* (`issue128_predictions.md`): 0 mismatches in the three families, with a ~40% chance of
+//! a first-run harness mismatch; all plants 10316-10335 caught, a plant on GameSpy's buddy branch the likeliest to be
+//! missed.
+//!
+//! - Meta cases: 20,000, **0 mismatches** on the first run. 905 cases made a window call, 61 turned the replay's fast
+//!   forward; 2,986 looked somewhere, 1,407 were selection walks that selected, 3,224 gave a UI message, 3,836 were kept
+//!   (the counts of the older families moved because the generator now draws from 34 types).
+//! - Keys: 20,000, **0 mismatches**; 3,996 made a meta, 230 were eaten, 101 toggled the fast forward (with its label).
+//! - Names: 105 compared, **0 mismatches**.
+//! - Plants 10316-10335: **20 of 20 caught** (table below). The fewest: 10317 and 10324, 9 cases each.//!
 //! # Planted bugs
 //!
-//! `L9_PLANT=<id>` (the run prints `MEASURED` lines and fails on purpose): **25 of 25 caught** (2026-11-11).
+//! `L9_PLANT=<id>` (the run prints `MEASURED` lines and fails on purpose): **25 of 25 caught** (2026-11-11); **(#128)
+//! 20 of 20 caught** (10316-10335, 2026-11-15).
 //!
 //! | id | planted bug | caught by |
 //! |---|---|---|
@@ -89,11 +110,31 @@
 //! | 9143 | game-only commands at client frame 0 | 532 |
 //! | 9144 | `getMetaMapRec` appends a new record (upstream prepends) | 16,834 |
 //! | 9145 | matching units also across the map when the screen selected some | 40 meta cases |
+//! | 10316 | (#128) chat in a replay too | 79 meta cases |
+//! | 10317 | chat's condition read `local && (active \|\| netMin == 0)` (`&&` binds first upstream) | 9 |
+//! | 10318 | the allies' chat set to everyone | 113 |
+//! | 10319 | chat to everyone kept | 299 |
+//! | 10320 | chat without the `!m_netMinPlayers` clause | 27 |
+//! | 10321 | `ToggleDiplomacy(TRUE)` (upstream: `FALSE`) | 102 |
+//! | 10322 | diplomacy in the shell's game too | 26 |
+//! | 10323 | the buddy overlay without GameSpy's queue | 26 |
+//! | 10324 | the buddy overlay also after the diplomacy (no `else`) | 9 |
+//! | 10325 | options kept | 264 |
+//! | 10326 | options stopped by the input gate | 22 |
+//! | 10327 | fast forward outside a replay | 193 |
+//! | 10328 | the fast-forward message says the old mode | 61 |
+//! | 10329 | fast forward kept | 254 |
+//! | 10330 | fast forward sets the mode on instead of toggling | 36 |
+//! | 10331 | screenshot kept | 285 |
+//! | 10332 | no screenshot taken | 285 |
+//! | 10333 | the key's TiVO hack outside a replay | 125 key cases |
+//! | 10334 | the TiVO key destroyed (upstream keeps it) | 226 key cases |
+//! | 10335 | the TiVO hack's message of the old mode | 101 key cases |
 
 mod support;
 
 use rts_lockstep_engine::client::command_xlat::{input_disabled_destroys, ActionType, CmdArg, CommandTranslator, CommandXlatHost, GuiButton, TargetMode};
-use rts_lockstep_engine::client::command_xlat_meta::CommandMetaHost;
+use rts_lockstep_engine::client::command_xlat_meta::{meta_event_toggle_tivo_fast_mode, CommandMetaHost, InGameChatType, MetaWindowHost};
 use rts_lockstep_engine::client::control_bar::{gui, opt};
 use rts_lockstep_engine::client::in_game_ui::{DrawableId, InGameUiSelection, SelectionUiHost};
 use rts_lockstep_engine::client::meta_event::{MetaEventTranslator, MetaMap, KeyContext, GAME_MESSAGE_META_TYPE_NAMES};
@@ -153,6 +194,8 @@ const META_NSEL: usize = 25;
 const META_SEL0: usize = 26;
 const META_NOBJ: usize = META_SEL0 + 8;
 const META_OBJ0: usize = META_NOBJ + 1;
+// (#128) isInGame, isInShellGame, the shell, GameSpy's buddy queue, m_TiVOFastMode
+const META_INGAME: usize = 43;
 const META_HEADER: usize = 48;
 const DRAW_WORDS: usize = 12;
 const META_COSTS: usize = META_HEADER + 8 * DRAW_WORDS;
@@ -196,6 +239,13 @@ struct MetaHost {
     audio: Vec<i32>,
     gui: Vec<i32>,
     sent: Vec<MessageType>,
+    /// #128: the window cases' facts and calls (the C++ stand-ins' codes).
+    in_game: bool,
+    shell_game: bool,
+    shell: bool,
+    buddy: bool,
+    tivo: bool,
+    calls: Vec<i32>,
 }
 
 impl MetaHost {
@@ -463,14 +513,64 @@ impl CommandMetaHost for MetaHost {
         self.audio.extend([-7, 0]);
     }
 }
+/// #128: the C++ stand-ins' calls: `ToggleInGameChat` 1, `SetInGameChatType` 2, `ToggleDiplomacy` 3,
+/// `GameSpyToggleOverlay` 4 (`GSOVERLAY_BUDDY` is 2), `ToggleQuitMenu` 5, `takeScreenShot` 6; the fast-forward case's
+/// literal message is the label code 8 with 1 for "ON".
+impl MetaWindowHost for MetaHost {
+    fn local_player_exists(&self) -> bool {
+        self.local
+    }
+    fn net_min_players(&self) -> i32 {
+        self.net_min
+    }
+    fn toggle_in_game_chat(&mut self, chat_type: InGameChatType) {
+        self.calls.extend([1, 1, 2, chat_type as i32]);
+    }
+    fn is_in_game(&self) -> bool {
+        self.in_game
+    }
+    fn is_in_shell_game(&self) -> bool {
+        self.shell_game
+    }
+    fn toggle_diplomacy(&mut self, immediate: bool) {
+        self.calls.extend([3, i32::from(immediate)]);
+    }
+    fn game_spy_buddy_message_queue(&self) -> bool {
+        self.buddy
+    }
+    fn game_spy_toggle_buddy_overlay(&mut self) {
+        self.calls.extend([4, 2]);
+    }
+    fn toggle_quit_menu(&mut self) {
+        self.calls.extend([5, 0]);
+    }
+    fn tivo_fast_mode(&self) -> bool {
+        self.tivo
+    }
+    fn set_tivo_fast_mode(&mut self, on: bool) {
+        self.tivo = on;
+    }
+    fn tivo_message(&mut self, label: Option<&[u8]>, on: bool) {
+        let code = match label {
+            None => 8,
+            Some(b"GUI:FF_ON") => 5,
+            Some(b"GUI:FF_OFF") => 6,
+            Some(_) => 7,
+        };
+        self.ui_msgs.extend([code, if label.is_none() { i32::from(on) } else { 0 }]);
+    }
+    fn take_screen_shot(&mut self) {
+        self.calls.extend([6, 0]);
+    }
+}
 impl rts_lockstep_engine::client::command_xlat_meta::CameraMetaHost for MetaHost {
     fn reset_camera(&mut self) {}
 }
 /// (#136) `MSG_META_TOGGLE_CONTROL_BAR` is not among this test's types (`tests/differential_control_bar_stage.rs` tests
-/// it): never reached.
+/// it): never reached, but for (#128) `MSG_META_DIPLOMACY`'s `TheShell->isShellActive()`.
 impl rts_lockstep_engine::client::control_bar_stage::ToggleControlBarHost for MetaHost {
     fn shell_is_active(&self) -> bool {
-        unreachable!("MSG_META_TOGGLE_CONTROL_BAR is not generated here")
+        self.shell
     }
     fn shell_top_is_hidden(&self) -> Option<bool> {
         None
@@ -482,7 +582,7 @@ impl rts_lockstep_engine::client::control_bar_stage::ToggleControlBarHost for Me
     fn toggle_control_bar(&mut self, _immediate: bool) {}
 }
 
-const META_TYPES: [MessageType; 28] = [
+const META_TYPES: [MessageType; 34] = [
     MSG_META_SELECT_MATCHING_UNITS,
     MSG_META_SELECT_NEXT_UNIT,
     MSG_META_SELECT_PREV_UNIT,
@@ -511,6 +611,13 @@ const META_TYPES: [MessageType; 28] = [
     MSG_META_BEGIN_FORCEATTACK,
     MSG_META_END_FORCEATTACK,
     MSG_META_ALL_CHEER,
+    // #128
+    MSG_META_CHAT_ALLIES,
+    MSG_META_CHAT_EVERYONE,
+    MSG_META_DIPLOMACY,
+    MSG_META_OPTIONS,
+    MSG_META_TOGGLE_FAST_FORWARD_REPLAY,
+    MSG_META_TAKE_SCREENSHOT,
 ];
 
 fn flag(g: &mut Gen) -> bool {
@@ -518,9 +625,9 @@ fn flag(g: &mut Gen) -> bool {
 }
 
 /// One meta case: its input words for the C++ and the Rust's output.
-fn meta_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
+fn meta_case(g: &mut Gen, stats: &mut [u64; 6]) -> (Vec<i32>, Vec<i32>) {
     // the walks, the hero, select all and matching weighted up
-    let t = if g.below(2) == 0 { META_TYPES[g.below(10) as usize] } else { META_TYPES[g.below(28) as usize] };
+    let t = if g.below(2) == 0 { META_TYPES[g.below(10) as usize] } else { META_TYPES[g.below(META_TYPES.len() as u32) as usize] };
     let walk = (MSG_META_SELECT_NEXT_UNIT.0..=MSG_META_SELECT_PREV_WORKER.0).contains(&t.0);
     let next_walk = t == MSG_META_SELECT_NEXT_UNIT || t == MSG_META_SELECT_NEXT_WORKER;
     let mut input = vec![0i32; META_COSTS + 4];
@@ -596,6 +703,8 @@ fn meta_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
     let flags: Vec<bool> = (0..6).map(|_| flag(g)).collect();
     let team = flag(g);
     let costs: [i32; 4] = [g.below(2000) as i32, g.below(2000) as i32, g.below(2000) as i32, g.below(2000) as i32 - 1000];
+    // #128: isInGame, isInShellGame, the shell, GameSpy's buddy queue, m_TiVOFastMode
+    let window = [flag(g), g.below(4) == 0, g.below(3) == 0, flag(g), flag(g)];
 
     input[META_TYPE] = t.0 as i32;
     input[META_INPUT] = i32::from(on);
@@ -647,6 +756,9 @@ fn meta_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
         ]);
     }
     input[META_COSTS..META_COSTS + 4].copy_from_slice(&costs);
+    for (k, &w) in window.iter().enumerate() {
+        input[META_INGAME + k] = i32::from(w);
+    }
 
     let mut h = MetaHost {
         draws,
@@ -662,6 +774,11 @@ fn meta_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
         beacons,
         max_beacons,
         beacon_button,
+        in_game: window[0],
+        shell_game: window[1],
+        shell: window[2],
+        buddy: window[3],
+        tivo: window[4],
         ..Default::default()
     };
     let mut ui = InGameUiSelection::new();
@@ -690,6 +807,8 @@ fn meta_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
     stats[1] += u64::from(walk && !h.msgs.is_empty());
     stats[2] += u64::from(!h.ui_msgs.is_empty());
     stats[3] += u64::from(d == Disposition::Keep);
+    stats[4] += u64::from(!h.calls.is_empty());
+    stats[5] += u64::from(h.tivo != window[4]);
     let mut rust = vec![disp(d), -1];
     rust.extend(&h.msgs);
     rust.push(-2);
@@ -714,7 +833,10 @@ fn meta_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
         ui.select_count(),
         -8,
         i32::from(x.team_exists),
+        -9,
     ]);
+    rust.extend(&h.calls);
+    rust.extend([-10, i32::from(h.tivo)]);
     (input, rust)
 }
 
@@ -725,14 +847,17 @@ fn meta_cases_match_upstream() {
     let planted = std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0) != 0;
     let mut g = Gen::new(0x125_1250);
     let mut c = Check::new("CommandTranslator meta cases");
-    let mut stats = [0u64; 4];
+    let mut stats = [0u64; 6];
     for i in 0..cases {
         let (input, rust) = meta_case(&mut g, &mut stats);
         let t = MessageType(input[META_TYPE] as _);
 
         c.eq(rust, cpp_case(0, &input), || format!("case {i} {t:?} {input:?}"));
     }
-    println!("meta cases: {} looked, {} walks that selected, {} with UI messages, {} kept", stats[0], stats[1], stats[2], stats[3]);
+    println!(
+        "meta cases: {} looked, {} walks that selected, {} with UI messages, {} kept, {} with window calls, {} fast-forward toggles",
+        stats[0], stats[1], stats[2], stats[3], stats[4], stats[5]
+    );
     if planted {
         c.report();
     } else {
@@ -808,7 +933,12 @@ fn key_case(g: &mut Gen, stats: &mut [u64; 3]) -> (Vec<i32>, Vec<i32>) {
     let mut x = MetaEventTranslator { last_key_down: last_key, last_mod_state: last_mod, ..Default::default() };
     let ctx = KeyContext { client_frame: frame, shell_active: shell, in_replay: replay };
     let r = x.translate_key(&map, down, key, state, &ctx);
-    let new_tivo = if r.fast_forward_toggled { 1 - tivo } else { tivo };
+    // (#128) the TiVO hack's toggle and message, as the client makes them
+    let mut th = MetaHost { tivo: tivo != 0, ..Default::default() };
+    if r.fast_forward_toggled {
+        meta_event_toggle_tivo_fast_mode(&mut th);
+    }
+    let new_tivo = i32::from(th.tivo);
     stats[0] += u64::from(!r.metas.is_empty());
     stats[1] += u64::from(r.disposition == Some(Disposition::Destroy) && r.metas.is_empty());
     stats[2] += u64::from(r.fast_forward_toggled);
@@ -816,6 +946,8 @@ fn key_case(g: &mut Gen, stats: &mut [u64; 3]) -> (Vec<i32>, Vec<i32>) {
     rust.extend(r.metas.iter().map(|t| t.0 as i32));
     rust.extend([-2, x.last_mod_state, x.last_key_down, new_tivo, i32::from(r.fast_forward_toggled), -3]);
     rust.extend(map.records().iter().map(|m| m.meta.0 as i32));
+    rust.push(-4);
+    rust.extend(th.ui_msgs.iter().step_by(2));
     (input, rust)
 }
 

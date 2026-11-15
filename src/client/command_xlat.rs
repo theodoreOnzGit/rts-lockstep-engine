@@ -43,10 +43,15 @@
 //! - **#125:** the meta-key cases (the selection walks, the hero, select all, the views, scatter, stop, formation, the
 //!   beacon, the held modes, attack-move, camera tracking, the cheer) are translated in
 //!   [`crate::client::command_xlat_meta`] ([`CommandTranslator::meta`]), and the key map that makes them in
-//!   [`crate::client::meta_event`]. Still not here: chat, diplomacy, the lower-details and control-bar toggles, the
-//!   screenshot, the replay's fast forward~~, the camera rotate / zoom / reset flags (the application's camera keys)~~.
+//!   [`crate::client::meta_event`]. Still not here: ~~chat, diplomacy, the lower-details and control-bar toggles, the
+//!   screenshot, the replay's fast forward~~~~, the camera rotate / zoom / reset flags (the application's camera keys)~~.
 //!   **Corrected 2026-11-11 (#131):** the camera rotate / zoom / reset cases are translated
-//!   (`command_xlat_meta`, CommandXlat.cpp:3205-3239), on the InGameUI's camera flags.
+//!   (`command_xlat_meta`, CommandXlat.cpp:3205-3239), on the InGameUI's camera flags. **Corrected 2026-11-15 (#128):**
+//!   (#136 had translated the control-bar toggle) the chat, diplomacy, options, fast-forward and screenshot cases are
+//!   translated ([`CommandTranslator::window_meta`], CommandXlat.cpp:3048-3120, 3244, 3505). Only
+//!   `MSG_META_TOGGLE_LOWER_DETAILS` (3122) is left: it writes the World's `setShowBehindBuildingMarkers`. Every other
+//!   meta case upstream has is debug-only (`_DEBUG`/`_INTERNAL`, `DUMP_PERF_STATS`, `ALLOW_ALT_F4`,
+//!   `_ALLOW_DEBUG_CHEATS_IN_RELEASE`).
 //!
 //! # As upstream reads it
 //!
