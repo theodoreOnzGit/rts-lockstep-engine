@@ -60,6 +60,14 @@
 //!   not finite or past `Int` (the timed slide with a zero duration).
 //! - The spiral's `cos` / `sin` of a `float` are MSVC's `float` overloads (`cosf`, `sinf`): petir's
 //!   ([`crate::ww::wwmath`]), as all of the client's maths.
+//!   (2026-11-17, #137: the later ports read `cos(float)` as C's double function instead (#46, #182, the
+//!   differential's shim `math.h`); which reading is MSVC's is an owner decision, #192.)
+//!
+//! # Verification
+//!
+//! `tests/differential_wt.rs` (#77, with the window transitions) and `tests/differential_animate_window.rs` (#137: the
+//! eight types frame by frame over 20,000 sequences, random displays, windows, delays and reversals, three managers
+//! and the control bar's lines; 0 mismatches) against upstream's text cut verbatim.
 //!
 //! # Representation
 //!
@@ -237,6 +245,9 @@ impl AnimateWindowManager {
             }
         }
         for i in 0..self.win_list.len() {
+            if self.reverse && crate::logic::modules::plant(10391) {
+                break;
+            }
             self.step(wm, List::Plain, i, now);
             if wm.undefined.is_some() {
                 return;
@@ -283,7 +294,7 @@ impl AnimateWindowManager {
         let mut p = self.clone_params();
         p.display_width = wm.display.0;
         p.init_animate_window(wm, &mut a, now);
-        if needs_to_finish {
+        if needs_to_finish && !crate::logic::modules::plant(10398) {
             self.must_finish_list.push(a);
             self.needs_update = true;
         } else {
@@ -295,7 +306,7 @@ impl AnimateWindowManager {
     pub fn reverse_animate_window(&mut self, wm: &mut GameWindowManager, now: u32) {
         self.reverse = true;
         self.needs_update = true;
-        let max_delay = self.must_finish_list.iter().map(|a| a.delay).max().unwrap_or(0);
+        let max_delay = if crate::logic::modules::plant(10392) { 0 } else { self.must_finish_list.iter().map(|a| a.delay).max().unwrap_or(0) };
         let mut p = self.clone_params();
         p.display_width = wm.display.0;
         for a in &mut self.must_finish_list {
@@ -310,7 +321,7 @@ impl AnimateWindowManager {
 
     /// `resetToRestPosition()`.
     pub fn reset_to_rest_position(&mut self, wm: &mut GameWindowManager) {
-        self.reverse = true;
+        self.reverse = !crate::logic::modules::plant(10397);
         self.needs_update = true;
         for a in self.must_finish_list.iter().chain(self.win_list.iter()) {
             if let Some(w) = a.win.and_then(|w| live(wm, w)) {
@@ -454,7 +465,7 @@ impl Processes {
             return;
         }
         if a.delay > 0 {
-            a.start_time = now.wrapping_add(max_delay.wrapping_sub(a.delay));
+            a.start_time = if crate::logic::modules::plant(10396) { now.wrapping_add(a.delay) } else { now.wrapping_add(max_delay.wrapping_sub(a.delay)) };
         }
         if t == anim::WIN_ANIMATION_SPIRAL {
             a.vel = (0.0, 0.0);
@@ -510,7 +521,11 @@ impl Processes {
                 if now < a.start_time {
                     return false;
                 }
-                let percent_done = 1.0f32 - a.end_time.wrapping_sub(now) as f32 / self.max_duration as f32;
+                let percent_done = if crate::logic::modules::plant(10394) {
+                    1.0f32 - a.start_time.wrapping_add(self.max_duration).wrapping_sub(now) as f32 / self.max_duration as f32
+                } else {
+                    1.0f32 - a.end_time.wrapping_sub(now) as f32 / self.max_duration as f32
+                };
                 if now >= a.end_time {
                     cur.1 = end.1;
                     a.is_finished = true;
@@ -533,7 +548,7 @@ impl Processes {
                 let passed = if sign < 0 { get(cur, axis) < get(end, axis) } else { get(cur, axis) > get(end, axis) };
                 if passed {
                     set(&mut cur, axis, get(end, axis));
-                    if set_on_finish {
+                    if set_on_finish && !(t == anim::WIN_ANIMATION_SLIDE_BOTTOM && crate::logic::modules::plant(10393)) {
                         wm.win_set_position(win, cur.0, cur.1);
                     }
                     a.is_finished = true;
@@ -567,6 +582,9 @@ impl Processes {
             anim::WIN_ANIMATION_SPIRAL => {
                 if a.is_finished {
                     return true;
+                }
+                if crate::logic::modules::plant(10395) && now < a.start_time {
+                    return false;
                 }
                 let Some(win) = a.win.and_then(|w| live(wm, w)) else { return true };
                 let mut cur = a.cur_pos;
@@ -622,7 +640,7 @@ impl Processes {
                     if v > -max {
                         v = -max;
                     }
-                } else if v < -max {
+                } else if v < -max && !(t == anim::WIN_ANIMATION_SLIDE_LEFT && crate::logic::modules::plant(10399)) {
                     v = -max;
                 }
                 setf(&mut vel, axis, v);

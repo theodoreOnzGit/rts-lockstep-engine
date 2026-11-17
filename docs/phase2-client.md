@@ -127,6 +127,53 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#137, the control bar's slide (2026-11-17, GitHub #137, item "No slide animations").**
+- **What was open (read first).** `ShowControlBar(FALSE)` / `HideControlBar(FALSE)` (ControlBarCallback.cpp:501, :536;
+  `ToggleControlBar(FALSE)`, :578) reset and register `ControlBarParent` on `TheControlBar->m_animateWindowManager`
+  (`WIN_ANIMATION_SLIDE_BOTTOM`, needing to finish, 500 ms, no delay) or reverse it, then call
+  `animateSpecialPowerShortcut`; the client's `StageHost` answered "no animate window manager", so the bar appeared and
+  vanished at once. Searched first: the manager and all eight processes were already translated by #77
+  (`client::animate_window`, the shell's `m_animateWindowManager`) and compared by `tests/differential_wt.rs` (2,000
+  cases with the transitions); `client::control_bar_stage` (#136) already made the calls through its host, and
+  `tests/differential_control_bar_stage.rs` compares them against a recording stand-in. Missing: the bar's managers,
+  `ControlBar::update`'s and `reset`'s lines, `animateSpecialPowerShortcut`, and the client's frame.
+- **Translated** (`src/client/control_bar_animate.rs`, new): ControlBar.cpp `init`'s three `NEW AnimateWindowManager`
+  (:1253-1258, `ControlBarAnimate::new`), `reset`'s three resets (:1314-1321), `update`'s animate lines (:1394-1416:
+  the bar's update, then `ControlBarParent` hidden once the manager is finished and reversed; the shortcut bar's the
+  same way), `animateSpecialPowerShortcut` (:3716-3741). Reused unchanged: `AnimateWindowManager` (init, reset, update,
+  registerGameWindow, getProcessAnimate, reverseAnimateWindow, resetToRestPosition, isFinished, isReversed, isEmpty;
+  AnimateWindowManager.cpp:67-420, .h:192-222) and the processes' constructors, initAnimateWindow,
+  initReverseAnimateWindow, updateAnimateWindow and reverseAnimateWindow (ProcessAnimateWindow.cpp: slide from right
+  76-255, left 262-433, top 440-612, bottom 619-793, bottom timed 800-950, spiral 955-1126, top fast 1133-1309, right
+  fast 1316-1515).
+- **The client** (`client/src/ui.rs`): `GameUi::animate` holds the three managers on the bar's window manager (its
+  display the 800x600 layout); `StageHost` now has the manager (reset, register, reverse at `GameUi::animate_now`);
+  `GameUi::animate_frame(now_ms)` is `ControlBar::update`'s part, called by `step_logic` at its top, once a fixed step
+  (30 Hz, raised with the logic in a replay's fast forward), before the pause's return (upstream's client updates while
+  paused) and before the logic's frame. `timeGetTime()` is Bevy's clock in ms; a call between frames uses the last
+  frame's. `ControlBar::reset`'s resets run with the glow's (`reset_radar_attack_glow`). The game's start
+  (`ShowControlBar(FALSE)`) now slides the bar in: 33 frames from 800 below; a script's `HideControlBar(FALSE)` slides
+  it out in 30 and hides it. The meta key stays immediate (`ToggleControlBar()`), as upstream's. Six ui tests that use
+  the bar right after loading now let the slide finish first (`settle`).
+- **Differential** (`tests/differential_animate_window.rs`, `differential/wrap_animate_window.cpp`; build.rs cuts both
+  managers' .cpp and .h, GameWindow.cpp's `normalizeWindowRegion`/`winSetPosition`/`winGetPosition`/`winGetSize` and
+  ControlBar.cpp's four pieces verbatim, each anchor asserted once, compiled in a namespace). 20,000 sequences, a focus
+  type each, random displays (0 to 4,000 wide, changed mid-sequence), windows, delays, durations, clocks (some at the
+  wrap), reversals mid-animation, resets, outside moves and hides, the shortcut bar's buttons; the dump after every
+  step (positions, hidden bits, each manager's finished/reversed/empty, every animation's state and velocity bits).
+  *Predicted:* 0 mismatches; a few dozen to a few hundred stopped as undefined; plants all caught, weakest 10395,
+  10399, 10400. *Result:* **0 mismatches** in each of the eight types (2,495,282 steps); 0 stopped on the first full run
+  (missed: zero durations were too rare), 235 after the generator gave 0 ms one registration in twenty. Plants
+  10386-10400: **15 of 15 caught** (weakest 10399, 97 sequences; 10393, 431; 10395 and 10400 were not weak). New client
+  test `the_bar_slides_in_and_out`: as predicted, first run.
+- **Gaps and decisions** filed: #192 (owner decision: the spiral's `cos(float)`, #77's float overload against the C
+  double semantics of #46/#182 and the shared `math.h` shim; the bar's slide has no trigonometry); #193 (the slide moves
+  in the bar's layout pixels, not the display's: the same as upstream at 800x600 only). Still #137's: the special power
+  shortcut bar is not loaded, so `animateSpecialPowerShortcut` (translated) and its update do nothing in the client.
+- Runs (2026-11-17, the final tree): `cargo test --release --lib` 1,285 passed (1,284 + `control_bar_animate`'s);
+  `--features differential --tests` 265 suites, 1,763 passed, 0 failed; the client 112 passed (111 + the slide's);
+  gate (a) PASS, identical CRCs at every one of 300 frames, last `0bf44067` (unchanged: the logic is untouched).
+
 **#190, the AABTree a collidable mesh without one gets (2026-11-17, GitHub #190, left by #149).**
 - **What was open (read first).** `MeshModelClass::Load_W3D` (meshmdlio.cpp:400-406; `MeshGeometryClass::Load_W3D`,
   meshgeometry.cpp:1683-1688, is the same test) builds an AABTree (`Generate_Culling_Tree`, meshgeometry.cpp:1548) for

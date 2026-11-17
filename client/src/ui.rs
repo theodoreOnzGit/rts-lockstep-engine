@@ -84,6 +84,8 @@ use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layo
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
 use rts_lockstep_engine::client::control_bar_glow::RadarAttackGlow;
 use rts_lockstep_engine::client::control_bar_gen_star::{GenStar, GenStarHost, GeneralButtonImage};
+use rts_lockstep_engine::client::animate_window::anim;
+use rts_lockstep_engine::client::control_bar_animate::{ControlBarAnimate, SpecialPowerShortcut};
 use rts_lockstep_engine::client::build_tooltip::{command_button_tooltip, command_gets_tooltip, control_bar_init_tooltips, BuildTooltip, BuildTooltipHost, ControlBarInitHost, COMMAND_BUTTON_TOOLTIP, GAME_COLOR_UNDEFINED, NON_COMMAND_BUTTONS};
 use rts_lockstep_engine::logic::command_button::CommandButton;
 use rts_lockstep_engine::client::control_bar_stage::{
@@ -189,6 +191,13 @@ pub struct GameUi {
     /// flashes while there are points to spend, and a rank or points change sets the transition handler's
     /// `ControlBarArrow` group with the input on ([`GameUi::gen_star_events`], [`GameUi::gen_star_frame`]).
     pub gen_star: GenStar,
+    /// (#137) `TheControlBar`'s animate window managers (`m_animateWindowManager`, the shortcut bar's and
+    /// `m_generalsScreenAnimate`): `ShowControlBar(FALSE)` slides the bar in from the bottom, `HideControlBar(FALSE)` back
+    /// out, and [`GameUi::animate_frame`] runs `ControlBar::update`'s part once a client frame.
+    pub animate: ControlBarAnimate,
+    /// (#137) `timeGetTime()` for the bar's calls between frames (registering and reversing a slide): the clock the
+    /// last [`GameUi::animate_frame`] was given (0 before the first).
+    pub animate_now: u32,
 }
 
 /// (#119) [`GenStarHost`] on the bar: the local player and its points, the InGameUI's input and the logic's frame as
@@ -243,9 +252,12 @@ impl GenStarHost for GenStarBar<'_> {
 }
 
 /// (#136) [`ControlBarStageHost`] on the bar's window manager and scheme. The display is the bar's 800x600 layout; the
-/// client has no replay controls window (`ReplayControl.wnd` is not loaded), no special power shortcut bar and no
-/// animate window manager~~, and rebuilds the popup and the buttons every frame ([`GameUi::bar_state`])~~: those calls do
-/// nothing. **Corrected 2026-11-11, #138:** `repopulateBuildTooltipLayout` is made (on [`GameUi::build_tooltip`]).
+/// client has no replay controls window (`ReplayControl.wnd` is not loaded), no special power shortcut bar and ~~no
+/// animate window manager~~ (**corrected 2026-11-17, #137**, below)~~, and rebuilds the popup and the buttons every frame
+/// ([`GameUi::bar_state`])~~: those calls do nothing. **Corrected 2026-11-11, #138:** `repopulateBuildTooltipLayout` is made (on [`GameUi::build_tooltip`]).
+/// **Corrected 2026-11-17 (#137):** the bar has its animate window manager ([`GameUi::animate`]): the slide's reset,
+/// registration and reversal are made on it at [`GameUi::animate_now`]; `animateSpecialPowerShortcut` is
+/// [`ControlBarAnimate::animate_special_power_shortcut`] with no shortcut bar, so it still does nothing.
 struct StageHost<'a> {
     wm: &'a mut GameWindowManager,
     schemes: &'a ControlBarSchemeManager,
@@ -254,6 +266,9 @@ struct StageHost<'a> {
     view_height: &'a mut Option<i32>,
     /// (#138) `repopulateBuildTooltipLayout()` was asked for (made after the stage's call: [`GameUi::with_stage`]).
     repopulate: &'a mut bool,
+    /// (#137) `TheControlBar`'s animate window managers, and `timeGetTime()` for them.
+    animate: &'a mut ControlBarAnimate,
+    now: u32,
 }
 
 impl ControlBarStageHost for StageHost<'_> {
@@ -297,17 +312,27 @@ impl ControlBarStageHost for StageHost<'_> {
     }
     fn show_special_power_shortcut(&mut self) {}
     fn hide_special_power_shortcut(&mut self) {}
-    fn animate_special_power_shortcut(&mut self, _on: bool) {}
+    /// (#137) No shortcut bar is loaded: nothing to animate.
+    fn animate_special_power_shortcut(&mut self, on: bool) {
+        self.animate.animate_special_power_shortcut(self.wm, self.now, on, SpecialPowerShortcut::default());
+    }
     fn repopulate_build_tooltip_layout(&mut self) {
         *self.repopulate = true;
     }
     fn mark_ui_dirty(&mut self) {}
+    /// (#137) `ControlBar::init` made it.
     fn has_animate_window_manager(&self) -> bool {
-        false
+        true
     }
-    fn animate_reset(&mut self) {}
-    fn animate_register_slide_bottom(&mut self, _w: WinId) {}
-    fn animate_reverse(&mut self) {}
+    fn animate_reset(&mut self) {
+        self.animate.animate_window_manager.reset(self.wm);
+    }
+    fn animate_register_slide_bottom(&mut self, w: WinId) {
+        self.animate.animate_window_manager.register_game_window(self.wm, Some(w), anim::WIN_ANIMATION_SLIDE_BOTTOM, true, 500, 0, self.now);
+    }
+    fn animate_reverse(&mut self) {
+        self.animate.animate_window_manager.reverse_animate_window(self.wm, self.now);
+    }
 }
 
 /// (#109) What `ControlBarSystem`'s `GBM_SELECTED` asks of the quit menu (ControlBarCallback.cpp): `ToggleQuitMenu()` for
@@ -471,6 +496,9 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
             g.init();
             g
         },
+        // (#137) `ControlBar::init`'s three `NEW AnimateWindowManager`, on the bar's display (the layout's width)
+        animate: ControlBarAnimate::new(wm.display.0),
+        animate_now: 0,
         images,
         wm,
         schemes,
@@ -1156,14 +1184,25 @@ impl GameUi {
         }
     }
 
-    /// (#162) `ControlBar::reset()`'s glow lines (`TheGameClient->reset()`, a new game). **(#119)** And its last lines,
-    /// the general's star's (`TheTransitionHandler->remove("ControlBarArrow")`, the flash back on).
+    /// (#162) `ControlBar::reset()`'s glow lines (`TheGameClient->reset()`, a new game). **(#137)** Then its animate
+    /// window managers' resets. **(#119)** And its last lines, the general's star's
+    /// (`TheTransitionHandler->remove("ControlBarArrow")`, the flash back on).
     pub fn reset_radar_attack_glow(&mut self) {
         self.radar_attack_glow.reset(&mut self.wm);
+        // (#137) then its managers' resets (ControlBar.cpp:1314): every sliding window put at its rest
+        self.animate.reset(&mut self.wm);
         let mut h = GenStarBar { local_player: -1, points: 0, input_enabled: false, frame: 0, ui: self };
         let mut star = std::mem::take(&mut h.ui.gen_star);
         star.reset(&mut h);
         h.ui.gen_star = star;
+    }
+
+    /// (#137) `ControlBar::update`'s animate lines at `now_ms` (`timeGetTime()`), once a client frame: the bar's slide
+    /// moves a step, and once it has slid out (finished and reversed) `ControlBarParent` is hidden; then the shortcut
+    /// bar's manager (no shortcut bar is loaded). The clock is kept for the bar's calls until the next frame.
+    pub fn animate_frame(&mut self, now_ms: u32) {
+        self.animate_now = now_ms;
+        self.animate.update(&mut self.wm, now_ms, SpecialPowerShortcut::default());
     }
 
     /// (#119) The logic's `PlayerClientEvent::RankChanged` and `SciencePurchasePointsChanged` of a frame, in order, to
@@ -1219,7 +1258,16 @@ impl GameUi {
     /// (#136) The stage functions on the bar's windows ([`StageHost`]).
     fn with_stage(&mut self, f: impl FnOnce(&mut ControlBarStage, &mut StageHost)) {
         let mut repopulate = false;
-        let mut h = StageHost { wm: &mut self.wm, schemes: &self.schemes, images: &self.images, playback: self.recorder_playback, view_height: &mut self.view_height, repopulate: &mut repopulate };
+        let mut h = StageHost {
+            wm: &mut self.wm,
+            schemes: &self.schemes,
+            images: &self.images,
+            playback: self.recorder_playback,
+            view_height: &mut self.view_height,
+            repopulate: &mut repopulate,
+            animate: &mut self.animate,
+            now: self.animate_now,
+        };
         f(&mut self.stage, &mut h);
         if repopulate {
             self.with_popup(PopupWorld::default(), |b, h| b.repopulate_build_tooltip_layout(h));
@@ -1536,6 +1584,17 @@ MappedImage ImgPortrait\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeigh
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// (#137) The game's start slides the bar in (`ShowControlBar(FALSE)`): run `ControlBar::update`'s animate lines a
+    /// client frame (33 ms) at a time until the slide has finished, as it has by the time a player uses the bar.
+    fn settle(ui: &mut GameUi) {
+        let mut t = ui.animate_now;
+        while !ui.animate.animate_window_manager.is_finished() {
+            t += 33;
+            ui.animate_frame(t);
+            assert!(t < 100_000, "the slide never finished");
+        }
+    }
     use crate::input::Controls;
     use rts_lockstep_engine::client::command_xlat::CommandXlatHost;
     use rts_lockstep_engine::common::base_type::ICoord2D;
@@ -1609,6 +1668,7 @@ mod tests {
         let mut fs = FileSystem::new(d);
         fs.init(None);
         let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         assert_eq!((ui.images.len(), ui.wm.tree.windows.len()), (4, 11));
         assert_eq!(ui.schemes.current_scheme().map(|s| s.name.clone()), Some(b"default".to_vec()));
         let money = ui.money.expect("the money window");
@@ -1700,6 +1760,7 @@ mod tests {
         let mut fs = FileSystem::new(d);
         fs.init(None);
         let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         let (w, o) = crate::demo::demo_world();
         let mut c = Controls::new(w, 1);
         let (m, p) = c.client.money_and_power();
@@ -1783,7 +1844,8 @@ mod tests {
         }
         let mut fs = FileSystem::new(d);
         fs.init(None);
-        let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         *ui
     }
 
@@ -1843,7 +1905,8 @@ mod tests {
         }
         let mut fs = FileSystem::new(d);
         fs.init(None);
-        let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         *ui
     }
 
@@ -1870,7 +1933,8 @@ mod tests {
         }
         let mut fs = FileSystem::new(d);
         fs.init(None);
-        let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         let mut ui = *ui;
         let comm = CommandButton::new(b"NonCommand_Communicator");
         let briefing = CommandButton::new(b"NonCommand_BriefingHistory");
@@ -2054,6 +2118,7 @@ mod tests {
         let mut fs = FileSystem::new(d);
         fs.init(None);
         let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         let inst = WinInstanceData { style: gws::ENTRY_FIELD, ..WinInstanceData::new() };
         let e = gogo_gadget_text_entry(&mut ui.wm, &mut NoGuiHost, None, win_status::ENABLED, 10, 10, 200, 20, inst, EntryRt { max_text_len: 32, ..Default::default() }, true).expect("an entry");
         assert!(!ui.keyboard(0, true, Some("a")));
@@ -2212,6 +2277,7 @@ mod tests {
         let mut fs = FileSystem::new(d);
         fs.init(None);
         let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         assert!(!ui.is_bar_hidden());
         assert_eq!((ui.stage.current, ui.view_height), (ControlBarStages::Default, Some(480)));
         ui.script_call(&ScriptInputCall::HideControlBar(true));
@@ -2224,6 +2290,77 @@ mod tests {
         assert!(ui.popup_hidden && ui.build_tooltip.prev_window.is_none());
         ui.clear_game_data();
         assert!(ui.is_bar_hidden() && ui.view_height == Some(600));
+    }
+
+    /// #137: the bar's slides, on the synthetic bar (`ControlBarParent` at y 450 of the 800x600 layout). *Predicted before
+    /// the run:* loaded as a game's (`startNewGame`'s `ShowControlBar(FALSE)`), the bar is shown but the display's width
+    /// below its place, at y 1250; each client frame (`ControlBar::update`) lifts it 40 (1210 after the first), slower
+    /// within 80, and it stops at 450, the manager finished and not reversed. A script's `HideControlBar(FALSE)` gives the
+    /// view the whole height at once and the bar slides back down; the frame its slide finishes (at 1250) hides it.
+    /// `ShowControlBar(FALSE)` shows it at 1250 again and it slides in to 450. The World's game cleared (`HideControlBar()`,
+    /// immediate) hides it at once, and `ControlBar::reset` (the glow's reset) puts it at its rest. The meta key's toggle is
+    /// immediate (`ToggleControlBar()`): no slide.
+    #[test]
+    fn the_bar_slides_in_and_out() {
+        use rts_lockstep_engine::logic::client_event::ScriptInputCall;
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let bar = ui.stage.master.expect("ControlBarParent");
+        let y = |ui: &GameUi| ui.wm.tree.windows[bar].region.1;
+        assert!(!ui.is_bar_hidden());
+        assert_eq!(y(&ui), 1250);
+        ui.animate_frame(33);
+        assert_eq!(y(&ui), 1210);
+        let mut frames = 1;
+        let mut t = 33;
+        while !ui.animate.animate_window_manager.is_finished() {
+            t += 33;
+            ui.animate_frame(t);
+            frames += 1;
+            assert!(frames < 200);
+        }
+        assert_eq!(y(&ui), 450);
+        assert!(!ui.animate.animate_window_manager.is_reversed() && !ui.is_bar_hidden());
+        ui.script_call(&ScriptInputCall::HideControlBar(false));
+        assert_eq!(ui.view_height, Some(600));
+        assert!(!ui.is_bar_hidden());
+        let mut out = 0;
+        while !ui.is_bar_hidden() {
+            t += 33;
+            ui.animate_frame(t);
+            out += 1;
+            assert!(out < 200);
+            if !ui.is_bar_hidden() {
+                assert!(y(&ui) < 1250, "the bar is hidden on the frame its slide finishes");
+            }
+        }
+        assert_eq!(y(&ui), 1250);
+        ui.script_call(&ScriptInputCall::ShowControlBar(false));
+        assert!(!ui.is_bar_hidden() && ui.view_height == Some(480));
+        assert_eq!(y(&ui), 1250);
+        while !ui.animate.animate_window_manager.is_finished() {
+            t += 33;
+            ui.animate_frame(t);
+        }
+        assert_eq!(y(&ui), 450);
+        ui.toggle_control_bar(true);
+        assert!(ui.is_bar_hidden() && y(&ui) == 450);
+        ui.toggle_control_bar(true);
+        assert!(!ui.is_bar_hidden() && y(&ui) == 450);
+        ui.script_call(&ScriptInputCall::ShowControlBar(false));
+        ui.animate_frame(t + 33);
+        assert_eq!(y(&ui), 1210);
+        ui.clear_game_data();
+        assert!(ui.is_bar_hidden());
+        ui.reset_radar_attack_glow();
+        assert_eq!(y(&ui), 450);
+        assert!(ui.animate.animate_window_manager.is_empty());
+        println!("the bar's slide in: {frames} frames; out: {out} frames");
     }
 
     /// #162: the radar attack glow on the bar's window manager. The synthetic bar has no `ControlBar.wnd:WinUAttack`, so
@@ -2243,6 +2380,7 @@ mod tests {
         let mut fs = FileSystem::new(d);
         fs.init(None);
         let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         assert_eq!(ui.radar_attack_glow.window, None);
         ui.radar_attack_glow_frame(1);
         assert!(!ui.radar_attack_glow.on);
@@ -2296,6 +2434,7 @@ mod tests {
         let mut fs = FileSystem::new(d);
         fs.init(None);
         let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         let w = ui.wm.win_create(&mut NoGuiHost, None, win_status::ENABLED | win_status::IMAGE, 10, 10, 20, 20, SystemFunc::Default, Some(WinInstanceData::new()));
         ui.wm.tree.windows[w].inst.decorated_name_string = b"ControlBar.wnd:ButtonGeneral".to_vec();
         let c = ui.schemes.current.expect("the synthetic America scheme");
@@ -2330,7 +2469,8 @@ mod tests {
         let Ok(dir) = std::env::var("RTS_ZH_DIR") else { return };
         let mut fs = FileSystem::new(rts_lockstep_engine::common::file_system::NativeDevice::new(std::path::Path::new(&dir)));
         fs.init(None);
-        let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         println!("the owner's control bar: {} windows, {} images, scheme {:?}", ui.wm.tree.windows.len(), ui.images.len(), ui.schemes.current_scheme().map(|s| String::from_utf8_lossy(&s.name).into_owned()));
         assert!(ui.command_windows.iter().all(Option::is_some));
         assert!(ui.queue_windows.iter().all(Option::is_some));
@@ -2353,7 +2493,8 @@ mod tests {
         }
         let mut fs = FileSystem::new(d);
         fs.init(None);
-        let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
         let r = ui.radar_window().expect("LeftHUD");
         assert_eq!(r, [20.0, 500.0, 220.0, 590.0]);
         let scale = 390.0 / 800.0;

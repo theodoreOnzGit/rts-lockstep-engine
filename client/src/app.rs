@@ -637,6 +637,13 @@ fn replay_fast_forward(game: NonSend<Game>, mut fixed: ResMut<Time<Fixed>>) {
 }
 
 fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Res<Time>, windows: Query<&Window>) {
+    // (#137) `ControlBar::update`'s animate lines, once a client frame at `timeGetTime()`: the client's frame is this
+    // fixed step (30 Hz, the rate upstream's frame limiter holds GameEngine::update to; raised with the logic in a
+    // replay's fast forward, as upstream's unlimited frames are), and upstream's client updates while the game is paused,
+    // so this comes before the pause's return. It comes before the logic's frame, as `GameClient::update` does.
+    if let Some(ui) = game.ui.as_mut() {
+        ui.animate_frame((time.elapsed_secs_f64() * 1000.0) as u32);
+    }
     if game.paused || game.error.is_some() {
         return;
     }

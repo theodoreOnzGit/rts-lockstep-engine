@@ -3661,6 +3661,11 @@ extern "C" {
     // onPlayerSciencePurchasePointsChanged, init's star lines and reset's end, verbatim.
     pub fn ref_gen_star_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #137: the animate window manager and the control bar's use of it (differential/wrap_animate_window.cpp,
+    // which documents the setup's, the steps' and the dump's words): AnimateWindowManager.cpp, ProcessAnimateWindow.cpp
+    // and their headers, ControlBar's managers in init, reset and update, and animateSpecialPowerShortcut, verbatim.
+    pub fn ref_animate_window_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #162: the radar's drawing items of #57 (differential/wrap_radar_draw.cpp, which documents the words):
     // W3DRadar::drawHeroIcon's rectangle, ControlBar's radar attack glow, BeaconClientUpdate, verbatim.
     pub fn ref_radar_hero_icon(f: *const f32, i: *const c_int, out: *mut c_int);
