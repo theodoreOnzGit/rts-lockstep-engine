@@ -332,7 +332,10 @@ impl Controls {
     /// presses that button ([`Controls::set_bar_hot_keys`]). Whether the key was used up (the camera's keys then leave it
     /// alone, as upstream's `LookAtTranslator` (60) never sees a destroyed key). On a phone no key comes: nothing
     /// changes.
-    pub fn key(&mut self, dik: u8, down: bool, repeat: bool) -> bool {
+    ///
+    /// **(#119)** Each meta message goes through the camera's `LookAtTranslator` too, when `look_at` is given
+    /// ([`Controls::meta`]).
+    pub fn key(&mut self, dik: u8, down: bool, repeat: bool, mut look_at: Option<&mut crate::camera::Camera>) -> bool {
         use rts_lockstep_engine::common::message_types::{MSG_RAW_KEY_DOWN, MSG_RAW_KEY_UP};
         let state = self.keyboard_mods.key_state(dik, down, repeat);
         let t = if down { MSG_RAW_KEY_DOWN } else { MSG_RAW_KEY_UP };
@@ -350,7 +353,7 @@ impl Controls {
             rts_lockstep_engine::client::command_xlat_meta::meta_event_toggle_tivo_fast_mode(&mut self.client);
         }
         for m in r.metas {
-            self.meta(m);
+            self.meta(m, look_at.as_deref_mut());
         }
         if r.disposition == Some(Disposition::Destroy) {
             return true;
@@ -524,9 +527,18 @@ impl Controls {
     /// `rts_lockstep_engine::client::command_xlat_meta`). Its disposition at the command translator, `None` for one it has
     /// no case for. Its messages go on the World's command list as the local player's; its looks are
     /// [`Controls::take_look_ats`]'.
-    pub fn meta(&mut self, t: MessageType) -> Option<Disposition> {
+    ///
+    /// ~~(`LookAtTranslator` (60) never saw a meta message: its `MSG_META_OPTIONS` `stopScrolling` and its bookmarks
+    /// `MSG_META_SAVE_VIEWn` / `MSG_META_VIEW_VIEWn` were not reached; #128's gap.)~~ **Corrected 2026-11-17 (#119):**
+    /// with the camera given (`look_at`), the message goes through its `LookAtTranslator` between the two, as the
+    /// stream's priorities order them (`GameClient::init`: Selection 50, LookAt 60, Command 70): a bookmark is destroyed
+    /// there (the command translator never sees it), `MSG_META_OPTIONS` stops the scroll and is kept. The selection
+    /// translator's own `MSG_META_OPTIONS` case lets go of the left button (SelectionXlat.cpp:1277,
+    /// `SelectionTranslator::meta_options`). Without a camera (no game view yet) the message skips the look-at
+    /// translator.
+    pub fn meta(&mut self, t: MessageType, look_at: Option<&mut crate::camera::Camera>) -> Option<Disposition> {
         use rts_lockstep_engine::common::message_types::{
-            MSG_META_ADD_TEAM0, MSG_META_BEGIN_FORCEATTACK, MSG_META_CREATE_TEAM0, MSG_META_END_FORCEATTACK, MSG_META_SELECT_TEAM0, MSG_META_VIEW_TEAM0,
+            MSG_META_ADD_TEAM0, MSG_META_BEGIN_FORCEATTACK, MSG_META_CREATE_TEAM0, MSG_META_END_FORCEATTACK, MSG_META_OPTIONS, MSG_META_SELECT_TEAM0, MSG_META_VIEW_TEAM0,
         };
         self.client.sync_modes(&self.ui);
         self.client.view.radar_last_event = self.radar.radar.get_last_event_loc();
@@ -545,12 +557,26 @@ impl Controls {
                 Some(self.selection.add_team(n, &mut self.ui, &mut self.client))
             } else if let Some(n) = group(MSG_META_VIEW_TEAM0) {
                 Some(self.selection.view_team(n, &mut self.client))
+            } else if t == MSG_META_OPTIONS {
+                // (#119, carried from #128) SelectionXlat.cpp:1277: the left button let go, the message kept
+                Some(self.selection.meta_options(&mut self.ui))
             } else {
                 None
             };
             if d == Some(Disposition::Destroy) {
                 self.client.sync_modes(&self.ui);
                 return d;
+            }
+        }
+        // (#119) `LookAtTranslator` (60): the camera's translator, then the view's mouse lock and the InGameUI's scroll
+        // as it left them
+        if let Some(cam) = look_at {
+            let d = cam.translate(&RawMessage::mouse(t, ICoord2D::default()), &self.ui, &self.client.world, false);
+            self.view_mouse_locked = cam.view.is_mouse_locked();
+            self.ui_scrolling = cam.ui_scrolling;
+            if d == Disposition::Destroy {
+                self.client.sync_modes(&self.ui);
+                return Some(d);
             }
         }
         let d = self.commands.meta(t, &mut self.ui, &mut self.client);
@@ -936,35 +962,35 @@ mod tests {
         let window = HotKeyWindow { hidden: false, enabled: true, button: o.build_depot };
         c.set_bar_hot_keys(&[(0, b"B".to_vec())], vec![Some(window)]);
         let b = 0x30;
-        assert!(!c.key(b, true, false));
+        assert!(!c.key(b, true, false, None));
         assert!(c.ui.pending_place_type().is_none());
-        assert!(!c.key(0x2A, true, false));
-        assert!(!c.key(b, false, false));
-        assert!(!c.key(0x2A, false, false));
+        assert!(!c.key(0x2A, true, false, None));
+        assert!(!c.key(b, false, false, None));
+        assert!(!c.key(0x2A, false, false, None));
         assert!(c.ui.pending_place_type().is_none());
-        assert!(c.key(b, false, false), "B's release presses the button");
+        assert!(c.key(b, false, false, None), "B's release presses the button");
         assert!(c.ui.pending_place_type().is_some());
         assert_eq!(c.gui_sounds, vec![b"GUIClick".to_vec()]);
         c.right_press(at(300, 300), 1000, false);
         c.right_release(at(300, 300), 1050, None, Coord3D::default());
         assert!(c.ui.pending_place_type().is_none(), "a right click cancels the placement");
-        assert!(c.key(b, false, false));
+        assert!(c.key(b, false, false, None));
         assert!(c.ui.pending_place_type().is_some());
         c.right_press(at(300, 300), 2000, false);
         c.right_release(at(380, 300), 2050, None, Coord3D::default());
         assert!(c.ui.pending_place_type().is_some(), "a right drag does not");
         c.ui.place_build_available(None, None, 0.0, &c.client);
         c.set_bar_hot_keys(&[(0, b"b".to_vec())], vec![Some(HotKeyWindow { enabled: false, ..window })]);
-        assert!(!c.key(b, false, false));
+        assert!(!c.key(b, false, false, None));
         assert!(c.ui.pending_place_type().is_none());
         assert_eq!(c.gui_sounds.last(), Some(&b"GUIClickDisabled".to_vec()));
-        c.meta(MSG_META_BEGIN_CAMERA_ROTATE_LEFT);
+        c.meta(MSG_META_BEGIN_CAMERA_ROTATE_LEFT, None);
         assert!(c.ui.is_camera_rotating_left());
-        c.meta(MSG_META_END_CAMERA_ROTATE_LEFT);
+        c.meta(MSG_META_END_CAMERA_ROTATE_LEFT, None);
         assert!(!c.ui.is_camera_rotating_left());
-        c.meta(MSG_META_CAMERA_RESET);
+        c.meta(MSG_META_CAMERA_RESET, None);
         assert_eq!(c.client.camera_resets, 1);
-        c.meta(MSG_META_BEGIN_CAMERA_ROTATE_LEFT);
+        c.meta(MSG_META_BEGIN_CAMERA_ROTATE_LEFT, None);
         c.ui.set_input_enabled(false);
         assert!(!c.ui.is_camera_rotating_left());
     }
@@ -1061,8 +1087,8 @@ CommandMap TAKE_SCREENSHOT\n Key = KEY_F12\n Transition = DOWN\n Modifiers = NON
         assert!(c.meta_map_binds_meta(rts_lockstep_engine::common::message_types::MSG_META_OPTIONS));
         c.frame_tick();
         let press = |c: &mut Controls, k: u8| {
-            let used = c.key(k, true, false);
-            c.key(k, false, false);
+            let used = c.key(k, true, false, None);
+            c.key(k, false, false, None);
             used
         };
         assert!(press(&mut c, esc));
@@ -1114,11 +1140,11 @@ CommandMap CREATE_TEAM1\n Key = KEY_1\n Transition = DOWN\n Modifiers = CTRL\n U
         let mut c = Controls::new(w, 1);
         c.meta_map.load_text(b"Data\\INI\\CommandMap.ini", map, None).expect("the map reads");
         let selection = |c: &Controls| c.client.world.players.get_nth(1).and_then(|p| p.current_selection.as_ref()).map(|s| s.object_ids.clone()).unwrap_or_default();
-        assert!(!c.key(tab, true, false), "before client frame 1 a game command is skipped");
-        c.key(tab, false, false);
+        assert!(!c.key(tab, true, false, None), "before client frame 1 a game command is skipped");
+        c.key(tab, false, false, None);
         c.frame_tick();
-        assert!(c.key(tab, true, false));
-        c.key(tab, false, false);
+        assert!(c.key(tab, true, false, None));
+        c.key(tab, false, false, None);
         assert_eq!(c.ui.select_count(), 1);
         let unit = c.ui.first_selected_drawable().expect("a unit");
         assert_eq!(c.client.world.get_controlling_player(unit), Some(1));
@@ -1129,15 +1155,15 @@ CommandMap CREATE_TEAM1\n Key = KEY_1\n Transition = DOWN\n Modifiers = CTRL\n U
         assert!(c.commands.team_exists);
         c.world().logic_update().expect("a frame");
         assert_eq!(selection(&c), vec![unit]);
-        assert!(c.key(s_key, true, false));
+        assert!(c.key(s_key, true, false, None));
         assert_eq!(c.client.sent, vec![MSG_DO_STOP]);
-        c.key(s_key, false, false);
+        c.key(s_key, false, false, None);
         c.client.sent.clear();
-        assert!(c.key(ctrl, true, false));
+        assert!(c.key(ctrl, true, false, None));
         assert!(c.ui.is_in_force_attack_mode());
-        assert!(c.key(a_key, true, false));
-        c.key(a_key, false, false);
-        assert!(c.key(ctrl, false, false));
+        assert!(c.key(a_key, true, false, None));
+        c.key(a_key, false, false, None);
+        assert!(c.key(ctrl, false, false, None));
         assert!(!c.ui.is_in_force_attack_mode());
         assert!(c.ui.select_count() > 1, "selected {:?}", c.ui.all_selected_drawables());
         // (the unit tab chose is not a dozer, harvester or structure, so select all keeps it and adds the rest)
@@ -1145,16 +1171,16 @@ CommandMap CREATE_TEAM1\n Key = KEY_1\n Transition = DOWN\n Modifiers = CTRL\n U
         assert_eq!(c.client.sent, vec![MSG_CREATE_SELECTED_GROUP]);
         // the control groups through the selection translator: ctrl+1 makes group 1 of the selection
         c.client.sent.clear();
-        assert!(c.key(ctrl, true, false));
-        assert!(c.key(0x02, true, false));
-        c.key(0x02, false, false);
-        assert!(c.key(ctrl, false, false));
+        assert!(c.key(ctrl, true, false, None));
+        assert!(c.key(0x02, true, false, None));
+        c.key(0x02, false, false, None);
+        assert!(c.key(ctrl, false, false, None));
         assert_eq!(c.client.sent, vec![rts_lockstep_engine::common::message_types::MSG_CREATE_TEAM1]);
-        assert!(!c.key(p_key, true, false));
-        c.key(p_key, false, false);
+        assert!(!c.key(p_key, true, false, None));
+        c.key(p_key, false, false, None);
         c.client.sent.clear();
         c.ui.set_input_enabled(false);
-        assert!(c.key(tab, true, false), "the window translator takes the key");
+        assert!(c.key(tab, true, false, None), "the window translator takes the key");
         assert!(c.client.sent.is_empty());
         assert!(c.meta_map_binds(tab) && !c.meta_map_binds(p_key));
     }

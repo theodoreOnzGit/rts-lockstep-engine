@@ -719,4 +719,48 @@ mod tests {
         cam.translate(&k, &ui, &c.client.world, true);
         assert_eq!(cam.look.scroll_dir, [false; 4]);
     }
+
+    /// (#119, carried from #128) The meta messages reach the camera's `LookAtTranslator` through `Controls::meta`, between
+    /// the selection and the command translators (priorities 50, 60, 70).
+    ///
+    /// *Predictions, written before the first run (issue119_predictions.md):* a right drag scrolls; `MSG_META_OPTIONS`
+    /// then stops the scroll and unlocks the view's mouse (LookAtXlat.cpp's `stopScrolling`), lets go of the selection
+    /// translator's left button (SelectionXlat.cpp:1277) and is kept for the command translator (its `ToggleQuitMenu`
+    /// queued); `MSG_META_SAVE_VIEW2` is destroyed at the look-at translator (the command translator sees nothing) and
+    /// `MSG_META_VIEW_VIEW2`, after a scroll moved the view, puts the view back where it was saved; without a camera the
+    /// bookmark goes on to the command translator, which has no case for it (`None`). The World's CRC is unchanged.
+    #[test]
+    fn the_meta_messages_reach_the_look_at_translator() {
+        let (mut c, mut cam) = demo();
+        let crc0 = c.client.world.logic_crc(CRC_RECALC, None).expect("CRC");
+        let ui = c.ui.clone();
+        cam.translate(&mouse(MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN, 400, 300), &ui, &c.client.world, false);
+        cam.translate(&mouse(MSG_RAW_MOUSE_POSITION, 500, 300), &ui, &c.client.world, false);
+        assert!(cam.ui_scrolling && cam.view.is_mouse_locked());
+        c.selection.left_mouse_button_is_down = true;
+        let toggles = c.client.quit_menu_toggles;
+        let d = c.meta(MSG_META_OPTIONS, Some(&mut cam));
+        assert!(!cam.ui_scrolling && !cam.view.is_mouse_locked() && !cam.look.is_scrolling, "MSG_META_OPTIONS stops the scroll");
+        assert!(!c.ui_scrolling && !c.view_mouse_locked, "the controls see the scroll stopped");
+        assert!(!c.selection.left_mouse_button_is_down, "SelectionXlat.cpp:1277");
+        // (the command translator's case destroys it after its `ToggleQuitMenu`, CommandXlat.cpp:3115)
+        assert_eq!(d, Some(rts_lockstep_engine::client::selection_xlat::Disposition::Destroy));
+        assert_eq!(c.client.quit_menu_toggles, toggles + 1, "kept for the command translator's ToggleQuitMenu");
+        // the bookmarks
+        let saved = cam.view.pos;
+        assert_eq!(c.meta(MSG_META_SAVE_VIEW2, Some(&mut cam)), Some(rts_lockstep_engine::client::selection_xlat::Disposition::Destroy));
+        let ui = c.ui.clone();
+        cam.translate(&mouse(MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN, 400, 300), &ui, &c.client.world, false);
+        cam.translate(&mouse(MSG_RAW_MOUSE_POSITION, 500, 300), &ui, &c.client.world, false);
+        for _ in 0..10 {
+            cam.tick(&ui, &c.client.world, false);
+        }
+        cam.translate(&mouse(MSG_RAW_MOUSE_RIGHT_BUTTON_UP, 500, 300), &ui, &c.client.world, false);
+        assert!(cam.view.pos.x > saved.x + 1.0, "{saved:?} {:?}", cam.view.pos);
+        assert_eq!(c.meta(MSG_META_VIEW_VIEW2, Some(&mut cam)), Some(rts_lockstep_engine::client::selection_xlat::Disposition::Destroy));
+        assert!((cam.view.pos.x - saved.x).abs() < 1e-3 && (cam.view.pos.y - saved.y).abs() < 1e-3, "{saved:?} {:?}", cam.view.pos);
+        // no camera: the command translator has no case for a bookmark
+        assert_eq!(c.meta(MSG_META_SAVE_VIEW2, None), None);
+        assert_eq!(c.client.world.logic_crc(CRC_RECALC, None).expect("CRC"), crc0);
+    }
 }

@@ -69,6 +69,11 @@
 //! `commandButtonTooltip`, so their popups show (the windows' ones through [`GameUi::window_popup`]) and their own tooltip
 //! text no longer goes to `TheMouse`, as upstream's.
 //!
+//! Since #119, the general's star (`rts_lockstep_engine::client::control_bar_gen_star`, differential-tested):
+//! `ButtonGeneral` flashes while the local player has science points to spend ([`GameUi::gen_star_frame`]), and a rank or
+//! points change sets the `ControlBarArrow` group with the input on ([`GameUi::gen_star_events`]); the bar's manager has
+//! no transition groups loaded, so the arrow itself does not show yet.
+//!
 //! The client still never changes the simulation: everything here reads the `World`.
 
 use std::collections::BTreeMap;
@@ -78,6 +83,7 @@ use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, pop
 use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, populate_window_tooltip, set_portrait_by_object, tooltip_window_of, PopupHost, PopupWindowHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
 use rts_lockstep_engine::client::control_bar_glow::RadarAttackGlow;
+use rts_lockstep_engine::client::control_bar_gen_star::{GenStar, GenStarHost, GeneralButtonImage};
 use rts_lockstep_engine::client::build_tooltip::{command_button_tooltip, command_gets_tooltip, control_bar_init_tooltips, BuildTooltip, BuildTooltipHost, ControlBarInitHost, COMMAND_BUTTON_TOOLTIP, GAME_COLOR_UNDEFINED, NON_COMMAND_BUTTONS};
 use rts_lockstep_engine::logic::command_button::CommandButton;
 use rts_lockstep_engine::client::control_bar_stage::{
@@ -179,6 +185,61 @@ pub struct GameUi {
     /// triggered by the radar's under-attack events, flashed once a frame ([`GameUi::radar_attack_glow_frame`]); the
     /// window's disabled image is the lit glow ([`GameUi::frame`] draws it as the manager has it).
     pub radar_attack_glow: RadarAttackGlow,
+    /// (#119) `TheControlBar`'s general's star (`m_genStarFlash`, `m_lastFlashedAtPointValue`): the general's button
+    /// flashes while there are points to spend, and a rank or points change sets the transition handler's
+    /// `ControlBarArrow` group with the input on ([`GameUi::gen_star_events`], [`GameUi::gen_star_frame`]).
+    pub gen_star: GenStar,
+}
+
+/// (#119) [`GenStarHost`] on the bar: the local player and its points, the InGameUI's input and the logic's frame as
+/// the caller read them; the transition handler is the bar's window manager's (`TheTransitionHandler` exists in a game);
+/// the general's button is `ControlBar.wnd:ButtonGeneral` with the side's scheme's `GeneralButtonEnable` /
+/// `GeneralButtonHightlited` (`updateUpDownImages`' images), by name. `markUIDirty` has nothing to mark: the bar's
+/// state is rebuilt every frame.
+pub struct GenStarBar<'a> {
+    pub ui: &'a mut GameUi,
+    pub local_player: i32,
+    pub points: i32,
+    pub input_enabled: bool,
+    pub frame: u32,
+}
+
+impl GenStarHost for GenStarBar<'_> {
+    fn is_local_player(&self, player_index: i32) -> bool {
+        player_index == self.local_player
+    }
+    fn local_science_purchase_points(&self) -> i32 {
+        self.points
+    }
+    fn transition_handler(&self) -> bool {
+        true
+    }
+    fn ui_input_enabled(&self) -> bool {
+        self.input_enabled
+    }
+    fn transition_set_group(&mut self, name: &[u8]) {
+        rts_lockstep_engine::client::window_transitions::set_group(&mut self.ui.wm, &mut NoGuiHost, name, false);
+    }
+    fn transition_remove(&mut self, name: &[u8]) {
+        rts_lockstep_engine::client::window_transitions::remove(&mut self.ui.wm, &mut NoGuiHost, name, false);
+    }
+    fn mark_ui_dirty(&mut self) {}
+    fn general_button_exists(&self) -> bool {
+        self.ui.wm.tree.find_by_name(b"ControlBar.wnd:ButtonGeneral").is_some()
+    }
+    fn general_button_set_enabled_image(&mut self, image: GeneralButtonImage) {
+        let Some(w) = self.ui.wm.tree.find_by_name(b"ControlBar.wnd:ButtonGeneral") else { return };
+        let field = match image {
+            GeneralButtonImage::Enable => "GeneralButtonEnable",
+            GeneralButtonImage::Highlight => "GeneralButtonHightlited",
+        };
+        let ui = &*self.ui;
+        let name = ui.schemes.current_scheme().and_then(|c| c.images.get(field)).and_then(|n| ui.images.find_image_by_name(n)).map(|i| i.name.clone());
+        rts_lockstep_engine::client::control_bar_scheme::gadget_button_set_enabled_image(&mut self.ui.wm.tree, w, name);
+    }
+    fn logic_frame(&self) -> u32 {
+        self.frame
+    }
 }
 
 /// (#136) [`ControlBarStageHost`] on the bar's window manager and scheme. The display is the bar's 800x600 layout; the
@@ -404,6 +465,12 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         non_command_buttons: Vec::new(),
         popup_fills: 0,
         radar_attack_glow: RadarAttackGlow::new(),
+        // (#119) `ControlBar::ControlBar`, then `init`'s `m_genStarFlash = TRUE`, `m_lastFlashedAtPointValue = -1`
+        gen_star: {
+            let mut g = GenStar::default();
+            g.init();
+            g
+        },
         images,
         wm,
         schemes,
@@ -1089,9 +1156,42 @@ impl GameUi {
         }
     }
 
-    /// (#162) `ControlBar::reset()`'s glow lines (`TheGameClient->reset()`, a new game).
+    /// (#162) `ControlBar::reset()`'s glow lines (`TheGameClient->reset()`, a new game). **(#119)** And its last lines,
+    /// the general's star's (`TheTransitionHandler->remove("ControlBarArrow")`, the flash back on).
     pub fn reset_radar_attack_glow(&mut self) {
         self.radar_attack_glow.reset(&mut self.wm);
+        let mut h = GenStarBar { local_player: -1, points: 0, input_enabled: false, frame: 0, ui: self };
+        let mut star = std::mem::take(&mut h.ui.gen_star);
+        star.reset(&mut h);
+        h.ui.gen_star = star;
+    }
+
+    /// (#119) The logic's `PlayerClientEvent::RankChanged` and `SciencePurchasePointsChanged` of a frame, in order, to
+    /// `TheControlBar->onPlayerRankChanged(p)` / `onPlayerSciencePurchasePointsChanged(p)`: for the local player
+    /// `local_player` with `points` to spend, the general's flash on and, with the input on, the `ControlBarArrow` group.
+    pub fn gen_star_events(&mut self, events: &[rts_lockstep_engine::logic::client_event::ClientEvent], local_player: i32, points: i32, input_enabled: bool) {
+        use rts_lockstep_engine::logic::client_event::ClientEvent;
+        use rts_lockstep_engine::logic::world::player_ops::PlayerClientEvent;
+        let mut star = std::mem::take(&mut self.gen_star);
+        let mut h = GenStarBar { ui: self, local_player, points, input_enabled, frame: 0 };
+        for e in events {
+            match e {
+                ClientEvent::Player(PlayerClientEvent::RankChanged { player_index }) => star.on_player_rank_changed(*player_index, &mut h),
+                ClientEvent::Player(PlayerClientEvent::SciencePurchasePointsChanged { player_index }) => star.on_player_science_purchase_points_changed(*player_index, &mut h),
+                _ => {}
+            }
+        }
+        h.ui.gen_star = star;
+    }
+
+    /// (#119) `ControlBar::update`'s first call, `getStarImage()`: the general's button's enabled image, flashing while
+    /// the local player has `points` to spend (the highlight in the second half of each logic second, `frame` the
+    /// logic's).
+    pub fn gen_star_frame(&mut self, points: i32, frame: u32) {
+        let mut star = std::mem::take(&mut self.gen_star);
+        let mut h = GenStarBar { ui: self, local_player: -1, points, input_enabled: true, frame };
+        star.get_star_image(&mut h);
+        h.ui.gen_star = star;
     }
 
     /// (#131) Each command window's own `WIN_STATUS_HIDDEN` and `WIN_STATUS_ENABLED` bits as the manager has them (after
@@ -1821,7 +1921,7 @@ mod tests {
         assert_eq!((ui.stage.current, ui.wm.tree.windows[master].region.1), (ControlBarStages::Default, 450));
         let (world, _) = crate::demo::demo_world();
         let mut c = Controls::new(world, 1);
-        c.meta(rts_lockstep_engine::common::message_types::MSG_META_TOGGLE_CONTROL_BAR);
+        c.meta(rts_lockstep_engine::common::message_types::MSG_META_TOGGLE_CONTROL_BAR, None);
         assert_eq!(c.client.control_bar_toggles, vec![true]);
         ui.toggle_control_bar(true);
         assert!(ui.is_bar_hidden() && ui.frame(&BarState::default()).is_empty());
@@ -2174,6 +2274,50 @@ mod tests {
         assert_eq!(image(&ui), Some(b"GlowOn".to_vec()));
         ui.reset_radar_attack_glow();
         assert_eq!(image(&ui), Some(b"GlowOff".to_vec()));
+    }
+
+    /// (#119) The general's star on the bar: `ControlBar.wnd:ButtonGeneral` (added by the test, as the synthetic layout has
+    /// none) with the scheme's `GeneralButtonEnable` `ImgBack` and `GeneralButtonHightlited` `ImgButton`.
+    /// *Predicted before the run:* with points to spend the button shows `ImgButton` on frames 16-29 of a second and
+    /// `ImgBack` on 0-15; a rank change of the local player with the input off leaves the transition handler without a
+    /// current group (the gate), and with the input on does not fail on the bar's handler, which has no `ControlBarArrow`
+    /// group loaded (`WindowTransitions.ini` is the shell's); with no points left the flash ends (`ImgBack` on every
+    /// frame); `reset` turns the flash back on.
+    #[test]
+    fn the_general_s_button_flashes_with_points_to_spend() {
+        use rts_lockstep_engine::client::window_manager::{NoGuiHost, SystemFunc};
+        use rts_lockstep_engine::client::window_script::WinInstanceData;
+        use rts_lockstep_engine::logic::client_event::ClientEvent;
+        use rts_lockstep_engine::logic::world::player_ops::PlayerClientEvent;
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let w = ui.wm.win_create(&mut NoGuiHost, None, win_status::ENABLED | win_status::IMAGE, 10, 10, 20, 20, SystemFunc::Default, Some(WinInstanceData::new()));
+        ui.wm.tree.windows[w].inst.decorated_name_string = b"ControlBar.wnd:ButtonGeneral".to_vec();
+        let c = ui.schemes.current.expect("the synthetic America scheme");
+        ui.schemes.schemes[c].images.insert("GeneralButtonEnable", b"ImgBack".to_vec());
+        ui.schemes.schemes[c].images.insert("GeneralButtonHightlited", b"ImgButton".to_vec());
+        let image = |ui: &GameUi| ui.wm.tree.windows[w].inst.enabled_draw_data[0].image.clone();
+        assert!(ui.gen_star.gen_star_flash && ui.gen_star.last_flashed_at_point_value == -1, "ControlBar::init");
+        ui.gen_star_frame(1, 15);
+        assert_eq!(image(&ui), Some(b"ImgBack".to_vec()));
+        ui.gen_star_frame(1, 16);
+        assert_eq!(image(&ui), Some(b"ImgButton".to_vec()));
+        let rank = [ClientEvent::Player(PlayerClientEvent::RankChanged { player_index: 2 })];
+        ui.gen_star_events(&rank, 2, 1, false);
+        assert!(ui.gen_star.gen_star_flash);
+        assert_eq!(ui.wm.transitions.current, None, "the input gate");
+        ui.gen_star_events(&rank, 2, 1, true);
+        assert_eq!(ui.wm.transitions.current, None, "no ControlBarArrow group on the bar's handler");
+        ui.gen_star_frame(0, 20);
+        assert!(!ui.gen_star.gen_star_flash);
+        assert_eq!(image(&ui), Some(b"ImgBack".to_vec()));
+        ui.reset_radar_attack_glow();
+        assert!(ui.gen_star.gen_star_flash && ui.gen_star.last_flashed_at_point_value == -1, "reset");
     }
 
     /// #12, on the owner's copy of Zero Hour (`RTS_ZH_DIR`, a folder with its archives; skipped without it, never faked):

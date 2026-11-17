@@ -723,6 +723,13 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Re
             let radar = g.controls.take_radar_events(&events);
             // #162: the radar attack glow's frame (`updateRadarAttackGlow`, then the frame's `triggerRadarAttackGlow`s)
             if let Some(bar) = g.ui.as_mut() {
+                // (#119: `ControlBar::update`'s `getStarImage()` first, then the frame's rank and points changes,
+                // `onPlayerRankChanged` / `onPlayerSciencePurchasePointsChanged`, with the InGameUI's input gate)
+                let c = &g.controls;
+                let local = c.client.player;
+                let points = c.client.world.players.get_nth(local).map_or(0, |p| p.science_purchase_points);
+                bar.gen_star_frame(points, c.client.world.frame());
+                bar.gen_star_events(&events, local, points, c.ui.input_enabled());
                 let triggers = radar.feedback.iter().filter(|f| matches!(f, rts_lockstep_engine::client::radar::RadarFeedback::AttackGlow)).count();
                 bar.radar_attack_glow_frame(triggers);
             }
@@ -1022,7 +1029,7 @@ fn dik_of(k: KeyCode) -> u8 {
 /// quit menu itself ([`crate::shell::ShellUi::toggle_quit_menu`], tested there) when the shell is loaded; while the
 /// in-game menus are up they have the keyboard, and an Escape their windows did not use toggles again (upstream's
 /// window manager sees the key before the meta map).
-fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Game>, mut taken: ResMut<UiKeyboard>, mut shell: NonSendMut<ShellState>) {
+fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Game>, mut taken: ResMut<UiKeyboard>, mut shell: NonSendMut<ShellState>, mut rig: Option<ResMut<Rig>>) {
     let g = &mut *game;
     // (#78) the shell, while it is shown, has the keyboard (`crate::shell::ShellUi::keyboard`, tested there); (#87) so
     // do the in-game menus
@@ -1102,7 +1109,8 @@ fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Ga
         for (k, u) in keys.iter().zip(used) {
             let dik = dik_of(k.key_code);
             if !u && dik != 0 {
-                g.controls.key(dik, k.state == ButtonState::Pressed, k.repeat);
+                // (#119: its meta messages through the camera's `LookAtTranslator` too)
+                g.controls.key(dik, k.state == ButtonState::Pressed, k.repeat, rig.as_deref_mut().map(|r| &mut r.cam));
             }
         }
     }
@@ -1205,7 +1213,7 @@ fn camera_input(
             };
             if held != r.camera_held[i] {
                 r.camera_held[i] = held;
-                g.controls.meta(if held { begin } else { end });
+                g.controls.meta(if held { begin } else { end }, Some(&mut r.cam));
             }
         }
         if let Ok(window) = windows.single() {
@@ -1295,7 +1303,7 @@ fn camera_input(
         let ends = [MSG_META_END_CAMERA_ROTATE_LEFT, MSG_META_END_CAMERA_ROTATE_RIGHT, MSG_META_END_CAMERA_ZOOM_IN, MSG_META_END_CAMERA_ZOOM_OUT];
         for (i, end) in ends.into_iter().enumerate() {
             if std::mem::take(&mut r.camera_held[i]) {
-                g.controls.meta(end);
+                g.controls.meta(end, Some(&mut r.cam));
             }
         }
     }
@@ -1617,8 +1625,8 @@ fn setup_ui(mut commands: Commands) {
             (button("-"), observe(|_: On<Activate>, mut rig: ResMut<Rig>, game: NonSend<Game>| zoom_button(&mut rig, &game, -3))),
             // (#131) the reset is the game's: `MSG_META_CAMERA_RESET` through the command translator (`resetCamera`: the
             // default angle and zoom where the view looks; ~~the start's point~~); the turn buttons, held, turn the view
-            (button("R"), observe(|_: On<Activate>, mut game: NonSendMut<Game>| {
-                game.controls.meta(rts_lockstep_engine::common::message_types::MSG_META_CAMERA_RESET);
+            (button("R"), observe(|_: On<Activate>, mut game: NonSendMut<Game>, mut rig: ResMut<Rig>| {
+                game.controls.meta(rts_lockstep_engine::common::message_types::MSG_META_CAMERA_RESET, Some(&mut rig.cam));
             })),
             (button("<"), TurnButton(0)),
             (button(">"), TurnButton(1)),
@@ -1630,8 +1638,8 @@ fn setup_ui(mut commands: Commands) {
             // (#136) the control bar hidden and shown: `MSG_META_TOGGLE_CONTROL_BAR` through the command translator, as
             // its key makes it (a phone has no keyboard; the bar's own `ButtonLarge` lowers and raises it, but is hidden
             // with it)
-            (button("B"), observe(|_: On<Activate>, mut game: NonSendMut<Game>| {
-                game.controls.meta(rts_lockstep_engine::common::message_types::MSG_META_TOGGLE_CONTROL_BAR);
+            (button("B"), observe(|_: On<Activate>, mut game: NonSendMut<Game>, mut rig: ResMut<Rig>| {
+                game.controls.meta(rts_lockstep_engine::common::message_types::MSG_META_TOGGLE_CONTROL_BAR, Some(&mut rig.cam));
             })),
             // (#135, owner decision 2026-11-11) a phone has no right button: `X` sends what a right click sends, at the
             // view's centre, through SelectionXlat's (#132/#134) and CommandXlat's (#131) right button: it cancels a

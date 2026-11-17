@@ -18,7 +18,11 @@
 **                       `case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN:` to `case GameMessage::MSG_META_CREATE_TEAM0:`
 **                       (the right button's press and release), compiled as the body of a switch in
 **                       SelectionTranslator::rightCases, which the wrapper writes;
-**   selection_deselect_all.inc  SelectionXlat.cpp, the static deselectAll they call.
+**   selection_deselect_all.inc  SelectionXlat.cpp, the static deselectAll they call;
+**   selection_options_case.inc  (#119, carried from #128) SelectionXlat.cpp, translateGameMessage's
+**                       `case GameMessage::MSG_META_OPTIONS:` to the debug build's MSG_META_DEMO_TOGGLE_HAND_OF_GOD_MODE
+**                       case, compiled as the body of a switch in SelectionTranslator::optionsCase, which the wrapper
+**                       writes.
 ** They are compiled inside namespace igt on stand-ins for the classes and singletons they name. The messages are the
 ** real GameMessage of the message stream build (wrap_message_stream.cpp), under its names. The stand-ins answer from a
 ** case the test sets and log the calls that act, in the format the test's Rust host logs.
@@ -52,7 +56,10 @@
 **             pending GUI command (0/1), getPendingPlaceSourceObjectID(), then the translator's state before:
 **             m_deselectFeedbackAnchor x, y, m_lastClick, m_deselectDownCameraPosition x, y, z (float bits). out:
 **             disposition, that state after (the six words), m_dragSelecting, isSelecting, deselectAllDrawables calls,
-**             setGUICommand(NULL) calls, a GUI command still pending, setScrolling(FALSE) calls. */
+**             setGUICommand(NULL) calls, a GUI command still pending, setScrolling(FALSE) calls.
+**     kind 6: (#119) the selection translator's gate then its MSG_META_OPTIONS case. in: type, input enabled,
+**             m_dragSelecting, isSelecting, m_leftMouseButtonIsDown. out: disposition, m_leftMouseButtonIsDown,
+**             m_dragSelecting, isSelecting, endAreaSelectHint calls, setMouseLock(FALSE) calls. */
 #define GameMessage MsTestGameMessage
 #define GameMessageArgument MsTestGameMessageArgument
 #define GameMessageList MsTestGameMessageList
@@ -283,7 +290,10 @@ public:
 	ICoord2D m_deselectFeedbackAnchor;
 	UnsignedInt m_lastClick;
 	Coord3D m_deselectDownCameraPosition;
+	/* (#119) SelectionXlat.h's m_leftMouseButtonIsDown */
+	Bool m_leftMouseButtonIsDown;
 	GameMessageDisposition rightCases(const GameMessage *msg);
+	GameMessageDisposition optionsCase(const GameMessage *msg);
 	virtual GameMessageDisposition translateGameMessage(const GameMessage *msg);
 };
 static Bool isSystemMessage( const GameMessage *msg );
@@ -302,6 +312,19 @@ GameMessageDisposition SelectionTranslator::rightCases(const GameMessage *msg)
 	switch (t)
 	{
 #include "selection_right_cases.inc"
+		default:
+			break;
+	}
+	return disp;
+}
+
+GameMessageDisposition SelectionTranslator::optionsCase(const GameMessage *msg)
+{
+	GameMessage::Type t = msg->getType();
+	GameMessageDisposition disp = KEEP_MESSAGE;
+	switch (t)
+	{
+#include "selection_options_case.inc"
 		default:
 			break;
 	}
@@ -489,6 +512,24 @@ extern "C" int ref_input_gate_case(int kind, const int *in, int nin, int *out, i
 			realBits(x.m_deselectDownCameraPosition.x), realBits(x.m_deselectDownCameraPosition.y), realBits(x.m_deselectDownCameraPosition.z),
 			(Int)x.m_dragSelecting, (Int)g_ui.m_isSelecting, g_ui.m_deselects, g_ui.m_commandClears, (Int)(g_ui.m_command != NULL), g_ui.m_scrollStops, 0, 0, 0 };
 		g_out.insert(g_out.end(), w, w + 13);
+	}
+	else if (kind == 6) {
+		Int t = in[0];
+		g_ui.m_inputEnabled = in[1] != 0;
+		g_ui.m_isSelecting = in[3] != 0;
+		g_ui.m_endHints = 0;
+		g_view.m_unlocks = 0;
+		SelectionTranslator x;
+		x.m_dragSelecting = in[2] != 0;
+		x.m_leftMouseButtonIsDown = in[4] != 0;
+		GameMessage *msg = newInstance(GameMessage)((GameMessage::Type)t);
+		Int disp = (Int)x.translateGameMessage(msg);
+		/* the gate's piece ends where the switch starts: the switch runs only with the input on */
+		if (g_ui.m_inputEnabled)
+			disp = (Int)x.optionsCase(msg);
+		msg->deleteInstance();
+		Int w[6] = { disp, (Int)x.m_leftMouseButtonIsDown, (Int)x.m_dragSelecting, (Int)g_ui.m_isSelecting, g_ui.m_endHints, g_view.m_unlocks };
+		g_out.insert(g_out.end(), w, w + 6);
 	}
 	int n = (int)g_out.size();
 	for (int i = 0; i < n && i < cap; ++i) out[i] = g_out[i];

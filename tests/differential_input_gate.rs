@@ -6,7 +6,8 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/WindowXlat.cpp
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/CommandXlat.cpp (the input gate, isSystemMessage; #123, #124:
 //     translateGameMessage's mouse-over, click and double-click cases)
-//   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/SelectionXlat.cpp (the input gate)
+//   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/SelectionXlat.cpp (the input gate; #132: the right
+//     button; #119: MSG_META_OPTIONS)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (setInputEnabled)
 //
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only), with
@@ -900,6 +901,71 @@ fn selection_right_button_matches_upstream() {
         "right button: {sequences} sequences, {messages} messages; {} releases with the input on, {} destroyed, {} deselected all, {} GUI commands cancelled, {} kept by a drag or the mode",
         stats[0], stats[1], stats[2], stats[3], stats[4]
     );
+    if planted {
+        c.report();
+    } else {
+        c.finish();
+    }
+    assert!(!planted, "a planted run: see the MEASURED lines (a mismatch is the plant caught)");
+}
+
+/// #119 (carried from #128): `SelectionTranslator::translateGameMessage`'s `MSG_META_OPTIONS` case (the gate, then the
+/// cut from `case GameMessage::MSG_META_OPTIONS:` to the debug build's hand-of-god case, SelectionXlat.cpp:1277-1283)
+/// against `SelectionTranslator::meta_options`.
+///
+/// # Method
+///
+/// Each case draws the message (`MSG_META_OPTIONS` three times in four, else one of the other meta and raw messages,
+/// which only the gate sees: the wrapper's switch has no case for them), the input (on half the time),
+/// `m_dragSelecting`, the InGameUI's selecting flag and `m_leftMouseButtonIsDown`. Compared: the disposition,
+/// `m_leftMouseButtonIsDown`, `m_dragSelecting` and selecting after, and the calls that end a drag (the gate's).
+///
+/// *Predictions, before the first run* (`issue119_predictions.md`): 0 mismatches; plant 10336 caught in about a fifth
+/// of the cases (options, input on, button down: 3/4 x 1/2 x 1/2), plant 10337 in about three eighths (options, input
+/// on).
+///
+/// # Results (2026-11-17, `SELECTION_OPTIONS_CASES=20000`, the default)
+///
+/// First run: 20,000 cases, **0 mismatches**; 7,550 options messages with the input on (predicted about 7,500), 3,743
+/// of them with the button down (predicted about 3,750); the gate ended 4,994 drags.
+///
+/// # Planted bugs
+///
+/// `L9_PLANT=<id>`: **2 of 2 caught** (2026-11-17).
+///
+/// | id | planted bug | caught by (cases) |
+/// |---|---|---|
+/// | 10336 | the options key leaves the left button down | 3,743 |
+/// | 10337 | the options case destroys the message | 7,550 |
+#[test]
+fn selection_meta_options_matches_upstream() {
+    let cases: u64 = std::env::var("SELECTION_OPTIONS_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20000);
+    let planted = std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0) != 0;
+    let mut g = Gen::new(0x119_0128);
+    let mut c = Check::new("SelectionTranslator MSG_META_OPTIONS");
+    let others = [MSG_META_TOGGLE_ATTACKMOVE, MSG_RAW_MOUSE_POSITION, MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, MSG_META_SAVE_VIEW1, MSG_CLEAR_GAME_DATA];
+    let mut stats = [0u64; 3];
+    for i in 0..cases {
+        let t = if g.below(4) != 0 { MSG_META_OPTIONS } else { others[g.below(others.len() as u32) as usize] };
+        let on = g.below(2) == 1;
+        let drag = g.below(2) == 1;
+        let selecting = g.below(2) == 1;
+        let down = g.below(2) == 1;
+        let input = vec![t.0 as i32, i32::from(on), i32::from(drag), i32::from(selecting), i32::from(down)];
+        let mut ui = InGameUiSelection::new();
+        ui.set_input_enabled(on);
+        ui.set_selecting(selecting);
+        let mut x = SelectionTranslator { drag_selecting: drag, left_mouse_button_is_down: down, ..Default::default() };
+        let d = if t == MSG_META_OPTIONS { x.meta_options(&mut ui) } else { x.input_disabled_gate(&mut ui).unwrap_or(Disposition::Keep) };
+        let ended = i32::from(drag && !x.drag_selecting);
+        stats[0] += u64::from(t == MSG_META_OPTIONS && on);
+        stats[1] += u64::from(t == MSG_META_OPTIONS && on && down);
+        stats[2] += u64::from(ended > 0);
+        let rust = vec![disp(d), i32::from(x.left_mouse_button_is_down), i32::from(x.drag_selecting), i32::from(ui.is_selecting()), ended, ended];
+        let cpp = cpp_case(6, &input);
+        c.eq(rust, cpp, || format!("case {i} {input:?}"));
+    }
+    println!("options: {cases} cases; {} options with the input on, {} of them with the button down, {} drags ended by the gate", stats[0], stats[1], stats[2]);
     if planted {
         c.report();
     } else {

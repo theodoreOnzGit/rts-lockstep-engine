@@ -6,7 +6,8 @@
 //   areAllSelected, deselectAll, the MSG_MOUSE_LEFT_CLICK case of SelectionTranslator::translateGameMessage; #116: its
 //   input gate, the MSG_RAW_MOUSE_LEFT_BUTTON_DOWN case and the drag halves of MSG_RAW_MOUSE_POSITION and
 //   MSG_RAW_MOUSE_LEFT_BUTTON_UP; #122: CanSelectDrawable, the mouse-over half of MSG_RAW_MOUSE_POSITION and the
-//   MSG_MOUSEOVER_DRAWABLE_HINT case; #132: the MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN and _UP cases)
+//   MSG_MOUSEOVER_DRAWABLE_HINT case; #132: the MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN and _UP cases; #119/#128: the
+//   MSG_META_OPTIONS case)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/SelectionInfo.cpp (addDrawableToList)
 //
 // Original copyright notice of those files:
@@ -40,6 +41,9 @@
 //!   drag tolerances) cancels a pending GUI command, the message destroyed, or else deselects everything in the regular
 //!   mouse mode, or in the alternate one while a building waits to be placed ([`SelectionTranslator::right_button_up`]).
 //!   `tests/differential_input_gate.rs` compares both with the C++.
+//! - **`MSG_META_OPTIONS` (#119, carried from #128).** The options key lets go of the left button's selection feedback
+//!   ([`SelectionTranslator::meta_options`]) and keeps the message for `LookAtTranslator` and `CommandTranslator`.
+//!   `tests/differential_input_gate.rs` compares it with the C++ (its kind 6).
 
 use crate::client::in_game_ui::{DrawableId, InGameUiSelection, SelectionUiHost};
 use crate::client::command_xlat::{CommandEvaluateType, CommandTranslator, CommandXlatHost};
@@ -351,6 +355,23 @@ impl SelectionTranslator {
             return true;
         }
         false
+    }
+
+    /// #119/#128: the `MSG_META_OPTIONS` case (SelectionXlat.cpp:1277-1283, after the input gate): "stop drawing
+    /// selection feedback, as we're going to ignore the selection" (`m_leftMouseButtonIsDown = FALSE`), and "let this
+    /// message drop through, the commandXLat will show the options screen itself": the message is kept. With the input
+    /// off the gate keeps it and the case does not run. `m_dragSelecting` is left as it is, as upstream leaves it.
+    pub fn meta_options(&mut self, ui: &mut InGameUiSelection) -> Disposition {
+        if let Some(d) = self.input_disabled_gate(ui) {
+            return d;
+        }
+        if !crate::logic::modules::plant(10336) {
+            self.left_mouse_button_is_down = false;
+        }
+        if crate::logic::modules::plant(10337) {
+            return Disposition::Destroy;
+        }
+        Disposition::Keep
     }
 
     /// #132: the `MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN` case (SelectionXlat.cpp:977-988, after the input gate). "There are three

@@ -37,6 +37,7 @@ pub mod laser_update; // #165: LaserUpdate (a client update module, though its s
 pub mod w3d_laser_draw; // #168: W3DLaserDraw (the LaserDrawInterface and the beams' geometry)
 pub mod control_bar_glow; // #162: the radar's under-attack glow (ControlBar::triggerRadarAttackGlow, updateRadarAttackGlow)
 pub mod control_bar_stage; // #136: hiding, showing, lowering and raising the control bar (ControlBar's stages, ToggleControlBar)
+pub mod control_bar_gen_star; // #119: the general's star flash and the ControlBarArrow group (getStarImage, onPlayerRankChanged)
 pub mod build_tooltip; // #138: the control bar's popup description's timing (commandButtonTooltip, showBuildTooltipLayout)
 pub mod letterbox; // #144: the script letterbox (W3DDisplay's renderLetterBox, enableLetterBox)
 pub mod cinematic_text; // #146: the cinematic text (Display's m_cinematicText, W3DDisplay::draw's block)

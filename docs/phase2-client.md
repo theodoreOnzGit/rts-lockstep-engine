@@ -127,6 +127,50 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#119/#120, the other readers of the input gate (2026-11-17, GitHub #119, #120; carried from #128): the general's star and
+the `ControlBarArrow` gate, SelectionXlat's `MSG_META_OPTIONS`, the meta messages through `LookAtTranslator`.**
+- **What was open (read first).** Of #119's list, Diplomacy's gate (Diplomacy.cpp:201) was already translated by #148
+  (`client::diplomacy`, plant 9415; the client passes the InGameUI's input), `DeleteBuildTooltipLayout` already reached
+  the bar by #138 (`GameUi::script_call`), and `LookAtTranslator` and `LookAtResetModes` were #119's own commit 008b910.
+  Still open: the idle worker (InGameUI.cpp:5619/5622), the `ControlBarArrow` group (ControlBar.cpp:1682/1699), and
+  from #128: `Controls::meta` gave no meta message to `LookAtTranslator`, and SelectionXlat.cpp:1277's
+  `MSG_META_OPTIONS` case was not translated. #120's items were all still open.
+- **Upstream read.** ControlBar.cpp:893 (the constructor), 1266-1269 (`init`), 1371-1376 (`reset`'s end), 1385
+  (`update` calls `getStarImage` first), 1645-1705 (`getStarImage`, `onPlayerRankChanged`,
+  `onPlayerSciencePurchasePointsChanged`); GameWindowTransitions.h:671-673 (`setGroup`/`remove`'s defaults);
+  SelectionXlat.cpp:1277-1283; GameClient.cpp:297-315 (the translators' priorities: Selection 50, LookAt 60, Command
+  70); LookAtXlat.cpp's `MSG_META_OPTIONS` and `SAVE_VIEW`/`VIEW_VIEW` cases; InGameUI.cpp:5445-5640 (the idle worker).
+- **Translated.** `src/client/control_bar_gen_star.rs` (new): `GenStar::get_star_image`, `on_player_rank_changed`,
+  `on_player_science_purchase_points_changed`, `init`, `reset`. The client's bar (`GameUi::gen_star_frame`, then
+  `gen_star_events` on the logic's `PlayerClientEvent::RankChanged` / `SciencePurchasePointsChanged`, once a logic
+  frame before the radar glow) flashes `ControlBar.wnd:ButtonGeneral` between the scheme's `GeneralButtonEnable` and
+  `GeneralButtonHightlited`, and sets the `ControlBarArrow` group only with the input on. `SelectionTranslator::meta_options`
+  (src/client/selection_xlat.rs). `Controls::meta` and `Controls::key` now take the camera and give each meta message to
+  its `LookAtTranslator` between the selection and command translators: the CommandMap's bookmark keys
+  (`MSG_META_SAVE_VIEWn` / `VIEW_VIEWn`) now work, and the options key stops a scroll.
+- **Stopped (needs a logic change):** the idle worker. The logic's `TheInGameUI->addIdleWorker` / `removeIdleWorker` go to
+  cuts (`player_host_world.rs` `ui_add_idle_worker`, `ai_state_host_world.rs` `in_game_ui_idle_worker`), so the client
+  has no `m_idleWorkers` to count; src/logic is read-only.
+- **Differentials** (verbatim build.rs cuts, each anchor asserted once): `tests/differential_gen_star.rs`
+  (`differential/wrap_gen_star.cpp`, three cuts of ControlBar.cpp): 20,000 sequences, 130,442 steps, **0 mismatches**
+  on the first run. `tests/differential_input_gate.rs`'s new kind 6 (`selection_options_case.inc`): 20,000 cases, **0
+  mismatches**. Plants 10336-10344: **9 of 9 caught** (fewest: 10340, the highlight a frame early, 418 sequences).
+  Neighbours re-run: `differential_look_at`, `differential_command_meta`, `differential_meta_input`, the rest of
+  `differential_input_gate`: all 0 mismatches.
+- **Gates (release, 1.97.1).** lib 1279 passed; client 111 passed (new: `the_meta_messages_reach_the_look_at_translator`,
+  `the_general_s_button_flashes_with_points_to_spend`); gate (a) PASS, 300 frames, last CRC **0bf44067**.
+- **Predictions.** All held: 0 mismatches on every first run; every plant caught; the options cases' shares (7,550 with
+  the input on, predicted ~7,500; 3,743 with the button down, predicted ~3,750). The idle worker was predicted blocked
+  and was.
+- **Defects** (the port differed from upstream): the meta messages skipped `LookAtTranslator` (the bookmark keys did
+  nothing), and the options key left the selection translator's left button down. Both fixed here.
+- **Gaps left:** the arrow does not show yet: the bar's window manager has no transition groups (`WindowTransitions.ini`
+  is loaded into the shell's manager only; upstream has one manager and one `TheTransitionHandler`) and the bar is drawn
+  from quads, not the manager's draw list. `showPurchaseScience`'s `m_genStarFlash = FALSE` waits for the general's
+  purchase screen. The idle worker (above). #120's list is unchanged: the terrain cast of `lookAt`, the scripted camera,
+  `MSG_SET_REPLAY_CAMERA`, the bookmark's message (the client has no message display), the RMB anchor's drawing and
+  option, the edge scroll, the view's 77 %, the stats collector, the demo's camera, a real-browser check.
+
 **#128, the last release meta cases (2026-11-15, GitHub #128): chat, diplomacy, options, the replay's fast forward and
 the screenshot through the CommandMap; MetaEvent's TiVO hack applied.**
 - **What was open (read first).** Of the issue's list, #131 (f1a34ab) did the hot keys, MetaEventTranslator's mouse
