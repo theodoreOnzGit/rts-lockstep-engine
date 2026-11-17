@@ -43,6 +43,7 @@ pub mod letterbox; // #144: the script letterbox (W3DDisplay's renderLetterBox, 
 pub mod cinematic_text; // #146: the cinematic text (Display's m_cinematicText, W3DDisplay::draw's block)
 pub mod global_language; // #148: TheGlobalLanguageData (GlobalLanguage.cpp: Language.ini's fonts, adjustFontSize)
 pub mod pick_drawable; // #148: W3DView::pickDrawable's ray cast (RTS3DScene::castRay, the boxes' Cast_Ray, CollisionMath)
+pub mod mesh_cast; // #149: MeshClass::Cast_Ray, the cast at a mesh's polygons (AABTree or brute force, Collide(LineSeg, Tri))
 pub mod diplomacy; // #148: the briefing history window (Diplomacy.cpp: UpdateDiplomacyBriefingText, Show/Hide/ToggleDiplomacy)
 pub mod military_subtitle; // #151: InGameUI::militarySubtitle, its update and draw (the typed-out briefing caption)
 pub mod in_game_popup_message; // #151: InGameUI::popupMessage and InGamePopupMessage.cpp (the script popup box)

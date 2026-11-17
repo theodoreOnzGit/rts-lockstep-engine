@@ -1852,7 +1852,7 @@ fn pointer_input(
     }
     // ~~the nearest object projected within 18 pixels (the client's stand-in for `pickDrawable`)~~ **Corrected 2026-11-12,
     // #148:** the translated `W3DView::pickDrawable` (`rts_lockstep_engine::client::pick_drawable`): the view's pick ray
-    // cast at the objects' render objects (`WorldDrawables::pick_scene`: the art's boxes, or the demo's shapes), behind
+    // cast at the objects' render objects (`WorldDrawables::pick_scene`: the art's ~~boxes~~ **Corrected 2026-11-17 (#149):** meshes, cast at by their polygons, or the demo's shapes), behind
     // the windows under the pointer. The mouse-over's pick asks `getPickTypesForContext(TRUE)` (SelectionXlat.cpp:453),
     // the clicks' and orders' `getPickTypesForContext(isInForceAttackMode())`, the double click `PICK_TYPE_SELECTABLE`.
     let scene = g.models.pick_scene(&g.controls.client.world, &g.cur.objects);

@@ -104,7 +104,7 @@
 //! [`MeshModel::vertex_materials`] and [`MeshModel::textures`].
 
 use super::htree::HTree;
-use super::mesh::{dx8_convert_color, dx8_unpack_color, mesh_flags, Arr, Mesh, Texture, MAX_PASSES, MAX_TEX_STAGES};
+use super::mesh::{dx8_convert_color, dx8_unpack_color, mesh_flags, AabNode, Arr, Mesh, Texture, MAX_PASSES, MAX_TEX_STAGES};
 use super::shader::ShaderClass;
 use super::vertmaterial::{color_source, VertexMaterialState, D3DMCS_COLOR1, D3DMCS_MATERIAL};
 use super::{W3dError, W3dResult, W3dUndefined};
@@ -174,6 +174,22 @@ pub struct MeshModel {
     pub textures: Vec<Texture>,
     /// The file had an alternate material description (not installed).
     pub has_alternate: bool,
+    /// (#149) `CullTree`: the AABTree the file carried (`MeshGeometryClass::read_aabtree`), which
+    /// `MeshGeometryClass::Cast_Ray` casts through (`crate::client::mesh_cast`). `None` without one: upstream then
+    /// generates one for a collidable mesh (`Generate_Culling_Tree`, `AABTreeBuilderClass`, not translated) and casts
+    /// by brute force otherwise; here every mesh without one is cast at by brute force.
+    pub cull_tree: Option<CullTree>,
+    /// (#149) `PolySurfaceType`: each polygon's surface type (`W3D_CHUNK_TRIANGLES`' attributes), which a ray cast
+    /// reports (`Get_Poly_Surface_Type`). Empty when the mesh had none.
+    pub surface_types: Vec<u8>,
+}
+
+/// (#149) `class AABTreeClass` (aabtree.h) as a mesh carries it for casting: its `Nodes` and `PolyIndices` as
+/// `AABTreeClass::Load_W3D` read them ([`super::mesh::AabTree`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CullTree {
+    pub nodes: Vec<AabNode>,
+    pub poly_indices: Vec<u32>,
 }
 
 /// One group of polygons drawn with the same state (a DX8 texture category's
@@ -259,6 +275,8 @@ impl MeshModel {
             vertex_materials: mesh.vertex_materials.iter().map(VertexMaterialState::from_w3d).collect(),
             textures: mesh.textures.clone(),
             has_alternate,
+            cull_tree: mesh.cull_tree.as_ref().map(|t| CullTree { nodes: t.nodes.to_vec(), poly_indices: t.poly_indices.to_vec() }),
+            surface_types: mesh.surface_types.as_ref().map(|a| a.to_vec()).unwrap_or_default(),
         };
         // install_materials: vertex-lit models need the lighting turned off
         let lighting_enabled = m.flags & mesh_flags::PRELIT_VERTEX == 0;
@@ -524,6 +542,10 @@ impl MeshModel {
     /// `MeshModelClass::post_process()`, with the game's settings (no fog
     /// activation, no static sort munging, no overbright).
     fn post_process(&mut self) {
+        // (#149) "skinned meshes should not have cull trees" (meshmdlio.cpp:1655)
+        if self.get_flag(mesh_flags::SKIN) {
+            self.cull_tree = None;
+        }
         // turn off backface culling if the mesh is supposed to be two-sided
         if self.get_flag(mesh_flags::TWO_SIDED) {
             // DefMatDesc->Disable_Backface_Culling()

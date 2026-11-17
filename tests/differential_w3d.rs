@@ -7642,6 +7642,8 @@ fn skin_deformation_matches_upstream() {
             vertex_materials: Vec::new(),
             textures: Vec::new(),
             has_alternate: false,
+            cull_tree: None,
+            surface_types: Vec::new(),
         };
         let (rv, rn) = match model.get_deformed_vertices(&tree) {
             Ok(x) => x,

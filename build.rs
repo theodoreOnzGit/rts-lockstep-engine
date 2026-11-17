@@ -4404,6 +4404,82 @@ mod differential {
                 pd.compile("upstream_pick_drawable");
             }
 
+            // GitHub #149: MeshClass::Cast_Ray and what it reaches (differential/wrap_mesh_cast.cpp, which lists the cuts). Cut
+            // verbatim into OUT_DIR/mesh_cast_gen from tri.cpp, lineseg.cpp, colmathaabox.cpp, colmathline.cpp (WWMath),
+            // aabtree.h, aabtree.cpp, meshgeometry.h, meshgeometry.cpp, mesh.cpp and rendobj.h (WW3D2). No text is edited.
+            // Each anchor must occur once; `skip` drops a leading part of the start anchor (colmathaabox.cpp's
+            // Overlap_Test(AABox, LineSeg) is defined twice, the second under `#if 0`: the compiled one is the one after
+            // a banner's `*/`, which is not part of the cut).
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_mesh_cast.cpp");
+                let piece = |text: &str, file: &str, from: &str, skip: usize, to: Option<&str>| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from") + skip;
+                    match to {
+                        Some(to) => {
+                            assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                            let j = text.find(to).expect("to");
+                            assert!(i < j, "{file}: a cut must end after it starts");
+                            text[i..j].to_string()
+                        }
+                        None => text[i..].to_string(),
+                    }
+                };
+                const BANNER: &str = "/***********************************************************************************************\n";
+                let tri = read_upstream(ww.join("WWMath/tri.cpp"));
+                let ls = read_upstream(ww.join("WWMath/lineseg.cpp"));
+                let ca = read_upstream(ww.join("WWMath/colmathaabox.cpp"));
+                let cl = read_upstream(ww.join("WWMath/colmathline.cpp"));
+                let ah = read_upstream(ww.join("WW3D2/aabtree.h"));
+                let ac = read_upstream(ww.join("WW3D2/aabtree.cpp"));
+                let gh = read_upstream(ww.join("WW3D2/meshgeometry.h"));
+                let gc = read_upstream(ww.join("WW3D2/meshgeometry.cpp"));
+                let me = read_upstream(ww.join("WW3D2/mesh.cpp"));
+                let ro = read_upstream(ww.join("WW3D2/rendobj.h"));
+                let banner = |title: &str| format!("{BANNER}{title}");
+                let ov = "*/\nCollisionMath::OverlapType CollisionMath::Overlap_Test(const AABoxClass & box,const LineSegClass & line)\n";
+                let files = [
+                    ("mc_tri.inc", piece(&tri, "tri.cpp", "struct FDPRec \n", 0, None)),
+                    ("mc_lineseg_set.inc", piece(&ls, "lineseg.cpp", "void LineSegClass::Set(const LineSegClass & that,const Matrix3D & tm)\n", 0, Some(&banner(" * LineSegClass::Set_Random -- create")))),
+                    ("mc_overlap_line.inc", piece(&ca, "colmathaabox.cpp", ov, 3, Some("#if 0 // Alternate Overlap Test for AABox-Ray"))),
+                    ("mc_collide_tri.inc", piece(&cl, "colmathline.cpp", "bool CollisionMath::Collide(const LineSegClass & line,const TriClass & tri,CastResultStruct * res)\n", 0, Some("bool CollisionMath::Collide(const LineSegClass & line,const SphereClass & sphere,CastResultStruct * res)"))),
+                    ("mc_leaf_flag.inc", piece(&ah, "aabtree.h", "#define AABTREE_LEAF_FLAG 0x80000000", 0, Some("\n/*\n** AABTreeClass"))),
+                    ("mc_node.inc", piece(&ah, "aabtree.h", "\tstruct CullNodeStruct\n", 0, Some("\t/*\n\t** OBBoxAPTContextStruct"))),
+                    ("mc_tree_cast.inc", piece(&ah, "aabtree.h", "inline bool AABTreeClass::Cast_Ray(RayCollisionTestClass & raytest)\n", 0, Some("inline int AABTreeClass::Cast_Semi_Infinite_Axis_Aligned_Ray("))),
+                    ("mc_node_impl.inc", piece(&ah, "aabtree.h", "inline bool AABTreeClass::CullNodeStruct::Is_Leaf(void)\n", 0, Some("inline void AABTreeClass::CullNodeStruct::Set_Front_Child(uint32 index)"))),
+                    ("mc_tree_recursive.inc", piece(&ac, "aabtree.cpp", "bool AABTreeClass::Cast_Ray_Recursive(CullNodeStruct * node,RayCollisionTestClass & raytest)\n", 0, Some(&banner(" * AABTreeClass::Cast_Semi_Infinite_Axis_Aligned_Ray_Recursive -- Internal")))),
+                    ("mc_tree_polys.inc", piece(&ac, "aabtree.cpp", "bool AABTreeClass::Cast_Ray_To_Polys(CullNodeStruct * node,RayCollisionTestClass & raytest)\n", 0, Some("#ifdef _DEBUG\n#pragma optimize(\"\", on)"))),
+                    ("mc_geom_defs.inc", piece(&gh, "meshgeometry.h", "typedef Vector3i16 TriIndex;", 0, Some("/**\n** MeshGeometryClass"))),
+                    ("mc_geom_flags.inc", piece(&gh, "meshgeometry.h", "\tenum FlagsType\n", 0, Some("\tvoid\t\t\t\t\t\t\tReset_Geometry(int polycount,int vertcount);"))),
+                    ("mc_geom_surface.inc", piece(&gh, "meshgeometry.h", "inline uint8 MeshGeometryClass::Get_Poly_Surface_Type(int poly_index) const", 0, Some("#endif //MESHGEOMETRY_H"))),
+                    ("mc_geom_planeeq.inc", piece(&gc, "meshgeometry.cpp", "#if (OPTIMIZE_PLANEEQ_RAM)\nstatic SimpleVecClass<Vector4> _PlaneEQArray(1024);", 0, Some("#if (OPTIMIZE_VNORM_RAM)\nstatic"))),
+                    ("mc_geom_cast.inc", piece(&gc, "meshgeometry.cpp", "bool MeshGeometryClass::Cast_Ray(RayCollisionTestClass & raytest)\n", 0, Some(&banner(" * MeshGeometryClass::Cast_AABox -- cast an AABox")))),
+                    ("mc_geom_brute.inc", piece(&gc, "meshgeometry.cpp", "bool MeshGeometryClass::cast_ray_brute_force(RayCollisionTestClass & raytest)\n", 0, Some(&banner(" * MeshGeometryClass::cast_aabox_brute_force")))),
+                    ("mc_geom_peq.inc", piece(&gc, "meshgeometry.cpp", "void MeshGeometryClass::Compute_Plane_Equations(Vector4 * peq)\n", 0, Some(&banner(" * MeshGeometryClass::Compute_Vertex_Normals")))),
+                    ("mc_geom_planes.inc", piece(&gc, "meshgeometry.cpp", "Vector4 * MeshGeometryClass::get_planes(bool create)\n", 0, Some(&banner(" * MeshGeometryClass::Compute_Plane --")))),
+                    ("mc_mesh_cast.inc", piece(&me, "mesh.cpp", "bool MeshClass::Cast_Ray(RayCollisionTestClass & raytest)\n", 0, Some(&banner(" * MeshClass::Cast_AABox -- cast")))),
+                    ("mc_mesh_coll.inc", piece(&me, "mesh.cpp", "\tint col_bits = (Model->W3dAttributes & W3D_MESH_FLAG_COLLISION_TYPE_MASK) >> W3D_MESH_FLAG_COLLISION_TYPE_SHIFT;\n", 0, Some("\tSet_Hidden(Model->W3dAttributes & W3D_MESH_FLAG_HIDDEN);"))),
+                    ("mc_coll_type.inc", piece(&ro, "rendobj.h", "\tvirtual int\t\t\t\t\t\tGet_Collision_Type(void) const", 0, Some("   virtual bool\t\t\t\t\tIs_Complete(void)"))),
+                ];
+                let gen = out_dir.join("mesh_cast_gen");
+                std::fs::create_dir_all(&gen).expect("create mesh_cast_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_mesh_cast.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}\n")).expect("write a mesh cast cut");
+                }
+                let mut mc = cc::Build::new();
+                base(&mut mc);
+                mc.include(&gen)
+                    .include(&shim)
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .include(ww.join("WWMath"))
+                    .include(ww.join("WW3D2"))
+                    .include(ww.join("WWLib"))
+                    .file(dif.join("wrap_mesh_cast.cpp"));
+                mc.compile("upstream_mesh_cast");
+            }
+
             // GitHub #148: the briefing history window (differential/wrap_diplomacy.cpp, which lists the cut). Cut verbatim into
             // OUT_DIR/diplomacy_gen from Diplomacy.cpp (the statics to PopulateInGameDiplomacyPopup). No text is edited. Each
             // anchor must occur once.

@@ -127,6 +127,45 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#149, the pick casts at mesh polygons (2026-11-17, GitHub #149, item "pickDrawable: Mesh polygons are not cast at").**
+- **What was open (read first).** #148 cast the pick ray at each mesh's oriented vertex box (`oriented_bounds` in
+  `WorldDrawables::pick_scene`), so a ray through an empty corner of that box picked where upstream does not. Searched
+  first: `src/formats/w3d/mesh.rs` already loaded the AABTree (`load_aabtree`) and the surface types, but `MeshModel`
+  dropped both; `src/ww/tri.rs` had only `Point_In_Triangle_2D`; `client::pick_drawable` had `LineSeg`, `CastResult`,
+  `RayTest` and the box collides; `Matrix3D` had `obj_look_at`, `get_inverse`, `transform_vector`, `rotate_vector_by`.
+- **Upstream read and translated** (function by function, upstream names in the doc comments): mesh.cpp
+  `MeshClass::Cast_Ray` (1218) and `Init`'s collision type (1168); meshgeometry.cpp `Cast_Ray` (650),
+  `cast_ray_brute_force` (1089), `Compute_Plane_Equations` (1260), `Get_Plane_Array` (1497); aabtree.h `Cast_Ray` (231)
+  and the node accessors; aabtree.cpp `Cast_Ray_Recursive` (527), `Cast_Ray_To_Polys` (747); coltest.h
+  `RayCollisionTestClass(raytest, tm)` and `Cull` (160-171); lineseg.cpp `Set(that, tm)` (58); colmathline.cpp
+  `Collide(LineSeg, Tri)` (192) and colmathline.h `Overlap_Test(min, max, line)` (47); colmathaabox.cpp
+  `Overlap_Test(AABox, LineSeg)` (144) and colmathaabox.h `Overlap_Test(AABox, point)` (66); tri.cpp
+  `find_dominant_plane` (83), `Find_Dominant_Plane` (143), `Contains_Point` (201, the compiled branch) and tri.h
+  `Compute_Normal`; meshmdlio.cpp `post_process`'s "skinned meshes should not have cull trees" (1655). New files:
+  `src/client/mesh_cast.rs`; `TriClass` in `src/ww/tri.rs`; `MeshModel::cull_tree` and `surface_types`;
+  `pick_drawable::ModelRenderObj` (a box or a mesh, `HLodClass::Cast_Ray`'s virtual call).
+- **Wired in.** `pick_scene` gives each mesh `HLodClass::Cast_Ray` casts at as a `MeshRenderObj`: its polygons under its
+  bone's transform in the drawn model's live hierarchy (a lone mesh: the drawn root). A **skin** is cast at as upstream
+  casts at it, at its own (bone-space) vertices under its bone's transform, not its deformed ones. The bounding sphere
+  stays the client's (`bounding_sphere_of_models`).
+- **Not translated (gaps):** generating an AABTree for a collidable mesh without one (`AABTreeBuilderClass`): cast by
+  brute force here; `Is_Alpha` (set by `MeshClass::Init` from the shaders) and `Is_Animation_Hidden` are left false
+  by the client.
+- *Predictions before the runs* (`tests/differential_mesh_cast.rs`, 20,000 sequences, C++ cut verbatim through build.rs
+  into `differential/wrap_mesh_cast.cpp`): 0 mismatches; tree and brute force agree on every (hit, fraction) but ties;
+  15 plants (10356-10370) all caught.
+- *Results:* **0 mismatches** over 20,000 sequences (129,186 mesh casts, 103,918 geometry casts, 25,691 triangle
+  collides, 25,671 point tests, 25,713 box-line overlaps, 25,897 segment transforms, 25,564 collision types). Missed:
+  the AABTree is not equivalent to brute force: of 25,260 pairs on exact trees the tree missed a hit 37 times and found
+  a farther one 30 times (both sides agree bit for bit: it is upstream's cull, hypothesis: rounding where a polygon
+  meets its node box's boundary; 67 fell to 16 with rays aimed only at triangles' insides). Plant 10356 (`t > 1` not
+  rejected) was not caught until results starting above 1 were generated; then 15 of 15 caught. The unit tests' own
+  predictions missed twice (a point on a hypotenuse is inside; a hit at `t = 1` is no hit against a fresh result).
+  Full run (2026-11-17): `cargo test --release --lib` 1,281 passed (1,279 before, plus `tri_class_contains_point` and
+  `mesh_cast_hits_polygons`); `--features differential --tests` 263 binaries, 1,757 passed, 0 failed; the client's
+  111 passed (`the_pick_scene_is_the_models_boxes_or_the_shapes` now casts at the synthetic cube's polygons); gate (a)
+  PASS, last CRC `0bf44067` (unchanged: the logic is untouched).
+
 **#119/#120, the other readers of the input gate (2026-11-17, GitHub #119, #120; carried from #128): the general's star and
 the `ControlBarArrow` gate, SelectionXlat's `MSG_META_OPTIONS`, the meta messages through `LookAtTranslator`.**
 - **What was open (read first).** Of #119's list, Diplomacy's gate (Diplomacy.cpp:201) was already translated by #148
@@ -2941,7 +2980,7 @@ Full run: 1198 tests pass (2026-11-05: the engine's 1192 in 204 suites, the clie
 - `client/src/app.rs`: a left click selects or orders, a left drag selects in a box (drawn), the hint is in the status line,
   selected units have rings, the first selected unit's buttons run along the bottom, a construct button places a building,
   Escape cancels. ~~Picking is by projected position (18 pixels)~~ **Corrected 2026-11-12, #148:** picking is the translated
-  `W3DView::pickDrawable` (the pick ray cast at the objects' boxes, `client::pick_drawable`), the ground by the camera ray on
+  `W3DView::pickDrawable` (the pick ray cast at the objects' ~~boxes~~ **Corrected 2026-11-17 (#149):** meshes' polygons, or the demo's boxes, `client::pick_drawable`, `client::mesh_cast`), the ground by the camera ray on
   the ground plane.
 
 *Predictions before the runs:* the questions a hovering player asks every frame (18,000 over 300 frames: hints on every

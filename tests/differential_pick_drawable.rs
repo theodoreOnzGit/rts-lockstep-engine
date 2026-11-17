@@ -109,7 +109,7 @@ fn scene(input: &[i32]) -> (Vec<SceneRenderObj<i32>>, Vec<BoxRenderObj>, usize) 
                 m
             });
             let m = BoxRenderObj { collision_type: b[1] & COLL_TYPE_MASK, animation_hidden: b[2] != 0, center: v3(&b[3..6]), extent: v3(&b[6..9]), basis };
-            models.push(m);
+            models.push(ModelRenderObj::Box(m));
             flat.push(m);
         }
         list.push(SceneRenderObj { drawable: (w[0] >= 0).then_some(w[0]), collision_type: w[1] & COLL_TYPE_MASK, really_visible: w[2] != 0, sphere_center: v3(&w[3..6]), sphere_radius: rb(w[6]), models });

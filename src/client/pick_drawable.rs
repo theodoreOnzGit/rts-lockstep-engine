@@ -64,15 +64,20 @@
 //! # What the client has, and the fallback (where this differs from upstream)
 //!
 //! The scene's render objects are the client's: the scene list here ([`SceneRenderObj`]) is made by the client from what
-//! it has. **Each model is a box**: a loaded W3D model's sub-object meshes are cast at as the oriented box of their
+//! it has. ~~**Each model is a box**: a loaded W3D model's sub-object meshes are cast at as the oriented box of their
 //! vertices in their bone's frame (`MeshClass::Cast_Ray` casts at the mesh's **polygons**, through its AABTree or by
 //! brute force: not translated, so a ray through a box's corner a mesh does not fill picks it here), and its bounding
-//! sphere is the sphere around those boxes (upstream's `Get_Bounding_Sphere` is the HLod's, from its meshes' own
+//! sphere is the sphere around those boxes~~ **Corrected 2026-11-17 (#149):** each model is a box or a mesh
+//! ([`ModelRenderObj`]); a loaded W3D model's sub-object meshes are cast at by `MeshClass::Cast_Ray`, at their
+//! **polygons**, through their AABTree or by brute force (`crate::client::mesh_cast`, which says where it differs). The
+//! bounding sphere is the client's: the sphere around the models' boxes, a mesh's box being that of its vertices
+//! ([`bounding_sphere_of_models`]) (upstream's `Get_Bounding_Sphere` is the HLod's, from its meshes' own
 //! spheres). Without the art (the demo), the object's logic geometry (its box, or its cylinder or sphere as the box
 //! around it) is the one box. Meshes' translucency (`CheckTranslucent`: a mesh with alpha is skipped), the animation's
 //! hidden sub-objects and the camera's visibility pass (`Is_Really_Visible`'s `IS_VISIBLE`, set by
 //! `RTS3DScene::Visibility_Check`) are the client's to give in [`SceneRenderObj::really_visible`] and
-//! [`BoxRenderObj::animation_hidden`].
+//! [`BoxRenderObj::animation_hidden`] (**since 2026-11-17 (#149)** also a mesh's
+//! [`crate::client::mesh_cast::MeshRenderObj::is_alpha`] and `animation_hidden`, which the client leaves false).
 
 use crate::logic::modules::plant;
 use crate::ww::vector3::Vector3;
@@ -520,7 +525,26 @@ pub struct SceneRenderObj<T> {
     pub sphere_center: Vector3,
     pub sphere_radius: f32,
     /// The top LOD's models and the additional models, in order.
-    pub models: Vec<BoxRenderObj>,
+    pub models: Vec<ModelRenderObj>,
+}
+
+/// (#149) A model of an HLod, by its class: a box (`AABoxRenderObjClass`, `OBBoxRenderObjClass`) or a mesh
+/// (`MeshClass`, [`crate::client::mesh_cast`]).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ModelRenderObj {
+    Box(BoxRenderObj),
+    Mesh(crate::client::mesh_cast::MeshRenderObj),
+}
+
+impl ModelRenderObj {
+    /// The model's `Cast_Ray` (a virtual call upstream): [`BoxRenderObj::cast_ray`] or `MeshClass::Cast_Ray`
+    /// ([`crate::client::mesh_cast::MeshRenderObj::cast_ray`]).
+    pub fn cast_ray(&self, raytest: &mut RayTest) -> bool {
+        match self {
+            ModelRenderObj::Box(b) => b.cast_ray(raytest),
+            ModelRenderObj::Mesh(m) => m.cast_ray(raytest),
+        }
+    }
 }
 
 impl<T> SceneRenderObj<T> {
@@ -621,7 +645,8 @@ pub fn pick_drawable<T: Copy>(
     pick_drawable_on_ray(std::iter::empty(), ray_start, ray_end, force_attack, pick_type, list)
 }
 
-/// The client's box of a set of points in a frame (new: what the client casts at for a mesh, see the module docs): the
+/// The client's box of a set of points in a frame (new: ~~what the client casts at for a mesh~~ **Corrected 2026-11-17
+/// (#149):** the box the client's bounding sphere is made from, see the module docs): the
 /// points' axis-aligned bounds in the frame `basis` (`Basis[row][column]`, the frame's axes as columns) at `origin`, as a
 /// world [`BoxRenderObj`] (its centre taken back to the world).
 pub fn oriented_bounds(points: impl IntoIterator<Item = Vector3>, basis: [[f32; 3]; 3], origin: Vector3, collision_type: i32) -> Option<BoxRenderObj> {
@@ -685,13 +710,44 @@ pub fn bounding_sphere(models: &[BoxRenderObj]) -> (Vector3, f32) {
     (center, crate::ww::wwmath::sqrt(r2))
 }
 
+/// (#149) The client's bounding sphere of an HLod's models (new, see the module docs): [`bounding_sphere`] of their
+/// boxes, a mesh's box being the box of its vertices under its transform ([`oriented_bounds`]); an `ALIGNED` or
+/// `ORIENTED` mesh, which `MeshClass::Cast_Ray` turns to face the ray, as the cube about its position that holds its
+/// vertices in any turn.
+pub fn bounding_sphere_of_models(models: &[ModelRenderObj]) -> (Vector3, f32) {
+    use crate::formats::w3d::mesh::mesh_flags;
+    let boxes: Vec<BoxRenderObj> = models
+        .iter()
+        .filter_map(|m| match m {
+            ModelRenderObj::Box(b) => Some(*b),
+            ModelRenderObj::Mesh(m) => {
+                let a = m.transform.to_array();
+                let origin = Vector3::new(a[3], a[7], a[11]);
+                let points = m.model.vertices.iter().map(|p| Vector3::new(p[0], p[1], p[2]));
+                if m.model.get_flag(mesh_flags::ALIGNED) || m.model.get_flag(mesh_flags::ORIENTED) {
+                    let r2 = points.map(|p| p.length2()).fold(0.0f32, |a, b| if b > a { b } else { a });
+                    if m.model.vertices.is_empty() {
+                        return None;
+                    }
+                    let r = crate::ww::wwmath::sqrt(r2);
+                    Some(BoxRenderObj { collision_type: m.collision_type, animation_hidden: false, center: origin, extent: Vector3::new(r, r, r), basis: None })
+                } else {
+                    let basis = [[a[0], a[1], a[2]], [a[4], a[5], a[6]], [a[8], a[9], a[10]]];
+                    oriented_bounds(points, basis, origin, m.collision_type)
+                }
+            }
+        })
+        .collect();
+    bounding_sphere(&boxes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn obj(id: i32, x: f32, collision_type: i32) -> SceneRenderObj<i32> {
-        let models = vec![BoxRenderObj { collision_type: coll_type::ALL, animation_hidden: false, center: Vector3::new(x, 0.0, 0.0), extent: Vector3::new(1.0, 1.0, 1.0), basis: None }];
-        let (c, r) = bounding_sphere(&models);
+        let models = vec![ModelRenderObj::Box(BoxRenderObj { collision_type: coll_type::ALL, animation_hidden: false, center: Vector3::new(x, 0.0, 0.0), extent: Vector3::new(1.0, 1.0, 1.0), basis: None })];
+        let (c, r) = bounding_sphere_of_models(&models);
         SceneRenderObj { drawable: Some(id), collision_type, really_visible: true, sphere_center: c, sphere_radius: r, models }
     }
 

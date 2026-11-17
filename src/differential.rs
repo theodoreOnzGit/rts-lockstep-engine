@@ -3806,6 +3806,12 @@ extern "C" {
     // getPickTypesForContext, verbatim (differential/wrap_pick_drawable.cpp, which documents the words).
     pub fn ref_pick_drawable_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #149: MeshClass::Cast_Ray, MeshGeometryClass::Cast_Ray and cast_ray_brute_force, AABTreeClass::Cast_Ray and
+    // its recursion, CollisionMath::Collide(LineSegClass, TriClass), TriClass::Contains_Point, Overlap_Test(min, max,
+    // LineSegClass), LineSegClass::Set(that, tm) and MeshClass::Init's collision type, verbatim
+    // (differential/wrap_mesh_cast.cpp, which documents the words).
+    pub fn ref_mesh_cast_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #148: GlobalLanguage.cpp's field table, INI::parseLanguageDefinition, the constructor, parseFontDesc,
     // parseFontFileName and adjustFontSize, verbatim, under the real INI::load (differential/wrap_global_language.cpp).
     pub fn ref_global_language_reset(x_resolution: c_int);

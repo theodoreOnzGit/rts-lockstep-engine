@@ -421,8 +421,12 @@ impl<D: LocalDevice> WorldDrawables<D> {
     ///   `W3DModelDraw::setSelectable`).
     /// - **Its visibility** (`Is_Really_Visible`) is the drawable's: not effectively hidden. (The camera's visibility pass
     ///   is not made: the pick ray only crosses the view.)
-    /// - **Its models** (new, see `pick_drawable`'s module docs): with the art, each shown sub-object mesh of the posed
-    ///   model as the oriented box of its vertices in its bone's frame (a skin's deformed vertices in the model's frame),
+    /// - **Its models** (~~new, see `pick_drawable`'s module docs~~ **Corrected 2026-11-17 (#149):** with the art,
+    ///   upstream's: each mesh `HLodClass::Cast_Ray` casts at is a `MeshClass` cast at by its polygons
+    ///   (`rts_lockstep_engine::client::mesh_cast::MeshRenderObj`: its AABTree or brute force), under its bone's transform
+    ///   in the drawn model's live hierarchy (a lone mesh: the drawn root), a skin at its own, undeformed vertices as
+    ///   upstream casts at it; what follows, the client's box per mesh until then, is replaced): with the art, each shown
+    ///   sub-object mesh of the posed model as the oriented box of its vertices in its bone's frame (a skin's deformed vertices in the model's frame),
     ///   under the object's transform (its position, its orientation about z, the drawable's physics transform), as the
     ///   model is drawn. **Corrected 2026-11-14 (#181 item 9):** the drawn model is in the world (its render object's live
     ///   hierarchy, under the drawable's root): each mesh under its ~~drawn transform
@@ -432,9 +436,11 @@ impl<D: LocalDevice> WorldDrawables<D> {
     ///   `RenderModel::cast_ray_sub_objects`), not the drawn LOD's (`Lod[CurLod]`) when that is a lower one. **Without the art (the demo), the fallback:** the object's logic geometry as the one box (a
     ///   sphere's or cylinder's radius as the box's half-widths, a box's own half-lengths, standing on its position but
     ///   a sphere's, centred on it; at least the sizes the shapes are drawn with).
-    /// - **Its bounding sphere** is the sphere around its boxes.
+    /// - **Its bounding sphere** is the sphere around its boxes (**since 2026-11-17 (#149)** a mesh's box being that of
+    ///   its vertices under its transform: `bounding_sphere_of_models`; the client's own, not the HLod's).
     pub fn pick_scene(&self, w: &World, objects: &[crate::view::ViewObject]) -> Vec<rts_lockstep_engine::client::pick_drawable::SceneRenderObj<ObjectId>> {
-        use rts_lockstep_engine::client::pick_drawable::{bounding_sphere, coll_type, model_draw_collision_type, oriented_bounds, set_selectable, BoxRenderObj, CollisionKinds, CollisionObject, SceneRenderObj};
+        use rts_lockstep_engine::client::mesh_cast::mesh_render_obj;
+        use rts_lockstep_engine::client::pick_drawable::{bounding_sphere_of_models, coll_type, model_draw_collision_type, oriented_bounds, set_selectable, CollisionKinds, CollisionObject, ModelRenderObj, SceneRenderObj};
         use rts_lockstep_engine::common::kind_of::*;
         use rts_lockstep_engine::ww::vector3::Vector3;
         let mut list = Vec::new();
@@ -469,31 +475,27 @@ impl<D: LocalDevice> WorldDrawables<D> {
                 let a = m.to_array();
                 ([[a[0], a[1], a[2]], [a[4], a[5], a[6]], [a[8], a[9], a[10]]], Vector3::new(a[3], a[7], a[11]))
             };
-            let mut models: Vec<BoxRenderObj> = Vec::new();
+            let mut models: Vec<ModelRenderObj> = Vec::new();
             match self.instance(id) {
                 Some(m) => {
                     // ~~each of the drawn model's sub-objects~~ **Corrected 2026-11-14 (#181 LOD):** the meshes
                     // `HLodClass::Cast_Ray` casts at (hlod.cpp:2686-2706): the top LOD's, then the aggregates
                     // (`RenderModel::cast_ray_sub_objects`), whatever LOD is drawn (`Lod[CurLod]`)
                     for sub in m.cast_ray_sub_objects() {
-                        if sub.hidden {
-                            continue;
-                        }
                         // ~~under the object's transform~~ **Corrected 2026-11-14 (#181 item 9):** the drawn model is in
-                        // the world (the live render object's hierarchy): a skin's deformed vertices as they are, a mesh
-                        // under its ~~drawn~~ transform in the live hierarchy (a lone mesh: the drawn root)
-                        let (points, tm) = if sub.is_skin() {
-                            (m.deformed_sub(sub).map(|(p, _)| p).unwrap_or_default(), Matrix3D::IDENTITY)
-                        } else if m.htree.is_some() {
-                            let Ok(t) = m.sub_transform(sub) else { continue };
-                            (sub.model.vertices.clone(), t)
+                        // the world (the live render object's hierarchy): ~~a skin's deformed vertices as they are, a mesh
+                        // under its drawn transform in the live hierarchy (a lone mesh: the drawn root)~~
+                        // **Corrected 2026-11-17 (#149):** each mesh is cast at by `MeshClass::Cast_Ray`, at its own
+                        // polygons under its `Get_Transform()`: its bone's transform in the live hierarchy (a skin's too:
+                        // upstream casts at a skin's own vertices, not its deformed ones), a lone mesh's the drawn root.
+                        // A hidden one is skipped by `Cast_Ray` itself (`Is_Hidden`, the pick does not check hidden).
+                        let tm = if m.htree.is_some() {
+                            let Ok(t) = m.bone_transform(sub.bone_index) else { continue };
+                            t
                         } else {
-                            (sub.model.vertices.clone(), self.drawn_root(id).unwrap_or(Matrix3D::IDENTITY))
+                            self.drawn_root(id).unwrap_or(Matrix3D::IDENTITY)
                         };
-                        let (basis, origin) = basis_of(&tm);
-                        if let Some(b) = oriented_bounds(points.iter().map(|p| Vector3::new(p[0], p[1], p[2])), basis, origin, coll_type::ALL) {
-                            models.push(b);
-                        }
+                        models.push(ModelRenderObj::Mesh(mesh_render_obj(&sub.model, tm, sub.hidden)));
                     }
                 }
                 None => {
@@ -514,11 +516,11 @@ impl<D: LocalDevice> WorldDrawables<D> {
                     };
                     let corners = [Vector3::new(-ex, -ey, up - ez), Vector3::new(ex, ey, up + ez)];
                     if let Some(b) = oriented_bounds(corners, basis, origin, coll_type::ALL) {
-                        models.push(b);
+                        models.push(ModelRenderObj::Box(b));
                     }
                 }
             }
-            let (sphere_center, sphere_radius) = bounding_sphere(&models);
+            let (sphere_center, sphere_radius) = bounding_sphere_of_models(&models);
             let really_visible = !drawable.is_some_and(|d| d.is_drawable_effectively_hidden());
             list.push(SceneRenderObj { drawable: Some(id), collision_type, really_visible, sphere_center, sphere_radius, models });
         }

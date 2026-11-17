@@ -156,7 +156,12 @@
 //!   `install_materials`' `Post_Load_Process` on the default description and
 //!   `post_process` with the game's settings are translated in
 //!   [`super::meshmdl::MeshModel::from_mesh`]; `Init_Alternate` and the
-//!   AABTree are still left out.
+//!   ~~AABTree are still left out~~ generated AABTree are still left out.
+//!   **Corrected 2026-11-17 (#149):** the file's AABTree is kept
+//!   ([`super::meshmdl::MeshModel::cull_tree`], dropped for skins as
+//!   `post_process` drops it) and cast through
+//!   (`crate::client::mesh_cast`); generating one for a collidable mesh
+//!   without (`AABTreeBuilderClass`) is still not translated.
 //! - `VertexMaterialClass`'s conversion of its file data (`Parse_W3dVertex
 //!   MaterialStruct`, `Parse_Mapping_Args`: the mapper argument strings are
 //!   kept raw), and the texture objects themselves (`Get_Texture` loads image

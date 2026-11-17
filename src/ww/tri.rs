@@ -3,8 +3,10 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/tri.h
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/tri.cpp (#149: find_dominant_plane, TriClass::Find_Dominant_Plane,
+//     TriClass::Contains_Point)
 //
-// Original copyright notice of that file:
+// Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
 //   Copyright 2025 Electronic Arts Inc.
 //   (Westwood Studios, WWMath)
@@ -15,8 +17,12 @@
 
 //! `Point_In_Triangle_2D` of `tri.h`, the pure 2D point-in-triangle test on
 //! the projection onto two axes, which `TerrainLogic` uses for bridge
-//! footprints. The rest of `tri.h` (`TriClass`, the ray casts) is not
-//! translated.
+//! footprints. ~~The rest of `tri.h` (`TriClass`, the ray casts) is not
+//! translated.~~ **Corrected 2026-11-17 (#149):** `TriClass` is translated
+//! ([`TriClass`]: `Compute_Normal`, `Find_Dominant_Plane`, `Contains_Point`,
+//! tri.h:60 and tri.cpp:83-363), for `CollisionMath::Collide(LineSegClass,
+//! TriClass)` (`crate::client::mesh_cast`). The semi-infinite axis-aligned ray
+//! casts (`Cast_Semi_Infinite_Axis_Aligned_Ray`) are still not.
 //!
 //! Upstream bug kept: in the degenerate branch `p2p0dist2` is computed from
 //! `p1p2` (`p2p0dist2 = p1p2.Length2()`), so the 'outer points' choice is
@@ -24,6 +30,7 @@
 
 use super::vector2::Vector2;
 use super::vector3::Vector3;
+use super::wwmath;
 
 /// `TRI_RAYCAST_FLAG_HIT_EDGE`.
 pub const TRI_RAYCAST_FLAG_HIT_EDGE: u8 = 0x01;
@@ -131,9 +138,97 @@ pub fn point_in_triangle_2d(
     }
 }
 
+/// `class TriClass` (tri.h:60): the normal and the three vertices. Upstream holds pointers (`const Vector3 * N`,
+/// `const Vector3 * V[3]`); here they are copies, which the casts only read.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TriClass {
+    pub n: Vector3,
+    pub v: [Vector3; 3],
+}
+
+impl TriClass {
+    /// `TriClass::Compute_Normal()` (tri.h:67): `Cross_Product(*V[1] - *V[0], *V[2] - *V[0], N)`, then `N->Normalize()`.
+    pub fn compute_normal(&mut self) {
+        self.n = Vector3::cross_product(&(self.v[1] - self.v[0]), &(self.v[2] - self.v[0]));
+        if crate::logic::modules::plant(10369) {
+            return;
+        }
+        self.n.normalize();
+    }
+
+    /// `TriClass::Find_Dominant_Plane(axis1, axis2)` (tri.cpp:143): the two axes perpendicular to the normal's largest
+    /// component (the first of equal ones).
+    pub fn find_dominant_plane(&self) -> (usize, usize) {
+        let (a1, a2, _) = find_dominant_plane(self);
+        (a1, a2)
+    }
+
+    /// `TriClass::Contains_Point(ipoint)` (tri.cpp:201), the branch compiled (`#if 1`, then `#else` of `#if 0`): the
+    /// 2D cross product of each edge with the vector to the point on the dominant plane; inside when the three signs
+    /// (`cross >= 0.0f`) agree, so a point on an edge or a vertex is inside.
+    pub fn contains_point(&self, ipoint: &Vector3) -> bool {
+        let (axis1, axis2, _axis3) = find_dominant_plane(self);
+        let mut side = [false; 3];
+        // "Compute the 2D cross product of edge0 with a vector to the point"
+        for (vi, s) in side.iter_mut().enumerate() {
+            let va = vi;
+            let vb = (vi + 1) % 3;
+            let edge = Vector2::new(self.v[vb][axis1] - self.v[va][axis1], self.v[vb][axis2] - self.v[va][axis2]);
+            let dp = Vector2::new(ipoint[axis1] - self.v[va][axis1], ipoint[axis2] - self.v[va][axis2]);
+            let cross = edge.x * dp.y - edge.y * dp.x;
+            *s = if crate::logic::modules::plant(10358) { cross > 0.0f32 } else { cross >= 0.0f32 };
+        }
+        (side[0] == side[1]) && (side[1] == side[2])
+    }
+}
+
+/// tri.cpp's `static inline find_dominant_plane(tri, axis1, axis2, axis3)` (tri.cpp:83): "Find the largest component of the
+/// normal" (by `WWMath::Fabs`, a later one only when strictly larger), "return the indices of the two axes
+/// perpendicular" and the dominant one.
+fn find_dominant_plane(tri: &TriClass) -> (usize, usize, usize) {
+    let mut ni = 0;
+    let x = wwmath::fabs(tri.n.x);
+    let y = wwmath::fabs(tri.n.y);
+    let z = wwmath::fabs(tri.n.z);
+    let mut val = x;
+    let larger = |a: f32, b: f32| if crate::logic::modules::plant(10359) { a >= b } else { a > b };
+    if larger(y, val) {
+        ni = 1;
+        val = y;
+    }
+    if larger(z, val) {
+        ni = 2;
+    }
+    match ni {
+        // "Dominant is the X axis"
+        0 => (1, 2, 0),
+        // "Dominant is the Y axis"
+        1 => (0, 2, 1),
+        // "Dominant is the Z axis"
+        _ => (0, 1, 2),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #149, predicted before the run: a triangle in the z = 0 plane contains its centroid, its vertices and the
+    /// midpoints of its edges (`>= 0` on every side), and not a point outside; the dominant plane of a normal (0, 0, 1)
+    /// is x-y, of (1, 1, 0) the y-z one (the first of two equal components wins).
+    #[test]
+    fn tri_class_contains_point() {
+        let mut t = TriClass { n: Vector3::new(0.0, 0.0, 0.0), v: [Vector3::new(0.0, 0.0, 0.0), Vector3::new(4.0, 0.0, 0.0), Vector3::new(0.0, 4.0, 0.0)] };
+        t.compute_normal();
+        assert_eq!(t.n, Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(t.find_dominant_plane(), (0, 1));
+        assert!(t.contains_point(&Vector3::new(1.0, 1.0, 0.0)));
+        assert!(t.contains_point(&Vector3::new(4.0, 0.0, 0.0)));
+        assert!(t.contains_point(&Vector3::new(2.0, 2.0, 0.0)));
+        assert!(!t.contains_point(&Vector3::new(3.0, 3.0, 0.0)));
+        t.n = Vector3::new(1.0, 1.0, 0.0);
+        assert_eq!(t.find_dominant_plane(), (1, 2));
+    }
 
     #[test]
     fn inside_outside_and_edge() {
