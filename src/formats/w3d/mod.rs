@@ -27,6 +27,7 @@
 //! upstream leaves it, which can be inside chunks it did not close), and
 //! `Err` an input on which upstream is undefined.
 
+pub mod aabtreebuilder; // #190: AABTreeBuilderClass, the AABTree a collidable mesh without one gets
 pub mod agg_def;
 pub mod animatedsoundmgr;
 pub mod assetmgr;

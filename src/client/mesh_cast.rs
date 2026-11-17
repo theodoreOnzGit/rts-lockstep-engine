@@ -54,9 +54,14 @@
 //! - **The mesh's transform** is the client's: the sub-object's bone transform in the drawn model's live hierarchy (a
 //!   lone mesh: the drawn root). A **skin** is cast at as upstream casts at it: its own vertices (the bone-space ones
 //!   `get_deformed_vertices` moves) under its bone's transform, **not** its deformed vertices.
-//! - **No generated AABTree.** A collidable mesh the file gave no AABTree gets one upstream (`Generate_Culling_Tree`,
+//! - ~~**No generated AABTree.** A collidable mesh the file gave no AABTree gets one upstream (`Generate_Culling_Tree`,
 //!   `AABTreeBuilderClass`, not translated); here it is cast at by brute force. The hit is the same polygon unless two
-//!   polygons tie on `t` (the first in the tree's order wins there, the first in the mesh's here).
+//!   polygons tie on `t` (the first in the tree's order wins there, the first in the mesh's here).~~ **Corrected
+//!   2026-11-17 (#190):** a collidable mesh the file gave no AABTree gets one, as upstream
+//!   (`crate::formats::w3d::aabtreebuilder`, built by `MeshModel::from_mesh`), and is cast through it. **The tree's
+//!   split planes** are drawn from the C runtime's `rand()`, whose state upstream is the process's; here each tree is
+//!   built from the runtime's initial state, so where upstream's state differs its tree can too (the hit then differs
+//!   only on ties on `t` and on rays the node boxes' cull rejects at a boundary).
 //! - **An AABTree or polygon index out of range** (undefined behaviour upstream: a read past the array) is no hit here.
 //! - `Is_Alpha` (`IS_ALPHA`, set by `MeshClass::Init` from the shaders) and `Is_Animation_Hidden` are the client's to
 //!   give ([`MeshRenderObj::is_alpha`], [`MeshRenderObj::animation_hidden`]).

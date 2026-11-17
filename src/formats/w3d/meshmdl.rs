@@ -176,8 +176,10 @@ pub struct MeshModel {
     pub has_alternate: bool,
     /// (#149) `CullTree`: the AABTree the file carried (`MeshGeometryClass::read_aabtree`), which
     /// `MeshGeometryClass::Cast_Ray` casts through (`crate::client::mesh_cast`). `None` without one: upstream then
-    /// generates one for a collidable mesh (`Generate_Culling_Tree`, `AABTreeBuilderClass`, not translated) and casts
-    /// by brute force otherwise; here every mesh without one is cast at by brute force.
+    /// generates one for a collidable mesh (`Generate_Culling_Tree`, ~~`AABTreeBuilderClass`, not translated) and casts
+    /// by brute force otherwise; here every mesh without one is cast at by brute force.~~ **Corrected 2026-11-17
+    /// (#190):** `AABTreeBuilderClass`, translated in [`super::aabtreebuilder`] and built by [`MeshModel::from_mesh`])
+    /// and casts by brute force otherwise, as here. A skin's is dropped by `post_process`, as upstream drops it.
     pub cull_tree: Option<CullTree>,
     /// (#149) `PolySurfaceType`: each polygon's surface type (`W3D_CHUNK_TRIANGLES`' attributes), which a ray cast
     /// reports (`Get_Poly_Surface_Type`). Empty when the mesh had none.
@@ -278,6 +280,12 @@ impl MeshModel {
             cull_tree: mesh.cull_tree.as_ref().map(|t| CullTree { nodes: t.nodes.to_vec(), poly_indices: t.poly_indices.to_vec() }),
             surface_types: mesh.surface_types.as_ref().map(|a| a.to_vec()).unwrap_or_default(),
         };
+        // (#190) "If this mesh is collideable and no AABTree was in the file, generate one now" (meshmdlio.cpp:400-406,
+        // before install_materials and post_process): Generate_Culling_Tree, from a fresh CRT rand() state (see
+        // super::aabtreebuilder: upstream's is the process's)
+        if mesh.needs_generated_cull_tree {
+            m.cull_tree = super::aabtreebuilder::generate_culling_tree(&m.polys, &m.vertices, &mut super::aabtreebuilder::CrtRand::default());
+        }
         // install_materials: vertex-lit models need the lighting turned off
         let lighting_enabled = m.flags & mesh_flags::PRELIT_VERTEX == 0;
         m.post_load_process(lighting_enabled, mesh.vertex_count.max(0) as usize)?;
@@ -698,6 +706,28 @@ mod tests {
         assert_eq!(model.uv_array(0).unwrap()[2], [1.0, 0.0], "vertex 2 at (1, 1) -> (1, 1 - 1)");
         assert_eq!(g[0].shader.get_cull_mode(), 1);
         assert_eq!(model.winding_agrees_with_normals(), Some(1.0));
+    }
+
+    /// (#190) Predictions: a collidable cuboid (12 triangles, `COLLISION_TYPE_PHYSICAL`) without a file AABTree gets a
+    /// generated one of at least 3 nodes (12 > `MIN_POLYS_PER_NODE`) holding every polygon once; without a collision bit
+    /// it gets none; a collidable skin's is dropped by `post_process`.
+    #[test]
+    fn collidable_meshes_get_a_generated_cull_tree() {
+        use crate::formats::w3d::w3d_file::W3D_MESH_FLAG_COLLISION_TYPE_PHYSICAL;
+        let mut spec = MeshSpec::cuboid(b"BOX", b"CUBE", [-1.0, -2.0, -3.0], [1.0, 2.0, 3.0]);
+        assert!(MeshModel::from_mesh(&load(&spec.to_w3d())).unwrap().cull_tree.is_none());
+        spec.attributes |= W3D_MESH_FLAG_COLLISION_TYPE_PHYSICAL;
+        let model = MeshModel::from_mesh(&load(&spec.to_w3d())).unwrap();
+        let tree = model.cull_tree.as_ref().expect("a generated tree");
+        assert!(tree.nodes.len() >= 3, "{} nodes", tree.nodes.len());
+        let mut p = tree.poly_indices.clone();
+        p.sort_unstable();
+        assert_eq!(p, (0..model.poly_count() as u32).collect::<Vec<_>>());
+        assert_eq!((tree.nodes[0].min, tree.nodes[0].max), ([-1.0, -2.0, -3.0], [1.0, 2.0, 3.0]));
+        spec.bones = Some(vec![0; spec.vertices.len()]);
+        spec.attributes |= crate::formats::w3d::w3d_file::W3D_MESH_FLAG_GEOMETRY_TYPE_SKIN;
+        let skin = MeshModel::from_mesh(&load(&spec.to_w3d())).unwrap();
+        assert!(skin.get_flag(mesh_flags::SKIN) && skin.cull_tree.is_none());
     }
 
     /// Predictions: a two-sided mesh loses culling on its shader; a pass with

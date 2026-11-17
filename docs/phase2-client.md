@@ -127,6 +127,42 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#190, the AABTree a collidable mesh without one gets (2026-11-17, GitHub #190, left by #149).**
+- **What was open (read first).** `MeshModelClass::Load_W3D` (meshmdlio.cpp:400-406; `MeshGeometryClass::Load_W3D`,
+  meshgeometry.cpp:1683-1688, is the same test) builds an AABTree (`Generate_Culling_Tree`, meshgeometry.cpp:1548) for
+  a mesh whose `W3dAttributes` have a collision bit and whose file had none; here such a mesh was cast at by brute
+  force. Searched first: `mesh.rs` already computed the test (`needs_generated_cull_tree`) and loaded file trees;
+  `meshmdl::CullTree` and `client::mesh_cast` (664a851) cast through `Nodes`/`PolyIndices`; no builder, no
+  `AAPlaneClass`, no C-runtime `rand()` existed (`ww::random` has WWLib's `Random3`/`Random4` only).
+- **Upstream read and translated** (`src/formats/w3d/aabtreebuilder.rs`, upstream names in the doc comments):
+  aabtreebuilder.cpp `Build_AABTree` (153), `Build_Tree` (284), `Select_Splitting_Plane` (375),
+  `Compute_Plane_Score` (435), `Which_Side` (502), `Split_Polys` (567), `Compute_Bounding_Box` (626), `Assign_Index`
+  (699), `Node_Count`/`Poly_Count` (735, 757), `Update_Min_Max` (851), `COINCIDENCE_EPSILON` (69); aabtreebuilder.h's
+  structs and constants; aabtree.cpp `AABTreeClass(AABTreeBuilderClass *)` (113) and `Build_Tree_Recursive` (261)
+  with aabtree.h's setters; meshgeometry.cpp `Generate_Culling_Tree` (1548); meshmdlio.cpp's test (400-406, now
+  `load_w3d_generates_cull_tree`, which `mesh.rs` calls). `MeshModel::from_mesh` builds the tree before
+  `post_process` (which drops it for a skin, as upstream). The recursions are explicit stacks in the same order.
+  Not translated: `Export`/`Build_W3D_AABTree_Recursive` (the tools' chunk; the test checks its arrays equal the
+  tree's), `MeshGeometryClass::Scale`'s rebuild on a non-uniform scale (#174's scaled meshes).
+- **`rand()`.** The split planes come from the C runtime's `rand()` (MSVC: `_holdrand * 214013 + 2531011`, `>> 16 &
+  0x7fff`; `CrtRand`). Upstream's state is the process's; here each tree starts from the CRT's initial state (1).
+  Owner decision filed as #191.
+- *Predictions* (`tests/differential_aabtree_builder.rs`, 20,000 meshes, cuts verbatim through build.rs into
+  `differential/wrap_aabtree_builder.cpp`, MSVC's `rand()` as a stand-in): 0 mismatches in the trees, the export's
+  arrays the tree's, 0 mismatches in casts, tree versus brute force "a handful per thousand hits", 15 plants
+  (10371-10385) caught, 10372 and 10378 the weakest.
+- *Results:* **0 mismatches** over 20,000 meshes (956,750 nodes, 2,615,367 poly indices; the export identical on all)
+  and **0** over 116,413 casts through the built trees. Missed: the generated tree versus brute force differs more
+  than predicted: it missed 591 of 56,342 brute-force hits and hit at another fraction 82 times (upstream's cull at
+  node boundaries; one ray in five is aimed at a node box corner). So the brute-force fallback this replaces did not
+  pick as upstream does. Four plants first designed (10372, 10375, 10377, 10380) made `Build_Tree` recurse forever and
+  one (10384) made the cast explode; redesigned; then 15 of 15 caught (10372 weakest at 627 meshes).
+  Full run (2026-11-17): `cargo test --release --lib` 1,284 passed (1,281 before, plus `crt_rand_sequence`,
+  `builds_a_tree_over_every_polygon` and `collidable_meshes_get_a_generated_cull_tree`); `--features differential
+  --tests` 264 binaries, 1,760 passed, 0 failed (run before the last of those unit tests was added); the client's 111
+  passed (its synthetic meshes have no collision bits, so none gets a generated tree); gate (a) PASS, last CRC
+  `0bf44067` (unchanged: the logic is untouched).
+
 **#149, the pick casts at mesh polygons (2026-11-17, GitHub #149, item "pickDrawable: Mesh polygons are not cast at").**
 - **What was open (read first).** #148 cast the pick ray at each mesh's oriented vertex box (`oriented_bounds` in
   `WorldDrawables::pick_scene`), so a ray through an empty corner of that box picked where upstream does not. Searched
@@ -148,8 +184,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   bone's transform in the drawn model's live hierarchy (a lone mesh: the drawn root). A **skin** is cast at as upstream
   casts at it, at its own (bone-space) vertices under its bone's transform, not its deformed ones. The bounding sphere
   stays the client's (`bounding_sphere_of_models`).
-- **Not translated (gaps):** generating an AABTree for a collidable mesh without one (`AABTreeBuilderClass`): cast by
-  brute force here; `Is_Alpha` (set by `MeshClass::Init` from the shaders) and `Is_Animation_Hidden` are left false
+- **Not translated (gaps):** ~~generating an AABTree for a collidable mesh without one (`AABTreeBuilderClass`): cast by
+  brute force here;~~ **Corrected 2026-11-17 (#190):** translated (`formats::w3d::aabtreebuilder`, see the #190 entry);
+  `Is_Alpha` (set by `MeshClass::Init` from the shaders) and `Is_Animation_Hidden` are left false
   by the client.
 - *Predictions before the runs* (`tests/differential_mesh_cast.rs`, 20,000 sequences, C++ cut verbatim through build.rs
   into `differential/wrap_mesh_cast.cpp`): 0 mismatches; tree and brute force agree on every (hit, fraction) but ties;

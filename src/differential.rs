@@ -3812,6 +3812,12 @@ extern "C" {
     // (differential/wrap_mesh_cast.cpp, which documents the words).
     pub fn ref_mesh_cast_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #190: AABTreeBuilderClass (aabtreebuilder.h/.cpp), AABTreeClass(AABTreeBuilderClass *) and
+    // Build_Tree_Recursive, MeshGeometryClass::Generate_Culling_Tree and MeshModelClass::Load_W3D's test, verbatim, on a
+    // stand-in for MSVC's rand() (differential/wrap_aabtree_builder.cpp, which documents the words). Returns the words
+    // it has (copying at most `cap`).
+    pub fn ref_aabtree_builder(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #148: GlobalLanguage.cpp's field table, INI::parseLanguageDefinition, the constructor, parseFontDesc,
     // parseFontFileName and adjustFontSize, verbatim, under the real INI::load (differential/wrap_global_language.cpp).
     pub fn ref_global_language_reset(x_resolution: c_int);

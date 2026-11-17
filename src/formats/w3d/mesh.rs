@@ -160,8 +160,13 @@
 //!   **Corrected 2026-11-17 (#149):** the file's AABTree is kept
 //!   ([`super::meshmdl::MeshModel::cull_tree`], dropped for skins as
 //!   `post_process` drops it) and cast through
-//!   (`crate::client::mesh_cast`); generating one for a collidable mesh
-//!   without (`AABTreeBuilderClass`) is still not translated.
+//!   (`crate::client::mesh_cast`); ~~generating one for a collidable mesh
+//!   without (`AABTreeBuilderClass`) is still not translated.~~
+//!   **Corrected 2026-11-17 (#190):** generating one for a collidable mesh
+//!   without is translated ([`super::aabtreebuilder`], built in
+//!   [`super::meshmdl::MeshModel::from_mesh`] before `post_process`), from a
+//!   fresh C-runtime `rand()` state (upstream's process-wide state is not
+//!   reproduced; see that module).
 //! - `VertexMaterialClass`'s conversion of its file data (`Parse_W3dVertex
 //!   MaterialStruct`, `Parse_Mapping_Args`: the mapper argument strings are
 //!   kept raw), and the texture objects themselves (`Get_Texture` loads image
@@ -1199,8 +1204,10 @@ pub struct Mesh {
     pub user_text: Option<Arr<u8>>,
     /// `CullTree` (the last AABTree chunk).
     pub cull_tree: Option<AabTree>,
-    /// The mesh is collidable and has no AABTree: upstream would generate
-    /// one now (not translated).
+    /// The mesh is collidable and has no AABTree: upstream generates one now.
+    /// ~~(not translated)~~ **Corrected 2026-11-17 (#190):** translated
+    /// ([`super::aabtreebuilder`]); [`super::meshmdl::MeshModel::from_mesh`]
+    /// builds it.
     pub needs_generated_cull_tree: bool,
     /// The context's `PrelitChunkID` (`0xFFFFFFFF` if none).
     pub prelit_chunk_id: u32,
@@ -1482,8 +1489,9 @@ pub fn load_w3d(cload: &mut ChunkLoad<'_>, options: &MeshLoadOptions) -> W3dResu
         let links = m.bone_links.get_or_insert_with(|| Arr::new(n, 0));
         links.map_from(0, |l| l.wrapping_add(1));
     }
-    m.needs_generated_cull_tree =
-        (m.w3d_attributes & W3D_MESH_FLAG_COLLISION_TYPE_MASK) >> W3D_MESH_FLAG_COLLISION_TYPE_SHIFT != 0 && m.cull_tree.is_none();
+    // (#190) "If this mesh is collideable and no AABTree was in the file, generate one now" (meshmdlio.cpp:400-406):
+    // the test here, the tree in MeshModel::from_mesh (super::aabtreebuilder::generate_culling_tree)
+    m.needs_generated_cull_tree = super::aabtreebuilder::load_w3d_generates_cull_tree(m.w3d_attributes, m.cull_tree.is_some());
     Ok(Some(m))
 }
 
