@@ -5,7 +5,11 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarScheme.cpp (the field parse table, AnimTypeNames,
 //     ControlBarScheme::reset, init, addAnimation, addImage, drawForeground, drawBackground; ControlBarSchemeManager's
 //     parseImagePart, parseAnimatingPartImage, parseAnimatingPart, newControlBarScheme, findControlBarScheme, init,
-//     setControlBarSchemeByPlayerTemplate; #146: setControlBarSchemeByPlayer)
+//     setControlBarSchemeByPlayerTemplate; #146: setControlBarSchemeByPlayer; #145: the constructor's colours and
+//     init's colour lines)
+//   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBar.cpp (#145: the constructor's colours,
+//     updateBuildUpClockColor, updateCommanBarBorderColors, setControlBarSchemeByPlayer, setControlBarSchemeByPlayerTemplate)
+//   GeneralsMD/Code/GameEngine/Include/GameClient/ControlBar.h (#145: updateBorderColor, getBorderColor, ControlBarContext)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/ControlBarScheme.h
 //   GeneralsMD/Code/GameEngine/Source/Common/INI/INIControlBarScheme.cpp (INI::parseControlBarSchemeDefinition)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/GadgetPushButton.h (GadgetButtonSet*Image)
@@ -52,6 +56,17 @@
 //!   gives the communicator button `NonCommand_BriefingHistory` outside a multiplayer game and `NonCommand_Communicator`
 //!   in one ([`set_control_bar_scheme_by_player_communicator`]), even with no player; then it is the template version
 //!   with the player's side and no "Small". Differential-tested (`tests/differential_scheme_by_player.rs`).
+//! - **#145:** the scheme's colours: `init` gives the bar its clock, command bar border and four button border colours
+//!   ([`ControlBarScheme::init_colors`] on [`ControlBarColors`]); a colour the block does not set is the scheme
+//!   constructor's (the command bar border **0**, not the bar constructor's `GameMakeColor(0,0,0,100)`), so a scheme
+//!   always overwrites all six. `updateCommanBarBorderColors` takes build, action, upgrade, system, in that order.
+//! - **#145:** `ControlBar::setControlBarSchemeByPlayer(p)` ([`control_bar_set_control_bar_scheme_by_player`]) and
+//!   `...ByPlayerTemplate(pt)` ([`control_bar_set_control_bar_scheme_by_player_template`]) after the manager's: the
+//!   observer's bar for an inactive player or the `FactionObserver` template (compared as pointers: a `NULL` template is
+//!   the observer's when the store has no `FactionObserver`), else the player's, with the beacon hidden outside a LAN or
+//!   internet multiplayer game; then the default stage, and for the template version `hidePurchaseScience`.
+//!   Differential-tested with the manager's `setControlBarSchemeByPlayerTemplate(pt, useSmall)`
+//!   (`tests/differential_scheme_bar.rs`).
 //!
 //! # Where this differs from upstream
 //!
@@ -254,6 +269,36 @@ impl ControlBarScheme {
         self.layers[l].push(image);
     }
 
+    /// GitHub #145: a colour member (`m_buildUpClockColor`, `m_borderBuildColor`, ...) by its field name: the INI's value,
+    /// or the one `ControlBarScheme::ControlBarScheme` (ControlBarScheme.cpp:307-321) gave it: `BuildUpClockColor`
+    /// `GameMakeColor(0,0,0,100)`, the four `ButtonBorder*Color`s `GAME_COLOR_UNDEFINED`, `CommandBarBorderColor` 0.
+    /// (`reset` does not touch them, so a second block of the same name keeps the first's.)
+    pub fn color(&self, field: &str) -> i32 {
+        if let Some(c) = self.colors.get(field) {
+            return *c;
+        }
+        match field {
+            "BuildUpClockColor" => crate::client::window_transitions::game_make_color(0, 0, 0, 100),
+            "CommandBarBorderColor" if plant(10403) => crate::client::window_transitions::game_make_color(0, 0, 0, 100),
+            "CommandBarBorderColor" => 0,
+            _ if plant(10404) => 0,
+            _ => crate::client::build_tooltip::GAME_COLOR_UNDEFINED,
+        }
+    }
+
+    /// GitHub #145: the colour lines of `ControlBarScheme::init()` (ControlBarScheme.cpp:432-434, inside
+    /// `if(TheControlBar)`): `updateBuildUpClockColor(m_buildUpClockColor)`,
+    /// `updateCommanBarBorderColors(m_borderBuildColor, m_borderActionColor, m_borderUpgradeColor, m_borderSystemColor)`
+    /// and `updateBorderColor(m_commandBarBorderColor)` on the control bar's colours. (The other lines of that block, the
+    /// stage, the queue's disabled images, the right HUD, the slot exit, up-down and arrow images, are not here: the stage
+    /// is `crate::client::control_bar_stage`'s; the images are #145's remaining gaps.)
+    pub fn init_colors(&self, bar: &mut ControlBarColors) {
+        bar.update_build_up_clock_color(self.color("BuildUpClockColor"));
+        bar.update_comman_bar_border_colors(self.color("ButtonBorderBuildColor"), self.color("ButtonBorderActionColor"), self.color("ButtonBorderUpgradeColor"), self.color("ButtonBorderSystemColor"));
+        let border = if plant(10402) { self.color("BuildUpClockColor") } else { self.color("CommandBarBorderColor") };
+        bar.update_border_color(border);
+    }
+
     /// The image of a mapped image field, found in the collection.
     pub fn image<'c>(&self, field: &str, images: &'c ImageCollection) -> Option<&'c crate::client::image::Image> {
         self.images.get(field).and_then(|n| images.find_image_by_name(n))
@@ -423,6 +468,186 @@ pub fn set_control_bar_scheme_by_player_communicator(multiplayer: bool, h: &mut 
     crate::client::build_tooltip::set_control_command(communicator_button, c, h);
 }
 
+/// GitHub #145: `TheControlBar`'s colour members that a scheme sets (ControlBar.h:965-988): `m_buildUpClockColor` (the
+/// inverse clock over a building button), `m_commandBarBorderColor` (`getBorderColor`, the command grid's lines in
+/// `W3DCommandBarGridDraw`) and the four command button border colours (`setCommandBarBorder`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ControlBarColors {
+    /// `m_buildUpClockColor`.
+    pub build_up_clock: i32,
+    /// `m_commandBarBorderColor`.
+    pub command_bar_border: i32,
+    /// `m_commandButtonBorderBuildColor`.
+    pub border_build: i32,
+    /// `m_commandButtonBorderActionColor`.
+    pub border_action: i32,
+    /// `m_commandButtonBorderUpgradeColor`.
+    pub border_upgrade: i32,
+    /// `m_commandButtonBorderSystemColor`.
+    pub border_system: i32,
+}
+
+impl Default for ControlBarColors {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ControlBarColors {
+    /// `ControlBar::ControlBar()`'s colours (ControlBar.cpp:899-900, 958): the clock and the command bar's border
+    /// `GameMakeColor(0,0,0,100)`, then `updateCommanBarBorderColors(GAME_COLOR_UNDEFINED, ...)` for the four borders.
+    pub fn new() -> Self {
+        let undefined = crate::client::build_tooltip::GAME_COLOR_UNDEFINED;
+        let clock = crate::client::window_transitions::game_make_color(0, 0, 0, 100);
+        let mut c = ControlBarColors { build_up_clock: clock, command_bar_border: if plant(10405) { 0 } else { clock }, border_build: 0, border_action: 0, border_upgrade: 0, border_system: 0 };
+        c.update_comman_bar_border_colors(undefined, undefined, undefined, undefined);
+        c
+    }
+
+    /// `ControlBar::updateBuildUpClockColor(color)` (ControlBar.cpp:2904).
+    pub fn update_build_up_clock_color(&mut self, color: i32) {
+        self.build_up_clock = color;
+    }
+
+    /// `ControlBar::updateCommanBarBorderColors(build, action, upgrade, system)` (ControlBar.cpp:2911; upstream's
+    /// spelling). The order is build, **action, upgrade**, system, unlike `setCommandBarBorder`'s switch.
+    pub fn update_comman_bar_border_colors(&mut self, build: i32, action: i32, upgrade: i32, system: i32) {
+        let (action, upgrade) = if plant(10401) { (upgrade, action) } else { (action, upgrade) };
+        self.border_build = build;
+        self.border_action = action;
+        self.border_upgrade = upgrade;
+        self.border_system = system;
+    }
+
+    /// `ControlBar::updateBorderColor(color)` (ControlBar.h:755).
+    pub fn update_border_color(&mut self, color: i32) {
+        self.command_bar_border = color;
+    }
+
+    /// `ControlBar::getBorderColor()` (ControlBar.h:754).
+    pub fn get_border_color(&self) -> i32 {
+        self.command_bar_border
+    }
+
+    /// The four border colours as [`crate::client::build_tooltip::ControlBarInitHost::border_colors`] gives them to
+    /// `setCommandBarBorder`: build, upgrade, action, system (new glue).
+    pub fn border_colors(&self) -> [i32; 4] {
+        if plant(10406) {
+            return [self.border_build, self.border_action, self.border_upgrade, self.border_system];
+        }
+        [self.border_build, self.border_upgrade, self.border_action, self.border_system]
+    }
+}
+
+/// `ControlBarContext` (ControlBar.h:579): the two `setControlBarSchemeByPlayer` switches to.
+pub mod context {
+    /// `CB_CONTEXT_NONE`.
+    pub const NONE: i32 = 0;
+    /// `CB_CONTEXT_OBSERVER_LIST`.
+    pub const OBSERVER_LIST: i32 = 7;
+}
+
+/// GitHub #145: what `ControlBar::setControlBarSchemeByPlayer` and `setControlBarSchemeByPlayerTemplate` reach.
+pub trait SchemeByPlayerBarHost {
+    /// `if(m_controlBarSchemeManager) m_controlBarSchemeManager->setControlBarSchemeByPlayer(p)`.
+    fn scheme_manager_by_player(&mut self);
+    /// `if(m_controlBarSchemeManager) m_controlBarSchemeManager->setControlBarSchemeByPlayerTemplate(pt)`.
+    fn scheme_manager_by_player_template(&mut self);
+    /// `TheWindowManager->winGetWindowFromId(NULL, NAMEKEY(name))`.
+    fn win_get_window_from_id(&self, name: &[u8]) -> Option<WinId>;
+    /// `window->winHide(hide)`.
+    fn win_hide(&mut self, w: WinId, hide: bool);
+    /// `window->winEnable(enable)`.
+    fn win_enable(&mut self, w: WinId, enable: bool);
+    /// `switchToContext(context, NULL)` ([`context`]).
+    fn switch_to_context(&mut self, context: i32);
+    /// `m_isObserverCommandBar = observer`.
+    fn set_observer_command_bar(&mut self, observer: bool);
+    /// `TheGameLogic->getGameMode()` (`crate::common::recorder::game_mode`).
+    fn game_mode(&self) -> i32;
+    /// `TheGameInfo->isMultiPlayer()`.
+    fn game_info_is_multi_player(&self) -> bool;
+    /// `switchControlBarStage(CONTROL_BAR_STAGE_DEFAULT)`.
+    fn switch_control_bar_stage_default(&mut self);
+    /// `hidePurchaseScience()`.
+    fn hide_purchase_science(&mut self);
+}
+
+/// The part `ControlBar::setControlBarSchemeByPlayer` and `setControlBarSchemeByPlayerTemplate` share after the
+/// manager's call (ControlBar.cpp:2755-2788 and 2800-2833): the beacon, idle worker and general's buttons looked up;
+/// the observer's bar (`CB_CONTEXT_OBSERVER_LIST`, `m_isObserverCommandBar` set **before** the switch; the beacon and
+/// idle worker hidden, the general's button disabled, not hidden) or the player's (`CB_CONTEXT_NONE`, the flag cleared
+/// **after** the switch; the beacon hidden outside a LAN or internet game with `TheGameInfo->isMultiPlayer()`, the idle
+/// worker shown, the general's button shown and enabled); then the default stage.
+fn control_bar_scheme_buttons(observer: bool, h: &mut impl SchemeByPlayerBarHost) {
+    use crate::common::recorder::game_mode;
+    let beacon = h.win_get_window_from_id(b"ControlBar.wnd:ButtonPlaceBeacon");
+    let idle_worker = h.win_get_window_from_id(b"ControlBar.wnd:ButtonIdleWorker");
+    let general = h.win_get_window_from_id(b"ControlBar.wnd:ButtonGeneral");
+    if observer {
+        if plant(10407) {
+            h.switch_to_context(context::OBSERVER_LIST);
+            h.set_observer_command_bar(true);
+        } else {
+            h.set_observer_command_bar(true);
+            h.switch_to_context(context::OBSERVER_LIST);
+        }
+        if let Some(w) = beacon {
+            h.win_hide(w, true);
+        }
+        if let Some(w) = idle_worker {
+            h.win_hide(w, true);
+        }
+        if let Some(w) = general {
+            h.win_enable(w, false);
+        }
+    } else {
+        h.switch_to_context(context::NONE);
+        h.set_observer_command_bar(false);
+        if let Some(w) = beacon {
+            let mode = h.game_mode();
+            let not_network = mode != game_mode::LAN && mode != game_mode::INTERNET;
+            // (`||` short-circuits: `TheGameInfo` is not asked outside a LAN or internet game)
+            let hide = if plant(10408) { not_network && !h.game_info_is_multi_player() } else if plant(10415) { not_network } else { not_network || !h.game_info_is_multi_player() };
+            h.win_hide(w, hide);
+        }
+        if let Some(w) = idle_worker {
+            h.win_hide(w, false);
+        }
+        if let Some(w) = general {
+            if !plant(10409) {
+                h.win_hide(w, false);
+            }
+            h.win_enable(w, true);
+        }
+    }
+    h.switch_control_bar_stage_default();
+}
+
+/// GitHub #145: `ControlBar::setControlBarSchemeByPlayer(p)` (ControlBar.cpp:2750): the manager's
+/// ([`set_control_bar_scheme_by_player_communicator`] and [`ControlBarSchemeManager::set_control_bar_scheme_by_player`],
+/// which the host runs), then the observer's bar when `!p->isPlayerActive()` (`player_active`: an observer or a dead
+/// player), else the player's ([`control_bar_scheme_buttons`]). Upstream dereferences `p` unchecked after the manager's
+/// call, so a `NULL` player crashes there; every caller passes the local player.
+pub fn control_bar_set_control_bar_scheme_by_player(player_active: bool, h: &mut impl SchemeByPlayerBarHost) {
+    h.scheme_manager_by_player();
+    control_bar_scheme_buttons(!player_active, h);
+}
+
+/// GitHub #145: `ControlBar::setControlBarSchemeByPlayerTemplate(pt)` (ControlBar.cpp:2795): the manager's
+/// ([`ControlBarSchemeManager::set_control_bar_scheme_by_player_template`], which the host runs), then the observer's
+/// bar when `pt` is `ThePlayerTemplateStore->findPlayerTemplate(NAMEKEY("FactionObserver"))` (`observer_template`;
+/// templates are compared as pointers, so a `NULL` `pt` with no `FactionObserver` template is the observer's bar),
+/// else the player's, then `hidePurchaseScience()`.
+pub fn control_bar_set_control_bar_scheme_by_player_template(template: Option<usize>, observer_template: Option<usize>, h: &mut impl SchemeByPlayerBarHost) {
+    h.scheme_manager_by_player_template();
+    let observer = if plant(10412) { template.is_some() && template == observer_template } else { template == observer_template };
+    control_bar_scheme_buttons(observer, h);
+    if !plant(10410) {
+        h.hide_purchase_science();
+    }
+}
+
 /// The `ControlBarScheme` block of the INI.
 fn parse_control_bar_scheme_definition(ini: &mut Ini<'_>, m: &mut ControlBarSchemeManager) -> IniResult<()> {
     let name = ini.get_next_token(None)?;
@@ -478,13 +703,24 @@ impl ControlBarSchemeManager {
     /// `setControlBarSchemeByPlayerTemplate(pt, useSmall)` with the template's side: the scheme chosen and its `init`
     /// on `tree`.
     pub fn set_control_bar_scheme_by_side(&mut self, side: &[u8], use_small: bool, tree: &mut WindowTree, display: (i32, i32), images: &ImageCollection) {
-        let mut side = side.to_vec();
-        if use_small {
-            side.extend_from_slice(b"Small");
-        }
-        if let Some(c) = self.choose_scheme_by_side(side, display) {
+        if let Some(c) = self.set_control_bar_scheme_by_player_template(Some(side), use_small, display) {
             self.schemes[c].init(tree, display, images);
         }
+    }
+
+    /// GitHub #145: `ControlBarSchemeManager::setControlBarSchemeByPlayerTemplate(pt, useSmall)` (ControlBarScheme.cpp:1102)
+    /// up to its `init`: no template (`template_side` `None`), nothing; else the template's side (`pt->getSide()`) with
+    /// "Small" appended when `use_small`, as [`Self::choose_scheme_by_side`]. The scheme whose `init` runs next.
+    pub fn set_control_bar_scheme_by_player_template(&mut self, template_side: Option<&[u8]>, use_small: bool, display: (i32, i32)) -> Option<usize> {
+        let mut side = match template_side {
+            Some(s) => s.to_vec(),
+            None if plant(10411) => Vec::new(),
+            None => return None,
+        };
+        if use_small && !plant(10414) {
+            side.extend_from_slice(if plant(10413) { b"small" } else { b"Small" });
+        }
+        self.choose_scheme_by_side(side, display)
     }
 
     /// The part `setControlBarSchemeByPlayerTemplate` and (GitHub #146) `setControlBarSchemeByPlayer` share, from the
@@ -560,6 +796,27 @@ mod tests {
     /// - init on the control-bar-like layout (`MoneyDisplay` is a child of the parent at screen (0, 896)): `MoneyUL`
     ///   X:100 Y:1000, `MoneyLR` X:200 Y:1030 gives the money display region (100, 104)..(200, 134), size (100, 30);
     /// - the colour `BuildUpClockColor = R:1 G:2 B:3` is alpha 255: 0xFF010203.
+    /// #145: the colours. Predicted from ControlBar.cpp and ControlBarScheme.cpp before the run: the bar's constructor
+    /// gives the clock and the command bar border 0x64000000 and the four borders 0x00FFFFFF; a scheme with only
+    /// `ButtonBorderUpgradeColor = R:1 G:2 B:3` gives the bar upgrade 0xFF010203, the other borders 0x00FFFFFF, the clock
+    /// 0x64000000 and the command bar border **0** (the scheme's constructor, not the bar's); `border_colors` is build,
+    /// upgrade, action, system. The template version with `useSmall` takes `AmericaSmall`; with no template, nothing.
+    #[test]
+    fn the_scheme_gives_the_bar_its_colours() {
+        let mut bar = ControlBarColors::new();
+        assert_eq!(bar, ControlBarColors { build_up_clock: 0x6400_0000, command_bar_border: 0x6400_0000, border_build: 0x00FF_FFFF, border_action: 0x00FF_FFFF, border_upgrade: 0x00FF_FFFF, border_system: 0x00FF_FFFF });
+        let ini = b"ControlBarScheme America\n  ScreenCreationRes = X:800 Y:600\n  Side = America\n  ButtonBorderUpgradeColor = R:1 G:2 B:3\nEnd\n\
+ControlBarScheme AmericaSmall\n  ScreenCreationRes = X:800 Y:600\n  Side = AmericaSmall\nEnd\n";
+        let mut m = ControlBarSchemeManager::new();
+        m.load_text(b"ControlBarScheme.ini", ini).expect("parse");
+        assert_eq!(m.set_control_bar_scheme_by_player_template(None, false, (800, 600)), None);
+        let c = m.set_control_bar_scheme_by_player_template(Some(b"America"), false, (800, 600)).expect("America");
+        m.schemes[c].init_colors(&mut bar);
+        assert_eq!((bar.build_up_clock, bar.get_border_color()), (0x6400_0000, 0));
+        assert_eq!(bar.border_colors(), [0x00FF_FFFF, 0xFF01_0203u32 as i32, 0x00FF_FFFF, 0x00FF_FFFF]);
+        assert_eq!(m.set_control_bar_scheme_by_player_template(Some(b"America"), true, (800, 600)), Some(1));
+    }
+
     #[test]
     fn a_scheme_reads_and_places_as_upstream() {
         let ini = b"ControlBarScheme America8x6\n  ScreenCreationRes = X:800 Y:600\n  Side = America\nEnd\n\

@@ -127,6 +127,84 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#145, the bar's scheme setters and colours (2026-11-17, GitHub #145, section "The bar's init and popups").**
+- **What was open (read first).** #145 listed three items. Searched first:
+  - **The communicator switch.** `client::control_bar_scheme` already had it, translated and differential-tested by
+    #146 (`set_control_bar_scheme_by_player_communicator`, `tests/differential_scheme_by_player.rs`), and the client
+    applies it at each game's start (`GameUi::set_communicator`). #145's "not translated" was stale when this batch
+    started.
+  - **What was missing.** The control bar's part of `setControlBarSchemeByPlayer` / `...ByPlayerTemplate`
+    (ControlBar.cpp:2750, :2795): the beacon, idle worker and general's buttons, the observer flag and context, the stage,
+    `hidePurchaseScience`. Also the manager's `setControlBarSchemeByPlayerTemplate` on its own (only reached through
+    `set_control_bar_scheme_by_side`, never compared) and every colour. The scheme's colours were parsed into
+    `ControlBarScheme::colors` but never given to the bar. `ControlBarInitHost::border_colors` answered
+    `GAME_COLOR_UNDEFINED` in the client.
+- **Translated** (`src/client/control_bar_scheme.rs`):
+  - `ControlBarScheme::ControlBarScheme`'s colour defaults (ControlBarScheme.cpp:307-321) as `ControlBarScheme::color`;
+  - `init`'s three colour lines (:432-434) as `init_colors`;
+  - `ControlBar::ControlBar`'s colours (ControlBar.cpp:899-900, 958), `updateBuildUpClockColor` (:2904),
+    `updateCommanBarBorderColors` (:2911), `getBorderColor` / `updateBorderColor` (ControlBar.h:754-755) as
+    `ControlBarColors`;
+  - `ControlBar::setControlBarSchemeByPlayer` (:2750) and `setControlBarSchemeByPlayerTemplate` (:2795) as
+    `control_bar_set_control_bar_scheme_by_player{,_template}` over `SchemeByPlayerBarHost`;
+  - the manager's `setControlBarSchemeByPlayerTemplate(pt, useSmall)` (ControlBarScheme.cpp:1102) as
+    `ControlBarSchemeManager::set_control_bar_scheme_by_player_template`, which `set_control_bar_scheme_by_side` now
+    calls.
+- **Upstream quirks kept.**
+  - A scheme always sets all six colours. One the block leaves out is its constructor's, and the command bar border's
+    default is **0**, not the bar constructor's `GameMakeColor(0,0,0,100)`.
+  - `updateCommanBarBorderColors` takes build, action, upgrade, system, while `setCommandBarBorder` switches build,
+    upgrade, action, system.
+  - The observer flag is set before `switchToContext` for an observer and cleared after it for a player.
+  - The beacon is hidden outside a LAN or internet game, and `TheGameInfo` is asked only inside one (`||`).
+  - The template version compares template pointers, so a `NULL` template with no `FactionObserver` in the store gets
+    the observer's bar.
+  - The player version dereferences `p` unchecked after the manager's call. The Rust takes the player's
+    `isPlayerActive()`, since every caller passes the local player.
+- **Client** (`client/src/ui.rs`, `client/src/app.rs`). At each game's start the application calls
+  `GameUi::set_control_bar_scheme_by_player`. It runs the communicator switch, then the side's scheme's colour lines on
+  `GameUi::bar_colors`, which `setControlCommand`'s border now reads. Then come the buttons: in a skirmish or campaign
+  the beacon is now hidden, as upstream hides it. `isPlayerActive()` is the local player's `!observer && !is_player_dead`.
+  Not run again here, with the reasons on the method:
+  - the scheme's window placement, which ran at load with the same choice;
+  - `switchControlBarStage(DEFAULT)`, which ran at load before `ShowControlBar(FALSE)`, as in upstream's `startNewGame`;
+  - `switchToContext`, which is the client's per-frame context.
+- **Hot keys: checked, not added.** #145 says `switchToContext` resets the manager (:2132). That is right, and more
+  happens than #145 said:
+  - `ControlBar::init` ends with `switchToContext(CB_CONTEXT_NONE, NULL)` (ControlBar.cpp:1286), so the non-command
+    buttons' hot keys from `setControlCommand` are reset before `init` returns.
+  - `ControlBar::setControlBarSchemeByPlayer` switches the context right after the communicator's `setControlCommand`.
+  - No non-command button's hot key is ever pressable. The client's `Controls::set_bar_hot_keys` resets and refills the
+    manager every frame from the command windows alone, which gives the same result. So there is nothing faithful to
+    add. The doc on `BarInitHost` records this.
+- **Observer bar.** It does not fall out: the observer's context (`CB_CONTEXT_OBSERVER_LIST`) is still not translated.
+  The observer branch's buttons are translated and tested (hidden beacon and idle worker, general's button disabled),
+  but the logic's death events that would reach it (Player.cpp:2092-2096) are not consumed (#194).
+- **Differential** (`tests/differential_scheme_bar.rs`, `differential/wrap_scheme_bar.cpp`, 13 verbatim cuts from
+  Color.h, ControlBarScheme.cpp, ControlBar.h and ControlBar.cpp). The whole chain runs on both sides, bar →
+  manager → scheme `init` → bar, with every recorded call and the six colours compared. Then `setCommandBarBorder` runs
+  for border types 0-5. There are 20,000 cases across the three kinds, with random players, sides (mixing case and
+  "Small"), multiplayer, game modes, schemes and colours.
+  - *Predicted:* 0 mismatches, and all 15 plants caught, with 10413 ("small" for "Small") the fewest at "a few hundred".
+  - *Result:* **0 mismatches** on the first run (kinds 7,928 / 8,076 / 3,996; 9,034 scheme inits; 4,647 observer bars;
+    `TheGameInfo` asked 2,584 times).
+  - *Plants 10401-10415: 15 of 15 caught.* Mismatching cases: 10401 5,330; 10402 8,178; 10403 4,523; 10404 8,491;
+    10405 10,966; 10406 5,330; 10407 4,647; 10408 9,040; 10409 9,098; 10410 8,076; 10411 1,289; 10412 329; 10413 **8**;
+    10414 682; 10415 2,584.
+  - **Prediction missed on 10413:** 8, not a few hundred. The scheme search compares without case, so "small" and
+    "Small" find the same schemes. Only the current scheme's exact-case test (`compare`) can tell them apart. That needs
+    a current scheme whose side is exactly the template's side + "Small".
+- **Tests.** One new lib test (`the_scheme_gives_the_bar_its_colours`) and one new client test
+  (`the_scheme_by_player_sets_the_colours_and_the_bar_buttons`). Both passed on the first run, as predicted in their doc
+  comments. The full runs are on #145.
+- **Left (#194).**
+  - The clock and the command bar's border colour are held but not drawn (`GadgetButtonDrawInverseClock`,
+    `W3DCommandBarGridDraw`).
+  - The rest of `init`'s bar updates (queue disabled image, right HUD image, slot exit image) are not translated.
+  - The death events are not consumed.
+  - The colours' lifetime across games differs from upstream's.
+  - The `TheGameInfo` stand-in.
+
 **#137, the control bar's slide (2026-11-17, GitHub #137, item "No slide animations").**
 - **What was open (read first).** `ShowControlBar(FALSE)` / `HideControlBar(FALSE)` (ControlBarCallback.cpp:501, :536;
   `ToggleControlBar(FALSE)`, :578) reset and register `ControlBarParent` on `TheControlBar->m_animateWindowManager`

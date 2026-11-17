@@ -74,6 +74,11 @@
 //! points change sets the `ControlBarArrow` group with the input on ([`GameUi::gen_star_events`]); the bar's manager has
 //! no transition groups loaded, so the arrow itself does not show yet.
 //!
+//! Since #145, `ControlBar::setControlBarSchemeByPlayer` at each game's start
+//! ([`GameUi::set_control_bar_scheme_by_player`], differential-tested): the side's scheme's colours on
+//! [`GameUi::bar_colors`] (the border `setControlCommand` gives a button), the beacon hidden outside a LAN or internet
+//! game, the idle worker and general's buttons shown, or the observer's buttons for an inactive player.
+//!
 //! The client still never changes the simulation: everything here reads the `World`.
 
 use std::collections::BTreeMap;
@@ -81,12 +86,12 @@ use std::sync::Arc;
 
 use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, populate_command_with_hot_keys, CommandSlot, ControlBarStateHost, QueueSlot};
 use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, populate_window_tooltip, set_portrait_by_object, tooltip_window_of, PopupHost, PopupWindowHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
-use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
+use rts_lockstep_engine::client::control_bar_scheme::{ControlBarColors, ControlBarSchemeManager, SchemeByPlayerBarHost, SchemeDraw};
 use rts_lockstep_engine::client::control_bar_glow::RadarAttackGlow;
 use rts_lockstep_engine::client::control_bar_gen_star::{GenStar, GenStarHost, GeneralButtonImage};
 use rts_lockstep_engine::client::animate_window::anim;
 use rts_lockstep_engine::client::control_bar_animate::{ControlBarAnimate, SpecialPowerShortcut};
-use rts_lockstep_engine::client::build_tooltip::{command_button_tooltip, command_gets_tooltip, control_bar_init_tooltips, BuildTooltip, BuildTooltipHost, ControlBarInitHost, COMMAND_BUTTON_TOOLTIP, GAME_COLOR_UNDEFINED, NON_COMMAND_BUTTONS};
+use rts_lockstep_engine::client::build_tooltip::{command_button_tooltip, command_gets_tooltip, control_bar_init_tooltips, BuildTooltip, BuildTooltipHost, ControlBarInitHost, COMMAND_BUTTON_TOOLTIP, NON_COMMAND_BUTTONS};
 use rts_lockstep_engine::logic::command_button::CommandButton;
 use rts_lockstep_engine::client::control_bar_stage::{
     clear_game_data_control_bar, create_control_bar, game_engine_init_control_bar, script_control_bar, set_toggle_images, start_new_game_control_bar, toggle_control_bar,
@@ -198,6 +203,11 @@ pub struct GameUi {
     /// (#137) `timeGetTime()` for the bar's calls between frames (registering and reversing a slide): the clock the
     /// last [`GameUi::animate_frame`] was given (0 before the first).
     pub animate_now: u32,
+    /// (#145) `TheControlBar`'s colours (`ControlBar::ControlBar`'s until the game's start, then the side's scheme's:
+    /// [`GameUi::set_control_bar_scheme_by_player`]): the border colours `setControlCommand` gives a button.
+    pub bar_colors: ControlBarColors,
+    /// (#145) `m_isObserverCommandBar`, as [`GameUi::set_control_bar_scheme_by_player`] last set it.
+    pub is_observer_command_bar: bool,
 }
 
 /// (#119) [`GenStarHost`] on the bar: the local player and its points, the InGameUI's input and the logic's frame as
@@ -499,6 +509,8 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         // (#137) `ControlBar::init`'s three `NEW AnimateWindowManager`, on the bar's display (the layout's width)
         animate: ControlBarAnimate::new(wm.display.0),
         animate_now: 0,
+        bar_colors: ControlBarColors::new(),
+        is_observer_command_bar: false,
         images,
         wm,
         schemes,
@@ -830,15 +842,23 @@ impl BuildTooltipHost for PopupBar<'_> {
 }
 
 /// (#144) [`ControlBarInitHost`] on the bar's window manager: `ControlBar::init`'s tooltip part and `setControlCommand`
-/// for the non-command buttons. The border colours are `ControlBar::ControlBar`'s (`GAME_COLOR_UNDEFINED`: a scheme's
-/// `init` sets them later, not modelled); there is no `TheHotKeyManager` here (the bar's hot keys are the
-/// application's, and upstream's `switchToContext` resets the manager before any key is used: #144's gaps).
+/// for the non-command buttons. The border colours are ~~`ControlBar::ControlBar`'s (`GAME_COLOR_UNDEFINED`: a scheme's
+/// `init` sets them later, not modelled)~~ **Corrected 2026-11-17 (#145):** [`GameUi::bar_colors`]'s: the constructor's
+/// (`GAME_COLOR_UNDEFINED`) for `ControlBar::init`'s buttons, the side's scheme's once the game's start has run the
+/// scheme's colour lines ([`GameUi::set_control_bar_scheme_by_player`]). There is no `TheHotKeyManager` here (the bar's
+/// hot keys are the application's, and upstream's `switchToContext` resets the manager before any key is used: #144's
+/// gaps; #145 checked it: `ControlBar::init` ends with `switchToContext(CB_CONTEXT_NONE, NULL)` (ControlBar.cpp:1286),
+/// whose `TheHotKeyManager->reset()` (:2132) drops the non-command buttons' hot keys before `init` returns, and
+/// `ControlBar::setControlBarSchemeByPlayer` switches the context right after the communicator's `setControlCommand`,
+/// so none of them is ever pressable).
 struct BarInitHost<'a> {
     wm: &'a mut GameWindowManager,
     images: &'a ImageCollection,
     /// `findCommandButton`'s answers for the `NonCommand_*` names: the name, the button's place, the button.
     found: Vec<(&'static [u8], usize, CommandButton)>,
     data: &'a mut Vec<(WinId, usize)>,
+    /// (#145) `m_commandButtonBorder*Color` (build, upgrade, action, system), from [`GameUi::bar_colors`].
+    border_colors: [i32; 4],
 }
 
 impl BarInitHost<'_> {
@@ -894,7 +914,7 @@ impl ControlBarInitHost for BarInitHost<'_> {
         rts_lockstep_engine::client::gadget::button_set_border(self.wm, w, color, draw);
     }
     fn border_colors(&self) -> [i32; 4] {
-        [GAME_COLOR_UNDEFINED; 4]
+        self.border_colors
     }
     fn search_hot_key(&mut self, _label: &[u8]) -> Option<Vec<u8>> {
         None
@@ -902,6 +922,55 @@ impl ControlBarInitHost for BarInitHost<'_> {
     fn add_hot_key(&mut self, _w: WinId, _key: Vec<u8>) {}
     fn gadget_button_set_alt_sound(&mut self, w: WinId, sound: &[u8]) {
         rts_lockstep_engine::client::gadget::button_set_alt_sound(self.wm, w, sound);
+    }
+}
+
+/// (#145) [`SchemeByPlayerBarHost`] on the bar ([`GameUi::set_control_bar_scheme_by_player`], which says where it
+/// differs from upstream).
+struct SchemeByPlayerHost<'a, F: Fn(&[u8]) -> Option<(usize, CommandButton)>> {
+    ui: &'a mut GameUi,
+    side: &'a [u8],
+    multiplayer: bool,
+    find: F,
+    game_mode: i32,
+    game_info_multi_player: bool,
+}
+
+impl<F: Fn(&[u8]) -> Option<(usize, CommandButton)>> SchemeByPlayerBarHost for SchemeByPlayerHost<'_, F> {
+    fn scheme_manager_by_player(&mut self) {
+        self.ui.set_communicator(self.multiplayer, &self.find);
+        if let Some(c) = self.ui.schemes.set_control_bar_scheme_by_player(Some(self.side), LAYOUT) {
+            self.ui.schemes.schemes[c].init_colors(&mut self.ui.bar_colors);
+        }
+    }
+    /// (Not reached: the client calls the player version only. The template's side is the player's here.)
+    fn scheme_manager_by_player_template(&mut self) {
+        if let Some(c) = self.ui.schemes.set_control_bar_scheme_by_player_template(Some(self.side), false, LAYOUT) {
+            self.ui.schemes.schemes[c].init_colors(&mut self.ui.bar_colors);
+        }
+    }
+    fn win_get_window_from_id(&self, name: &[u8]) -> Option<WinId> {
+        self.ui.wm.tree.find_by_name(name)
+    }
+    fn win_hide(&mut self, w: WinId, hide: bool) {
+        self.ui.wm.win_hide(w, hide);
+    }
+    fn win_enable(&mut self, w: WinId, enable: bool) {
+        self.ui.wm.win_enable(w, enable);
+    }
+    fn switch_to_context(&mut self, _context: i32) {}
+    fn set_observer_command_bar(&mut self, observer: bool) {
+        self.ui.is_observer_command_bar = observer;
+    }
+    fn game_mode(&self) -> i32 {
+        self.game_mode
+    }
+    fn game_info_is_multi_player(&self) -> bool {
+        self.game_info_multi_player
+    }
+    fn switch_control_bar_stage_default(&mut self) {}
+    fn hide_purchase_science(&mut self) {
+        self.ui.with_stage(|stage, h| stage.hide_purchase_science(h));
     }
 }
 
@@ -1116,7 +1185,7 @@ impl GameUi {
     /// application again with the World's (a second run sets the same callbacks again and the commands found).
     pub fn init_tooltips(&mut self, find: impl Fn(&[u8]) -> Option<(usize, CommandButton)>) {
         let found = NON_COMMAND_BUTTONS.iter().filter_map(|(_, name)| find(name).map(|(i, b)| (*name, i, b))).collect();
-        let mut h = BarInitHost { wm: &mut self.wm, images: &self.images, found, data: &mut self.non_command_buttons };
+        let mut h = BarInitHost { wm: &mut self.wm, images: &self.images, found, data: &mut self.non_command_buttons, border_colors: self.bar_colors.border_colors() };
         control_bar_init_tooltips(&mut h);
     }
 
@@ -1125,13 +1194,35 @@ impl GameUi {
     /// differential-tested): at each game's start (`GameLogic::startNewGame`'s `setControlBarSchemeByPlayer`), the
     /// communicator button gets `NonCommand_Communicator` in a multiplayer game (`TheRecorder->isMultiplayer()`) and
     /// `NonCommand_BriefingHistory` outside one, in place of `ControlBar::init`'s `NonCommand_Communicator`. `find` is as
-    /// [`Self::init_tooltips`]'s. The rest of the function (the scheme of the player's side) is the application's
-    /// [`load_game_ui_with`] (`set_control_bar_scheme_by_side`, the same choice).
+    /// [`Self::init_tooltips`]'s. ~~The rest of the function (the scheme of the player's side) is the application's
+    /// [`load_game_ui_with`] (`set_control_bar_scheme_by_side`, the same choice).~~ **Corrected 2026-11-17 (#145):** the
+    /// application calls it through [`Self::set_control_bar_scheme_by_player`], which runs the rest of the manager's
+    /// function (the scheme's colours; its window placement is [`load_game_ui_with`]'s, the same choice) and the bar's.
     pub fn set_communicator(&mut self, multiplayer: bool, find: impl Fn(&[u8]) -> Option<(usize, CommandButton)>) {
         const NAMES: [&[u8]; 2] = [b"NonCommand_Communicator", b"NonCommand_BriefingHistory"];
         let found = NAMES.iter().filter_map(|name| find(name).map(|(i, b)| (*name, i, b))).collect();
-        let mut h = BarInitHost { wm: &mut self.wm, images: &self.images, found, data: &mut self.non_command_buttons };
+        let mut h = BarInitHost { wm: &mut self.wm, images: &self.images, found, data: &mut self.non_command_buttons, border_colors: self.bar_colors.border_colors() };
         rts_lockstep_engine::client::control_bar_scheme::set_control_bar_scheme_by_player_communicator(multiplayer, &mut h);
+    }
+
+    /// (#145) `ControlBar::setControlBarSchemeByPlayer(ThePlayerList->getLocalPlayer())` at each game's start
+    /// (`GameLogic::startNewGame`, GameLogic.cpp:2253), through
+    /// `rts_lockstep_engine::client::control_bar_scheme::control_bar_set_control_bar_scheme_by_player` (differential-tested):
+    /// the manager's part ([`Self::set_communicator`], then the scheme of `side` and its `init`'s colour lines on
+    /// [`Self::bar_colors`]), then the beacon, idle worker and general's buttons for an active player (the beacon hidden
+    /// outside a LAN or internet game) or an observer, and [`Self::is_observer_command_bar`]. Where it differs:
+    /// - the scheme's window placement already ran when the bar was read ([`load_game_ui_with`], the same choice: the
+    ///   manager finds the current scheme's side unchanged), so only its colour lines run here;
+    /// - `switchToContext` is not called: the client works out the bar's context every frame ([`GameUi::sync`]) and
+    ///   refills `TheHotKeyManager` with it (`Controls::set_bar_hot_keys`); the observer's context is not translated;
+    /// - `switchControlBarStage(CONTROL_BAR_STAGE_DEFAULT)` ran in [`load_game_ui_with`], before
+    ///   `start_new_game_control_bar` as upstream's `startNewGame` orders them; running it again here, after the bar
+    ///   began to slide in, would move it back;
+    /// - `game_info_multi_player` stands in for `TheGameInfo->isMultiPlayer()`, asked only in a LAN or internet game.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_control_bar_scheme_by_player(&mut self, side: &[u8], multiplayer: bool, player_active: bool, game_mode: i32, game_info_multi_player: bool, find: impl Fn(&[u8]) -> Option<(usize, CommandButton)>) {
+        let mut h = SchemeByPlayerHost { ui: self, side, multiplayer, find, game_mode, game_info_multi_player };
+        rts_lockstep_engine::client::control_bar_scheme::control_bar_set_control_bar_scheme_by_player(player_active, &mut h);
     }
 
     /// (#146) The command button the bar's communicator holds (its place in the World's list), as `setControlCommand`
@@ -1951,6 +2042,65 @@ mod tests {
         assert_eq!(ui.communicator_command(), Some(5));
         ui.set_communicator(false, |n: &[u8]| (n == b"NonCommand_Communicator").then(|| (5, comm.clone())));
         assert_eq!(ui.communicator_command(), Some(5), "no BriefingHistory: setControlCommand(NULL) does nothing");
+    }
+
+    /// #145: `ControlBar::setControlBarSchemeByPlayer` on the bar's own windows. Predicted before the run: a bar with
+    /// `ButtonPlaceBeacon`, `ButtonIdleWorker` and `ButtonGeneral` (push buttons) and an `America` scheme with
+    /// `ButtonBorderBuildColor = R:1 G:2 B:3`, `ButtonBorderActionColor = R:4 G:5 B:6 A:7`, `CommandBarBorderColor =
+    /// R:9 G:9 B:9`: before the game's start the colours are `ControlBar::ControlBar`'s (clock and command bar border
+    /// 0x64000000, borders 0x00FFFFFF); after it, build 0xFF010203, action 0x07040506, upgrade and system still
+    /// 0x00FFFFFF (the scheme's constructor), the command bar border 0xFF090909, the clock 0x64000000. An active player in
+    /// a single player game: the beacon hidden, the idle worker and general's button shown, the general's enabled, not the
+    /// observer's bar. In a LAN game with `isMultiPlayer`: the beacon shown. An inactive player: the beacon and idle
+    /// worker hidden, the general's button disabled (not hidden), the observer's bar.
+    #[test]
+    fn the_scheme_by_player_sets_the_colours_and_the_bar_buttons() {
+        use rts_lockstep_engine::client::window_script::win_status;
+        use rts_lockstep_engine::common::recorder::game_mode;
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            let b = if p == b"Window\\ControlBar.wnd" {
+                let wnd = String::from_utf8(b).expect("text");
+                let start = wnd.find("WINDOW\n WINDOWTYPE = PUSHBUTTON;").expect("a button");
+                let button = &wnd[start..start + wnd[start..].find("END\n").expect("its end") + 4];
+                let mut added = String::new();
+                for (name, y) in [("ButtonPlaceBeacon", 400), ("ButtonIdleWorker", 420), ("ButtonGeneral", 440)] {
+                    let named = button.replace("NAME = \"ControlBar.wnd:ButtonCommand01\";\n", &format!("NAME = \"ControlBar.wnd:{name}\";\n"));
+                    added += &named.replace("UPPERLEFT: 260 480, BOTTOMRIGHT: 310 530", &format!("UPPERLEFT: 380 {y}, BOTTOMRIGHT: 420 {}", y + 16));
+                }
+                let at = wnd.find("WINDOW\n WINDOWTYPE = USER;\n SCREENRECT = UPPERLEFT: 250 470").expect("the command window");
+                format!("{}{}{}", &wnd[..at], added, &wnd[at..]).into_bytes()
+            } else if p == b"Data\\INI\\ControlBarScheme.ini" {
+                let mut s = b.clone();
+                s.extend_from_slice(b"ControlBarScheme America\n  ScreenCreationRes = X:800 Y:600\n  Side = America\n  ButtonBorderBuildColor = R:1 G:2 B:3\n  ButtonBorderActionColor = R:4 G:5 B:6 A:7\n  CommandBarBorderColor = R:9 G:9 B:9\nEnd\n");
+                s
+            } else {
+                b
+            };
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
+        let mut ui = *ui;
+        let undefined = 0x00FF_FFFF;
+        let c = ui.bar_colors;
+        assert_eq!((c.build_up_clock, c.command_bar_border, c.border_build, c.border_action, c.border_upgrade, c.border_system), (0x6400_0000, 0x6400_0000, undefined, undefined, undefined, undefined));
+        let win = |ui: &GameUi, n: &str| ui.wm.tree.find_by_name(format!("ControlBar.wnd:{n}").as_bytes()).expect(n);
+        let state = |ui: &GameUi, n: &str| {
+            let w = &ui.wm.tree.windows[win(ui, n)];
+            (w.is_hidden(), w.status & win_status::ENABLED != 0)
+        };
+        ui.set_control_bar_scheme_by_player(b"America", false, true, game_mode::SINGLE_PLAYER, false, |_| None);
+        let c = ui.bar_colors;
+        assert_eq!((c.build_up_clock, c.command_bar_border, c.border_build, c.border_action, c.border_upgrade, c.border_system), (0x6400_0000, 0xFF09_0909u32 as i32, 0xFF01_0203u32 as i32, 0x0704_0506, undefined, undefined));
+        assert_eq!(c.border_colors(), [0xFF01_0203u32 as i32, undefined, 0x0704_0506, undefined], "build, upgrade, action, system");
+        assert_eq!((state(&ui, "ButtonPlaceBeacon").0, state(&ui, "ButtonIdleWorker").0, state(&ui, "ButtonGeneral"), ui.is_observer_command_bar), (true, false, (false, true), false));
+        ui.set_control_bar_scheme_by_player(b"America", true, true, game_mode::LAN, true, |_| None);
+        assert!(!state(&ui, "ButtonPlaceBeacon").0, "a LAN game with isMultiPlayer shows the beacon");
+        ui.set_control_bar_scheme_by_player(b"America", false, false, game_mode::SINGLE_PLAYER, false, |_| None);
+        assert_eq!((state(&ui, "ButtonPlaceBeacon").0, state(&ui, "ButtonIdleWorker").0, state(&ui, "ButtonGeneral"), ui.is_observer_command_bar), (true, true, (false, false), true));
     }
 
     /// #136: the bar hidden, shown, lowered and raised (`ToggleControlBar`, `ButtonLarge`'s `toggleControlBarStage`).

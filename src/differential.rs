@@ -3801,6 +3801,12 @@ extern "C" {
     // words).
     pub fn ref_scheme_by_player_case(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #145: ControlBar::setControlBarSchemeByPlayer and setControlBarSchemeByPlayerTemplate, the manager's
+    // setControlBarSchemeByPlayerTemplate, the scheme's constructor and init's colour lines, ControlBar's constructor
+    // colours, updateBuildUpClockColor, updateCommanBarBorderColors, getBorderColor, updateBorderColor and
+    // setCommandBarBorder, verbatim (differential/wrap_scheme_bar.cpp, which documents the words).
+    pub fn ref_scheme_bar_case(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #146: the cinematic text: Display.h's setCinematicText, setCinematicFont and setCinematicTextFrames,
     // Display::Display's cinematic members and W3DDisplay::draw's cinematic text block, verbatim
     // (differential/wrap_cinematic_text.cpp, which documents the words).

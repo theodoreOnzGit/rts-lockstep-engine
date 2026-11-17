@@ -2580,8 +2580,12 @@ fn load_game_ui(mut game: NonSendMut<Game>, shell: NonSend<ShellState>) {
                 rts_lockstep_engine::client::control_bar_command::ControlBarStateHost::button(client, i).map(|b| (i, b))
             };
             ui.init_tooltips(find);
-            // (#146) the game's start: `setControlBarSchemeByPlayer`'s communicator switch (`TheRecorder->isMultiplayer()`)
-            ui.set_communicator(client.world.recorder_is_multiplayer().unwrap_or(false), find);
+            // (#146) the game's start: `setControlBarSchemeByPlayer`'s communicator switch (`TheRecorder->isMultiplayer()`);
+            // (#145) the whole of `ControlBar::setControlBarSchemeByPlayer(localPlayer)`: the scheme's colours, the beacon,
+            // idle worker and general's buttons (`isPlayerActive()`: not an observer and not dead)
+            let multiplayer = client.world.recorder_is_multiplayer().unwrap_or(false);
+            let active = client.world.players.get_nth(client.player).is_some_and(|p| !p.observer && !p.is_player_dead);
+            ui.set_control_bar_scheme_by_player(&side, multiplayer, active, client.world.cuts.game_loop.game_mode, multiplayer, find);
             info!("control bar: {} windows, {} images", ui.wm.tree.windows.len(), ui.images.len());
             g.ui_status = format!("control bar: {} windows", ui.wm.tree.windows.len());
             g.ui = Some(ui);
