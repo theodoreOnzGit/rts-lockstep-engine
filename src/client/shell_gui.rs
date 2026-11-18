@@ -863,8 +863,12 @@ impl<W: WndFiles> OptionsHost for ShellGui<W> {
     fn display_settings(&mut self) -> DisplaySettings {
         DisplaySettings { x_res: self.global_data.x_resolution, y_res: self.global_data.y_resolution, bit_depth: 32, windowed: self.env.windowed }
     }
+    /// The options menu's resolution change: refused, as `W3DDisplay::setDisplayMode` is when the device refuses the mode
+    /// (`WW3D::Set_Device_Resolution`, W3DDisplay.cpp:583): the client cannot set its window's size from here. (#200: the
+    /// view's half, `Display::setDisplayMode`, is translated, `tactical_view::Display::set_display_mode`, and runs on a
+    /// window resize; the shell offers no display modes, so the menu does not reach this.)
     fn set_display_mode(&mut self, _x: i32, _y: i32, _bits: i32, _windowed: bool) -> bool {
-        self.untranslated.push(b"Display::setDisplayMode".to_vec());
+        self.untranslated.push(b"W3DDisplay::setDisplayMode: WW3D::Set_Device_Resolution".to_vec());
         false
     }
     fn resolution_changed(&mut self, _wm: &mut GameWindowManager) {

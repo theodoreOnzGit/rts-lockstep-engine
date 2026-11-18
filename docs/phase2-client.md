@@ -127,6 +127,46 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#200 item 1, `Display::setDisplayMode`'s view half (2026-11-18, GitHub #200).**
+- **What was open (read first).** I searched `set_display_mode`, `display_mode`, `set_screen` and `setDisplayMode`. I found:
+  - #138/#146's `W3DView::setWidth`, `setHeight` and `setOrigin` in `src/client/tactical_view.rs`, with their differential
+    test (`tests/differential_tactical_view.rs`, `differential/wrap_tactical_view.cpp`);
+  - the options menu's `set_display_mode` host stub (`shell_gui.rs`, recorded as untranslated);
+  - `Camera::set_screen`, which set the view to the whole new window. ~~Its doc called this "`Display::setDisplayMode`'s
+    `setWidth`/`setHeight`".~~ **Corrected 2026-11-18 (#200):** `setDisplayMode` scales the old view, it does not fill
+    the display.
+  - `W3DDisplay::setDisplayMode` (W3DDisplay.cpp:581) overrides it. It sets the device's resolution and the 2D
+    renderer's screen, then calls `Display::setDisplayMode`; on the device's refusal it calls it with the old size.
+- **Translated** in `src/client/tactical_view.rs`:
+  - `Display` (`m_width`, `m_height`, `getWidth`, `getHeight`, Display.h:83-84, 189);
+  - `Display::setWidth` (Display.cpp:170) and `setHeight` (:185), without their `TheMouse->setMouseLimits()`. The client's
+    mouse takes its limits from the window every frame.
+  - `Display::setDisplayMode` (:146-165): `setWidth`, `setHeight`, then `setOrigin` of the view, each the old value over
+    the old display's size times the new one, in `float`, truncated to `Int`.
+- **Client.** `Camera::set_screen` now calls it, then the client's bar glue (`set_view_height`) as before. Upstream
+  disables the resolution box in a game, so it has no rule for the bar's height after a resize there: filed as #201 for
+  the owner. A minimised window (0 pixels) is skipped.
+- **Not translated.** The device half of `W3DDisplay::setDisplayMode` (`Set_Device_Resolution`,
+  `Render2DClass::Set_Screen_Resolution`): the window's size has already changed when the client calls this. The options
+  menu's resolution change still refuses (#100), now recorded as `W3DDisplay::setDisplayMode: WW3D::Set_Device_Resolution`.
+- **Differential.** A second test in `tests/differential_tactical_view.rs` adds step kind 7, `setDisplayMode`, cut verbatim
+  from Display.cpp by build.rs (`tv_display.inc`). It runs 20,000 sequences, with display changes mixed with `setHeight`,
+  `setWidth`, `setOrigin` and pick rays. The C++ calls are now serialised, because the wrapper's state is global and the
+  two tests run on two threads. The first run without that lock aborted with a double free.
+  - *Prediction:* 0 mismatches.
+  - *Result:* **0 mismatches** over 408,901 steps (136,175 `setDisplayMode`, 640 of them truncated a pixel short of an
+    exact product). The first test is unchanged: 0 over 412,481 steps.
+  - *Plants:* 10446-10454, **9 of 9 caught** (2,729 to 18,957 sequences). **Missed prediction:** 10447, 10451 and 10452
+    were caught in thousands, not hundreds.
+- **A miss in my own example.** I first wrote that `864 / 1080 * 1440` truncates to 1151. Checked in `float` before the
+  run, it is exactly 1152. The doc and the client test use `483 / 604 * 604` = 482.99997 instead: a pixel lost when only
+  the width changes.
+- **Runs on the final tree.**
+  - `cargo test --release --lib`: 1,292 passed.
+  - `--features differential --tests`: 267 binaries, 1,774 passed, 0 failed.
+  - Client: 117 passed (116 + 1).
+  - Gate (a): PASS, 300 frames, last CRC `0bf44067`, unchanged.
+
 **#195, the rest of W3DControlBar.cpp's draw callbacks and the command windows' borders (2026-11-18, GitHub #195).**
 - **What was open (read first).** Searched `power bar`, `power_draw`, `GenExp`, `HelpPopup`, `Helpbox`, `border`,
   `draw_image`, `set_command_bar_border` and the push button draw in `src/client/` and `client/src/`. Found:

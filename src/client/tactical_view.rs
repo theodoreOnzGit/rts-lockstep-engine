@@ -16,6 +16,8 @@
 //     Set_Aspect_Ratio, Un_Project, Device_To_View_Space, Device_To_World_Space; #146: Update_Frustum's inverse and
 //     projection, Project)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/View.h (#146: WorldToScreenReturn, worldToScreen)
+//   GeneralsMD/Code/GameEngine/Source/GameClient/Display.cpp (#200: Display::setDisplayMode, setWidth, setHeight)
+//   GeneralsMD/Code/GameEngine/Include/GameClient/Display.h (#200: getWidth, getHeight)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/matrix4.h (#146: Make_Identity, Init_Perspective, operator *
 //     (Matrix4x4, Vector3))
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/Common/W3DConvert.cpp (PixelScreenToW3DLogicalScreen; #146:
@@ -76,6 +78,8 @@
 //!   for (`TheTacticalView->setHeight`: 80 %, not 77 %, of the display with the bar shown; the whole of it hidden or
 //!   lowered), which the client applies ([`TacticalView::set_height`]); the 3D viewport, the camera's aspect, the pick
 //!   ray and the radar's view box follow it.
+//!   **#200:** a new display size rescales the view's width, height and origin in proportion, as
+//!   `Display::setDisplayMode` does ([`Display::set_display_mode`], differential-tested).
 //!
 //! # Representation
 //!
@@ -115,6 +119,102 @@ pub trait ViewHost {
     fn extent(&self) -> Option<Region3D>;
     /// `TheGameLogic->isGamePaused()`.
     fn game_paused(&self) -> bool;
+}
+
+/// GitHub #200: `Display`'s size (`m_width`, `m_height`, Display.h:189), the part of `TheDisplay` that
+/// [`Display::set_display_mode`] changes and the tactical view reads.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Display {
+    /// `m_width`.
+    pub width: u32,
+    /// `m_height`.
+    pub height: u32,
+}
+
+impl Display {
+    /// `Display::getWidth()` (Display.h:83).
+    pub fn get_width(&self) -> u32 {
+        self.width
+    }
+
+    /// `Display::getHeight()` (Display.h:84).
+    pub fn get_height(&self) -> u32 {
+        self.height
+    }
+
+    /// `Display::setWidth(width)` (Display.cpp:170): the new width. Upstream then calls `TheMouse->setMouseLimits()`
+    /// (the mouse's maximum to the display's size); not here: the client's mouse takes its limits from the window every
+    /// frame (`Mouse::set_mouse_limits`, in the tooltip's frame, which a turned shell layout turns).
+    pub fn set_width(&mut self, width: u32) {
+        self.width = width;
+    }
+
+    /// `Display::setHeight(height)` (Display.cpp:185): the new height (the mouse's limits as in [`Display::set_width`]).
+    pub fn set_height(&mut self, height: u32) {
+        self.height = height;
+    }
+
+    /// `Display::setDisplayMode(xres, yres, bitdepth, windowed)` (Display.cpp:146-165), with
+    /// `TheTacticalView` as `view`: the display takes the new size, and the view keeps its proportions of it ("Adjust
+    /// view to match previous proportions"): `setWidth`, then `setHeight`, then `setOrigin`, each of the old value over
+    /// the old display's size times the new one, in `Real`, truncated toward zero to the `Int` the view takes. So a view
+    /// can come out a pixel short of the exact proportion, even when the height does not change: a view 483 high (80 % of
+    /// 604, truncated) on a display 604 high is `483.0f / 604.0f * 604.0f` = 482.99997, so 482, when only the width
+    /// changes.
+    /// Always `TRUE`. The bit depth and the windowed flag are not read by upstream either.
+    ///
+    /// `W3DDisplay::setDisplayMode` (W3DDisplay.cpp:581) overrides it: it asks the device for the resolution
+    /// (`WW3D::Set_Device_Resolution`) and sets the 2D renderer's screen (`Render2DClass::Set_Screen_Resolution`) before
+    /// calling this; on the device's refusal it restores the old mode and calls this with the old size. The client's
+    /// device is Bevy's window, whose size has already changed when the client calls this, so only the success branch
+    /// applies, and it has no `Render2DClass` (the UI draws in Bevy's own coordinates).
+    pub fn set_display_mode(&mut self, xres: u32, yres: u32, _bitdepth: u32, _windowed: bool, view: &mut TacticalView) -> bool {
+        // Get old values
+        let old_display_height = self.get_height();
+        let old_display_width = self.get_width();
+        let old_view_width = view.width;
+        let old_view_height = view.height;
+        let (old_view_origin_x, old_view_origin_y) = (view.origin.x, view.origin.y);
+
+        if !plant(10453) {
+            self.set_width(xres);
+        }
+        self.set_height(yres);
+
+        let (odw, odh) = if plant(10450) { (self.width, self.height) } else { (old_display_width, old_display_height) };
+        let (dw, dh) = (self.get_width() as i32, self.get_height() as i32);
+        // Adjust view to match previous proportions
+        let w_res = if plant(10449) { yres } else { xres };
+        view.set_width(display_mode_scale(old_view_width, odw, w_res), dw);
+        view.set_height(display_mode_scale(old_view_height, odh, yres), dh);
+        let (ox, oy) = if plant(10446) {
+            (old_view_origin_x, old_view_origin_y)
+        } else {
+            let oy_den = if plant(10454) { odw } else { odh };
+            (display_mode_scale(old_view_origin_x, odw, xres), display_mode_scale(old_view_origin_y, oy_den, yres))
+        };
+        view.set_origin(ox, oy, dw, dh);
+        true
+    }
+}
+
+/// GitHub #200: `Display::setDisplayMode`'s `(Real)oldView/(Real)oldDisplay*(Real)res` (Display.cpp:160-163), in
+/// `float`, left to right, then the implicit conversion to the view's `Int` argument (truncation toward zero).
+fn display_mode_scale(old_view: i32, old_display: u32, res: u32) -> i32 {
+    if plant(10447) {
+        return (old_view as i64 * res as i64 / old_display as i64) as i32;
+    }
+    if plant(10451) {
+        return (res as f32 / old_display as f32 * old_view as f32) as i32;
+    }
+    if plant(10452) {
+        return (old_view as f64 / old_display as f64 * res as f64) as i32;
+    }
+    let r = old_view as f32 / old_display as f32 * res as f32;
+    if plant(10448) {
+        return fast_float2long_round(r);
+    }
+    r as i32
 }
 
 /// `ViewLocation`: a saved view (the bookmarks).

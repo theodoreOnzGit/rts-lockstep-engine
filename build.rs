@@ -4088,7 +4088,8 @@ mod differential {
             // which lists the cuts). Cut verbatim into OUT_DIR/tactical_view_gen from View.h (getScreenCornerWorldPointsAtZ's
             // declaration and the size and origin accessors), View.cpp (getScreenCornerWorldPointsAtZ), W3DView.cpp
             // (setHeight, setWidth, setOrigin; getPickRay; screenToWorldAtZ), W3DConvert.cpp (PixelScreenToW3DLogicalScreen),
-            // camera.h (Get_Depth to Get_Viewport) and camera.cpp (Set_View_Plane(hfov, vfov), Set_Aspect_Ratio, Un_Project).
+            // camera.h (Get_Depth to Get_Viewport) and camera.cpp (Set_View_Plane(hfov, vfov), Set_Aspect_Ratio, Un_Project);
+            // #200: Display.cpp (Display::setDisplayMode, setWidth, setHeight).
             // No text is edited. Each anchor must occur once.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_tactical_view.cpp");
@@ -4114,6 +4115,7 @@ mod differential {
                 let cv = rd(&gd.join("Source/W3DDevice/Common/W3DConvert.cpp"));
                 let ch = rd(&ww.join("WW3D2/camera.h"));
                 let cc_ = rd(&ww.join("WW3D2/camera.cpp"));
+                let dc = rd(&ge.join("Source/GameClient/Display.cpp"));
                 let w = "W3DView.cpp";
                 let files = [
                     ("tv_view_h.inc", piece(&vh, "View.h", "\t/** project the 4 corners of this view into the world and return each point as a parameter,", Some("\tvirtual void forceRedraw() = 0;"))),
@@ -4125,6 +4127,8 @@ mod differential {
                     ("tv_cam_inline.inc", piece(&ch, "camera.h", "inline float CameraClass::Get_Depth(void) const", Some("inline void\tCameraClass::Set_Depth_Range(float zmin,float zmax)"))),
                     ("tv_cam_plane.inc", piece(&cc_, "camera.cpp", "void CameraClass::Set_View_Plane(float hfov,float vfov)\n", Some("void CameraClass::Get_View_Plane(Vector2 & set_min,Vector2 & set_max) const"))),
                     ("tv_cam_unproj.inc", piece(&cc_, "camera.cpp", "void CameraClass::Un_Project(Vector3 & dest,const Vector2 & view_point) const\n", Some("void CameraClass::Transform_To_View_Space(Vector3 & dest,const Vector3 & ws_point) const"))),
+                    // #200: Display::setDisplayMode, setWidth and setHeight
+                    ("tv_display.inc", piece(&dc, "Display.cpp", "Bool Display::setDisplayMode( UnsignedInt xres, UnsignedInt yres, UnsignedInt bitdepth, Bool windowed )\n", Some("// Display::playLogoMovie"))),
                 ];
                 let gen = out_dir.join("tactical_view_gen");
                 std::fs::create_dir_all(&gen).expect("create tactical_view_gen");

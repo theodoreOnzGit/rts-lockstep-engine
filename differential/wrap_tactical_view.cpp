@@ -15,11 +15,15 @@
 **                      Get_Projection_Type, Set_Viewport and Get_Viewport (to Set_Depth_Range);
 **   tv_cam_plane.inc   WW3D2/camera.cpp, CameraClass::Set_View_Plane(hfov, vfov) and Set_Aspect_Ratio (to
 **                      Get_View_Plane);
-**   tv_cam_unproj.inc  camera.cpp, CameraClass::Un_Project (to Transform_To_View_Space).
+**   tv_cam_unproj.inc  camera.cpp, CameraClass::Un_Project (to Transform_To_View_Space);
+**   tv_display.inc     (#200) GameEngine/Source/GameClient/Display.cpp, Display::setDisplayMode, setWidth and setHeight
+**                      (to playLogoMovie's comment), inside nothing: the stand-in Display class declares them.
 ** No edit. The stand-ins: a CameraClass declaring the members those functions use (camera.h's names and types;
 ** `Get_Position` is RenderObjClass's, the transform's translation), set up as its constructor does (camera.cpp:92: a
 ** perspective camera, the viewport (0,0)-(1,1), 4:3, clip 1 to the far plane given, `Set_View_Plane(DEG_TO_RADF(50))`),
-** then the transform given; a W3DView holding m_3DCamera; and TheDisplay's size. WWMath (Vector2, Vector3, Matrix3D) is
+** then the transform given; a W3DView holding m_3DCamera; and TheDisplay (#200: a Display holding Display.h's m_width and
+** m_height with its getWidth and getHeight, and the cut's three functions; TheMouse is NULL, so setWidth and setHeight
+** skip setMouseLimits; TheTacticalView is the W3DView). WWMath (Vector2, Vector3, Matrix3D) is
 ** upstream's own headers; `tan` is the test binary's interposer (tests/support).
 **
 ** Entry point (extern "C", tests/differential_tactical_view.rs):
@@ -28,6 +32,7 @@
 **   transform's 12 floats' bits (row-major 3x4), unused], then steps of 4 words [kind, a, b, c]:
 **     kind 0  setWidth(a)               kind 1  setHeight(a)            kind 2  setOrigin(a, b)
 **     kind 3  the display's size (a, b)
+**     kind 7  (#200) TheDisplay->setDisplayMode(a, b, 32, TRUE)  -> [7, its return]
 **     kind 4  getPickRay((a, b))                          -> [4, start x, y, z, end x, y, z] (bits)
 **     kind 5  screenToWorldAtZ((a, b), bits c)            -> [5, x, y, z]
 **     kind 6  getScreenCornerWorldPointsAtZ(bits a)       -> [6, the four points' x, y, z, in the argument order]
@@ -51,14 +56,24 @@ static Int bitsOf(Real r) { Int i; memcpy(&i, &r, sizeof i); return i; }
 static Real realOf(Int i) { Real r; memcpy(&r, &i, sizeof r); return r; }
 
 /* ---- the display ---- */
-struct DisplayStub
+class Mouse
 {
+public:
+	void setMouseLimits( void ) {}
+};
+Mouse *TheMouse = NULL;
+class Display
+{
+public:
 	UnsignedInt m_width, m_height;
 	UnsignedInt getWidth() { return m_width; }
 	UnsignedInt getHeight() { return m_height; }
+	void setWidth( UnsignedInt width );
+	void setHeight( UnsignedInt height );
+	Bool setDisplayMode( UnsignedInt xres, UnsignedInt yres, UnsignedInt bitdepth, Bool windowed );
 };
-DisplayStub g_display;
-DisplayStub *TheDisplay = &g_display;
+Display g_display;
+Display *TheDisplay = &g_display;
 
 /* ---- CameraClass ---- */
 class ViewportClass
@@ -126,6 +141,8 @@ public:
 
 CameraClass g_camera;
 W3DView g_view;
+W3DView *TheTacticalView = &g_view;
+#include "tv_display.inc"
 
 static void rec(const std::vector<Int> &w) { g_out.insert(g_out.end(), w.begin(), w.end()); }
 
@@ -169,6 +186,7 @@ extern "C" int ref_tactical_view_seq(const int *in, int nin, int *out, int cap)
 		case 1: g_view.setHeight(w[1]); break;
 		case 2: g_view.setOrigin(w[1], w[2]); break;
 		case 3: g_display.m_width = (UnsignedInt)w[1]; g_display.m_height = (UnsignedInt)w[2]; break;
+		case 7: rec({7, (Int)TheDisplay->setDisplayMode((UnsignedInt)w[1], (UnsignedInt)w[2], 32, TRUE)}); break;
 		case 4: {
 			ICoord2D s; s.x = w[1]; s.y = w[2];
 			Vector3 a, b;

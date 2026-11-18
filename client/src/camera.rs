@@ -25,7 +25,7 @@
 use rts_lockstep_engine::client::in_game_ui::InGameUiSelection;
 use rts_lockstep_engine::client::look_at_xlat::{LookAtGlobals, LookAtHost, LookAtTranslator, MOUSE_ARROW};
 use rts_lockstep_engine::client::selection_xlat::Disposition;
-use rts_lockstep_engine::client::tactical_view::{TacticalView, ViewHost, ViewLocation};
+use rts_lockstep_engine::client::tactical_view::{Display, TacticalView, ViewHost, ViewLocation};
 use rts_lockstep_engine::client::window_xlat::RawMessage;
 use rts_lockstep_engine::common::base_type::{Coord2D, Coord3D, ICoord2D, Region3D};
 use rts_lockstep_engine::common::global_data::GlobalData;
@@ -299,14 +299,26 @@ impl Camera {
         self.home = centre;
     }
 
-    /// The display's size changed: the view takes it (`Display::setDisplayMode`'s `setWidth` / `setHeight`).
+    /// ~~The display's size changed: the view takes it (`Display::setDisplayMode`'s `setWidth` / `setHeight`).~~
+    /// **Corrected 2026-11-18 (#200):** the old body set the view to the whole new display (`setWidth(w)`,
+    /// `setHeight(h)`), which `setDisplayMode` does not do. The window's size changed: `TheDisplay->setDisplayMode(w, h)`
+    /// ([`rts_lockstep_engine::client::tactical_view::Display::set_display_mode`], Display.cpp:146, translated and
+    /// differential-tested): the view's width, height and origin are scaled by the new size over the old, in `float`,
+    /// truncated. New glue around it: a window of no size (a minimised one) is skipped, as upstream never sets a mode of
+    /// 0 pixels (its next scale would divide by 0); the scroll's portrait flag ([`TacticalView::portrait_scroll`]) follows
+    /// the window; the camera transform is rebuilt (`setCameraTransform`), so its constraints follow the new view. The
+    /// caller then applies the control bar's height as before ([`Camera::set_view_height`]), which changes the view only
+    /// where the bar's line on the new window is not the scaled height (a pixel lost to the truncation, or a phone, whose
+    /// bar scales with the width): upstream never resizes during a game (`OptionsMenu.cpp:1812` disables the resolution
+    /// box in one), so it has no rule for that case. Owner decision 2026-11-18 (#201): "Just reapply straight away", so the
+    /// bar's height is reapplied in the same frame.
     pub fn set_screen(&mut self, screen: (i32, i32), world: &World) {
         if screen == self.screen || screen.0 <= 0 || screen.1 <= 0 {
             return;
         }
+        let mut display = Display { width: self.screen.0 as u32, height: self.screen.1 as u32 };
+        display.set_display_mode(screen.0 as u32, screen.1 as u32, 32, true, &mut self.view);
         self.screen = screen;
-        self.view.set_width(screen.0, screen.0);
-        self.view.set_height(screen.1, screen.1);
         self.view.portrait_scroll = screen.0 < screen.1;
         let vh = ViewWorld { g: &self.globals, world };
         self.view.set_camera_transform(&vh);
@@ -674,6 +686,42 @@ mod tests {
         assert!(cam.ground_under(ICoord2D { x: 195, y: 392 }, |_, _| 0.0).is_some_and(|p| p.z == 0.0));
         cam.set_view_height(5000);
         assert_eq!(cam.viewport(), (390, 844), "clamped to the display");
+        assert_eq!(c.client.world.logic_crc(CRC_RECALC, None).expect("CRC"), crc0);
+    }
+
+    /// GitHub #200: a window resize scales the view as `Display::setDisplayMode` does, rather than setting it to the
+    /// whole new window.
+    ///
+    /// *Predictions:* a window 800x604 with the bar's 80 % (483, truncated) widened to 900x604 gives a view 900 wide and
+    /// 482 high (`483.0f / 604.0f * 604.0f` is 482.99997, truncated: a pixel lost with the height unchanged), the
+    /// viewport's bottom at 482 / 604 and the camera's aspect 900 / 482; the bar's height applied after it
+    /// (`set_view_height(483)`) then gives 483 back; a minimised window (0 high) changes nothing; a whole-window view
+    /// stays the whole window (`w / w` is exactly 1); the logic's CRC is unchanged.
+    ///
+    /// *Results (2026-11-18):* all held. (An earlier draft of this prediction, 1080 to 1440 high with 864, expected 1151;
+    /// checked in `float` before the run it is exactly 1152, so the case was replaced.)
+    #[test]
+    fn a_resize_scales_the_view_as_set_display_mode() {
+        let (mut c, _) = demo();
+        let e = c.client.world.terrain.extent().expect("terrain");
+        let centre = Coord3D { x: (e.lo.x + e.hi.x) / 2.0, y: (e.lo.y + e.hi.y) / 2.0, z: 0.0 };
+        let crc0 = c.client.world.logic_crc(CRC_RECALC, None).expect("CRC");
+        let w = &c.client.world;
+        let mut cam = Camera::new(w, centre, e.hi.x - e.lo.x, (800, 604));
+        cam.set_view_height((604.0f32 * 0.80f32) as i32);
+        assert_eq!(cam.viewport(), (800, 483));
+        cam.set_screen((900, 604), w);
+        assert_eq!(cam.viewport(), (900, 482), "scaled and truncated, not the whole window");
+        assert_eq!(cam.view.camera.viewport.1.y, 482.0f32 / 604.0f32);
+        assert_eq!(cam.view.camera.aspect_ratio, 900.0f32 / 482.0f32);
+        cam.set_view_height(483);
+        assert_eq!(cam.viewport(), (900, 483));
+        cam.set_screen((0, 0), w);
+        assert_eq!((cam.screen, cam.viewport()), ((900, 604), (900, 483)), "a minimised window is skipped");
+        // the whole-window view (the shell's) stays the whole window: w / w is exactly 1
+        let mut full = Camera::new(w, centre, e.hi.x - e.lo.x, (800, 600));
+        full.set_screen((1366, 768), w);
+        assert_eq!(full.viewport(), (1366, 768));
         assert_eq!(c.client.world.logic_crc(CRC_RECALC, None).expect("CRC"), crc0);
     }
 

@@ -8,6 +8,7 @@
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DView.cpp (setHeight, setWidth, setOrigin,
 //     getPickRay, screenToWorldAtZ)
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/Common/W3DConvert.cpp (PixelScreenToW3DLogicalScreen)
+//   GeneralsMD/Code/GameEngine/Source/GameClient/Display.cpp (#200: Display::setDisplayMode, setWidth, setHeight)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/camera.h and camera.cpp (the viewport, the view plane, the aspect,
 //     Un_Project)
 //
@@ -64,10 +65,47 @@
 //! | 9276 | `screenToWorldAtZ`'s y is `Find_X_At_Z` |
 //! | 9277 | the corners' height is the display's, not the view's |
 //! | 9278 | the corners' lower left is at the right edge |
+//!
+//! # `Display::setDisplayMode` (GitHub #200)
+//!
+//! The second test, [`set_display_mode_rescales_the_view_as_upstream`], adds step kind 7, `TheDisplay->setDisplayMode(a,
+//! b, 32, TRUE)` (Display.cpp:146, with its `setWidth` and `setHeight`, cut verbatim; `TheMouse` NULL), against
+//! [`Display::set_display_mode`]. Its own generator (seed `0x200_2000`, so the first test's sequences are unchanged): the
+//! first test's setup, then 1 to 40 steps, a third of them a new display size (a listed display, random from 1 to 4,000
+//! each way, the same size, doubled or halved), the rest `setHeight` (80 % or 77 % of the display truncated as the bar
+//! asks, the whole display, random), `setWidth`, `setOrigin` (random within the display) and pick rays. The words after
+//! each step are the first test's (the view's size and origin, the camera's aspect, view plane and viewport), so the
+//! rescale is compared through all three of `setWidth`, `setHeight` and `setOrigin`. The C++ calls are serialised (the
+//! wrapper's state is global and the two tests run on two threads).
+//!
+//! *Predictions (2026-11-18, before the first run):* 0 mismatches: the same `float` operations in the same order, and
+//! the `float`-to-`Int` truncation is `cvttss2si` on both sides for these in-range values. All plants caught;
+//! 10446, 10449, 10450, 10453 and 10454 in thousands of sequences; 10447, 10451 and 10452 (a different rounding of the
+//! same proportion) the fewest, in the hundreds; 10448 in thousands.
+//!
+//! *Results (2026-11-18, `TACTICAL_VIEW_CASES=20000`):* 20,000 sequences, 408,901 steps, 136,175 `setDisplayMode`:
+//! **0 mismatches**, max ULP 0. 640 of the rescales gave a view height a pixel short of an exact integer product (e.g.
+//! `483.0f / 604.0f * 604.0f` = 482.99997, so 482), so the truncation edge is exercised. Plants, mismatching sequences
+//! of 20,000: 10446 14,167; 10447 2,729; 10448 15,289; 10449 18,957; 10450 18,499; 10451 4,322; 10452 4,828; 10453
+//! 18,499; 10454 14,518. **9 of 9 caught.** **Prediction missed:** 10447, 10451 and 10452 were caught in thousands, not
+//! hundreds: besides the truncations short of an integer, `float`'s rounding also lands a product just above an integer
+//! that the exact quotient falls short of, and a halved or doubled display makes many proportions non-integer.
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 10446 | the origin is not rescaled |
+//! | 10447 | the proportion in exact integers (`old * res / oldDisplay`) |
+//! | 10448 | rounded to the nearest, not truncated |
+//! | 10449 | the width scaled by the new height |
+//! | 10450 | the old display size read after the display's `setWidth`/`setHeight` |
+//! | 10451 | `res / oldDisplay * old`, the other order |
+//! | 10452 | in `double` |
+//! | 10453 | the display's `setWidth` skipped |
+//! | 10454 | the origin's y scaled over the old display's width |
 
 mod support;
 
-use rts_lockstep_engine::client::tactical_view::{TacticalView, ViewCamera};
+use rts_lockstep_engine::client::tactical_view::{Display, TacticalView, ViewCamera};
 use rts_lockstep_engine::common::base_type::ICoord2D;
 use rts_lockstep_engine::common::global_data::GlobalData;
 use rts_lockstep_engine::differential as cpp;
@@ -101,6 +139,12 @@ fn rust_seq(input: &[i32]) -> Vec<i32> {
             1 => v.set_height(w[1], dh),
             2 => v.set_origin(w[1], w[2], dw, dh),
             3 => (dw, dh) = (w[1], w[2]),
+            7 => {
+                let mut d = Display { width: dw as u32, height: dh as u32 };
+                let ok = d.set_display_mode(w[1] as u32, w[2] as u32, 32, true, &mut v);
+                (dw, dh) = (d.width as i32, d.height as i32);
+                out.extend([7, ok as i32]);
+            }
             4 => {
                 let (a, b) = v.get_pick_ray(ICoord2D { x: w[1], y: w[2] });
                 out.extend([4, bits(a.x), bits(a.y), bits(a.z), bits(b.x), bits(b.y), bits(b.z)]);
@@ -124,7 +168,12 @@ fn rust_seq(input: &[i32]) -> Vec<i32> {
     out
 }
 
+/// The wrapper's state is global (`g_out`, the camera, the view, the display): one sequence at a time (#200: the two
+/// tests of this binary run on two threads).
+static CPP: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn cpp_seq(input: &[i32]) -> Vec<i32> {
+    let _one = CPP.lock().unwrap_or_else(|e| e.into_inner());
     let mut out = vec![0i32; 100_000];
     let n = unsafe { cpp::ref_tactical_view_seq(input.as_ptr(), input.len() as i32, out.as_mut_ptr(), out.len() as i32) };
     out.truncate(n as usize);
@@ -219,6 +268,90 @@ fn the_tactical_view_maps_the_screen_as_upstream() {
         whole.eq(r, c, || format!("sequence {i}"));
     }
     println!("{cases} sequences, {steps} steps: {heights} setHeight, {picks} pick rays, {at_z} screenToWorldAtZ, {corners} corner sets");
+    if planted {
+        whole.report();
+    } else {
+        whole.finish();
+    }
+    assert!(!planted, "a planted run: see the MEASURED line (a mismatch is the plant caught)");
+}
+
+/// GitHub #200: a sequence for [`Display::set_display_mode`]: the cases of [`gen_case`]'s setup, then 1 to 40 steps, of
+/// which about a third are `setDisplayMode` to a new size (a listed display, a random one from 1 to 4,000 each way, the
+/// same size, or the same size doubled or halved), the rest `setHeight` (the bar's 80 %, the whole display, the old view
+/// height rounded through `float` as a bar would ask, or random), `setWidth`, `setOrigin` (random, up to the display's
+/// size), and a pick ray, so the rescaled viewport and view plane are read through `getPickRay` too.
+fn gen_case_mode(g: &mut Gen) -> Vec<i32> {
+    let mut v = gen_case(g);
+    v.truncate(18);
+    let (mut dw, mut dh) = (v[0], v[1]);
+    let steps = 1 + g.below(40);
+    for _ in 0..steps {
+        let px = |g: &mut Gen, d: i32| g.below((d + 401) as u32) as i32 - 200;
+        let s = match g.below(9) {
+            0..=2 => {
+                let (nw, nh) = match g.below(5) {
+                    0 | 1 => display(g),
+                    2 => (dw, dh),
+                    3 => (dw * 2, dh * 2),
+                    _ => (max1(dw / 2), max1(dh / 2)),
+                };
+                (dw, dh) = (nw, nh);
+                [7, nw, nh, 0]
+            }
+            3 | 4 => [1, [(dh as f32 * 0.80f32) as i32, dh, (dh as f32 * 0.77f32) as i32, 1 + g.below(4000) as i32][g.below(4) as usize], 0, 0],
+            5 => [0, if g.below(2) == 0 { dw } else { 1 + g.below(4000) as i32 }, 0, 0],
+            6 => [2, g.below((dw + 1) as u32) as i32, g.below((dh + 1) as u32) as i32, 0],
+            _ => [4, px(g, dw), px(g, dh), 0],
+        };
+        v.extend(s);
+    }
+    v
+}
+
+fn max1(x: i32) -> i32 {
+    if x < 1 { 1 } else { x }
+}
+
+#[test]
+fn set_display_mode_rescales_the_view_as_upstream() {
+    let cases: u64 = std::env::var("TACTICAL_VIEW_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20000);
+    let planted = std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0) != 0;
+    let mut g = Gen::new(0x200_2000);
+    let mut whole = Check::new("setDisplayMode's rescaled view");
+    let (mut steps, mut modes, mut short) = (0u64, 0u64, 0u64);
+    for i in 0..cases {
+        let input = gen_case_mode(&mut g);
+        let mut dh = input[1];
+        let mut vh = input[3];
+        for s in input[18..].chunks(4) {
+            steps += 1;
+            match s[0] {
+                1 => vh = s[1],
+                7 => {
+                    modes += 1;
+                    // a truncation that a real-number product would not make: count them
+                    let exact = vh as i64 * s[2] as i64 % dh as i64 == 0;
+                    let got = (vh as f32 / dh as f32 * s[2] as f32) as i32;
+                    if exact && got as i64 != vh as i64 * s[2] as i64 / dh as i64 {
+                        short += 1;
+                    }
+                    vh = got;
+                    dh = s[2];
+                }
+                _ => {}
+            }
+        }
+        let r = rust_seq(&input);
+        let c = cpp_seq(&input);
+        if r != c {
+            let k = r.iter().zip(&c).position(|(a, b)| a != b).unwrap_or(r.len().min(c.len()));
+            let k0 = k.saturating_sub(6);
+            println!("sequence {i} first difference at word {k}: rust {:?} c++ {:?}", &r[k0.min(r.len())..(k + 12).min(r.len())], &c[k0.min(c.len())..(k + 12).min(c.len())]);
+        }
+        whole.eq(r, c, || format!("sequence {i}"));
+    }
+    println!("{cases} sequences, {steps} steps: {modes} setDisplayMode, {short} of them a view height a pixel short of the exact product");
     if planted {
         whole.report();
     } else {
