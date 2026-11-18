@@ -26,3 +26,6 @@ pub mod shddefmanager;
 pub mod shdinterface;
 pub mod composite;
 pub mod meshbuild;
+pub mod shader_presets;
+pub mod line3d;
+pub mod dynamesh;
