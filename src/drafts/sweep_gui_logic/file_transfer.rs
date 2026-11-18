@@ -1,4 +1,7 @@
 //! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! (#215: the ten path helpers, `get_base_path_from_path` to `get_readme_from_map`, match the upstream C++ on 60,000 strings each, test:
+//! tests/differential_draft_ft_paths.rs. `do_file_transfer` and `do_any_map_transfers` are NOT tested: they drive the network and the
+//! shell through the host. `get_base_path_from_path` duplicates the verified `crate::common::game_info::base_path_from_path`.)
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameNetwork/FileTransfer.cpp
@@ -9,6 +12,7 @@
 //! probes. `Sleep(500)` and `timeGetTime()` are the host's.
 
 use crate::drafts::network::net_command_msg::MAX_SLOTS;
+use crate::logic::modules::plant;
 
 /// What the transfer asks of the game.
 pub trait FileTransferHost {
@@ -123,8 +127,9 @@ fn do_file_transfer<H: FileTransferHost>(h: &mut H, filename: &[u8], mask: i32) 
 
 /// `GetBasePathFromPath(path)` (FileTransfer.cpp:155): up to the last `\`, or empty.
 pub fn get_base_path_from_path(path: &[u8]) -> Vec<u8> {
-    match path.iter().rposition(|&c| c == b'\\') {
-        Some(len) => path[..len].to_vec(),
+    let at = if plant(12281) { path.iter().position(|&c| c == b'\\') } else { path.iter().rposition(|&c| c == b'\\') };
+    match at {
+        Some(len) => path[..if plant(12282) { len + 1 } else { len }].to_vec(),
         None => Vec::new(),
     }
 }
@@ -132,16 +137,16 @@ pub fn get_base_path_from_path(path: &[u8]) -> Vec<u8> {
 /// `GetFileFromPath(path)` (:171): after the last `\`, else the whole path.
 pub fn get_file_from_path(path: &[u8]) -> Vec<u8> {
     match path.iter().rposition(|&c| c == b'\\') {
-        Some(i) => path[i + 1..].to_vec(),
+        Some(i) => path[if plant(12283) { i } else { i + 1 }..].to_vec(),
         None => path.to_vec(),
     }
 }
 
 /// `GetExtensionFromFile(fname)` (:181): after the last `.`, else the whole name (sic).
 pub fn get_extension_from_file(fname: &[u8]) -> Vec<u8> {
-    match fname.iter().rposition(|&c| c == b'.') {
+    match if plant(12290) { fname.iter().position(|&c| c == b'.') } else { fname.iter().rposition(|&c| c == b'.') } {
         Some(i) => fname[i + 1..].to_vec(),
-        None => fname.to_vec(),
+        None => if plant(12284) { Vec::new() } else { fname.to_vec() },
     }
 }
 
@@ -149,21 +154,21 @@ pub fn get_extension_from_file(fname: &[u8]) -> Vec<u8> {
 pub fn get_base_file_from_file(fname: &[u8]) -> Vec<u8> {
     match fname.iter().rposition(|&c| c == b'.') {
         Some(len) => fname[..len].to_vec(),
-        None => Vec::new(),
+        None => if plant(12285) { fname.to_vec() } else { Vec::new() },
     }
 }
 
 fn join(base: &[u8], tail: &[u8]) -> Vec<u8> {
     // out.format("%s\\%s", base.str(), tail)
     let mut v = base.to_vec();
-    v.push(b'\\');
+    v.push(if plant(12286) { b'/' } else { b'\\' });
     v.extend_from_slice(tail);
     v
 }
 
 /// `GetPreviewFromMap(path)` (:211): `<base>\<name>.tga`.
 pub fn get_preview_from_map(path: &[u8]) -> Vec<u8> {
-    let fname = get_base_file_from_file(&get_file_from_path(path));
+    let fname = if plant(12287) { get_file_from_path(path) } else { get_base_file_from_file(&get_file_from_path(path)) };
     let base = get_base_path_from_path(path);
     let mut tail = fname;
     tail.extend_from_slice(b".tga");
@@ -179,7 +184,7 @@ pub fn get_str_file_from_map(path: &[u8]) -> Vec<u8> {
 }
 /// `GetSoloINIFromMap(path)` (:240): `<base>\solo.ini`.
 pub fn get_solo_ini_from_map(path: &[u8]) -> Vec<u8> {
-    join(&get_base_path_from_path(path), b"solo.ini")
+    join(&get_base_path_from_path(path), if plant(12288) { b"map.ini" } else { b"solo.ini" })
 }
 /// `GetAssetUsageFromMap(path)` (:249): `<base>\assetusage.txt`.
 pub fn get_asset_usage_from_map(path: &[u8]) -> Vec<u8> {
@@ -187,7 +192,7 @@ pub fn get_asset_usage_from_map(path: &[u8]) -> Vec<u8> {
 }
 /// `GetReadmeFromMap(path)` (:258): `<base>\readme.txt`.
 pub fn get_readme_from_map(path: &[u8]) -> Vec<u8> {
-    join(&get_base_path_from_path(path), b"readme.txt")
+    join(&get_base_path_from_path(path), if plant(12289) { b"assetusage.txt" } else { b"readme.txt" })
 }
 
 /// `DoAnyMapTransfers(game)` (:267): the players (slots 1 and up) that are human and lack the map make the mask; if

@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 30,000 op lists (test: tests/differential_draft_keyboard.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/Input/Keyboard.cpp   (`getFirstKey`, `getKeyStatusData`,
@@ -7,6 +8,8 @@
 //!
 //! The verified `crate::client::keyboard` holds the key names (`KeyNames`, `getPrintableKey`). The key arrays and the
 //! modifier tests are [`KeyboardState`]. `KEY_STATE_*` are the bits of `crate::client::meta_event` (KeyDefs.h).
+
+use crate::logic::modules::plant;
 
 /// `KEY_STATE_*` bits (KeyDefs.h); the same values as `crate::client::meta_event::key_state` (`i32` there, `u16` here
 /// for `KeyboardIO::state`).
@@ -58,47 +61,63 @@ impl KeyboardState {
 
     /// `Keyboard::getFirstKey()` (Keyboard.cpp:763): `&m_keys[0]`.
     pub fn get_first_key(&self) -> &KeyboardIO {
-        &self.keys[0]
+        &self.keys[if plant(12328) { 1 } else { 0 }]
     }
 
     /// `Keyboard::getKeyStatusData(key)` (Keyboard.cpp:771).
     pub fn get_key_status_data(&self, key: u8) -> u8 {
-        self.key_status[key as usize].status
+        if plant(12326) {
+            self.keys[key as usize].status
+        } else {
+            self.key_status[key as usize].status
+        }
     }
 
     /// `Keyboard::getKeyStateBit(key, bit)` (Keyboard.cpp:779): `(state & bit) ? 1 : 0`. Upstream's `state` is an
     /// `UnsignedShort` and `bit` an `Int`; the AND is done in `Int`.
     pub fn get_key_state_bit(&self, key: u8, bit: i32) -> bool {
-        (self.key_status[key as usize].state as i32 & bit) != 0
+        if plant(12321) {
+            (self.key_status[key as usize].state as i32 & bit) == bit
+        } else {
+            (self.key_status[key as usize].state as i32 & bit) != 0
+        }
     }
 
     /// `Keyboard::getKeySequenceData(key)` (Keyboard.cpp:787).
     pub fn get_key_sequence_data(&self, key: u8) -> u32 {
-        self.key_status[key as usize].sequence
+        if plant(12327) {
+            self.key_status[key as usize].sequence as u16 as u32
+        } else {
+            self.key_status[key as usize].sequence
+        }
     }
 
     /// `Keyboard::setKeyStatusData(key, data)` (Keyboard.cpp:795).
     pub fn set_key_status_data(&mut self, key: u8, data: u8) {
-        self.key_status[key as usize].status = data;
+        self.key_status[if plant(12329) { key.wrapping_add(1) } else { key } as usize].status = data;
     }
 
     /// `Keyboard::setKeyStateData(key, data)` (Keyboard.cpp:803): `data` is an `UnsignedByte` stored in the `state` short.
     pub fn set_key_state_data(&mut self, key: u8, data: u8) {
-        self.key_status[key as usize].state = data as u16;
+        if plant(12322) {
+            self.key_status[key as usize].state |= data as u16;
+        } else {
+            self.key_status[key as usize].state = data as u16;
+        }
     }
 
     /// `Keyboard::isShift()` (Keyboard.cpp:942): any shift state is pressed.
     pub fn is_shift(&self) -> bool {
-        self.modifiers & KEY_STATE_LSHIFT != 0 || self.modifiers & KEY_STATE_RSHIFT != 0 || self.modifiers & KEY_STATE_SHIFT2 != 0
+        self.modifiers & KEY_STATE_LSHIFT != 0 || self.modifiers & KEY_STATE_RSHIFT != 0 || (self.modifiers & KEY_STATE_SHIFT2 != 0 && !plant(12323))
     }
 
     /// `Keyboard::isCtrl()` (Keyboard.cpp:954).
     pub fn is_ctrl(&self) -> bool {
-        self.modifiers & KEY_STATE_LCONTROL != 0 || self.modifiers & KEY_STATE_RCONTROL != 0
+        self.modifiers & KEY_STATE_LCONTROL != 0 || (self.modifiers & KEY_STATE_RCONTROL != 0 && !plant(12324))
     }
 
     /// `Keyboard::isAlt()` (Keyboard.cpp:966).
     pub fn is_alt(&self) -> bool {
-        self.modifiers & KEY_STATE_LALT != 0 || self.modifiers & KEY_STATE_RALT != 0
+        self.modifiers & KEY_STATE_LALT != 0 || self.modifiers & if plant(12325) { KEY_STATE_RSHIFT } else { KEY_STATE_RALT } != 0
     }
 }

@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 scripts (test: tests/differential_draft_mouse.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/Input/Mouse.cpp   (`moveMouse`, `updateMouseData`,
@@ -10,6 +11,7 @@
 //! (DirectInput / Win32 messages) and is the [`MouseDevice`] trait.
 
 use crate::client::window_manager::gwm;
+use crate::logic::modules::plant;
 
 /// `NUM_MOUSE_EVENTS`.
 pub const NUM_MOUSE_EVENTS: usize = 256;
@@ -135,7 +137,13 @@ impl MouseInput {
             self.curr_mouse.pos.0 = x;
             self.curr_mouse.pos.1 = y;
         }
-        if self.curr_mouse.pos.0 > self.max_x {
+        if plant(12301) {
+            if self.curr_mouse.pos.0 < self.min_x {
+                self.curr_mouse.pos.0 = self.min_x;
+            } else if self.curr_mouse.pos.0 > self.max_x {
+                self.curr_mouse.pos.0 = self.max_x;
+            }
+        } else if self.curr_mouse.pos.0 > self.max_x {
             self.curr_mouse.pos.0 = self.max_x;
         } else if self.curr_mouse.pos.0 < self.min_x {
             self.curr_mouse.pos.0 = self.min_x;
@@ -158,31 +166,31 @@ impl MouseInput {
                 let mut result;
                 loop {
                     result = dev.get_mouse_event(&mut self.mouse_events[index], true);
-                    if result != MOUSE_LOST {
+                    if result != MOUSE_LOST || plant(12306) {
                         break;
                     }
                 }
                 index += 1;
                 // `while( (result != MOUSE_NONE) && (index < sizeof( m_mouseEvents ) / sizeof( MouseIO )) )`
-                if !(result != MOUSE_NONE && index < NUM_MOUSE_EVENTS) {
+                if !(result != MOUSE_NONE && index < if plant(12307) { NUM_MOUSE_EVENTS - 1 } else { NUM_MOUSE_EVENTS }) {
                     break;
                 }
             }
             self.busy = false;
         }
         if index > 0 {
-            self.events_this_frame = index as i32 - 1;
+            self.events_this_frame = if plant(12304) { index as i32 } else { index as i32 - 1 };
         } else {
             self.events_this_frame = 0;
         }
-        if index != 0 {
+        if if plant(12305) { index > 1 } else { index != 0 } {
             self.dead_input_frame = self.input_frame;
         }
     }
 
     /// `Mouse::checkForDrag()` (Mouse.cpp:366): a held button whose previous event was a down or a drag is dragging.
     pub fn check_for_drag(&mut self) {
-        if self.curr_mouse.left_state != MouseButtonState::Up
+        if (if plant(12308) { self.curr_mouse.left_state == MouseButtonState::Down } else { self.curr_mouse.left_state != MouseButtonState::Up })
             && (self.prev_mouse.left_event == gwm::LEFT_DOWN || self.prev_mouse.left_event == gwm::LEFT_DRAG)
         {
             self.curr_mouse.left_event = gwm::LEFT_DRAG;
@@ -219,10 +227,10 @@ impl MouseInput {
                 if in_state == MouseButtonState::Down {
                     *event = down;
                     *state = MouseButtonState::Down;
-                    *frame = input_frame as i32;
+                    *frame = if plant(12312) { in_frame } else { input_frame as i32 };
                 } else if in_state == MouseButtonState::DoubleClick {
                     *event = double;
-                    *state = MouseButtonState::DoubleClick;
+                    *state = if plant(12313) { MouseButtonState::Down } else { MouseButtonState::DoubleClick };
                     *frame = input_frame as i32;
                 } else {
                     *event = up;
@@ -230,7 +238,7 @@ impl MouseInput {
                     *frame = input_frame as i32;
                 }
             }
-        } else if *state != MouseButtonState::Up && (prev_event == down || prev_event == drag) {
+        } else if *state != MouseButtonState::Up && (prev_event == down || (prev_event == drag && !plant(12314))) {
             *event = drag;
         }
         let _ = input;
@@ -241,7 +249,9 @@ impl MouseInput {
         self.curr_mouse.left_event = MOUSE_EVENT_NONE;
         self.curr_mouse.right_event = MOUSE_EVENT_NONE;
         self.curr_mouse.middle_event = MOUSE_EVENT_NONE;
-        self.curr_mouse.wheel_pos = 0;
+        if !plant(12310) {
+            self.curr_mouse.wheel_pos = 0;
+        }
 
         // what type of movement commands are we setup for
         let movement_type = if self.input_moves_absolute { MOUSE_MOVE_ABSOLUTE } else { MOUSE_MOVE_RELATIVE };
@@ -249,7 +259,7 @@ impl MouseInput {
         self.curr_mouse.time = self.mouse_events[index].time;
 
         // check for drag on the first event only
-        if index == 0 {
+        if (index == 0) != plant(12309) {
             self.check_for_drag();
         }
 
