@@ -25,3 +25,4 @@ pub mod shddeffactory;
 pub mod shddefmanager;
 pub mod shdinterface;
 pub mod composite;
+pub mod meshbuild;
