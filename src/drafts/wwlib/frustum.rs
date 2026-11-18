@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 60,000 cases (test: tests/differential_draft_frustum.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/frustum.h
@@ -6,6 +7,7 @@
 //!
 //! `PlaneClass::Set(p1,p2,p3)` is the port's `PlaneClass::from_points` (same cross-product construction).
 
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::plane::PlaneClass;
 use crate::ww::vector2::Vector2;
@@ -40,18 +42,22 @@ impl FrustumClass {
 
         // Forward is negative Z in our viewspace coordinate system.
         // Just flip the sign if the user passed in positive values.
-        if znear > 0.0 && zfar > 0.0 {
+        if if plant(11291) { znear > 0.0 || zfar > 0.0 } else { znear > 0.0 && zfar > 0.0 } {
             znear = -znear;
             zfar = -zfar;
         }
 
         // calculate a proper z-vector assuming our right-handed coordinate system
-        let zv = Vector3::cross_product(&self.camera_transform.get_x_vector(), &self.camera_transform.get_y_vector());
+        let zv = if plant(11292) {
+            Vector3::cross_product(&self.camera_transform.get_y_vector(), &self.camera_transform.get_x_vector())
+        } else {
+            Vector3::cross_product(&self.camera_transform.get_x_vector(), &self.camera_transform.get_y_vector())
+        };
 
         // compare correct z-vector with the one in the camera matrix.  If they point in
         // opposite directions, we have a reflected camera matrix.
         let c = &mut self.corners;
-        if Vector3::dot_product(&self.camera_transform.get_z_vector(), &zv) < 0.0 {
+        if if plant(11293) { Vector3::dot_product(&self.camera_transform.get_z_vector(), &zv) <= 0.0 } else { Vector3::dot_product(&self.camera_transform.get_z_vector(), &zv) < 0.0 } {
             // flip the frustum corners horizontally for a reflected matrix
             c[1].set(vpmin.x, vpmax.y, 1.0);
             c[5] = c[1];
@@ -77,7 +83,7 @@ impl FrustumClass {
             c[0].set(vpmin.x, vpmax.y, 1.0);
             c[4] = c[0];
             c[0] *= znear;
-            c[4] *= zfar;
+            c[4] *= if plant(11294) { znear } else { zfar };
 
             c[1].set(vpmax.x, vpmax.y, 1.0);
             c[5] = c[1];
@@ -96,7 +102,7 @@ impl FrustumClass {
         }
 
         // Transform the eight corners of the view frustum from camera space to world space.
-        for i in 0..8 {
+        for i in 0..(if plant(11295) { 7 } else { 8 }) {
             c[i] = Matrix3D::transform_vector(&self.camera_transform, &c[i]);
         }
 
@@ -104,7 +110,7 @@ impl FrustumClass {
         // The bounding planes are oriented so that their normals point outward
         self.planes[0] = PlaneClass::from_points(&c[0], &c[3], &c[1]); // near
         self.planes[1] = PlaneClass::from_points(&c[0], &c[5], &c[4]); // bottom
-        self.planes[2] = PlaneClass::from_points(&c[0], &c[6], &c[2]); // right
+        self.planes[2] = if plant(11296) { PlaneClass::from_points(&c[0], &c[2], &c[6]) } else { PlaneClass::from_points(&c[0], &c[6], &c[2]) }; // right
         self.planes[3] = PlaneClass::from_points(&c[2], &c[7], &c[3]); // top
         self.planes[4] = PlaneClass::from_points(&c[1], &c[7], &c[5]); // left
         self.planes[5] = PlaneClass::from_points(&c[4], &c[7], &c[6]); // far
@@ -113,7 +119,7 @@ impl FrustumClass {
         self.bound_min = c[0];
         self.bound_max = c[0];
         for i in 1..8 {
-            if c[i].x < self.bound_min.x {
+            if c[i].x < self.bound_min.x && !plant(11297) {
                 self.bound_min.x = c[i].x;
             }
             if c[i].x > self.bound_max.x {
@@ -129,7 +135,7 @@ impl FrustumClass {
                 self.bound_min.z = c[i].z;
             }
             if c[i].z > self.bound_max.z {
-                self.bound_max.z = c[i].z;
+                self.bound_max.z = if plant(11298) { c[i].y } else { c[i].z };
             }
         }
     }

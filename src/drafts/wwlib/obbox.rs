@@ -1,6 +1,7 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 40,000 cases of each of its operations (test: tests/differential_draft_obbox.rs);
+//! not yet wired into the game. Not covered: `from_points` (upstream `assert(0)`, nothing to compare).
 //!
-//! Covered by tests/differential_draft_colmath.rs (#215): `project_to_axis`, `volume`, `compute_point`, `compute_axis_aligned_extent`, `transform`, `eq_box`, `oriented_boxes_intersect`, `oriented_boxes_collide`, `oriented_box_intersects_tri`. NOT covered: `from_points` (assert(0) upstream), `ne_box`, `init_from_box_points`, `init_random`.
+//! Covered by tests/differential_draft_colmath.rs (#215): `project_to_axis`, `volume`, `compute_point`, `compute_axis_aligned_extent`, `transform`, `eq_box`, `oriented_boxes_intersect`, `oriented_boxes_collide`, `oriented_box_intersects_tri`. ~~NOT covered: `from_points` (assert(0) upstream), `ne_box`, `init_from_box_points`, `init_random`.~~ **Corrected 2026-11-18 (#215):** `ne_box`, `init_from_box_points` and `init_random` are covered by tests/differential_draft_obbox.rs (merged the same day); only `from_points` is not covered.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/obbox.h
@@ -50,6 +51,9 @@ impl OBBoxClass {
 
     /// `operator !=` (obbox.h): UPSTREAM DEFECT KEPT, `(Center != ) || ((Extent != ) && (Basis == ))`.
     pub fn ne_box(&self, src: &OBBoxClass) -> bool {
+        if plant(11287) {
+            return !self.eq_box(src);
+        }
         self.center != src.center || (self.extent != src.extent && self.basis == src.basis)
     }
 
@@ -85,9 +89,10 @@ impl OBBoxClass {
         for i in 0..num {
             self.center += points[i];
         }
-        self.center.x /= num as f32;
-        self.center.y /= num as f32;
-        self.center.z /= num as f32;
+        let den = if plant(11282) { (num - 1) as f32 } else { num as f32 };
+        self.center.x /= den;
+        self.center.y /= den;
+        self.center.z /= den;
 
         // "Compute the extents": project each point onto the axes
         self.extent.set(0.0, 0.0, 0.0);
@@ -145,19 +150,25 @@ impl OBBoxClass {
         let z = self.extent[2] * Vector3::dot_product(axis, &Vector3::new(b[0][2], b[1][2], b[2][2]));
 
         // projection is the sum of the absolute values of the projections of the three extents
+        if plant(11280) {
+            return x + wwmath::fabs(y) + wwmath::fabs(z);
+        }
         wwmath::fabs(x) + wwmath::fabs(y) + wwmath::fabs(z)
     }
 
     /// `Volume()` (obbox.h): double arithmetic returned as `float`.
     pub fn volume(&self) -> f32 {
+        if plant(11289) {
+            return 2.0f32 * self.extent.x * 2.0f32 * self.extent.y * 2.0f32 * self.extent.z;
+        }
         (if plant(10543) { 2.0f32 * self.extent.x * 2.0f32 * self.extent.y * 2.0f32 * self.extent.z } else { (2.0f64 * self.extent.x as f64 * 2.0f64 * self.extent.y as f64 * 2.0f64 * self.extent.z as f64) as f32 })
     }
 
     /// `Compute_Point(params, &set_point)` (obbox.h).
     pub fn compute_point(&self, params: &[f32; 3]) -> Vector3 {
         let mut point = self.extent;
-        point.x *= params[0];
-        point.y *= if plant(10544) { params[0] } else { params[1] };
+        point.x *= if plant(11288) { params[1] } else { params[0] };
+        point.y *= if plant(11288) || plant(10544) { params[0] } else { params[1] };
         point.z *= params[2];
 
         let rotated = Matrix3x3::rotate_vector(&self.basis, &point);
@@ -169,7 +180,7 @@ impl OBBoxClass {
         let e = &self.extent;
         let b = &self.basis;
         Vector3::new(
-            wwmath::fabs(e[0] * b[0][0]) + (if plant(10545) { e[1] * b[0][1] } else { wwmath::fabs(e[1] * b[0][1]) }) + wwmath::fabs(e[2] * b[0][2]),
+            if plant(11281) { wwmath::fabs(e[0] * b[0][0]) + wwmath::fabs(e[1] * b[1][0]) + wwmath::fabs(e[2] * b[2][0]) } else { wwmath::fabs(e[0] * b[0][0]) + (if plant(10545) { e[1] * b[0][1] } else { wwmath::fabs(e[1] * b[0][1]) }) + wwmath::fabs(e[2] * b[0][2]) },
             wwmath::fabs(e[0] * b[1][0]) + wwmath::fabs(e[1] * b[1][1]) + wwmath::fabs(e[2] * b[1][2]),
             wwmath::fabs(e[0] * b[2][0]) + wwmath::fabs(e[1] * b[2][1]) + wwmath::fabs(e[2] * b[2][2]),
         )
@@ -180,7 +191,7 @@ impl OBBoxClass {
         OBBoxClass {
             extent: input.extent,
             center: (if plant(10546) { input.center } else { Matrix3D::transform_vector(tm, &input.center) }),
-            basis: Matrix3x3::mul_matrix3d_matrix(tm, &input.basis),
+            basis: if plant(11286) { Matrix3x3::mul_matrix_matrix3d(&input.basis, tm) } else { Matrix3x3::mul_matrix3d_matrix(tm, &input.basis) },
         }
     }
 }
@@ -204,7 +215,7 @@ fn oriented_boxes_intersect_on_axis(box0: &OBBoxClass, box1: &OBBoxClass, axis: 
     let c = box1.center - box0.center;
     let cdist = Vector3::dot_product(axis, &c);
 
-    if (cdist > rsum) || (cdist < -rsum) {
+    if (if plant(11284) { cdist >= rsum } else { cdist > rsum }) || (cdist < -rsum) {
         return false;
     }
     true
@@ -251,11 +262,11 @@ fn oriented_boxes_collide_on_axis(box0: &OBBoxClass, v0: &Vector3, box1: &OBBoxC
 
     // project the center distance onto the line:
     let c = box1.center - box0.center;
-    let v = *v1 - *v0;
+    let v = if plant(11283) { *v0 - *v1 } else { *v1 - *v0 };
     let cdist = Vector3::dot_product(axis, &c);
     let vdist = cdist + dt * Vector3::dot_product(axis, &v);
 
-    if (cdist > rsum && vdist > rsum) || (cdist < -rsum && vdist < -rsum) {
+    if (if plant(11290) { cdist > rsum || vdist > rsum } else { cdist > rsum && vdist > rsum }) || (cdist < -rsum && vdist < -rsum) {
         return false;
     }
     true
@@ -321,7 +332,7 @@ fn oriented_box_intersects_tri_on_axis(box_: &OBBoxClass, tri: &TriClass, axis: 
     }
     lep += dist;
 
-    if (if plant(10547) { lep > leb } else { lep >= leb }) {
+    if (if plant(10547) || plant(11285) { lep > leb } else { lep >= leb }) {
         return false;
     }
     true

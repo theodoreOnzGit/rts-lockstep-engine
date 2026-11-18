@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases of each of its 69 operations (test: tests/differential_draft_matrix.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/matrix3.h
@@ -8,6 +9,7 @@
 //! `crate::ww::matrix3d`. The never-compiled `#if 0` Jacobi eigen solver of matrix3.cpp is not translated.
 //! `Set(const Matrix4x4 &)` / `Matrix3x3(const Matrix4x4 &)` take the 4x4 from `super::matrix4`.
 
+use crate::logic::modules::plant;
 use super::matrix4::Matrix4x4;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::quat::Quaternion;
@@ -135,7 +137,7 @@ impl Matrix3x3 {
     pub fn set_axis_sin_cos(&mut self, axis: &Vector3, s: f32, c: f32) {
         self.row[0].set(
             axis[0] * axis[0] + c * (1.0f32 - axis[0] * axis[0]),
-            axis[0] * axis[1] * (1.0f32 - c) - axis[2] * s,
+            if plant(11261) { axis[0] * axis[1] * (1.0f32 - c) + axis[2] * s } else { axis[0] * axis[1] * (1.0f32 - c) - axis[2] * s },
             axis[2] * axis[0] * (1.0f32 - c) + axis[1] * s,
         );
         self.row[1].set(
@@ -155,7 +157,7 @@ impl Matrix3x3 {
     /// products of components are `float`; the `2.0 *` and `1.0 -` make the rest `double`, narrowed when stored.
     pub fn set_quaternion(&mut self, q: &Quaternion) {
         self.row[0][0] = (1.0f64 - 2.0f64 * (q[1] * q[1] + q[2] * q[2]) as f64) as f32;
-        self.row[0][1] = (2.0f64 * (q[0] * q[1] - q[2] * q[3]) as f64) as f32;
+        self.row[0][1] = if plant(11266) { (2.0f64 * (q[0] * q[1] + q[2] * q[3]) as f64) as f32 } else { (2.0f64 * (q[0] * q[1] - q[2] * q[3]) as f64) as f32 };
         self.row[0][2] = (2.0f64 * (q[2] * q[0] + q[1] * q[3]) as f64) as f32;
 
         self.row[1][0] = (2.0f64 * (q[0] * q[1] + q[2] * q[3]) as f64) as f32;
@@ -188,14 +190,16 @@ impl Matrix3x3 {
             // Find largest pivot in column j among rows j..3
             let mut i1 = j;
             for i in (j + 1)..3 {
-                if wwmath::fabs(a.row[i][j]) > wwmath::fabs(a.row[i1][j]) {
+                if if plant(11263) { wwmath::fabs(a.row[i][j]) >= wwmath::fabs(a.row[i1][j]) } else { wwmath::fabs(a.row[i][j]) > wwmath::fabs(a.row[i1][j]) } {
                     i1 = i;
                 }
             }
 
             // Swap rows i1 and j in a and b to put pivot on diagonal
             a.row.swap(i1, j);
-            b.row.swap(i1, j);
+            if !plant(11264) {
+                b.row.swap(i1, j);
+            }
 
             // Scale row j to have a unit diagonal
             // (if a[j][j]==0. upstream does nothing: "singular matrix; can't invert")
@@ -221,6 +225,9 @@ impl Matrix3x3 {
     /// `Determinant()`.
     pub fn determinant(&self) -> f32 {
         let r = &self.row;
+        if plant(11262) {
+            return r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1]) - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0]) + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
+        }
         r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1]) - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0]) - r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0])
     }
 
@@ -285,7 +292,7 @@ impl Matrix3x3 {
             let tmp1 = self.row[i][0];
             let tmp2 = self.row[i][2];
             self.row[i][0] = c * tmp1 - s * tmp2;
-            self.row[i][2] = s * tmp1 + c * tmp2;
+            self.row[i][2] = if plant(11269) { s * tmp1 - c * tmp2 } else { s * tmp1 + c * tmp2 };
         }
     }
 
@@ -307,6 +314,9 @@ impl Matrix3x3 {
     /// `Get_X_Rotation()`: `Atan2` of `(*this) * (0,1,0)`.
     pub fn get_x_rotation(&self) -> f32 {
         let v = self.mul_vector(&Vector3::new(0.0, 1.0, 0.0));
+        if plant(11270) {
+            return wwmath::atan2(v[1], v[2]);
+        }
         wwmath::atan2(v[2], v[1])
     }
 
@@ -365,7 +375,13 @@ impl Matrix3x3 {
 
     /// `operator * (a, b)`: `ROWCOL(i,j) = a[i][0]*b[0][j] + a[i][1]*b[1][j] + a[i][2]*b[2][j]`.
     pub fn mul_matrix(a: &Matrix3x3, b: &Matrix3x3) -> Matrix3x3 {
-        let rc = |i: usize, j: usize| a.row[i][0] * b.row[0][j] + a.row[i][1] * b.row[1][j] + a.row[i][2] * b.row[2][j];
+        let rc = |i: usize, j: usize| {
+            if plant(11265) {
+                a.row[i][2] * b.row[2][j] + a.row[i][1] * b.row[1][j] + a.row[i][0] * b.row[0][j]
+            } else {
+                a.row[i][0] * b.row[0][j] + a.row[i][1] * b.row[1][j] + a.row[i][2] * b.row[2][j]
+            }
+        };
         Matrix3x3::from_rows(
             &Vector3::new(rc(0, 0), rc(0, 1), rc(0, 2)),
             &Vector3::new(rc(1, 0), rc(1, 1), rc(1, 2)),
@@ -444,7 +460,7 @@ impl Matrix3x3 {
         let y = Vector3::new(self.row[1].x, self.row[1].y, self.row[1].z);
         let z = Vector3::new(self.row[2].x, self.row[2].y, self.row[2].z);
 
-        if Vector3::dot_product(&x, &y) > wwmath::WWMATH_EPSILON {
+        if if plant(11268) { wwmath::fabs(Vector3::dot_product(&x, &y)) > wwmath::WWMATH_EPSILON } else { Vector3::dot_product(&x, &y) > wwmath::WWMATH_EPSILON } {
             return false;
         }
         if Vector3::dot_product(&y, &z) > wwmath::WWMATH_EPSILON {
@@ -471,7 +487,9 @@ impl Matrix3x3 {
         let mut x = Vector3::new(self.row[0][0], self.row[0][1], self.row[0][2]);
         let mut y = Vector3::new(self.row[1][0], self.row[1][1], self.row[1][2]);
         let mut z = Vector3::cross_product(&x, &y);
-        y = Vector3::cross_product(&z, &x);
+        if !plant(11267) {
+            y = Vector3::cross_product(&z, &x);
+        }
 
         let mut len = x.length();
         if len < wwmath::WWMATH_EPSILON {
