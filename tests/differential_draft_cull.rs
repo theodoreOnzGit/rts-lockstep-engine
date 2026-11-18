@@ -41,9 +41,69 @@
 //! least: the tree's `Re_Partition(bounds, boxes)` order of re-insertion; `Update_Culling` after `Set_Cull_Box`; and the
 //! grid's `Re_Partition` re-linking order. Everything simpler (`Add`, `Remove`, point and box collection) I expect to match.
 //!
-//! # Results, plants
+//! # Results (2026-11-18)
 //!
-//! see the comment on #215.
+//! **0 mismatches on the first run: prediction missed.** 12,000 tree programs (101,202,382 dump words) and 12,000 grid
+//! programs (50,641,449 words), the full run takes about 17 s. The arena and the `Arc` lists reproduce the C++ pointers'
+//! structure, order and counts in every operation, including the re-insertion order of `Re_Partition(bounds, boxes)` and
+//! the grid's re-link order.
+//!
+//! Two harness facts found on the way (not draft defects): (1) upstream's `ObjectPoolClass` (mempool.h) assumes 32-bit
+//! pointers (the block's link is `sizeof(void *)` bytes but the objects start 4 bytes in), so on x86_64 the static
+//! pools of `AABTreeNodeClass`, `AABTreeLinkClass` and `GridLinkClass` crashed at process exit (`SIGSEGV` after the tests
+//! passed); `differential/shim_draft/mempool.h` replaces it with the same free-list pool and a 16-byte block header (no
+//! behaviour of the culling systems depends on the pool). (2) upstream's `~GridCullSystemClass` frees the cell array and
+//! leaves every object linked (the objects keep a dangling `GridLinkClass::System`), so the generator removes the objects
+//! before it destroys a grid. The draft's grid has no destructor at all.
+//!
+//! # Planted bugs
+//!
+//! `L9_PLANT=<id> DRAFT_CASES=3000`: programs of 3,000 that differ (a draft panic counts; it is reported):
+//!
+//! | id | planted bug | programs |
+//! |---|---|---|
+//! | 11310 | tree: `Collect_Objects_Recursive(node)` visits front before back | 685 |
+//! | 11311 | tree: point collection skips the object's own box test | 1,933 |
+//! | 11312 | tree: an AABox that contains the node is not accepted whole | 53 |
+//! | 11313 | tree: frustum objects need `INSIDE` | 1,325 |
+//! | 11314 | tree: sphere objects are tested with the node's box | 1,796 |
+//! | 11315 | tree: `Add_Object_Recursive` orders big and small children the other way | 533 |
+//! | 11316 | tree: never tries the smaller child | 1,775 |
+//! | 11317 | tree: `AABTreeNodeClass::Add_Object` always adds the box | 2,905 |
+//! | 11318 | tree: `Remove_Object_Internal` leaves `ObjectCount` | 2,730 |
+//! | 11319 | tree: `Update_Culling` leaves `ObjectCount` | 2,746 |
+//! | 11320 | tree: `Update_Bounding_Boxes` ignores the objects | 759 |
+//! | 11321 | tree: `Partition` splits at 2 objects | 1,990 |
+//! | 11322 | tree: split plane case 1 uses `+` | 2,153 |
+//! | 11323 | tree: `Compute_Score` leaves out the count | 2,319 |
+//! | 11324 | tree: the front box is not grown by `WWMATH_EPSILON` | 1,849 |
+//! | 11325 | tree: `Partition(bounds, boxes)` stops at 2 boxes | 1,818 |
+//! | 11326 | tree: the root's extent is not set to `FLT_MAX` | 1,913 |
+//! | 11327 | tree: `Re_Index_Nodes` numbers back before front | 2,493 |
+//! | 11328 | tree: `Enter_Sibling` from the front child stays | 1,437 |
+//! | 11329 | tree: brute force plane 1 uses the extent (the upstream defect fixed) | 898 |
+//! | 11330 | tree: `Enter_Parent` refuses at index 1 | 1,437 |
+//! | 11331 | grid: `map_point_to_cell` truncates instead of `floor` | 447 |
+//! | 11332 | grid: `map_indices_to_address` uses `CellCount[1]` for j | 620 (panics) |
+//! | 11333 | grid: `link_object` `>=` for the extent test | 1,423 |
+//! | 11334 | grid: `Update_Culling` always re-links | 1,432 |
+//! | 11335 | grid: `Re_Partition` `bigdim` `>=` | 161 |
+//! | 11336 | grid: termination `>` the count | 1,546 |
+//! | 11337 | grid: `Collect_And_Unlink_All` loops i and k swapped | 1,301 (panics) |
+//! | 11338 | grid: `init_volume` leaves `Max[1]` | 2,461 |
+//! | 11339 | grid: the per-k re-seek of the address uses `k` | 890 |
+//! | 11340 | grid: point collection skips the object's box test | 2,643 |
+//! | 11341 | grid: `Remove_Object_Internal` leaves `ObjCount` | 2,850 |
+//! | 11342 | grid: `Update_Culling` maps the box's extent, not its centre | 2,631 |
+//! | 11343 | grid: `Set_Min_Cell_Size` fixes z at 10 | 1,939 |
+//! | 11344 | `Add_To_Collection` does not link `NextCollected` | tree 2,432; grid 2,686 |
+//! | 11345 | `Set_Cull_Box` updates only when `just_loaded` | tree 2,372; grid 1,738 |
+//! | 11346 | `Peek_First_Collected_Object_Internal` skips the head | tree 2,865; grid 2,858 |
+//!
+//! **37 of 37 caught** (11312, the fewest, needs a query box that contains a node). The first plants for 11332/11337/
+//! 11339/11342/11343 made the draft panic, loop or run out of memory (a cycle in a list); the dumps' list walks now stop
+//! at 1,000 entries and the panic hook is silent in planted runs, and 11342/11343 were replaced by plants that do not
+//! make cycles.
 
 mod support;
 
@@ -68,6 +128,8 @@ extern "C" {
 /// The C++ wrapper's objects and rand state are global.
 static CPP: Mutex<()> = Mutex::new(());
 
+/// More objects than a program has (128): a longer list is a cycle.
+const MAX_LIST: usize = 1000;
 const TREE_CASES: usize = 12_000;
 const GRID_CASES: usize = 12_000;
 
@@ -131,6 +193,7 @@ fn dump_collected(out: &mut Vec<u32>, base: &rts_lockstep_engine::drafts::wwlib:
     let mut c = base.peek_first_collected_object_internal();
     while let Some(h) = c {
         list.push(id_of(objs, &h));
+        assert!(list.len() <= MAX_LIST, "the collection list does not end (a cycle)");
         c = base.peek_next_collected_object_internal(Some(&h));
     }
     out.push(list.len() as u32);
@@ -157,8 +220,11 @@ fn dump_tree_node(out: &mut Vec<u32>, nodes: &[AABTreeNodeClass], id: NodeId, ob
     out.push(n.user_data);
     out.push(n.object_count() as u32);
     let mut c = n.object.clone();
+    let mut listed = 0;
     while let Some(h) = c {
         out.push(id_of(objs, &h) as u32);
+        listed += 1;
+        assert!(listed <= MAX_LIST, "a node's list does not end (a cycle)");
         c = next_object_tree(&h);
     }
     if let Some(f) = n.front {
@@ -226,6 +292,7 @@ fn dump_grid_list(out: &mut Vec<u32>, head: &Option<CullableHandle>, objs: &[Opt
             _ => panic!("no grid link"),
         };
         list.push((id_of(objs, &h), addr, prev.map(|p| id_of(objs, &p)).unwrap_or(-1), next.clone().map(|p| id_of(objs, &p)).unwrap_or(-1)));
+        assert!(list.len() <= MAX_LIST, "a cell's list does not end (a cycle)");
         c = next;
     }
     out.push(list.len() as u32);

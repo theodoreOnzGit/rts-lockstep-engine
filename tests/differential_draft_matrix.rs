@@ -34,13 +34,48 @@
 //!   `Matrix3x3::Set(Quaternion)`, whose `double` and `float` mixture I cannot check by eye, and the `ROWCOL`
 //!   statements, whose left-to-right order the draft must keep.
 //!
-//! # Results
+//! # Results (2026-11-18)
 //!
-//! see the comment on #215 and `RESULTS` below (filled in after the runs).
+//! **0 mismatches on the first run**, 20,000 cases of each of 69 `Matrix3x3` operations, 41 `Matrix4x4` operations and the
+//! ten `Matrix3x3` constants (every output float by bits), max ULP 0; some hundreds of both-NaN pairs differ only in
+//! payload (`Re_Orthogonalize` 127 of 180,000, a few others), which `tests/support` does not count. **Prediction missed:**
+//! I expected a miss in `Set(Quaternion)` or the `ROWCOL` order; there was none (the products are `float`, so the `double`
+//! `2.0 *` and `1.0 -` round to the same `float` as `float` arithmetic would). The `Is_Orthogonal` inputs were widened
+//! after the first plant run (random unit rows, so a negative dot product with the other checks passing occurs): plant 11268
+//! was first missed (0 of 20,000), then caught.
+//!
+//! Excluded inputs: `Init_Ortho` and `Init_Perspective` are run only on arguments that pass upstream's `assert`s (about
+//! half of the random ones): the draft keeps them as `assert!`, which also fires in release, where upstream's `assert` is
+//! compiled out (`NDEBUG`).
 //!
 //! # Planted bugs
 //!
-//! `L9_PLANT=<id>` (the run prints a `PLANTED` line and fails on purpose when not caught): see the table at the end.
+//! `L9_PLANT=<id> DRAFT_CASES=20000` (the run prints a `PLANTED` line). Mismatching outputs (and operations affected):
+//!
+//! | id | planted bug | outputs | ops |
+//! |---|---|---|---|
+//! | 11261 | `Set(axis, s, c)` row 0 column 1 adds the `axis[2]*s` term | 76,140 | 4 |
+//! | 11262 | `Determinant` adds the third term | 17,060 | 1 |
+//! | 11263 | `Inverse` pivot test `>=` | 6,221 | 1 |
+//! | 11264 | `Inverse` swaps the rows of `a` but not of `b` | 105,962 | 1 |
+//! | 11265 | `a * b` sums in the other order | 33,585 | 1 |
+//! | 11266 | `Set(Quaternion)` `[0][1]` adds where upstream subtracts | 38,794 | 2 |
+//! | 11267 | `Re_Orthogonalize` skips `y = z x x` | 52,262 | 1 |
+//! | 11268 | `Is_Orthogonal` takes the absolute value of the first dot product | 249 | 1 |
+//! | 11269 | `Rotate_Y(s, c)` sign | 110,827 | 2 |
+//! | 11270 | `Get_X_Rotation` swaps the `atan2` arguments | 18,588 | 1 |
+//! | 11271 | `Matrix4x4 /=` divides (the defect fixed) | 294,952 | 1 |
+//! | 11272 | `Init_Ortho` `[0][3]` loses its sign | 19,985 | 1 |
+//! | 11273 | `Init_Perspective(hfov, ..)` in `float` | 5,770 | 1 |
+//! | 11274 | `Matrix3D * Matrix4x4` last row is 0,0,0,1 | 141,426 | 2 |
+//! | 11275 | `Matrix4x4 * Matrix3D` drops `a[i][3]` | 128,466 | 2 |
+//! | 11276 | `bits_equal` compares by value | 896 | 2 |
+//! | 11277 | `Transform_Vector` drops the translation z | 33,222 | 2 |
+//! | 11278 | `Matrix4x4::Inverse` pivot test `>=` | 30,385 | 1 |
+//! | 11279 | `Transpose` `[2][3]` | 18,847 | 1 |
+//!
+//! **19 of 19 caught.** (11266 replaced a first plant, 11266 as an `f64` instead of `f32` product, that cannot differ:
+//! the product by 2.0 is exact.)
 
 mod support;
 

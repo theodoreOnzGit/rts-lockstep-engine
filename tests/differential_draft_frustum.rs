@@ -25,9 +25,29 @@
 //! both sides. The one thing to watch: upstream's `Matrix3D::Transform_Vector(tm, Corners[i], &Corners[i])` is aliased,
 //! the draft's is by value.
 //!
-//! # Results, plants
+//! # Results (2026-11-18)
 //!
-//! see the comment on #215 and the planted bug table at the end of this file's comment block.
+//! **0 mismatches on the first run**, 60,000 cases x 66 floats = 3,960,000 compared, max ULP 0; 16,213 both-NaN pairs
+//! differ only in payload (10 % of the inputs are the full mixed generator, with NaN and infinity). **Prediction held:**
+//! the by-value `Transform_Vector` is the same as the aliased one. Degenerate cameras (a zero or repeated column, small
+//! integers, so `Dot(Z, X x Y)` is exactly 0) were added after the first plant run, which missed 11293 (`<=` for `<`).
+//!
+//! # Planted bugs
+//!
+//! `L9_PLANT=<id>`: mismatching floats of 3,960,000:
+//!
+//! | id | planted bug | floats |
+//! |---|---|---|
+//! | 11291 | the sign flip when either distance is positive (`||`) | 441,018 |
+//! | 11292 | `Y x X` for the z vector test | 2,290,422 |
+//! | 11293 | the reflected-camera test is `<= 0` | 65,068 |
+//! | 11294 | reflected: far corner 4 at `znear` | 448,074 |
+//! | 11295 | the last corner is not transformed to world space | 897,829 |
+//! | 11296 | plane 2 from points in the other order | 196,373 |
+//! | 11297 | `BoundMin.X` not updated | 49,456 |
+//! | 11298 | `BoundMax.Z` takes `Y` | 49,541 |
+//!
+//! **8 of 8 caught.**
 
 mod support;
 

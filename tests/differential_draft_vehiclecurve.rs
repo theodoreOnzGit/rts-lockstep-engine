@@ -31,9 +31,31 @@
 //! interposed `sqrt` (exact rounding), so no miss from it. A possible miss: the arc-angle wraps (`WWMath::Wrap` on
 //! `float` vs the draft's) near multiples of 2 pi.
 //!
-//! # Results, plants
+//! # Results (2026-11-18)
 //!
-//! see the comment on #215.
+//! **0 mismatches on the first run**: 40,000 programs, 37,724 of them with an `Evaluate` (about 250,000 result groups of
+//! 8 floats), 2,141,823 floats compared, max ULP 0, no NaN. **Prediction held.** One style point fixed in the draft:
+//! `Find_Tangent`'s `::sqrt` was the `f64` method; it is now `petir::Real::sqrt` (the same value, sqrt is exactly rounded).
+//!
+//! # Planted bugs
+//!
+//! `L9_PLANT=<id>`: mismatching floats of 2,141,823:
+//!
+//! | id | planted bug | floats |
+//! |---|---|---|
+//! | 11299 | `Find_Tangent` `dist > radius` | 2,907 |
+//! | 11300 | the clockwise test inverted | 306,403 |
+//! | 11301 | `Get_Angle_Delta` counter-clockwise `angle1 >= angle2` | 11,129 |
+//! | 11302 | `Find_Turn_Arc` `delta1 <= delta2` | 332 |
+//! | 11303 | `point_out.y` loses its minus | 148,072 |
+//! | 11304 | the long-way-round check at 180 degrees | 38 |
+//! | 11305 | `time1` without the straight part | 81,474 |
+//! | 11306 | `seg_time <= time2` | 7,353 |
+//! | 11307 | `m_LastTime` of the line part uses `time1` | 85,143 |
+//! | 11308 | `Set_Key` does not mark the arcs dirty | 9,041 |
+//! | 11309 | the first arc's sharpness over 20 degrees | 1,046 |
+//!
+//! **11 of 11 caught** (11304 the fewest, 38 floats: the 200-degree check needs a very tight turn).
 
 mod support;
 

@@ -259,6 +259,9 @@ impl GridCullSystemClass {
     /// `Set_Min_Cell_Size`.
     pub fn set_min_cell_size(&mut self, size: &Vector3) {
         self.min_cell_size = *size;
+        if plant(11343) {
+            self.min_cell_size.z = 10.0;
+        }
     }
 
     /// `Get_Termination_Count`.
@@ -583,7 +586,7 @@ impl GridCullSystemClass {
     /// `Update_Culling(obj)`: relink when the cell the box's centre falls in has changed.
     pub fn update_culling(&mut self, obj: &CullableHandle) {
         assert!(obj.read().unwrap().get_culling_system() == Some(self.base.id));
-        let (address, _) = self.map_point_to_address(&cull_box_of(obj).center);
+        let (address, _) = self.map_point_to_address(&(if plant(11342) { cull_box_of(obj).extent } else { cull_box_of(obj).center }));
         let grid_address = link_of(obj, |l| l.grid_address);
         if address != grid_address || plant(11334) {
             self.unlink_object(obj);
@@ -721,9 +724,7 @@ fn link_object_to_list(head: &mut Option<CullableHandle>, obj: &CullableHandle) 
         l.prev = None;
     });
     if let Some(next) = &old_head {
-        if !plant(11342) {
-            link_of_mut(next, |l| l.prev = Some(obj.clone()));
-        }
+        link_of_mut(next, |l| l.prev = Some(obj.clone()));
     }
     *head = Some(obj.clone());
 }
@@ -743,9 +744,7 @@ fn unlink_object_from_list(head: &mut Option<CullableHandle>, obj: &CullableHand
     }
 
     if let Some(n) = &next {
-        if !plant(11343) {
-            link_of_mut(n, |l| l.prev = prev.clone());
-        }
+        link_of_mut(n, |l| l.prev = prev.clone());
     }
 
     link_of_mut(obj, |l| {

@@ -30,9 +30,33 @@
 //! `_On_Axis` function negates it, so the later cross products use the negated axis; the draft copies `A[i]`. A negated
 //! axis gives an exactly negated cross product and the callee negates it back, so I predict no visible effect.
 //!
-//! # Results, plants
+//! # Results (2026-11-18)
 //!
-//! see the comment on #215 and the table at the end of this comment block.
+//! **0 mismatches on the first run**, 40,000 cases of each of 14 operations (about 600,000 floats each for the box
+//! outputs), max ULP 0. The booleans were true in 2,687 of 40,000 (`==`), 34,640 (`!=`), 31,071 (intersect), 33,248
+//! (collide) and 17,929 (triangle): both outcomes are exercised. **Prediction held:** the by-reference `A[i]` flip in
+//! `Oriented_Box_Intersects_Tri` made no visible difference. Touching boxes and a triangle on a face were added to the
+//! generator after the first plant run, which missed 11285 (`lep >= leb`, 0 of 40,000) and caught 11284 only 35 times.
+//!
+//! # Planted bugs
+//!
+//! `L9_PLANT=<id>`: mismatching outputs of the compared floats (operations affected):
+//!
+//! | id | planted bug | outputs | ops |
+//! |---|---|---|---|
+//! | 11280 | `Project_To_Axis` drops one `fabs` | 31,415 | 4 |
+//! | 11281 | `Compute_Axis_Aligned_Extent` reads the basis transposed | 28,737 | 1 |
+//! | 11282 | `Init_From_Box_Points` divides the centre by 7 | 240,000 | 1 |
+//! | 11283 | `Collide`: `V = v0 - v1` | 4,343 | 1 |
+//! | 11284 | `Intersect_On_Axis` `cdist >= rsum` | 8,215 | 1 |
+//! | 11285 | `Intersects_Tri_On_Axis` `lep > leb` | 6,900 | 1 |
+//! | 11286 | `Transform` multiplies the basis in the other order | 259,850 | 1 |
+//! | 11287 | `!=` is `!(==)` | 2,673 | 1 |
+//! | 11288 | `Compute_Point` swaps x and y parameters | 101,463 | 1 |
+//! | 11289 | `Volume` in `float` | 7,859 | 1 |
+//! | 11290 | `Collide_On_Axis` `||` for `&&` | 21,122 | 1 |
+//!
+//! **11 of 11 caught.**
 
 mod support;
 
