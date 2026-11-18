@@ -36,3 +36,4 @@ pub mod popup_join_game;
 pub mod popup_host_game;
 pub mod popup_ladder_select;
 pub mod wol_map_select_menu;
+pub mod wol_welcome_menu;
