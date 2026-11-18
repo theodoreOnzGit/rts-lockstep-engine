@@ -8,7 +8,7 @@
 //! "off in the game" (`Activate_Fog_On_Load`, `MungeSortOnLoad`, `OverbrightModifyOnLoad` are all false), plus the
 //! legacy `read_scg` and `MeshLoadContextClass::Get_Texcoord_Array`.
 //!
-//! **Excluded: the 22 `MeshModelClass::write_*` functions** (`write_chunks`, `write_user_text`, `write_triangles`,
+//! **Excluded: the 20 `MeshModelClass::write_*` functions** (`write_chunks`, `write_user_text`, `write_triangles`,
 //! `write_vertices`, `write_vertex_normals`, `write_vertex_shade_indices`, `write_vertex_influences`,
 //! `write_material_info`, `write_shaders`, `write_vertex_materials`, `write_textures`, `write_material_pass`,
 //! `write_vertex_material_ids`, `write_shader_ids`, `write_scg`, `write_dig`, `write_dcg`, `write_texture_stage`,
