@@ -20,3 +20,7 @@ pub mod projector;
 pub mod decalsys;
 pub mod texturefilter;
 pub mod bitmaphandler;
+pub mod shddef;
+pub mod shddeffactory;
+pub mod shddefmanager;
+pub mod shdinterface;
