@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 200,000 calls in one sequence (test: tests/differential_draft_encrypt.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/Common/encrypt.h
@@ -13,6 +14,8 @@
 //!   single-threaded in its logic, so there is nothing to translate.
 //! - `System/Compression.cpp`: its only code is `DoCompressTest` under `#ifdef TEST_COMPRESSION` (never defined). Not translated.
 //! - `System/Directory.cpp`: the whole file is inside `#if (0)`. Not translated.
+
+use crate::logic::modules::plant;
 
 /// `MAX_ENCRYPTED_STRING`.
 pub const MAX_ENCRYPTED_STRING: usize = 8;
@@ -42,20 +45,32 @@ impl EncryptState {
     pub fn encrypt_string(&mut self, string: &[u8]) -> [u8; MAX_ENCRYPTED_STRING] {
         // unsigned int Length = strlen(String);
         let mut length = string.iter().position(|&b| b == 0).unwrap_or(string.len());
-        if length > MAX_ENCRYPTED_STRING {
-            length = MAX_ENCRYPTED_STRING;
+        if length > MAX_ENCRYPTED_STRING - if plant(11461) { 1 } else { 0 } {
+            length = MAX_ENCRYPTED_STRING - if plant(11461) { 1 } else { 0 };
         }
         let at = |i: usize| -> i32 { string.get(i).copied().unwrap_or(0) as i8 as i32 }; // `char` is signed in MSVC.
-        let mut dn_cnt = length;
+        if plant(11467) {
+            // a fresh Temp_Buffer per call instead of upstream's static
+            self.temp_buffer = [0; MAX_ENCRYPTED_STRING + 1];
+        }
+        let mut dn_cnt = if plant(11463) { length.saturating_sub(1) } else { length };
         for up_cnt in 0..length {
             let c = at(up_cnt);
             let d = at(dn_cnt);
-            let v = if c & 0x01 != 0 { (c << (c & 0x01)) & d } else { (c << (c & 0x01)) ^ d };
+            let v = if plant(11464) {
+                if c & 0x01 == 0 { (c << (c & 0x01)) & d } else { (c << (c & 0x01)) ^ d }
+            } else if plant(11465) {
+                if c & 0x01 != 0 { (c << (c & 0x01)) & d } else { (c << 1) ^ d }
+            } else if c & 0x01 != 0 {
+                (c << (c & 0x01)) & d
+            } else {
+                (c << (c & 0x01)) ^ d
+            };
             self.temp_buffer[up_cnt] = v as u8;
             dn_cnt -= 1; // DnCnt-- (reaches 0 only after the last pass)
         }
-        for cnt in 0..MAX_ENCRYPTED_STRING {
-            self.return_buffer[cnt] = BASE_STRING[(self.temp_buffer[cnt] & 0x3F) as usize];
+        for cnt in 0..(if plant(11462) { length } else { MAX_ENCRYPTED_STRING }) {
+            self.return_buffer[cnt] = BASE_STRING[if plant(11466) { (self.temp_buffer[cnt] % 63) as usize } else { (self.temp_buffer[cnt] & 0x3F) as usize }];
         }
         self.return_buffer[MAX_ENCRYPTED_STRING] = 0;
         let mut out = [0u8; MAX_ENCRYPTED_STRING];
