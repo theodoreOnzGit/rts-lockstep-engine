@@ -21,3 +21,6 @@ pub mod w3d_debug_icons;
 pub mod w3d_motd;
 pub mod w3d_display_string_manager;
 pub mod w3d_status_circle;
+pub mod w3d_game_client;
+pub mod w3d_in_game_ui;
+pub mod w3d_main_menu;

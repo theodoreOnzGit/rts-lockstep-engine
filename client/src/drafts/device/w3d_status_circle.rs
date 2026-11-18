@@ -71,6 +71,12 @@ impl W3DStatusCircle {
         W3DStatusCircle { need_update: false, diffuse: 255, num_triangles: 0, initialised: false, vertex_buffer_circle: Vec::new() }
     }
 
+    /// `W3DStatusCircle::setColor` (W3DStatusCircle.h:85, static upstream): the team colour, `b + (g<<8) + (r<<16)`.
+    pub fn set_color(&mut self, r: i32, g: i32, b: i32) {
+        self.need_update = true;
+        self.diffuse = b + (g << 8) + (r << 16);
+    }
+
     /// `W3DStatusCircle::freeMapResources` (W3DStatusCircle.cpp:147).
     pub fn free_map_resources(&mut self) -> i32 {
         self.initialised = false;
