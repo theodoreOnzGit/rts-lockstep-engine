@@ -26,3 +26,8 @@ pub mod lan_map_select_menu;
 pub mod network_direct_connect;
 pub mod download_menu;
 pub mod lan_game_options_menu;
+pub mod wol_status_menu;
+pub mod wol_message_window;
+pub mod wol_custom_score_screen;
+pub mod wol_ladder_screen;
+pub mod wol_locale_select_popup;
