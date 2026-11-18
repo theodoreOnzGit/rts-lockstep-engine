@@ -11,3 +11,5 @@ pub mod assetstatus;
 pub mod w3dexclusionlist;
 pub mod static_sort_list;
 pub mod renderobjectrecycler;
+pub mod coltest;
+pub mod matinfo;
