@@ -30,3 +30,5 @@ pub mod shader_presets;
 pub mod line3d;
 pub mod dynamesh;
 pub mod decalmsh;
+pub mod streak_render;
+pub mod streak;
