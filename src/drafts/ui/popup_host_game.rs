@@ -401,7 +401,7 @@ pub fn popup_host_game_system<H: PopupHostGameHost>(wm: &mut GameWindowManager, 
                 wm.focus_reply = true;
             }
         }
-        ggm::GEM_UPDATE_TEXT => {
+        crate::client::gadget_text_entry::gem::UPDATE_TEXT => {
             let Some(control) = data_win(d1) else { return MsgHandled::Handled };
             let p = h.popup_host_game().clone();
             if wm.tree.windows[control].id == p.text_entry_game_name_id {
