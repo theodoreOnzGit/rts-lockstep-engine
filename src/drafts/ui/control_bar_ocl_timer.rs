@@ -6,6 +6,7 @@
 
 use crate::client::window_manager::{GameWindowManager, GuiHost};
 use crate::client::window_script::win_status;
+use crate::logic::modules::plant;
 
 /// `LOGICFRAMES_PER_SECOND` (GameCommon.h).
 pub const LOGICFRAMES_PER_SECOND: u32 = 30;
@@ -55,7 +56,7 @@ pub fn update_ocl_timer_text_display<H: OclTimerHost>(wm: &mut GameWindowManager
     let seconds = (total_seconds as i32) - (minutes * 60);
 
     // format the message
-    let text = if seconds < 10 {
+    let text = if (seconds < 10 && !plant(12661)) || (seconds <= 10 && plant(12661)) {
         let fmt = h.fetch_text(b"CONTROLBAR:OCLTimerDescWithPadding");
         h.format_minutes_seconds(&fmt, minutes, seconds)
     } else {
@@ -68,11 +69,20 @@ pub fn update_ocl_timer_text_display<H: OclTimerHost>(wm: &mut GameWindowManager
     }
     if let Some(b) = bar_window {
         // `(percent * 100)` converted to Int by the call
-        h.gadget_progress_bar_set_progress(wm, b, (percent * 100.0) as i32);
+        let progress = if plant(12662) {
+            (percent * 100.0 + 0.5) as i32
+        } else if plant(12663) {
+            (f64::from(percent) * 100.0) as i32
+        } else {
+            (percent * 100.0) as i32
+        };
+        h.gadget_progress_bar_set_progress(wm, b, progress);
     }
 
     // record this as the last time displayed
-    h.set_displayed_ocl_timer_seconds(total_seconds);
+    if !plant(12668) {
+        h.set_displayed_ocl_timer_seconds(total_seconds);
+    }
 }
 
 /// `ControlBar::populateOCLTimer(creatorObject)` (ControlBarOCLTimer.cpp:84).
@@ -87,16 +97,16 @@ pub fn populate_ocl_timer<H: OclTimerHost>(wm: &mut GameWindowManager, h: &mut H
     let id = h.name_to_key(b"ControlBar.wnd:OCLTimerSellButton");
     let win = wm.win_get_window_from_id(parent, id);
 
-    if !h.is_tech_building(creator) {
+    if !h.is_tech_building(creator) && !(plant(12666) && h.is_auto_rallypoint(creator)) {
         // Surgical bug fix.
-        let command_button = h.find_command_button(b"Command_Sell");
+        let command_button = h.find_command_button(if plant(12667) { b"Command_SetRallyPoint" } else { b"Command_Sell" });
         if let Some(w) = win {
             h.set_control_command(wm, w, command_button);
             wm.win_set_status(w, win_status::USE_OVERLAY_STATES);
         }
     }
     // Another last minute hack due to time constraint and feature creep
-    else if h.is_tech_building(creator) && h.is_auto_rallypoint(creator) {
+    else if (h.is_tech_building(creator) && h.is_auto_rallypoint(creator) && !plant(12669)) || (plant(12669) && h.is_auto_rallypoint(creator)) {
         // This time we want a rally point button to show up instead of a sell button
         let command_button = h.find_command_button(b"Command_SetRallyPoint");
         if let Some(w) = win {
@@ -104,27 +114,34 @@ pub fn populate_ocl_timer<H: OclTimerHost>(wm: &mut GameWindowManager, h: &mut H
             wm.win_set_status(w, win_status::USE_OVERLAY_STATES);
         }
         // for objects that have a production exit interface, we may have a rally point set; show it in the world
-        let _had_exit = h.show_rally_point_of_exit(creator);
+        if !plant(12670) {
+            let _had_exit = h.show_rally_point_of_exit(creator);
+        }
     } else if let Some(w) = win {
         wm.win_hide(w, true);
     }
 
     // set the text percent and bar of our timer we are displaying
-    update_context_ocl_timer(wm, h);
+    if !plant(12677) {
+        update_context_ocl_timer(wm, h);
+    }
 
     // set the portrait for the thing being constructed
     h.set_portrait_by_object(creator);
+    if plant(12677) {
+        update_context_ocl_timer(wm, h);
+    }
 }
 
 /// `ControlBar::updateContextOCLTimer()` (ControlBarOCLTimer.cpp:140).
 pub fn update_context_ocl_timer<H: OclTimerHost>(wm: &mut GameWindowManager, h: &mut H) {
     let Some(obj) = h.current_selected_object() else { return };
     let frames = h.ocl_update_remaining_frames(obj);
-    let seconds = frames / LOGICFRAMES_PER_SECOND;
+    let seconds = if plant(12664) { frames.div_ceil(LOGICFRAMES_PER_SECOND) } else { frames / LOGICFRAMES_PER_SECOND };
     let percent = h.ocl_update_countdown_percent(obj);
 
     // if the time has changed since what was last shown to the user update the text
-    if h.displayed_ocl_timer_seconds() != seconds {
+    if (h.displayed_ocl_timer_seconds() != seconds && !plant(12665)) || (plant(12665) && h.displayed_ocl_timer_seconds() < seconds) {
         update_ocl_timer_text_display(wm, h, seconds, percent);
     }
 }
