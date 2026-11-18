@@ -367,14 +367,10 @@ impl<S: ShdShaderInstance> ShdMeshClass<S> {
         self.cached_bounding_sphere = sphere;
         // (the ALIGNED/ORIENTED branch is commented out upstream)
         let mut b = self.get_obj_space_bounding_box();
-        // AABoxClass::Transform(tm): center = tm * center; extent = |R| * extent
-        b.center = Matrix3D::transform_vector(&tm, &b.center);
-        let e = b.extent;
-        let r = |row: usize| tm.row[row];
-        let ex = r(0).x.abs() * e.x + r(0).y.abs() * e.y + r(0).z.abs() * e.z;
-        let ey = r(1).x.abs() * e.x + r(1).y.abs() * e.y + r(1).z.abs() * e.z;
-        let ez = r(2).x.abs() * e.x + r(2).y.abs() * e.y + r(2).z.abs() * e.z;
-        b.extent = Vector3::new(ex, ey, ez);
+        // AABoxClass::CachedBoundingBox.Transform(Get_Transform()) -> Matrix3D::Transform_Center_Extent_AABox
+        let (c, e) = tm.transform_center_extent_aabox(&b.center, &b.extent);
+        b.center = c;
+        b.extent = e;
         self.cached_bounding_box = b;
     }
 

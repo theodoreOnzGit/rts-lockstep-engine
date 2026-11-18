@@ -66,3 +66,4 @@ pub mod w3d_dep;
 pub mod shdsubmesh;
 pub mod shdmesh;
 pub mod shdrenderer;
+pub mod texproject;
