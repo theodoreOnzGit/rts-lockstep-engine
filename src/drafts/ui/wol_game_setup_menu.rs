@@ -929,7 +929,7 @@ fn start_pressed<H: WolGameSetupMenuHost>(wm: &mut GameWindowManager, h: &mut H)
             }
         }
     }
-    if num_random + teams.len() as i32 < h.net_min_players() {
+    if (num_random + teams.len() as i32) < h.net_min_players() {
         if room.am_i_host {
             let text = h.fetch_text(b"LAN:NeedMoreTeams");
             let c = h.gamespy_color_default();

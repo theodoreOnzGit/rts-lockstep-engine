@@ -51,7 +51,7 @@ pub fn popup_communicator_input<H: PopupCommunicatorHost>(wm: &mut GameWindowMan
         let state = d2 as u8;
         if k == key::ESC {
             // send a simulated selected event to the parent window of the back/exit button
-            if state & key::STATE_UP != 0 {
+            if u32::from(state) & key::STATE_UP != 0 {
                 let p = h.popup_communicator().clone();
                 wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(p.button_ok), p.button_ok_id as u32);
             }

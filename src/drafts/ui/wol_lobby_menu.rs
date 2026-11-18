@@ -72,7 +72,7 @@ pub struct LobbyGroupRoom {
 pub const PEER_FLAG_OP: i32 = 1 << 1;
 
 /// A queued `PEERRESPONSE_PLAYERUTM` / `PEERRESPONSE_ROOMUTM` (`TheLobbyQueuedUTMs`).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LobbyUtm {
     pub is_room_utm: bool,
     pub command: Vec<u8>,
@@ -1420,7 +1420,7 @@ pub fn wol_lobby_menu_system<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h:
                 }
             }
         }
-        ggm::GLM_DOUBLE_CLICKED => {
+        crate::client::gadget_list_box::glm::DOUBLE_CLICKED => {
             if h.wol_lobby_menu().button_pushed {
                 return MsgHandled::Handled;
             }
@@ -1438,7 +1438,7 @@ pub fn wol_lobby_menu_system<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h:
                 }
             }
         }
-        ggm::GLM_RIGHT_CLICKED => {
+        crate::client::gadget_list_box::glm::RIGHT_CLICKED => {
             let Some(control) = data_win(d1) else { return MsgHandled::Handled };
             let control_id = wm.tree.windows[control].id;
             let m = h.wol_lobby_menu().clone();

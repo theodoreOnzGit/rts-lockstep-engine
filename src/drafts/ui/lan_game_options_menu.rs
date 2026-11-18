@@ -347,7 +347,7 @@ pub fn start_pressed<H: LanGameOptionsHost>(wm: &mut GameWindowManager, h: &mut 
             }
         }
     }
-    if num_random + teams.len() as i32 < h.net_min_players() {
+    if (num_random + teams.len() as i32) < h.net_min_players() {
         if h.lan_am_i_host() {
             let text = h.fetch_text(b"LAN:NeedMoreTeams");
             h.lan_on_chat_system(&text);

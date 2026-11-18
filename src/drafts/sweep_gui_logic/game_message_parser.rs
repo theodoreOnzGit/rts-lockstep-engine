@@ -54,7 +54,7 @@ impl GameMessageParser {
     /// `lasttype` starts at `ARGUMENTDATATYPE_UNKNOWN`, so that a first run is closed only when it has a count.
     pub fn from_message(msg: &GameMessage) -> Self {
         let mut p = GameMessageParser::new();
-        let arg_count = msg.get_argument_count();
+        let arg_count = msg.get_argument_count() as i32;
         let mut lasttype = ArgumentDataType::Unknown;
         let mut this_type_count: i32 = 0;
         for i in 0..arg_count {

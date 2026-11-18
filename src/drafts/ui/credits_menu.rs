@@ -92,7 +92,7 @@ pub fn credits_menu_input<H: CreditsHost>(wm: &mut GameWindowManager, h: &mut H,
         let state = d2 as u8;
         if k == key::ESC {
             // pop on the release
-            if state & key::STATE_UP != 0 {
+            if u32::from(state) & key::STATE_UP != 0 {
                 shell::pop(wm, h);
             }
             // don't let key fall through anywhere else

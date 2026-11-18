@@ -342,7 +342,7 @@ pub fn buddy_control_system<H: WolBuddyOverlayHost>(wm: &mut GameWindowManager, 
     }
 
     match msg {
-        ggm::GLM_RIGHT_CLICKED => {
+        crate::client::gadget_list_box::glm::RIGHT_CLICKED => {
             let Some(control) = data_win(d1) else { return MsgHandled::Handled };
             let control_id = wm.tree.windows[control].id;
 
@@ -905,7 +905,7 @@ pub fn wol_buddy_overlay_system<H: WolBuddyOverlayHost>(wm: &mut GameWindowManag
             }
             return MsgHandled::Handled;
         }
-        ggm::GLM_RIGHT_CLICKED => {
+        crate::client::gadget_list_box::glm::RIGHT_CLICKED => {
             let Some(control) = data_win(d1) else { return MsgHandled::Handled };
             let control_id = wm.tree.windows[control].id;
             let o = h.wol_buddy_overlay().clone();
@@ -975,7 +975,7 @@ pub fn wol_buddy_overlay_system<H: WolBuddyOverlayHost>(wm: &mut GameWindowManag
                 // bodies are commented out upstream
             }
         }
-        ggm::GLM_DOUBLE_CLICKED => {
+        crate::client::gadget_list_box::glm::DOUBLE_CLICKED => {
             // body commented out upstream
         }
         _ => return MsgHandled::Ignored,
