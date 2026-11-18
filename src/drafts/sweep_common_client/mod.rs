@@ -14,3 +14,7 @@ pub mod display;
 pub mod game_text;
 pub mod credits;
 pub mod particle_sys;
+pub mod selection_xlat;
+pub mod function_lexicon;
+pub mod game_state;
+pub mod file_system;
