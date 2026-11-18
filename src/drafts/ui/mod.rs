@@ -41,3 +41,4 @@ pub mod wol_login_menu;
 pub mod wol_quick_match_menu;
 pub mod wol_lobby_menu;
 pub mod wol_buddy_overlay;
+pub mod wol_game_setup_menu;
