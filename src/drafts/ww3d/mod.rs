@@ -15,3 +15,5 @@ pub mod coltest;
 pub mod matinfo;
 pub mod light;
 pub mod lightenvironment;
+pub mod matrixmapper;
+pub mod projector;
