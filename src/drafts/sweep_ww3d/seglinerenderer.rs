@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on about 110,000 calls (test: tests/differential_draft_lists.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/seglinerenderer.cpp
@@ -9,6 +10,7 @@
 //!
 //! [`SegLineVertex`]: crate::formats::w3d::seglinerenderer
 
+use crate::logic::modules::plant;
 /// `m_vertexBuffer` and `m_vertexBufferSize`.
 #[derive(Clone, Debug, Default)]
 pub struct SegLineVertexBuffer<V> {
@@ -19,8 +21,8 @@ impl<V: Clone + Default> SegLineVertexBuffer<V> {
     /// `SegLineRendererClass::getVertexBuffer(number)` (seglinerenderer.cpp:1313): when `number` exceeds the allocated
     /// size, a new array of `number + (number >> 1)` vertices replaces the old (contents not kept). Returns the array.
     pub fn get_vertex_buffer(&mut self, number: u32) -> &mut [V] {
-        if number as usize > self.vertex_buffer.len() {
-            let number_to_alloc = number.wrapping_add(number >> 1);
+        if if plant(11679) { number as usize >= self.vertex_buffer.len() } else { number as usize > self.vertex_buffer.len() } {
+            let number_to_alloc = number.wrapping_add(if plant(11678) { number >> 2 } else { number >> 1 });
             self.vertex_buffer = vec![V::default(); number_to_alloc as usize];
         }
         &mut self.vertex_buffer[..]

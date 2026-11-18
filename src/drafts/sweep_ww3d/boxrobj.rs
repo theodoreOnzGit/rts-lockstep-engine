@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215, tests/differential_draft_shapes.rs): `render_box`, `vis_render_box` and `obbox_get_box` are NOT tested (device); the two `update_cached_box` match (20,000 cases).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/boxrobj.cpp
@@ -20,6 +21,7 @@ use crate::drafts::wwlib::obbox::OBBoxClass;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 use crate::ww::wwmath::WWMATH_OOSQRT3;
+use crate::logic::modules::plant;
 
 /// `NUM_BOX_VERTS`.
 pub const NUM_BOX_VERTS: usize = 8;
@@ -198,15 +200,15 @@ pub fn vis_render_box<H: BoxRenderHost>(state: &BoxRenderState, host: &mut H, ce
 /// `AABoxRenderObjClass::update_cached_box()` (boxrobj.cpp:786): `CachedBox.Center = Transform.Get_Translation() +
 /// ObjSpaceCenter; CachedBox.Extent = ObjSpaceExtent;`.
 pub fn aabox_update_cached_box(cached_box: &mut AABoxClass, transform: &Matrix3D, obj_space_center: &Vector3, obj_space_extent: &Vector3) {
-    cached_box.center = transform.get_translation() + *obj_space_center;
+    cached_box.center = if plant(11739) { transform.get_translation() } else { transform.get_translation() + *obj_space_center };
     cached_box.extent = *obj_space_extent;
 }
 
 /// `OBBoxRenderObjClass::update_cached_box()` (boxrobj.cpp:1168): the centre is `ObjSpaceCenter` transformed by
 /// `Transform`, the extent is `ObjSpaceExtent`, and the basis is the rotation of `Transform` (`Basis.Set(Transform)`).
 pub fn obbox_update_cached_box(cached_box: &mut OBBoxClass, transform: &Matrix3D, obj_space_center: &Vector3, obj_space_extent: &Vector3) {
-    cached_box.center = Matrix3D::transform_vector(transform, obj_space_center);
-    cached_box.extent = *obj_space_extent;
+    cached_box.center = if plant(11740) { transform.get_translation() + *obj_space_center } else { Matrix3D::transform_vector(transform, obj_space_center) };
+    cached_box.extent = if plant(11741) { transform.get_translation() } else { *obj_space_extent };
     cached_box.basis.set_matrix3d(transform);
 }
 
