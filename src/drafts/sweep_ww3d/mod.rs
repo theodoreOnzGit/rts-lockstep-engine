@@ -3,6 +3,7 @@
 pub mod assetmgr;
 pub mod dazzle;
 pub mod hlod;
+pub mod meshgeometry;
 pub mod meshmatdesc;
 pub mod meshmdlio;
 pub mod texture;
