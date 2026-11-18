@@ -7,10 +7,12 @@
 //!       `ChallengeLoadScreen::reset/update/setProgressRange`, `ShellGameLoadScreen` (all),
 //!       `MultiPlayerLoadScreen::reset/update/processProgress`, `GameSpyLoadScreen::reset/update/processProgress`,
 //!       `MapTransferLoadScreen` (all)
-//!     NOT drafted yet (lines 644-1138, 1286-1496, 1544-1865 of the upstream file): `ChallengeLoadScreen`'s
-//!       constructor, destructor, `updateTeletypeText`, `activatePieces`, `activatePiecesMinSpec`, `init`;
-//!       `MultiPlayerLoadScreen`'s constructor, destructor and `init`; `GameSpyLoadScreen`'s constructor, destructor
-//!       and `init` (filed on #203 as left to do).
+//!     ~~NOT drafted yet~~ **Drafted (#203, second pass, lines 644-1138, 1286-1496, 1544-1865 of the upstream file):**
+//!       `ChallengeLoadScreen`'s constructor, destructor, `updateTeletypeText`, `activatePieces`,
+//!       `activatePiecesMinSpec`, `init`; `MultiPlayerLoadScreen`'s constructor, destructor and `init`;
+//!       `GameSpyLoadScreen`'s constructor, destructor and `init`. They are at the end of this file; the members the
+//!       shared [`LoadScreen`] lacks live in [`ChallengeLoadScreenWindows`], [`MultiPlayerExtra`] and
+//!       [`GameSpyExtra`].
 //!
 //! The video (`TheVideoPlayer`, Bink) and the audio handle (Miles) are the host's; their calls are marked
 //! `// upstream: ... — device-only, not translated`. The blocking loops (`Sleep`, `serviceWindowsOS`) are kept as
@@ -19,6 +21,7 @@
 use crate::client::gadget;
 use crate::client::window_manager::{GameWindowManager, GuiHost};
 use crate::client::window_script::WinId;
+use crate::drafts::ui::window_video_manager::{VideoHost, WindowVideoManager, WindowVideoPlayType};
 
 /// `MAX_SLOTS` (GameInfo.h).
 pub const MAX_SLOTS: usize = 8;
@@ -781,4 +784,924 @@ pub fn map_transfer_set_current_filename<H: LoadScreenHost>(wm: &mut GameWindowM
         let txt = h.format_with_text(&fmt, &leaf);
         gadget::static_text_set_text(wm, h, Some(w), &txt);
     }
+}
+
+// ChallengeLoadScreen: constructor, destructor, init ///////////////////////////////////////////
+
+/// The members only `ChallengeLoadScreen` has (LoadScreen.h). The commented-out reticle line and `bioAge` windows
+/// are not members of this port, as upstream comments them out of every use.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ChallengeLoadScreenWindows {
+    pub bio_name_left: Option<WinId>,
+    pub bio_birthplace_left: Option<WinId>,
+    pub bio_strategy_left: Option<WinId>,
+    pub bio_big_name_entry_left: Option<WinId>,
+    pub bio_name_entry_left: Option<WinId>,
+    pub bio_birthplace_entry_left: Option<WinId>,
+    pub bio_strategy_entry_left: Option<WinId>,
+    pub bio_big_name_entry_right: Option<WinId>,
+    pub bio_name_right: Option<WinId>,
+    pub bio_birthplace_right: Option<WinId>,
+    pub bio_strategy_right: Option<WinId>,
+    pub bio_name_entry_right: Option<WinId>,
+    pub bio_birthplace_entry_right: Option<WinId>,
+    pub bio_strategy_entry_right: Option<WinId>,
+    pub portrait_left: Option<WinId>,
+    pub portrait_right: Option<WinId>,
+    pub portrait_movie_left: Option<WinId>,
+    pub portrait_movie_right: Option<WinId>,
+    pub overlay_reticle_circle_alpha_outer: Option<WinId>,
+    pub overlay_reticle_circle_alpha_inner: Option<WinId>,
+    pub overlay_vs_backdrop: Option<WinId>,
+    pub overlay_vs: Option<WinId>,
+    /// `m_wndVideoManager` (`NULL` is `None`).
+    pub wnd_video_manager: Option<WindowVideoManager>,
+    /// `activatePieces`'s ten function-local statics (`textPosBigNameRight` ... `textPosStrategyLeft`).
+    pub text_pos: TeletypePositions,
+}
+
+/// `activatePieces`'s statics. Order of the fields follows upstream's declaration order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TeletypePositions {
+    pub big_name_right: i32,
+    pub name_right: i32,
+    pub age_right: i32,
+    pub birthplace_right: i32,
+    pub strategy_right: i32,
+    pub big_name_left: i32,
+    pub name_left: i32,
+    pub age_left: i32,
+    pub birthplace_left: i32,
+    pub strategy_left: i32,
+}
+
+/// The `GeneralPersona` fields `ChallengeLoadScreen` reads (GeneralPersona in ChallengeGenerals.h).
+#[derive(Clone, Debug, Default)]
+pub struct GeneralPersonaInfo {
+    /// `getNameSound()`, `getRandomTauntSound()` (the latter picks at random: the host's, evaluated when asked).
+    pub name_sound: Vec<u8>,
+    pub portrait_movie_left_name: Vec<u8>,
+    pub portrait_movie_right_name: Vec<u8>,
+    /// `getBioName()`, `getBioRank()`, `getBioStrategy()`: text labels.
+    pub bio_name: Vec<u8>,
+    pub bio_rank: Vec<u8>,
+    pub bio_strategy: Vec<u8>,
+    /// `getBioPortraitLarge()`: an image name the host looks up.
+    pub bio_portrait_large: Vec<u8>,
+}
+
+/// What `ChallengeLoadScreen` reaches that the base host lacks.
+pub trait ChallengeLoadScreenHost: LoadScreenHost + VideoHost {
+    fn challenge_windows(&mut self) -> &mut ChallengeLoadScreenWindows;
+    /// `TheChallengeGenerals->getPlayerGeneralByCampaignName(campaign->m_name)`.
+    fn player_general_by_campaign_name(&self, campaign_name: &[u8]) -> GeneralPersonaInfo;
+    /// `TheChallengeGenerals->getGeneralByGeneralName(mission->m_generalName)`.
+    fn general_by_general_name(&self, general_name: &[u8]) -> GeneralPersonaInfo;
+    /// `mission->m_generalName`.
+    fn current_mission_general_name(&self) -> Vec<u8>;
+    /// `generalOpponent->getRandomTauntSound()`.
+    fn opponent_random_taunt_sound(&mut self, opponent: &GeneralPersonaInfo) -> Vec<u8>;
+    /// `TheAudio->addAudioEvent(&AudioEventRTS(name))` (Miles audio: device-only, not translated).
+    fn audio_add_event_named(&mut self, name: &[u8]);
+    /// `TheAudio->update()`.
+    fn audio_update(&mut self);
+    /// `win->winSetEnabledImage(0, image)` with the image looked up by name; an empty name is `NULL`.
+    fn win_set_enabled_image_named(&mut self, wm: &mut GameWindowManager, w: WinId, index: usize, name: &[u8]);
+    /// `m_videoStream->frameGoto(m_videoStream->frameCount())`.
+    fn video_frame_goto_end(&mut self, stream: usize);
+}
+
+/// `ChallengeLoadScreen::ChallengeLoadScreen()`: every member `NULL`.
+pub fn challenge_new<H: ChallengeLoadScreenHost>(h: &mut H) {
+    h.load_screen().progress_bar = None;
+    h.load_screen().video_stream = None;
+    h.load_screen().video_buffer = None;
+    *h.challenge_windows() = ChallengeLoadScreenWindows::default();
+}
+
+/// `ChallengeLoadScreen::~ChallengeLoadScreen()`. The video manager is dropped (`delete m_wndVideoManager`).
+pub fn challenge_destroy<H: ChallengeLoadScreenHost>(h: &mut H) {
+    h.load_screen().progress_bar = None;
+    if let (Some(stream), Some(buffer)) = (h.load_screen().video_stream.take(), h.load_screen().video_buffer.take()) {
+        h.video_close(stream, buffer);
+    }
+    *h.challenge_windows() = ChallengeLoadScreenWindows::default();
+    if let Some(handle) = h.load_screen().ambient_loop_handle.take() {
+        h.audio_remove_event(handle);
+    }
+}
+
+/// `updateTeletypeText(num_chars, window, full_text, current_text_pos)` (LoadScreen.cpp:732): appends up to
+/// `num_chars` characters of `full_text` from `current_text_pos` to the window's text; returns the new position.
+pub fn update_teletype_text<H: LoadScreenHost>(wm: &mut GameWindowManager, h: &mut H, num_chars: i32, window: Option<WinId>, full_text: &[u16], mut current_text_pos: i32) -> i32 {
+    let mut current_text = match window {
+        Some(w) => gadget::static_text_get_text(wm, w),
+        None => Vec::new(),
+    };
+    for _ in 0..num_chars {
+        if (current_text_pos as usize) < full_text.len() {
+            let w_char = full_text[current_text_pos as usize];
+            current_text.push(w_char);
+            current_text_pos += 1;
+        }
+    }
+    gadget::static_text_set_text(wm, h, window, &current_text);
+    current_text_pos
+}
+
+/// `ChallengeLoadScreen::activatePieces(frame, generalPlayer, generalOpponent)` (LoadScreen.cpp:748).
+pub fn challenge_activate_pieces<H: ChallengeLoadScreenHost>(wm: &mut GameWindowManager, h: &mut H, frame: i32, player: &GeneralPersonaInfo, opponent: &GeneralPersonaInfo) {
+    let cw = h.challenge_windows().clone();
+    match frame {
+        FRAME_TITLES_START => {
+            hide_opt(wm, cw.bio_name_left, false);
+            hide_opt(wm, cw.bio_birthplace_left, false);
+            hide_opt(wm, cw.bio_strategy_left, false);
+            hide_opt(wm, cw.bio_name_right, false);
+            hide_opt(wm, cw.bio_birthplace_right, false);
+            hide_opt(wm, cw.bio_strategy_right, false);
+        }
+        FRAME_TELETYPE_START => {
+            // reinit the statics for each new load screen
+            h.challenge_windows().text_pos = TeletypePositions::default();
+
+            for w in [cw.bio_big_name_entry_left, cw.bio_name_entry_left, cw.bio_birthplace_entry_left, cw.bio_strategy_entry_left] {
+                hide_opt(wm, w, false);
+            }
+            for w in [cw.bio_big_name_entry_left, cw.bio_name_entry_left, cw.bio_birthplace_entry_left, cw.bio_strategy_entry_left] {
+                gadget::static_text_set_text(wm, h, w, &[]);
+            }
+
+            for w in [cw.bio_big_name_entry_right, cw.bio_name_entry_right, cw.bio_birthplace_entry_right, cw.bio_strategy_entry_right] {
+                hide_opt(wm, w, false);
+            }
+            for w in [cw.bio_big_name_entry_right, cw.bio_name_entry_right, cw.bio_birthplace_entry_right, cw.bio_strategy_entry_right] {
+                gadget::static_text_set_text(wm, h, w, &[]);
+            }
+        }
+        FRAME_PORTRAITS_START => {
+            let mut mgr = h.challenge_windows().wnd_video_manager.take().unwrap_or_default();
+            if let Some(w) = cw.portrait_movie_left {
+                mgr.play_movie(wm, h, w, &player.portrait_movie_left_name, WindowVideoPlayType::ShowLastFrame);
+            }
+            if let Some(w) = cw.portrait_movie_right {
+                mgr.play_movie(wm, h, w, &opponent.portrait_movie_right_name, WindowVideoPlayType::ShowLastFrame);
+            }
+            h.challenge_windows().wnd_video_manager = Some(mgr);
+            hide_opt(wm, cw.portrait_movie_left, false);
+            hide_opt(wm, cw.portrait_movie_right, false);
+
+            // eventLeftGeneral( generalPlayer->getNameSound() )
+            h.audio_add_event_named(&player.name_sound);
+        }
+        FRAME_OUTER_CIRCLE_LINE_SHOW => {} // m_overlayReticleCircleLineOuter->winHide(FALSE) is commented out upstream
+        FRAME_INNER_CIRCLE_LINE_SHOW => {} // m_overlayReticleCircleLineInner->winHide(FALSE) is commented out upstream
+        FRAME_OUTER_CIRCLE_ALPHA_SHOW => hide_opt(wm, cw.overlay_reticle_circle_alpha_outer, false),
+        FRAME_INNER_CIRCLE_ALPHA_SHOW => hide_opt(wm, cw.overlay_reticle_circle_alpha_inner, false),
+        FRAME_OUTER_CIRCLE_LINE_HIDE => {} // commented out upstream
+        FRAME_INNER_BACKDROP_ALPHA_SHOW => hide_opt(wm, cw.overlay_vs_backdrop, false),
+        FRAME_INNER_CIRCLE_LINE_HIDE => {} // commented out upstream
+        FRAME_VS_ANIM_START => {
+            // it's time to start the overlay movie
+            hide_opt(wm, cw.overlay_vs_backdrop, false);
+            hide_opt(wm, cw.overlay_vs, false);
+            let mut mgr = h.challenge_windows().wnd_video_manager.take().unwrap_or_default();
+            if let Some(w) = cw.overlay_vs {
+                mgr.play_movie(wm, h, w, b"VSSmall", WindowVideoPlayType::ShowLastFrame);
+            }
+            h.challenge_windows().wnd_video_manager = Some(mgr);
+
+            // "Verses": eventVS("Taunts_GCAnnouncer12")
+            h.audio_add_event_named(b"Taunts_GCAnnouncer12");
+        }
+        FRAME_RIGHT_VOICE => h.audio_add_event_named(&opponent.name_sound),
+        _ => {}
+    }
+
+    // update the teletype readout
+    if frame > FRAME_TELETYPE_START && (frame % TELETYPE_UPDATE_FREQ) == 0 {
+        let mut tp = h.challenge_windows().text_pos;
+        let p_name = h.fetch_text(&player.bio_name);
+        let p_rank = h.fetch_text(&player.bio_rank);
+        let p_strategy = h.fetch_text(&player.bio_strategy);
+        let o_name = h.fetch_text(&opponent.bio_name);
+        let o_rank = h.fetch_text(&opponent.bio_rank);
+        let o_strategy = h.fetch_text(&opponent.bio_strategy);
+
+        tp.name_left = update_teletype_text(wm, h, 1, cw.bio_name_entry_left, &p_name, tp.name_left);
+        tp.big_name_left = update_teletype_text(wm, h, 1, cw.bio_big_name_entry_left, &p_name, tp.big_name_left);
+        tp.birthplace_left = update_teletype_text(wm, h, 1, cw.bio_birthplace_entry_left, &p_rank, tp.birthplace_left);
+        tp.strategy_left = update_teletype_text(wm, h, 1, cw.bio_strategy_entry_left, &p_strategy, tp.strategy_left);
+
+        tp.name_right = update_teletype_text(wm, h, 1, cw.bio_name_entry_right, &o_name, tp.name_right);
+        tp.big_name_right = update_teletype_text(wm, h, 1, cw.bio_big_name_entry_right, &o_name, tp.big_name_right);
+        tp.birthplace_right = update_teletype_text(wm, h, 1, cw.bio_birthplace_entry_right, &o_rank, tp.birthplace_right);
+        tp.strategy_right = update_teletype_text(wm, h, 1, cw.bio_strategy_entry_right, &o_strategy, tp.strategy_right);
+        h.challenge_windows().text_pos = tp;
+    }
+}
+
+/// `ChallengeLoadScreen::activatePiecesMinSpec(generalPlayer, generalOpponent)` (LoadScreen.cpp:906).
+pub fn challenge_activate_pieces_min_spec<H: ChallengeLoadScreenHost>(wm: &mut GameWindowManager, h: &mut H, player: &GeneralPersonaInfo, opponent: &GeneralPersonaInfo) {
+    let cw = h.challenge_windows().clone();
+    hide_opt(wm, cw.bio_name_left, false);
+    hide_opt(wm, cw.bio_birthplace_left, false);
+    hide_opt(wm, cw.bio_strategy_left, false);
+    hide_opt(wm, cw.bio_name_right, false);
+    hide_opt(wm, cw.bio_birthplace_right, false);
+    hide_opt(wm, cw.bio_strategy_right, false);
+    for w in [cw.bio_big_name_entry_left, cw.bio_name_entry_left, cw.bio_birthplace_entry_left, cw.bio_strategy_entry_left] {
+        hide_opt(wm, w, false);
+    }
+    let p_name = h.fetch_text(&player.bio_name);
+    let p_rank = h.fetch_text(&player.bio_rank);
+    let p_strategy = h.fetch_text(&player.bio_strategy);
+    gadget::static_text_set_text(wm, h, cw.bio_big_name_entry_left, &p_name);
+    gadget::static_text_set_text(wm, h, cw.bio_name_entry_left, &p_name);
+    gadget::static_text_set_text(wm, h, cw.bio_birthplace_entry_left, &p_rank);
+    gadget::static_text_set_text(wm, h, cw.bio_strategy_entry_left, &p_strategy);
+    for w in [cw.bio_big_name_entry_right, cw.bio_name_entry_right, cw.bio_birthplace_entry_right, cw.bio_strategy_entry_right] {
+        hide_opt(wm, w, false);
+    }
+    let o_name = h.fetch_text(&opponent.bio_name);
+    let o_rank = h.fetch_text(&opponent.bio_rank);
+    let o_strategy = h.fetch_text(&opponent.bio_strategy);
+    gadget::static_text_set_text(wm, h, cw.bio_big_name_entry_right, &o_name);
+    gadget::static_text_set_text(wm, h, cw.bio_name_entry_right, &o_name);
+    gadget::static_text_set_text(wm, h, cw.bio_birthplace_entry_right, &o_rank);
+    gadget::static_text_set_text(wm, h, cw.bio_strategy_entry_right, &o_strategy);
+    if let Some(w) = cw.portrait_left {
+        h.win_set_enabled_image_named(wm, w, 0, &player.bio_portrait_large);
+    }
+    if let Some(w) = cw.portrait_right {
+        h.win_set_enabled_image_named(wm, w, 0, &opponent.bio_portrait_large);
+    }
+    hide_opt(wm, cw.portrait_left, false);
+    hide_opt(wm, cw.portrait_right, false);
+    hide_opt(wm, cw.overlay_reticle_circle_alpha_outer, false);
+    hide_opt(wm, cw.overlay_reticle_circle_alpha_inner, false);
+    hide_opt(wm, cw.overlay_vs_backdrop, false);
+    hide_opt(wm, cw.overlay_vs_backdrop, false); // (upstream hides it twice)
+    hide_opt(wm, cw.overlay_vs, false);
+    let mut mgr = h.challenge_windows().wnd_video_manager.take().unwrap_or_default();
+    if let Some(w) = cw.overlay_vs {
+        mgr.play_movie(wm, h, w, b"VSSmall", WindowVideoPlayType::ShowLastFrame);
+    }
+    h.challenge_windows().wnd_video_manager = Some(mgr);
+}
+
+/// `ChallengeLoadScreen::init(game)` (LoadScreen.cpp:944).
+pub fn challenge_init<H: ChallengeLoadScreenHost>(wm: &mut GameWindowManager, h: &mut H) {
+    let mission = h.current_mission();
+
+    // the player general is tied to the campaign
+    let general_player = h.player_general_by_campaign_name(&mission.campaign_name);
+
+    // the opponent general is tied to the mission
+    let general_name = h.current_mission_general_name();
+    let general_opponent = h.general_by_general_name(&general_name);
+
+    // create the layout of the load screen
+    let ls = h.win_create_from_script(wm, b"Menus/ChallengeLoadScreen.wnd");
+    h.load_screen().load_screen = ls;
+    let Some(ls) = ls else { return }; // (DEBUG_ASSERTCRASH: upstream dereferences NULL)
+    wm.win_hide(ls, false);
+    wm.win_bring_to_top(ls);
+
+    // Store the pointer to the progress bar on the loadscreen
+    let progress_bar = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:ProgressLoad");
+    h.load_screen().progress_bar = progress_bar;
+    if let Some(p) = progress_bar {
+        gadget::progress_bar_set_progress(wm, h, p, 0);
+    }
+
+    // upstream: m_ambientLoop.setEventName("LoadScreenAmbient") — set in audio_add_ambient_loop
+    // create the new background video stream and the new buffer
+    let Some((stream, buffer)) = h.video_open_stream_and_buffer(&mission.movie_label) else {
+        return;
+    };
+    h.load_screen().video_stream = Some(stream);
+    h.load_screen().video_buffer = Some(buffer);
+
+    // init overlays
+    let portrait_left = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:PortraitLeft");
+    let portrait_right = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:PortraitRight");
+    let portrait_movie_left = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:PortraitMovieLeft");
+    let portrait_movie_right = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:PortraitMovieRight");
+    let circle_outer = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:CircleAlphaOuter");
+    let circle_inner = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:CircleAlphaInner");
+    let vs_backdrop = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:VersusBackdrop");
+    let overlay_vs = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:OverlayVs");
+
+    let bio_name_left = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioNameLeft");
+    let bio_birthplace_left = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioBirthplaceLeft");
+    let bio_strategy_left = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioStrategyLeft");
+    let bio_big_name_entry_left = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BigNameEntryLeft");
+    let bio_name_entry_left = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioNameEntryLeft");
+    let bio_birthplace_entry_left = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioBirthplaceEntryLeft");
+    let bio_strategy_entry_left = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioStrategyEntryLeft");
+    let bio_name_right = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioNameRight");
+    let bio_birthplace_right = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioBirthplaceRight");
+    let bio_strategy_right = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioStrategyRight");
+    let bio_big_name_entry_right = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BigNameEntryRight");
+    let bio_name_entry_right = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioNameEntryRight");
+    let bio_birthplace_entry_right = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioBirthplaceEntryRight");
+    let bio_strategy_entry_right = win_in(wm, h, Some(ls), "ChallengeLoadScreen.wnd:BioStrategyEntryRight");
+
+    // make sure reticle stuff starts out hidden
+    hide_opt(wm, circle_outer, true);
+    hide_opt(wm, circle_inner, true);
+    hide_opt(wm, vs_backdrop, true);
+    hide_opt(wm, overlay_vs, true);
+
+    {
+        let cw = h.challenge_windows();
+        cw.portrait_left = portrait_left;
+        cw.portrait_right = portrait_right;
+        cw.portrait_movie_left = portrait_movie_left;
+        cw.portrait_movie_right = portrait_movie_right;
+        cw.overlay_reticle_circle_alpha_outer = circle_outer;
+        cw.overlay_reticle_circle_alpha_inner = circle_inner;
+        cw.overlay_vs_backdrop = vs_backdrop;
+        cw.overlay_vs = overlay_vs;
+        cw.bio_name_left = bio_name_left;
+        cw.bio_birthplace_left = bio_birthplace_left;
+        cw.bio_strategy_left = bio_strategy_left;
+        cw.bio_big_name_entry_left = bio_big_name_entry_left;
+        cw.bio_name_entry_left = bio_name_entry_left;
+        cw.bio_birthplace_entry_left = bio_birthplace_entry_left;
+        cw.bio_strategy_entry_left = bio_strategy_entry_left;
+        cw.bio_name_right = bio_name_right;
+        cw.bio_birthplace_right = bio_birthplace_right;
+        cw.bio_strategy_right = bio_strategy_right;
+        cw.bio_big_name_entry_right = bio_big_name_entry_right;
+        cw.bio_name_entry_right = bio_name_entry_right;
+        cw.bio_birthplace_entry_right = bio_birthplace_entry_right;
+        cw.bio_strategy_entry_right = bio_strategy_entry_right;
+        // m_wndVideoManager = NEW WindowVideoManager; m_wndVideoManager->init();
+        let mut mgr = WindowVideoManager::new();
+        mgr.init();
+        cw.wnd_video_manager = Some(mgr);
+    }
+
+    if h.game_lod_did_mem_pass() {
+        let progress_update_count = h.video_frame_count(stream) / FRAME_FUDGE_ADD;
+        let mut shifted_percent = -FRAME_FUDGE_ADD + 1;
+        while h.video_frame_index(stream) < h.video_frame_count(stream) - 1 {
+            h.service_windows_os();
+
+            if !h.video_is_frame_ready(stream) {
+                h.sleep_ms(1);
+                continue;
+            }
+
+            if !h.game_engine_is_active() {
+                // we are alt-tabbed out, so just increment the frame
+                // (frameNext() then frameDecompress(): the host's decompress-render does both with the render
+                // skipped; the buffer is not drawn to while inactive)
+                h.video_frame_next(stream);
+                continue;
+            }
+
+            h.video_decompress_render(stream, buffer);
+            h.video_frame_next(stream);
+
+            h.win_set_video_buffer(wm, ls, Some(buffer));
+
+            let frame = h.video_frame_index(stream);
+            // (`% progressUpdateCount`: a zero count is a division by zero upstream; modelled as no update)
+            if progress_update_count != 0 && frame % progress_update_count == 0 {
+                shifted_percent += 1;
+                if shifted_percent > 0 {
+                    shifted_percent = 0;
+                }
+                let percent = ((shifted_percent + FRAME_FUDGE_ADD) as f64 / 1.3) as i32;
+                h.mouse_clear_cursor_tooltip();
+                if let Some(p) = progress_bar {
+                    gadget::progress_bar_set_progress(wm, h, p, percent);
+                }
+            }
+            wm.update(h);
+
+            challenge_activate_pieces(wm, h, frame, &general_player, &general_opponent);
+            let mut mgr = h.challenge_windows().wnd_video_manager.take().unwrap_or_default();
+            mgr.update(wm, h);
+            h.challenge_windows().wnd_video_manager = Some(mgr);
+
+            // redraw all views, update the GUI
+            h.display_draw();
+
+            h.audio_update();
+        }
+    } else {
+        // if we're min speced
+        h.video_frame_goto_end(stream); // zero based
+        while !h.video_is_frame_ready(stream) {
+            h.sleep_ms(1);
+        }
+        h.video_decompress_render(stream, buffer);
+        h.win_set_video_buffer(wm, ls, Some(buffer));
+
+        challenge_activate_pieces_min_spec(wm, h, &general_player, &general_opponent);
+
+        let delay = mission.voice_length * 1000;
+        let begin = h.time_get_time() as i32;
+        let mut curr_time = begin;
+        while begin + delay > curr_time {
+            let fudge_factor = (30.0 * ((curr_time - begin) as f32 / delay as f32)) as i32;
+            if let Some(p) = progress_bar {
+                gadget::progress_bar_set_progress(wm, h, p, fudge_factor);
+            }
+
+            wm.update(h);
+            h.display_draw();
+            h.sleep_ms(100);
+            curr_time = h.time_get_time() as i32;
+        }
+
+        let mut mgr = h.challenge_windows().wnd_video_manager.take().unwrap_or_default();
+        mgr.update(wm, h);
+        h.challenge_windows().wnd_video_manager = Some(mgr);
+        wm.update(h);
+        h.display_draw();
+    }
+    h.set_fp_mode();
+
+    let taunt = h.opponent_random_taunt_sound(&general_opponent);
+    h.audio_add_event_named(&taunt);
+
+    let handle = h.audio_add_ambient_loop();
+    h.load_screen().ambient_loop_handle = handle;
+    h.audio_update();
+}
+
+// MultiPlayerLoadScreen and GameSpyLoadScreen: constructors, destructors, init ///////////////////
+
+/// The members `MultiPlayerLoadScreen` has beyond the shared [`LoadScreen`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MultiPlayerExtra {
+    pub map_preview: Option<WinId>,
+    pub button_map_start_position: [Option<WinId>; MAX_SLOTS],
+    pub portrait_local_general: Option<WinId>,
+    pub features_local_general: Option<WinId>,
+    pub name_local_general: Option<WinId>,
+}
+
+/// The members `GameSpyLoadScreen` has beyond the shared [`LoadScreen`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GameSpyExtra {
+    pub map_preview: Option<WinId>,
+    pub button_map_start_position: [Option<WinId>; MAX_SLOTS],
+    pub portrait_local_general: Option<WinId>,
+    pub features_local_general: Option<WinId>,
+    pub name_local_general: Option<WinId>,
+    pub player_rank: [Option<WinId>; MAX_SLOTS],
+    pub player_officer_medal: [Option<WinId>; MAX_SLOTS],
+    pub player_favorite_factions: [Option<WinId>; MAX_SLOTS],
+    pub player_total_disconnects: [Option<WinId>; MAX_SLOTS],
+    pub player_win: [Option<WinId>; MAX_SLOTS],
+    pub player_win_losses: [Option<WinId>; MAX_SLOTS],
+}
+
+/// What a game slot reports to the multiplayer load screens (`GameSlot`, `GameSpyGameSlot`).
+#[derive(Clone, Debug, Default)]
+pub struct LoadSlotInfo {
+    pub occupied: bool,
+    pub is_ai: bool,
+    pub apparent_color: i32,
+    pub name: Vec<u16>,
+    /// `getApparentPlayerTemplateDisplayName()`.
+    pub apparent_player_template_display_name: Vec<u16>,
+    /// `getTeamNumber()`.
+    pub team_number: i32,
+    /// `getProfileID()` (GameSpy slots).
+    pub profile_id: i32,
+}
+
+/// The local player's `PlayerTemplate` as the multiplayer load screens read it.
+#[derive(Clone, Debug, Default)]
+pub struct LocalTemplateInfo {
+    /// `pt->getName()`, `getDisplayName()`, `getGeneralFeatures()` (a text label), `getLoadScreenMusic()`.
+    pub name: Vec<u8>,
+    pub display_name: Vec<u16>,
+    pub general_features: Vec<u8>,
+    pub load_screen_music: Vec<u8>,
+}
+
+/// The `PSPlayerStats` fields `GameSpyLoadScreen::init` sums (GameSpy persistent storage).
+#[derive(Clone, Debug, Default)]
+pub struct PlayerStatsInfo {
+    pub id: i32,
+    pub wins: Vec<i32>,
+    pub losses: Vec<i32>,
+    pub discons: Vec<i32>,
+    pub desyncs: Vec<i32>,
+}
+
+/// What `MultiPlayerLoadScreen::init` and `GameSpyLoadScreen::init` reach beyond the base host.
+pub trait MultiPlayerLoadScreenHost: LoadScreenHost {
+    fn multi_player_extra(&mut self) -> &mut MultiPlayerExtra;
+    fn game_spy_extra(&mut self) -> &mut GameSpyExtra;
+    /// `game->getSlot(game->getLocalSlotNum())`'s template: `lSlot->getPlayerTemplate() >= 0` picks the Nth
+    /// template, else `FactionObserver`.
+    fn local_player_template(&self) -> LocalTemplateInfo;
+    /// `TheChallengeGenerals->getGeneralByTemplateName(pt->getName())`, or `None` for the original factions.
+    fn local_general_by_template_name(&self, template_name: &[u8]) -> Option<GeneralPersonaInfo>;
+    /// `game->getSlot(i)` as `GameSlot` (`None` for no slot).
+    fn load_slot(&self, i: usize) -> Option<LoadSlotInfo>;
+    /// `win->winSetEnabledImage(index, TheMappedImageCollection->findImageByName(name))`; an empty name is `NULL`,
+    /// a name not found is `NULL`.
+    fn win_set_enabled_image_named_opt(&mut self, wm: &mut GameWindowManager, w: WinId, index: usize, name: &[u8]);
+    /// Whether `TheMappedImageCollection->findImageByName(name)` finds the image.
+    fn image_exists(&self, name: &[u8]) -> bool;
+    /// `winSetEnabledTextColors(color, winGetEnabledTextBorderColor())`.
+    fn win_set_text_color_keep_border(&mut self, wm: &mut GameWindowManager, w: WinId, color: Color);
+    /// `TheMultiplayerSettings->getColor(slot->getApparentColor())->getColor()`.
+    fn slot_house_color_by_color(&self, apparent_color: i32) -> Color;
+    /// `TheAudio->removeAudioEvent(AHSV_StopTheMusicFade)`.
+    fn audio_remove_stop_music_fade(&mut self);
+    /// `AudioEventRTS event(name); event.setShouldFade(TRUE); TheAudio->addAudioEvent(&event); TheAudio->update()`.
+    fn audio_add_event_fading_and_update(&mut self, name: &[u8]);
+    /// The map preview block shared by both `init`s: `TheMapCache->findMap`, `winSetUserData(mmd)`,
+    /// `getMapPreviewImage(game->getMap())`, `positionStartSpots(game, buttons, preview)`,
+    /// `updateMapStartSpots(game, buttons, TRUE)` and the `WIN_STATUS_IMAGE` set/clear with the image.
+    fn setup_map_preview(&mut self, wm: &mut GameWindowManager, map_preview: WinId, buttons: &[Option<WinId>; MAX_SLOTS]);
+    /// `TheGameLogic->initTimeOutValues()`.
+    fn game_logic_init_time_out_values(&mut self);
+    /// `TheGameSpyPSMessageQueue->findPlayerStatsByID(slot->getProfileID())`.
+    fn find_player_stats_by_id(&self, profile_id: i32) -> PlayerStatsInfo;
+    /// `TheGameSpyInfo->didPlayerPreorder(id)`.
+    fn did_player_preorder(&self, id: i32) -> bool;
+    /// `CalculateRank(stats)`, `GetFavoriteSide(stats)`, `LookupSmallRankImage(favSide, rankPoints)` (an image name).
+    fn lookup_small_rank_image_name(&self, stats: &PlayerStatsInfo) -> Vec<u8>;
+    /// `GetAdditionalDisconnectsFromUserFile(playerID)`.
+    fn additional_disconnects_from_user_file(&self, player_id: i32) -> i32;
+}
+
+/// `MultiPlayerLoadScreen::MultiPlayerLoadScreen()`.
+pub fn multi_player_new<H: MultiPlayerLoadScreenHost>(h: &mut H) {
+    *h.multi_player_extra() = MultiPlayerExtra::default();
+    let l = h.load_screen();
+    for i in 0..MAX_SLOTS {
+        l.progress_bars[i] = None;
+        l.player_names[i] = None;
+        l.player_side[i] = None;
+        l.player_lookup[i] = -1;
+    }
+}
+
+/// `MultiPlayerLoadScreen::~MultiPlayerLoadScreen()`.
+pub fn multi_player_destroy<H: MultiPlayerLoadScreenHost>(h: &mut H) {
+    {
+        let l = h.load_screen();
+        for i in 0..MAX_SLOTS {
+            l.progress_bars[i] = None;
+            l.player_names[i] = None;
+            l.player_side[i] = None;
+            l.player_lookup[i] = -1;
+        }
+    }
+    {
+        let e = h.multi_player_extra();
+        e.portrait_local_general = None;
+        e.features_local_general = None;
+        e.name_local_general = None;
+    }
+    h.audio_remove_stop_music_fade();
+}
+
+/// The local general block both `init`s share: portrait, features and name (`prefix` is the .wnd name).
+/// The original factions have no general: their logo (`logos`, per faction) and the template's display name are used.
+fn local_general_block<H: MultiPlayerLoadScreenHost>(wm: &mut GameWindowManager, h: &mut H, ls: WinId, prefix: &str, logos: [&[u8]; 3]) -> (Option<WinId>, Option<WinId>, Option<WinId>, LocalTemplateInfo) {
+    let pt = h.local_player_template();
+    let local_general = h.local_general_by_template_name(&pt.name);
+    let (portrait_name, local_name): (Vec<u8>, Vec<u16>) = match local_general {
+        Some(g) => (g.bio_portrait_large.clone(), h.fetch_text(&g.bio_name)),
+        None => {
+            // the main original factions don't have associated generals
+            let portrait = match pt.name.as_slice() {
+                b"FactionAmerica" => logos[0].to_vec(),
+                b"FactionGLA" => logos[1].to_vec(),
+                b"FactionChina" => logos[2].to_vec(),
+                _ => Vec::new(), // DEBUG_ASSERTCRASH(NULL, ("Unexpected player template")); portrait stays NULL
+            };
+            (portrait, pt.display_name.clone())
+        }
+    };
+    let portrait_win = win_in(wm, h, Some(ls), &format!("{prefix}:LocalGeneralPortrait"));
+    if let Some(w) = portrait_win {
+        h.win_set_enabled_image_named_opt(wm, w, 0, &portrait_name);
+    }
+    let features_win = win_in(wm, h, Some(ls), &format!("{prefix}:LocalGeneralFeatures"));
+    let features: Vec<u8> = if pt.general_features.is_empty() { b"GUI:PlayerObserver".to_vec() } else { pt.general_features.clone() };
+    let features_text = h.fetch_text(&features);
+    gadget::static_text_set_text(wm, h, features_win, &features_text);
+    let name_win = win_in(wm, h, Some(ls), &format!("{prefix}:LocalGeneralName"));
+    gadget::static_text_set_text(wm, h, name_win, &local_name);
+    (portrait_win, features_win, name_win, pt)
+}
+
+/// The house progress bar image: `LoadingBar_ProgressCenter%d`, or `LoadingBar_Progress` when it is not found.
+fn house_bar_image_name<H: MultiPlayerLoadScreenHost>(h: &H, apparent_color: i32) -> Vec<u8> {
+    let name = format!("LoadingBar_ProgressCenter{apparent_color}").into_bytes();
+    if h.image_exists(&name) { name } else { b"LoadingBar_Progress".to_vec() }
+}
+
+/// `MultiPlayerLoadScreen::init(game)` (LoadScreen.cpp:1329).
+pub fn multi_player_init<H: MultiPlayerLoadScreenHost>(wm: &mut GameWindowManager, h: &mut H) {
+    // create the layout of the load screen
+    let ls = h.win_create_from_script(wm, b"Menus/MultiplayerLoadScreen.wnd");
+    h.load_screen().load_screen = ls;
+    let Some(ls) = ls else { return }; // (DEBUG_ASSERTCRASH: upstream dereferences NULL)
+    wm.win_hide(ls, false);
+    wm.win_bring_to_top(ls);
+    let map_preview = win_in(wm, h, Some(ls), "MultiplayerLoadScreen.wnd:WinMapPreview");
+    h.multi_player_extra().map_preview = map_preview;
+
+    let (portrait, features, name_win, pt) = local_general_block(
+        wm, h, ls, "MultiplayerLoadScreen.wnd",
+        [b"SAFactionLogoLg_US", b"SUFactionLogoLg_GLA", b"SNFactionLogoLg_China"],
+    );
+    {
+        let e = h.multi_player_extra();
+        e.portrait_local_general = portrait;
+        e.features_local_general = features;
+        e.name_local_general = name_win;
+    }
+
+    if !pt.load_screen_music.is_empty() {
+        h.audio_remove_stop_music_fade();
+        h.audio_add_event_fading_and_update(&pt.load_screen_music);
+    }
+
+    let mut team_win: [Option<WinId>; MAX_SLOTS] = [None; MAX_SLOTS];
+
+    let mut net_slot = 0usize;
+    // Loop through and make the loadscreen look all good.
+    for i in 0..MAX_SLOTS {
+        // Load the Progress Bar
+        let bar = win_in(wm, h, Some(ls), &format!("MultiplayerLoadScreen.wnd:ProgressLoad{i}"));
+        h.load_screen().progress_bars[i] = bar;
+        // set the progressbar to zero
+        if let Some(b) = bar {
+            gadget::progress_bar_set_progress(wm, h, b, 0);
+        }
+
+        // Load MapStart Positions
+        let btn = win_in(wm, h, Some(ls), &format!("MultiplayerLoadScreen.wnd:ButtonMapStartPosition{i}"));
+        h.multi_player_extra().button_map_start_position[i] = btn;
+
+        // Load the Player's name
+        let name = win_in(wm, h, Some(ls), &format!("MultiplayerLoadScreen.wnd:StaticTextPlayer{i}"));
+        h.load_screen().player_names[i] = name;
+
+        // Load the Player's Side
+        let side = win_in(wm, h, Some(ls), &format!("MultiplayerLoadScreen.wnd:StaticTextSide{i}"));
+        h.load_screen().player_side[i] = side;
+
+        team_win[i] = win_in(wm, h, Some(ls), &format!("MultiplayerLoadScreen.wnd:StaticTextTeam{i}"));
+
+        // get the slot man!
+        let Some(slot) = h.load_slot(i) else { continue };
+        if !slot.occupied {
+            continue;
+        }
+
+        let house_color = h.slot_house_color_by_color(slot.apparent_color);
+
+        // format the progress bar to house colors
+        let house_image = house_bar_image_name(h, slot.apparent_color);
+        let l = h.load_screen().clone();
+        if let Some(b) = l.progress_bars[net_slot] {
+            h.win_set_enabled_image_named_opt(wm, b, 6, &house_image);
+        }
+
+        gadget::static_text_set_text(wm, h, l.player_names[net_slot], &slot.name);
+        if let Some(w) = l.player_names[net_slot] {
+            h.win_set_text_color_keep_border(wm, w, house_color);
+        }
+
+        gadget::static_text_set_text(wm, h, l.player_side[net_slot], &slot.apparent_player_template_display_name);
+        if let Some(w) = l.player_side[net_slot] {
+            h.win_set_text_color_keep_border(wm, w, house_color);
+        }
+
+        if slot.is_ai {
+            hide_opt(wm, l.progress_bars[net_slot], true);
+        }
+
+        if let Some(t) = team_win[net_slot] {
+            let team_str = format!("Team:{}", slot.team_number + 1);
+            let text = h.fetch_text(team_str.as_bytes());
+            gadget::static_text_set_text(wm, h, Some(t), &text);
+            // (the border colour is read from m_playerNames[netSlot], as upstream does)
+            h.win_set_text_color_keep_border(wm, t, house_color);
+        }
+
+        h.load_screen().player_lookup[i] = net_slot as i32; // save our mapping so we can update progress correctly
+
+        net_slot += 1;
+    }
+
+    for i in net_slot..MAX_SLOTS {
+        let l = h.load_screen().clone();
+        hide_opt(wm, l.progress_bars[i], true);
+        hide_opt(wm, l.player_names[i], true);
+        hide_opt(wm, l.player_side[i], true);
+        hide_opt(wm, team_win[i], true);
+    }
+
+    if let Some(mp) = map_preview {
+        let buttons = h.multi_player_extra().button_map_start_position;
+        h.setup_map_preview(wm, mp, &buttons);
+    }
+
+    h.game_logic_init_time_out_values();
+}
+
+/// `GameSpyLoadScreen::GameSpyLoadScreen()`.
+pub fn game_spy_new<H: MultiPlayerLoadScreenHost>(h: &mut H) {
+    *h.game_spy_extra() = GameSpyExtra::default();
+    let l = h.load_screen();
+    for i in 0..MAX_SLOTS {
+        l.progress_bars[i] = None;
+        l.player_names[i] = None;
+        l.player_side[i] = None;
+        l.player_lookup[i] = -1;
+    }
+}
+
+/// `GameSpyLoadScreen::~GameSpyLoadScreen()`.
+pub fn game_spy_destroy<H: MultiPlayerLoadScreenHost>(h: &mut H) {
+    {
+        let l = h.load_screen();
+        for i in 0..MAX_SLOTS {
+            l.progress_bars[i] = None;
+            l.player_names[i] = None;
+            l.player_side[i] = None;
+            l.player_lookup[i] = -1;
+        }
+    }
+    let e = h.game_spy_extra();
+    for i in 0..MAX_SLOTS {
+        e.player_favorite_factions[i] = None;
+        e.player_total_disconnects[i] = None;
+        e.player_win[i] = None;
+        e.player_win_losses[i] = None;
+    }
+}
+
+/// `GameSpyLoadScreen::init(game)` (LoadScreen.cpp:1580). The GameSpy stats come through the host
+/// (`TheGameSpyPSMessageQueue`, `TheGameSpyInfo`: the service is gone, so the host supplies what it had).
+pub fn game_spy_init<H: MultiPlayerLoadScreenHost>(wm: &mut GameWindowManager, h: &mut H) {
+    // create the layout of the load screen
+    let ls = h.win_create_from_script(wm, b"Menus/GameSpyLoadScreen.wnd");
+    h.load_screen().load_screen = ls;
+    let Some(ls) = ls else { return }; // (DEBUG_ASSERTCRASH: upstream dereferences NULL)
+    wm.win_hide(ls, false);
+    wm.win_bring_to_top(ls);
+    let map_preview = win_in(wm, h, Some(ls), "GameSpyLoadScreen.wnd:WinMapPreview");
+    h.game_spy_extra().map_preview = map_preview;
+
+    let (portrait, features, name_win, _pt) = local_general_block(
+        wm, h, ls, "GameSpyLoadScreen.wnd",
+        [b"SAFactionLogo144_US", b"SUFactionLogo144_GLA", b"SNFactionLogo144_China"],
+    );
+    {
+        let e = h.game_spy_extra();
+        e.portrait_local_general = portrait;
+        e.features_local_general = features;
+        e.name_local_general = name_win;
+    }
+
+    let mut team_win: [Option<WinId>; MAX_SLOTS] = [None; MAX_SLOTS];
+
+    let mut net_slot = 0usize;
+    // Loop through and make the loadscreen look all good.
+    for i in 0..MAX_SLOTS {
+        let bar = win_in(wm, h, Some(ls), &format!("GameSpyLoadScreen.wnd:ProgressLoad{i}"));
+        h.load_screen().progress_bars[i] = bar;
+        if let Some(b) = bar {
+            gadget::progress_bar_set_progress(wm, h, b, 0);
+        }
+
+        let name = win_in(wm, h, Some(ls), &format!("GameSpyLoadScreen.wnd:StaticTextPlayer{i}"));
+        h.load_screen().player_names[i] = name;
+
+        let btn = win_in(wm, h, Some(ls), &format!("GameSpyLoadScreen.wnd:ButtonMapStartPosition{i}"));
+        let side = win_in(wm, h, Some(ls), &format!("GameSpyLoadScreen.wnd:StaticTextSide{i}"));
+        h.load_screen().player_side[i] = side;
+        let player_win = win_in(wm, h, Some(ls), &format!("GameSpyLoadScreen.wnd:WinPlayer{i}"));
+        let total_disconnects = win_in(wm, h, Some(ls), &format!("GameSpyLoadScreen.wnd:StaticTextTotalDisconnects{i}"));
+        // (the StaticTextFavoriteFaction lookup is commented out upstream)
+        let win_losses = win_in(wm, h, Some(ls), &format!("GameSpyLoadScreen.wnd:StaticTextWinLoss{i}"));
+        let rank = win_in(wm, h, Some(ls), &format!("GameSpyLoadScreen.wnd:WinRank{i}"));
+        let officer = win_in(wm, h, Some(ls), &format!("GameSpyLoadScreen.wnd:WinOfficer{i}"));
+        {
+            let e = h.game_spy_extra();
+            e.button_map_start_position[i] = btn;
+            e.player_win[i] = player_win;
+            e.player_total_disconnects[i] = total_disconnects;
+            e.player_win_losses[i] = win_losses;
+            e.player_rank[i] = rank;
+            e.player_officer_medal[i] = officer;
+        }
+
+        // (the team window is looked up under the MultiplayerLoadScreen.wnd prefix upstream, as copied)
+        team_win[i] = win_in(wm, h, Some(ls), &format!("MultiplayerLoadScreen.wnd:StaticTextTeam{i}"));
+
+        // get the slot man!
+        let Some(slot) = h.load_slot(i) else { continue };
+        if !slot.occupied {
+            continue;
+        }
+
+        let house_color = h.slot_house_color_by_color(slot.apparent_color);
+
+        // format the progress bar to house colors
+        let house_image = house_bar_image_name(h, slot.apparent_color);
+        let l = h.load_screen().clone();
+        if let Some(b) = l.progress_bars[net_slot] {
+            h.win_set_enabled_image_named_opt(wm, b, 6, &house_image);
+        }
+
+        gadget::static_text_set_text(wm, h, l.player_names[net_slot], &slot.name);
+        if let Some(w) = l.player_names[net_slot] {
+            h.win_set_text_color_keep_border(wm, w, house_color);
+        }
+
+        // Get the stats for the player
+        let stats = h.find_player_stats_by_id(slot.profile_id);
+
+        let is_preorder = h.did_player_preorder(stats.id);
+        let rank_img = h.lookup_small_rank_image_name(&stats);
+        // (upstream indexes the medal and rank windows with `i`, not `netSlot`; kept)
+        let e = h.game_spy_extra().clone();
+        if let Some(w) = e.player_officer_medal[i] {
+            let preorder_name: &[u8] = if is_preorder { b"OfficersClubsmall" } else { b"" };
+            h.win_set_enabled_image_named_opt(wm, w, 0, preorder_name);
+        }
+        if let Some(w) = e.player_rank[i] {
+            h.win_set_enabled_image_named_opt(wm, w, 0, &rank_img);
+        }
+
+        // pop wins and losses
+        let num_losses: i32 = stats.losses.iter().sum();
+        let num_wins: i32 = stats.wins.iter().sum();
+        let fmt = utf16(&format!("{num_wins}/{num_losses}"));
+        gadget::static_text_set_text(wm, h, e.player_win_losses[net_slot], &fmt);
+        if let Some(w) = e.player_win_losses[net_slot] {
+            h.win_set_text_color_keep_border(wm, w, house_color);
+        }
+        // (favoriteFaction: the games loop and its text are commented out upstream)
+        // disconnects
+        let mut num_games: i32 = stats.discons.iter().sum();
+        num_games += stats.desyncs.iter().sum::<i32>();
+        num_games += h.additional_disconnects_from_user_file(stats.id);
+
+        let fmt = utf16(&format!("{num_games}"));
+        gadget::static_text_set_text(wm, h, e.player_total_disconnects[net_slot], &fmt);
+        if let Some(w) = e.player_total_disconnects[net_slot] {
+            h.win_set_text_color_keep_border(wm, w, house_color);
+        }
+        gadget::static_text_set_text(wm, h, l.player_side[net_slot], &slot.apparent_player_template_display_name);
+        if let Some(w) = l.player_side[net_slot] {
+            h.win_set_text_color_keep_border(wm, w, house_color);
+        }
+
+        if slot.is_ai {
+            hide_opt(wm, l.progress_bars[net_slot], true);
+            hide_opt(wm, e.player_total_disconnects[net_slot], true);
+            hide_opt(wm, e.player_win_losses[net_slot], true);
+            hide_opt(wm, e.player_rank[net_slot], true);
+            hide_opt(wm, e.player_officer_medal[net_slot], true);
+        }
+
+        if let Some(t) = team_win[net_slot] {
+            let mut team_str = format!("Team:{}", slot.team_number + 1);
+            if slot.is_ai && slot.team_number == -1 {
+                team_str = "Team:AI".to_string();
+            }
+            let text = h.fetch_text(team_str.as_bytes());
+            gadget::static_text_set_text(wm, h, Some(t), &text);
+            h.win_set_text_color_keep_border(wm, t, house_color);
+        }
+
+        h.load_screen().player_lookup[i] = net_slot as i32; // save our mapping so we can update progress correctly
+
+        net_slot += 1;
+    }
+
+    for i in net_slot..MAX_SLOTS {
+        let e = h.game_spy_extra().clone();
+        hide_opt(wm, e.player_win[i], true);
+        // (the player name and side hides are commented out upstream)
+    }
+
+    if let Some(mp) = map_preview {
+        let buttons = h.game_spy_extra().button_map_start_position;
+        h.setup_map_preview(wm, mp, &buttons);
+    }
+
+    h.game_logic_init_time_out_values();
 }
