@@ -51,3 +51,7 @@ pub mod twiddler;
 pub mod md5;
 pub mod sha;
 pub mod fixed;
+pub mod rgb;
+pub mod hsv;
+pub mod sampler;
+pub mod lzo;
