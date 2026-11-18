@@ -4,8 +4,13 @@
 //! `GameEngine/Source/GameNetwork`: the lockstep network layer.
 
 pub mod net_command_msg;
+pub mod frame_data;
+pub mod frame_data_manager;
+pub mod frame_metrics;
 pub mod net_command_list;
 pub mod net_command_ref;
 pub mod net_command_wrapper_list;
+pub mod net_message_stream;
 pub mod net_packet;
 pub mod network_util;
+pub mod user;
