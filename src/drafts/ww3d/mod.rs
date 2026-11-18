@@ -62,3 +62,4 @@ pub mod shdlib;
 pub mod shdforcelinks;
 pub mod shdloader;
 pub mod shattersystem;
+pub mod w3d_dep;
