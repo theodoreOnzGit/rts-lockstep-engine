@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #209): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/matrix4.h
@@ -8,7 +7,10 @@
 //! `class Matrix4x4`. Upstream defects kept: `operator /= (float d)` MULTIPLIES by `d` (`float ood = d;`), unlike
 //! `operator /` which multiplies by `1/d`; `Inverse()` asserts `"Matrix4x4::Inverse does not work, re-implement!"`
 //! (debug builds only, so it runs in release); `operator ==` compares the 16 floats' bit patterns, not their values.
-//! (`crate::client::tactical_view::Matrix4x4` is the client's own, unrelated 4x4.)
+//! The type is the verified port's `crate::client::tactical_view::Matrix4x4` (#214): this file only adds the methods
+//! the verified type lacks. Not carried over, because the verified type already has them: `identity`,
+//! `init_perspective(left, right, ...)` and `mul_vector3`. Gap in verified code: its `PartialEq` is the derived
+//! float comparison, not upstream's bit-pattern `operator ==`; use `bits_equal` for upstream's.
 
 use super::matrix3::Matrix3x3;
 use crate::ww::matrix3d::Matrix3D;
@@ -17,16 +19,17 @@ use crate::ww::vector4::Vector4;
 use crate::ww::wwmath;
 use std::ops::{Index, IndexMut};
 
-/// `class Matrix4x4`: `Vector4 Row[4]`.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Matrix4x4 {
-    pub row: [Vector4; 4],
-}
+pub use crate::client::tactical_view::Matrix4x4;
 
 impl Matrix4x4 {
+    /// All sixteen floats zero (what the draft's `Default` gave; upstream leaves them uninitialised).
+    fn zeroed() -> Self {
+        Matrix4x4 { row: [Vector4::new(0.0, 0.0, 0.0, 0.0); 4] }
+    }
+
     /// `Matrix4x4(bool identity)`: identity when `true`; uninitialised upstream (zero here) when `false`.
     pub fn new(identity: bool) -> Self {
-        let mut m = Matrix4x4::default();
+        let mut m = Matrix4x4::zeroed();
         if identity {
             m.make_identity();
         }
@@ -35,7 +38,7 @@ impl Matrix4x4 {
 
     /// `Matrix4x4(const Matrix3D &)` -> `Init(m)`.
     pub fn from_matrix3d(m: &Matrix3D) -> Self {
-        let mut r = Matrix4x4::default();
+        let mut r = Matrix4x4::zeroed();
         r.init_matrix3d(m);
         r
     }
@@ -48,7 +51,7 @@ impl Matrix4x4 {
     /// `Matrix4x4(m11 .. m44)`.
     #[allow(clippy::too_many_arguments)]
     pub fn from_elements(m11: f32, m12: f32, m13: f32, m14: f32, m21: f32, m22: f32, m23: f32, m24: f32, m31: f32, m32: f32, m33: f32, m34: f32, m41: f32, m42: f32, m43: f32, m44: f32) -> Self {
-        let mut r = Matrix4x4::default();
+        let mut r = Matrix4x4::zeroed();
         r.init_elements(m11, m12, m13, m14, m21, m22, m23, m24, m31, m32, m33, m34, m41, m42, m43, m44);
         r
     }
@@ -103,34 +106,30 @@ impl Matrix4x4 {
     }
 
     /// `Init_Perspective(hfov, vfov, znear, zfar)`: `static_cast<float>(1.0 / tan(hfov*0.5))` in double (the C library's
-    /// `tan`, here `f64::tan`).
+    /// `tan`, here petir's).
     pub fn init_perspective_fov(&mut self, hfov: f32, vfov: f32, znear: f32, zfar: f32) {
         assert!(znear > 0.0f32);
         assert!(zfar > znear);
 
         self.make_identity();
-        self.row[0][0] = (1.0f64 / (hfov as f64 * 0.5f64).tan()) as f32;
-        self.row[1][1] = (1.0f64 / (vfov as f64 * 0.5f64).tan()) as f32;
+        self.row[0][0] = (1.0f64 / petir::Real::tan(hfov as f64 * 0.5f64)) as f32;
+        self.row[1][1] = (1.0f64 / petir::Real::tan(vfov as f64 * 0.5f64)) as f32;
         self.row[2][2] = -(zfar + znear) / (zfar - znear);
         self.row[2][3] = (-(2.0f64 * zfar as f64 * znear as f64) / (zfar - znear) as f64) as f32;
         self.row[3][2] = -1.0f32;
         self.row[3][3] = 0.0f32;
     }
 
-    /// `Init_Perspective(left, right, bottom, top, znear, zfar)`.
-    pub fn init_perspective(&mut self, left: f32, right: f32, bottom: f32, top: f32, znear: f32, zfar: f32) {
-        assert!(znear > 0.0f32);
-        assert!(zfar > 0.0f32);
-
-        self.make_identity();
-        self.row[0][0] = (2.0f64 * znear as f64 / (right - left) as f64) as f32;
-        self.row[0][2] = (right + left) / (right - left);
-        self.row[1][1] = (2.0f64 * znear as f64 / (top - bottom) as f64) as f32;
-        self.row[1][2] = (top + bottom) / (top - bottom);
-        self.row[2][2] = -(zfar + znear) / (zfar - znear);
-        self.row[2][3] = (-(2.0f64 * zfar as f64 * znear as f64) / (zfar - znear) as f64) as f32;
-        self.row[3][2] = -1.0f32;
-        self.row[3][3] = 0.0f32;
+    /// `operator == (a, b)` (matrix4.cpp:123): XOR of the sixteen 32-bit patterns; equal when all are identical (so
+    /// `0.0 != -0.0` and a NaN equals itself when the bits match). The verified type's `==` is the float comparison.
+    pub fn bits_equal(&self, other: &Matrix4x4) -> bool {
+        let mut res: u32 = 0;
+        for i in 0..4 {
+            for j in 0..4 {
+                res |= self.row[i][j].to_bits() ^ other.row[i][j].to_bits();
+            }
+        }
+        res == 0
     }
 
     /// `Transpose()`.
@@ -287,17 +286,6 @@ impl Matrix4x4 {
         Matrix4x4::mul_matrix_matrix3d(a, b)
     }
 
-    /// `operator * (const Matrix4x4 & a, const Vector3 & v)`: `v` extended with `w = 1.0f`.
-    pub fn mul_vector3(&self, v: &Vector3) -> Vector4 {
-        let a = &self.row;
-        Vector4::new(
-            a[0][0] * v[0] + a[0][1] * v[1] + a[0][2] * v[2] + a[0][3] * 1.0f32,
-            a[1][0] * v[0] + a[1][1] * v[1] + a[1][2] * v[2] + a[1][3] * 1.0f32,
-            a[2][0] * v[0] + a[2][1] * v[1] + a[2][2] * v[2] + a[2][3] * 1.0f32,
-            a[3][0] * v[0] + a[3][1] * v[1] + a[3][2] * v[2] + a[3][3] * 1.0f32,
-        )
-    }
-
     /// `operator * (const Matrix4x4 & a, const Vector4 & v)`.
     pub fn mul_vector4(&self, v: &Vector4) -> Vector4 {
         let a = &self.row;
@@ -331,20 +319,6 @@ impl Matrix4x4 {
     /// `Transform_Vector(tm, Vector4 in, Vector4 * out)`.
     pub fn transform_vector4(a: &Matrix4x4, v: &Vector4) -> Vector4 {
         a.mul_vector4(v)
-    }
-}
-
-impl PartialEq for Matrix4x4 {
-    /// `operator == (a, b)` (matrix4.cpp:123): XOR of the sixteen 32-bit patterns; equal when all are identical (so
-    /// `0.0 != -0.0` and a NaN equals itself when the bits match).
-    fn eq(&self, other: &Matrix4x4) -> bool {
-        let mut res: u32 = 0;
-        for i in 0..4 {
-            for j in 0..4 {
-                res |= self.row[i][j].to_bits() ^ other.row[i][j].to_bits();
-            }
-        }
-        res == 0
     }
 }
 

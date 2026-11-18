@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #209): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/aabox.h
@@ -208,12 +207,12 @@ impl AABoxClass {
 
     /// `Contains(const Vector3 &)`: `CollisionMath::Overlap_Test(*this, point) == INSIDE`.
     pub fn contains_point(&self, point: &Vector3) -> bool {
-        overlap_test_aabox_point(self, point) == OverlapType::Inside
+        overlap_test_aabox_point(self, point) == OverlapType::INSIDE
     }
 
     /// `Contains(const AABoxClass &)`: `CollisionMath::Overlap_Test(*this, other_box) == INSIDE`.
     pub fn contains_box(&self, other_box: &AABoxClass) -> bool {
-        overlap_test_aabox_aabox(self, other_box) == OverlapType::Inside
+        overlap_test_aabox_aabox(self, other_box) == OverlapType::INSIDE
     }
 
     /// `Contains(const MinMaxAABoxClass &)` (aabox.h).

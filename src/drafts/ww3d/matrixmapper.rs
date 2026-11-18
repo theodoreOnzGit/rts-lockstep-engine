@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #206): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
@@ -13,7 +12,6 @@
 use crate::client::tactical_view::Matrix4x4;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
-use crate::ww::vector4::Vector4;
 
 /// `MatrixMapperClass::INVERT_DEPTH_GRADIENT` (matrixmapper.h).
 pub const INVERT_DEPTH_GRADIENT: u32 = 0x0000_0001;
@@ -25,22 +23,6 @@ pub enum MappingType {
     PerspectiveProjection,
     DepthGradient,
     NormalGradient,
-}
-
-/// `Matrix4x4::Matrix4x4(const Matrix3D &)` (matrix4.h:246): rows 0-2 copied, row 3 is (0,0,0,1).
-pub fn matrix4x4_from_matrix3d(m: &Matrix3D) -> Matrix4x4 {
-    Matrix4x4 { row: [m.row[0], m.row[1], m.row[2], Vector4::new(0.0, 0.0, 0.0, 1.0)] }
-}
-
-/// `Matrix4x4::Multiply(a, b, &res)` (matrix4.cpp:61): `res[i][j] = sum_k a[i][k] * b[k][j]`.
-pub fn matrix4x4_multiply(a: &Matrix4x4, b: &Matrix4x4) -> Matrix4x4 {
-    let mut res = Matrix4x4::identity();
-    for i in 0..4 {
-        for j in 0..4 {
-            res.row[i][j] = a.row[i][0] * b.row[0][j] + a.row[i][1] * b.row[1][j] + a.row[i][2] * b.row[2][j] + a.row[i][3] * b.row[3][j];
-        }
-    }
-    res
 }
 
 /// What `MatrixMapperClass::Apply` would give the device for one stage: the texture transform, the texcoord
@@ -109,7 +91,7 @@ impl MatrixMapperClass {
 
     /// `MatrixMapperClass::Set_Texture_Transform(const Matrix3D &, texsize)` (matrixmapper.cpp:50).
     pub fn set_texture_transform_3d(&mut self, view_to_texture: &Matrix3D, texsize: f32) {
-        self.view_to_texture = matrix4x4_from_matrix3d(view_to_texture);
+        self.view_to_texture = Matrix4x4::from_matrix3d(view_to_texture);
         self.update_view_to_pixel_transform(texsize);
     }
 
@@ -279,7 +261,7 @@ impl<M: TextureMatrixSource> CompositeMatrixMapperClass<M> {
             let int_mat = inner.calculate_texture_matrix();
             let view_to_pixel_copy = self.base.view_to_pixel;
             let tmp = self.composite_tmp();
-            self.base.view_to_pixel = matrix4x4_multiply(&int_mat, &tmp);
+            self.base.view_to_pixel = Matrix4x4::multiply(&int_mat, &tmp);
             let state = self.base.apply_state(uv_array_index);
             self.base.view_to_pixel = view_to_pixel_copy;
             state
@@ -293,7 +275,7 @@ impl<M: TextureMatrixSource> CompositeMatrixMapperClass<M> {
         if let Some(inner) = &self.internal_mapper {
             let int_mat = inner.calculate_texture_matrix();
             let tmp = self.composite_tmp();
-            matrix4x4_multiply(&int_mat, &tmp)
+            Matrix4x4::multiply(&int_mat, &tmp)
         } else {
             self.base.calculate_texture_matrix()
         }

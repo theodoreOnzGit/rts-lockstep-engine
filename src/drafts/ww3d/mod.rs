@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #206): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Drafts of `Libraries/Source/WWVegas/WW3D2` and `wwshade` (#206).
 

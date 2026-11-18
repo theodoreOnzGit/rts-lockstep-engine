@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #209): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/fixed.h
@@ -250,7 +249,7 @@ impl Fixed {
 
     /// `Round()`: UPSTREAM QUIRK KEPT, a fraction of 0.5 or more rounds up and then `Round_Down` runs regardless.
     pub fn round(&mut self) {
-        if self.fraction() >= 256 / 2 {
+        if (self.fraction() as u32) >= 256 / 2 {
             self.round_up();
         }
         self.round_down();

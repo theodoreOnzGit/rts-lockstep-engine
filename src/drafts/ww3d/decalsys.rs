@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #206): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/decalsys.cpp
@@ -108,7 +107,7 @@ impl DecalGeneratorClass {
     pub fn set_mesh_transform<F: Fn(usize) -> u32>(&mut self, mesh_transform: &Matrix3D, texturing_enabled: bool, texture_width: F) {
         let world_to_texture = self.projector.transform.get_orthogonal_inverse();
         let tmp = Matrix3D::multiply(&world_to_texture, mesh_transform);
-        let mesh_to_texture = matrix4x4_multiply_by_matrix3d(&self.projector.projection, &tmp);
+        let mesh_to_texture = Matrix4x4::multiply_matrix_matrix3d(&self.projector.projection, &tmp);
 
         // Plug the matrix and texture size into the mapper
         if texturing_enabled {
@@ -121,20 +120,6 @@ impl DecalGeneratorClass {
             self.projector.mapper.set_texture_transform(&mesh_to_texture, texsize);
         }
     }
-}
-
-/// `Matrix4x4::Multiply(const Matrix4x4 &A, const Matrix3D &B, Matrix4x4 *)` (matrix4.cpp:145): B's last row is
-/// (0,0,0,1), so its fourth column adds `a[i][3]` and its fourth row contributes nothing... as upstream's
-/// `ROWCOL` / `ROWCOL4` macros: columns 0-2 `a[i][0..3] * b[0..3][j]`, column 3 the same plus `a[i][3]`.
-pub fn matrix4x4_multiply_by_matrix3d(a: &Matrix4x4, b: &Matrix3D) -> Matrix4x4 {
-    let mut res = Matrix4x4::identity();
-    for i in 0..4 {
-        for j in 0..3 {
-            res.row[i][j] = a.row[i][0] * b.row[0][j] + a.row[i][1] * b.row[1][j] + a.row[i][2] * b.row[2][j];
-        }
-        res.row[i][3] = a.row[i][0] * b.row[0][3] + a.row[i][1] * b.row[1][3] + a.row[i][2] * b.row[2][3] + a.row[i][3];
-    }
-    res
 }
 
 /// `MultiFixedPoolDecalSystemClass::encode_decal_id` (decalsys.h).
