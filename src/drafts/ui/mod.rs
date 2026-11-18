@@ -38,3 +38,4 @@ pub mod popup_ladder_select;
 pub mod wol_map_select_menu;
 pub mod wol_welcome_menu;
 pub mod wol_login_menu;
+pub mod wol_quick_match_menu;
