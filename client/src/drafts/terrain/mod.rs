@@ -10,3 +10,4 @@ pub mod w3d_shroud;
 pub mod w3d_custom_edging;
 pub mod w3d_bridge_buffer;
 pub mod w3d_road_buffer;
+pub mod w3d_snow;
