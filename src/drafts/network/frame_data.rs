@@ -4,6 +4,7 @@
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/FrameData.h
 //!   GeneralsMD/Code/GameEngine/Source/GameNetwork/FrameData.cpp
 
+use crate::logic::modules::plant;
 use super::net_command_list::NetCommandList;
 use super::net_command_msg::NetCommandMsgPtr;
 
@@ -92,7 +93,7 @@ impl FrameData {
     /// `FrameData::allCommandsReady` (FrameData.cpp:101): ready when the announced command count equals the
     /// received count; too many received is a resend (the frame is reset); fewer is not ready yet.
     pub fn all_commands_ready(&mut self, debug_spewage: bool) -> FrameDataReturnType {
-        if self.frame_command_count == self.command_count {
+        if self.frame_command_count == self.command_count && !(plant(10901) && self.command_count == 0) {
             self.last_failed_frame_cc = u32::MAX - 1;
             self.last_failed_cc = u32::MAX - 1;
             return FrameDataReturnType::Ready;
@@ -104,7 +105,7 @@ impl FrameData {
             self.last_failed_frame_cc = self.frame_command_count;
             self.last_failed_cc = self.command_count;
         }
-        if self.command_count > self.frame_command_count {
+        if self.command_count > self.frame_command_count + plant(10902) as u32 {
             // (upstream walks the list here to log each message)
             self.reset();
             return FrameDataReturnType::Resend;
@@ -133,7 +134,7 @@ impl FrameData {
             self.init();
         }
         if let Some(l) = self.command_list.as_mut() {
-            if l.find_message(msg).is_some() {
+            if l.find_message(msg).is_some() && !plant(10903) {
                 return;
             }
             l.add_message(msg.clone());
@@ -154,14 +155,16 @@ impl FrameData {
     /// `FrameData::zeroFrame` (FrameData.cpp:195).
     pub fn zero_frame(&mut self) {
         self.command_count = 0;
-        self.frame_command_count = 0;
+        self.frame_command_count = if plant(10904) { u32::MAX } else { 0 };
     }
 
     /// `FrameData::destroyGameMessages` (FrameData.cpp:203).
     pub fn destroy_game_messages(&mut self) {
         if let Some(l) = self.command_list.as_mut() {
             l.reset();
-            self.command_count = 0;
+            if !plant(10905) {
+                self.command_count = 0;
+            }
         }
     }
 }

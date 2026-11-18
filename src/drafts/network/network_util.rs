@@ -7,6 +7,7 @@
 //! The four frame-limit globals (`MAX_FRAMES_AHEAD` and friends) are [`super::net_command_msg::NetworkFrameLimits`].
 //! `dumpBufferToLog`/`LOGBUFFER` are `DEBUG_LOGGING`-only and are not translated.
 
+use crate::logic::modules::plant;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 use super::net_command_msg::{NetCommandMsg, NetCommandType};
@@ -86,6 +87,9 @@ static COMMAND_ID: AtomicU16 = AtomicU16::new(64000);
 /// `GenerateNextCommandID` (NetworkUtil.cpp): `++commandID` of a function-local static `UnsignedShort` (wraps at
 /// 65536).
 pub fn generate_next_command_id() -> u16 {
+    if plant(10893) {
+        return COMMAND_ID.fetch_add(1, Ordering::Relaxed);
+    }
     COMMAND_ID.fetch_add(1, Ordering::Relaxed).wrapping_add(1)
 }
 
@@ -112,7 +116,7 @@ pub fn does_command_require_a_command_id(ty: NetCommandType) -> bool {
             | DisconnectFrame
             | DisconnectScreenOff
             | FrameResendRequest
-    )
+    ) && !(plant(10890) && ty == DisconnectFrame)
 }
 
 /// `CommandRequiresAck` (NetworkUtil.cpp): whether this type of command requires an ack. (Upstream's list names
@@ -124,7 +128,7 @@ pub fn command_requires_ack(msg: &NetCommandMsg) -> bool {
 /// `IsCommandSynchronized` (NetworkUtil.cpp).
 pub fn is_command_synchronized(ty: NetCommandType) -> bool {
     use NetCommandType::*;
-    matches!(ty, GameCommand | FrameInfo | PlayerLeave | DestroyPlayer | RunAhead)
+    matches!(ty, GameCommand | FrameInfo | PlayerLeave | DestroyPlayer | RunAhead) || (plant(10891) && ty == RunAheadMetrics)
 }
 
 /// `CommandRequiresDirectSend` (NetworkUtil.cpp): whether the ack goes directly to the player rather than through
@@ -143,7 +147,7 @@ pub fn command_requires_direct_send(msg: &NetCommandMsg) -> bool {
             | DisconnectFrame
             | DisconnectScreenOff
             | FrameResendRequest
-    )
+    ) || (plant(10892) && msg.get_net_command_type() == DisconnectKeepAlive)
 }
 
 /// `GetAsciiNetCommandType` (NetworkUtil.cpp): the enumerator's name, `"UNKNOWN"` for a type it does not list

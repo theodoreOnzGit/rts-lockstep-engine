@@ -31,10 +31,13 @@
 //!   Acks are never wrapped, so it is unreachable; here the ack's fields are read from the command (the intent).
 //! * `ConstructBigCommandPacketList` does `ref->setRelay(ref->getRelay())` (a no-op: the wrapper ref's relay is
 //!   never set from the original).
-//! * `GetRunAheadMetricsCommandSize` omits the 2-byte average-fps field that the fill function writes.
+//! * ~~`GetRunAheadMetricsCommandSize` omits the 2-byte average-fps field that the fill function writes.~~ **Corrected
+//!   2026-11-18 (#215, measured on the C++):** it is one byte short, not two: the size counts a stray `sizeof(UnsignedByte)`
+//!   after the `D` and not the 2-byte fps, so for any command it says 15 where `FillBufferWithRunAheadMetricsCommand` writes 16.
 //! * `isRoomForLoadCompleteMessage` and `isRoomForTimeOutGameStartMessage` do not count the `C` field that the add
 //!   functions write.
 
+use crate::logic::modules::plant;
 use std::cmp::min;
 
 use crate::common::base_type::{Coord3D, ICoord2D, IRegion2D};
@@ -146,7 +149,7 @@ fn parser_runs(args: &[GameMessageArgument]) -> Vec<(ArgumentDataType, i32)> {
         }
         this_count += 1;
     }
-    if this_count > 0 {
+    if this_count > 0 && !plant(10868) {
         runs.push((last, this_count));
     }
     runs
@@ -167,7 +170,13 @@ fn write_game_message_argument(v: &mut Vec<u8>, ty: ArgumentDataType, arg: Argum
     match ty {
         ArgumentDataType::Integer => wr_u32(v, arg.0[0]),
         ArgumentDataType::Real => wr_u32(v, arg.0[0]),
-        ArgumentDataType::Boolean => wr_u8(v, (arg.0[0] & 0xff) as u8),
+        ArgumentDataType::Boolean => {
+            if plant(10869) {
+                wr_u32(v, arg.0[0] & 0xff)
+            } else {
+                wr_u8(v, (arg.0[0] & 0xff) as u8)
+            }
+        }
         ArgumentDataType::ObjectId => wr_u32(v, arg.0[0]),
         ArgumentDataType::DrawableId => wr_u32(v, arg.0[0]),
         ArgumentDataType::TeamId => wr_u32(v, arg.0[0]),
@@ -187,7 +196,13 @@ fn write_game_message_argument(v: &mut Vec<u8>, ty: ArgumentDataType, arg: Argum
             wr_u32(v, arg.0[3]);
         }
         ArgumentDataType::Timestamp => wr_u32(v, arg.0[0]),
-        ArgumentDataType::WideChar => wr_u16(v, (arg.0[0] & 0xffff) as u16),
+        ArgumentDataType::WideChar => {
+            if plant(10870) {
+                wr_u8(v, (arg.0[0] & 0xff) as u8)
+            } else {
+                wr_u16(v, (arg.0[0] & 0xffff) as u16)
+            }
+        }
         _ => {}
     }
 }
@@ -421,7 +436,7 @@ impl NetPacket {
                 }
                 b'F' => {
                     offset += 1;
-                    frame = rd_u32(data, &mut offset);
+                    frame = if plant(10883) { rd_u16(data, &mut offset) as u32 } else { rd_u32(data, &mut offset) };
                 }
                 b'D' => {
                     offset += 1;
@@ -506,9 +521,9 @@ impl NetPacket {
 
         let wrapper = NetCommandMsgPtr::new(NetCommandMsg::new_wrapper());
         let wrapper_size = NetPacket::get_buffer_size_needed_for_command(&wrapper.read());
-        let command_size_per_packet: u32 = MAX_PACKET_SIZE as u32 - wrapper_size;
+        let command_size_per_packet: u32 = MAX_PACKET_SIZE as u32 - wrapper_size - plant(10879) as u32;
         let mut num_chunks: u32 = buffer_size / command_size_per_packet;
-        if (buffer_size % command_size_per_packet) > 0 {
+        if (buffer_size % command_size_per_packet) > 0 && !plant(10878) {
             num_chunks += 1;
         }
         let mut current_chunk: u32 = 0;
@@ -643,8 +658,8 @@ impl NetPacket {
         1 + 1 + (1 + 1) + (4 + 1) + 1 + 1 + (2 + 1) + 1 + 1
     }
 
-    /// `GetRunAheadMetricsCommandSize` (NetPacket.cpp:405): omits the 2-byte fps field that the fill function
-    /// writes (see the module doc).
+    /// `GetRunAheadMetricsCommandSize` (NetPacket.cpp:405): 15, one byte short of what the fill function writes (16: it
+    /// counts a stray byte after the `D` and not the 2-byte fps; see the module doc).
     pub fn get_run_ahead_metrics_command_size(_msg: &NetCommandMsg) -> u32 {
         1 + 1 + (1 + 1) + 1 + 1 + (2 + 1) + 1 + 1 + 4
     }
@@ -1030,7 +1045,7 @@ impl NetPacket {
 
     /// The `length` byte and `length * sizeof(UnsignedShort)` text bytes of the chat commands.
     fn write_text(buffer: &mut Vec<u8>, text: &UnicodeString) {
-        let length = (text.get_length() & 0xff) as usize;
+        let length = if plant(10880) { text.get_length() as usize } else { (text.get_length() & 0xff) as usize };
         wr_u8(buffer, length as u8);
         for k in 0..length {
             wr_u16(buffer, text.str().get(k).copied().unwrap_or(0));
@@ -1049,10 +1064,10 @@ impl NetPacket {
             len += 1;
         }
         if layout.frame != FramePos::None && self.last_frame != cmd.get_execution_frame() {
-            len += 4 + 1;
+            len += if plant(10862) { 4 } else { 4 + 1 };
         }
         if self.last_relay != relay {
-            len += 1 + 1;
+            len += if plant(10861) { 1 } else { 1 + 1 };
         }
         if self.last_player_id as u32 != cmd.get_player_id() {
             len += 1;
@@ -1072,7 +1087,7 @@ impl NetPacket {
     fn is_room_for(&self, r: &NetCommandRef, layout: Layout, payload_len: i32) -> bool {
         let m = r.get_command().read();
         let len = self.header_len(&m, r.get_relay(), layout) + payload_len;
-        if len + self.packet.len() as i32 > MAX_PACKET_SIZE {
+        if len + self.packet.len() as i32 > MAX_PACKET_SIZE - plant(10866) as i32 {
             return false;
         }
         true
@@ -1107,10 +1122,11 @@ impl NetPacket {
                 self.packet.push(b'P');
                 self.packet.push(cmd.get_player_id() as u8);
                 self.last_player_id = cmd.get_player_id() as u8;
-                need_new_command_id = true;
+                need_new_command_id = !plant(10863);
             }
             if layout.cmd_id {
-                if ((self.last_command_id as i32 + 1) != (cmd.get_id() as i32)) || need_new_command_id {
+                let next_id = if plant(10864) { self.last_command_id as i32 } else { self.last_command_id as i32 + 1 };
+                if (next_id != (cmd.get_id() as i32)) || need_new_command_id {
                     self.packet.push(b'C');
                     wr_u16(&mut self.packet, cmd.get_id());
                 }
@@ -1127,7 +1143,11 @@ impl NetPacket {
     fn write_frame_if_changed(&mut self, cmd: &NetCommandMsg) {
         if self.last_frame != cmd.get_execution_frame() {
             self.packet.push(b'F');
-            wr_u32(&mut self.packet, cmd.get_execution_frame());
+            if plant(10865) {
+                self.packet.extend_from_slice(&cmd.get_execution_frame().to_be_bytes());
+            } else {
+                wr_u32(&mut self.packet, cmd.get_execution_frame());
+            }
             self.last_frame = cmd.get_execution_frame();
         }
     }
@@ -1201,7 +1221,9 @@ impl NetPacket {
     fn payload_file(m: &NetCommandMsg) -> Vec<u8> {
         let mut p = Vec::new();
         p.extend_from_slice(m.get_portable_filename().str());
-        wr_u8(&mut p, 0);
+        if !plant(10884) {
+            wr_u8(&mut p, 0);
+        }
         wr_u32(&mut p, m.get_file_length());
         if let Some(d) = m.get_file_data() {
             p.extend_from_slice(d);
@@ -1500,7 +1522,9 @@ impl NetPacket {
             self.packet.push(b'Z');
             self.last_command_id = r.get_command().read().get_id();
             self.set_last_command(r);
-            self.last_frame = self.last_frame.wrapping_add(1); // actually advancing to the next frame
+            if !plant(10874) {
+                self.last_frame = self.last_frame.wrapping_add(1); // actually advancing to the next frame
+            }
             self.num_commands += 1;
             return true;
         }
@@ -1530,7 +1554,7 @@ impl NetPacket {
         if framemsg.get_execution_frame() != lastmsg.get_execution_frame().wrapping_add(1) {
             return false;
         }
-        if r.get_relay() != last.get_relay() {
+        if r.get_relay() != last.get_relay() && !plant(10873) {
             return false;
         }
         if framemsg.get_id() as i32 != lastmsg.get_id() as i32 + 1 {
@@ -1591,8 +1615,13 @@ impl NetPacket {
                 }
             }
             self.packet.push(b'D');
-            wr_u16(&mut self.packet, command_id);
-            wr_u8(&mut self.packet, original_player_id);
+            if plant(10876) {
+                wr_u8(&mut self.packet, original_player_id);
+                wr_u16(&mut self.packet, command_id);
+            } else {
+                wr_u16(&mut self.packet, command_id);
+                wr_u8(&mut self.packet, original_player_id);
+            }
             self.set_last_command(r);
             self.num_commands += 1;
             return true;
@@ -1649,7 +1678,7 @@ impl NetPacket {
         if last_ack.get_command_id() as i32 != ack.get_command_id() as i32 - 1 {
             return false;
         }
-        if last_ack.get_original_player_id() != ack.get_original_player_id() {
+        if last_ack.get_original_player_id() != ack.get_original_player_id() && !plant(10875) {
             return false;
         }
         if r.get_relay() != last.get_relay() {
@@ -1727,7 +1756,7 @@ impl NetPacket {
         msglen += 1; // for 'D'
         msglen += 4; // sizeof(GameMessage::Type)
         msglen += 1;
-        msglen += 2 * runs.len() as i32;
+        msglen += if plant(10867) { runs.len() as i32 } else { 2 * runs.len() as i32 };
         msglen += runs_data_size(&runs);
         if msglen > MAX_PACKET_SIZE - self.packet.len() as i32 {
             return false; // there isn't enough room in this packet for this new message
@@ -1790,7 +1819,7 @@ impl NetPacket {
                     msg.set_player_id(player_id as u32);
                     msg.set_net_command_type(ty);
                     msg.set_id(command_id);
-                    if does_command_require_a_command_id(ty) {
+                    if does_command_require_a_command_id(ty) || plant(10871) {
                         command_id = command_id.wrapping_add(1);
                     }
                     let ptr = NetCommandMsgPtr::new(msg);
@@ -1817,7 +1846,7 @@ impl NetPacket {
                     };
                     let mut msg = if command_type as i32 == NetCommandType::AckStage1 as i32 {
                         let mut m = NetCommandMsg::new_ack_stage1();
-                        m.set_command_id(last_cid.wrapping_add(1));
+                        m.set_command_id(if plant(10881) { last_cid } else { last_cid.wrapping_add(1) });
                         m.set_original_player_id(last_orig);
                         m
                     } else if command_type as i32 == NetCommandType::AckStage2 as i32 {
@@ -1832,7 +1861,9 @@ impl NetPacket {
                         m
                     } else if command_type as i32 == NetCommandType::FrameInfo as i32 {
                         let mut m = NetCommandMsg::new_frame();
-                        frame = frame.wrapping_add(1); // this is set below
+                        if !plant(10872) {
+                            frame = frame.wrapping_add(1); // this is set below
+                        }
                         m.set_command_count(0);
                         m
                     } else {
@@ -1882,7 +1913,7 @@ impl NetPacket {
             let arg_count = rd_u8(data, i);
             let ty = ArgumentDataType::from_i32(t as i32).unwrap_or(ArgumentDataType::Unknown);
             parser.push((ty, arg_count as i32));
-            total_arg_count += arg_count as i32;
+            total_arg_count += if plant(10885) { 1 } else { arg_count as i32 };
         }
         let mut idx: usize = 0;
         let mut lasttype = ArgumentDataType::Unknown;
@@ -2071,8 +2102,13 @@ impl NetPacket {
         msg.set_num_chunks(num);
         let total = rd_u32(data, i);
         msg.set_total_data_length(total);
-        let data_length = rd_u32(data, i);
-        let offset = rd_u32(data, i);
+        let (data_length, offset) = if plant(10877) {
+            let o = rd_u32(data, i);
+            (rd_u32(data, i), o)
+        } else {
+            let d = rd_u32(data, i);
+            (d, rd_u32(data, i))
+        };
         msg.set_data_offset(offset);
         let remaining = data.len().saturating_sub(*i);
         let n = min(data_length as usize, remaining);

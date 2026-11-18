@@ -38,8 +38,7 @@
 //!
 //! Acks are left out of the *fill* comparison: `FillBufferWithAckCommand` casts the `NetCommandRef *` itself to an ack message
 //! and reads garbage (upstream defect, the draft reads the ack's fields instead; acks are never wrapped). Their packet bytes
-//! (the add functions) are compared. Generated arguments keep a boolean to 0 or 1, a `WideChar` to 16 bits, 255 arguments or
-//! fewer, and strings that fit upstream's 260-byte stack buffers.
+//! (the add functions) are compared. Generated arguments keep a boolean to 0 or 1, a `WideChar` to 16 bits, strings that fit upstream's 260-byte stack buffers.
 
 mod support;
 
@@ -402,11 +401,16 @@ fn emit_packet(o: &mut Vec<u32>, p: &NetPacket) {
     put_bytes(o, p.get_data());
 }
 
-/// The arguments `constructGameMessage` would give the `GameMessage` (the wrapper's stand-in for it): the known data types, at
-/// most 255 (the generator keeps to that).
+/// The arguments `constructGameMessage` would give the `GameMessage` (the wrapper's stand-in for it): the known data types, as
+/// many as an `UnsignedByte` counts.
 fn game_args(m: &NetCommandMsg) -> Vec<GameMessageArgument> {
     if let NetCommandBody::GameCommand(g) = &m.body {
-        g.args.iter().filter(|a| a.ty != ArgumentDataType::Unknown).copied().collect()
+        let mut v: Vec<GameMessageArgument> = g.args.iter().filter(|a| a.ty != ArgumentDataType::Unknown).copied().collect();
+        // GameMessage::getArgumentCount() is an UnsignedByte: the parser and the fill loops read that many (the generator makes
+        // up to 259 arguments, so this wraps)
+        let count = v.len() & 0xff;
+        v.truncate(count);
+        v
     } else {
         Vec::new()
     }
@@ -719,7 +723,7 @@ fn gen_string(g: &mut Gen, o: &mut Vec<u32>) {
         0 => 0,
         1..=8 => g.below(30),
         9 | 10 => g.below(120),
-        _ => 200 + g.below(56),
+        _ => 200 + g.below(101),
     };
     o.push(n);
     for _ in 0..n {
@@ -733,13 +737,24 @@ fn gen_bytes(g: &mut Gen, o: &mut Vec<u32>, max: u32, text: bool) {
 }
 
 /// One command, appended to `o`.
-fn gen_cmd(g: &mut Gen, c: &mut Ctx, o: &mut Vec<u32>, big: bool) {
+fn gen_cmd(g: &mut Gen, c: &mut Ctx, o: &mut Vec<u32>, big: bool, allow_lc: bool) {
+    gen_cmd_kind(g, c, o, big, allow_lc, u32::MAX)
+}
+
+/// [`gen_cmd`] with the kind forced (`u32::MAX`: chosen at random).
+fn gen_cmd_kind(g: &mut Gen, c: &mut Ctx, o: &mut Vec<u32>, big: bool, allow_lc: bool, force: u32) {
     // kinds with an add function, weighted to the common ones
     const KINDS: [u32; 38] = [
         4, 4, 4, 4, 4, 0, 1, 2, 3, 3, 5, 6, 7, 8, 9, 10, 11, 11, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28, 29, 12, 13, 22,
         30, 31,
     ];
-    let kind = if big { [4u32, 4, 11, 18, 10][g.below(5) as usize] } else { KINDS[g.below(KINDS.len() as u32) as usize] };
+    let mut kind = if big { [4u32, 4, 11, 18, 10][g.below(5) as usize] } else { KINDS[g.below(KINDS.len() as u32) as usize] };
+    if (kind == 15 || kind == 16) && !allow_lc {
+        kind = 14; // see gen_pack_case
+    }
+    if force != u32::MAX {
+        kind = force;
+    }
     // header: repeat or change
     if g.below(10) < 2 {
         c.player = if g.below(100) == 0 { 256 + g.below(10) } else { g.below(8) };
@@ -833,9 +848,18 @@ fn gen_pack_case(g: &mut Gen) -> Vec<u32> {
         _ => 10 + g.below(50),
     };
     let mut v = vec![1, n];
-    for _ in 0..n {
+    // Load-complete and time-out-start messages (15, 16) overrun upstream's packet when it is within 3 bytes of full (the
+    // known defect: the_known_upstream_overruns), which leaves the C++ heap corrupted; they are generated only among the first
+    // four commands and only while every command so far is a small one, so the packet is far from full. The probe covers the
+    // full-packet case.
+    let mut small_so_far = true;
+    for k in 0..n {
         let b = g.below(25) == 0;
-        gen_cmd(g, &mut c, &mut v, b);
+        let at = v.len();
+        gen_cmd(g, &mut c, &mut v, b, k < 4 && small_so_far);
+        if matches!(v[at], 4 | 10 | 11 | 17 | 18) {
+            small_so_far = false;
+        }
     }
     v
 }
@@ -894,6 +918,27 @@ fn packets_are_packed_and_read_as_upstream() {
         pack.eq(r.clone(), c.clone(), || format!("pack case {i}"));
         if !same {
             show("pack case", i, &r, &c);
+            if std::env::var("NETPKT_DUMP").is_ok() {
+                let k = r.iter().zip(&c).position(|(a, b)| a != b).unwrap_or(0);
+                let (mut idx, mut cmd) = (0usize, 0usize);
+                while idx < k {
+                    let start = idx;
+                    idx += 1;
+                    if c[idx] == 0xFFFF_FFFF {
+                        idx += 1;
+                    } else {
+                        idx += 1 + (c[idx] as usize + 3) / 4;
+                    }
+                    println!("  [cmd {cmd}: words {start}..{}: size {} room rust {} c++ {} ok {}]", idx + 2, c[start], r[idx], c[idx], c[idx + 1]);
+                    idx += 2;
+                    cmd += 1;
+                }
+                let mut rd = Rd { w: &input, i: 2 };
+                for k in 0..input[1] {
+                    let (m, relay) = make_msg(&mut rd);
+                    println!("  cmd {k}: {:?} player {} frame {} id {} relay {} {}", m.get_net_command_type(), m.get_player_id(), m.get_execution_frame(), m.get_id(), relay, if let NetCommandBody::Chat { text, .. } = &m.body { format!("chat len {}", text.get_length()) } else { String::new() });
+                }
+            }
             continue;
         }
         wrapped += c.iter().filter(|&&w| w == 0xB1C0).count() as u64;
@@ -962,7 +1007,7 @@ fn wrapped_commands_are_reassembled_as_upstream() {
     for i in 0..n {
         let mut c = Ctx { player: g.below(8), frame: g.below(1000), relay: g.below(256), id: g.below(65536), ack_kind: 99, ack_orig: 0, ack_cmd: 0 };
         let mut spec = Vec::new();
-        gen_cmd(&mut g, &mut c, &mut spec, true);
+        gen_cmd(&mut g, &mut c, &mut spec, true, false);
         // a command type without a command id is not wrapped (empty list upstream): the generator's big kinds all have ids
         let mut order: Vec<u32> = Vec::new();
         let nchunks_guess = 12;
@@ -1397,6 +1442,80 @@ fn the_known_upstream_overruns() {
     if planted() {
         let a = chk.report();
         println!("MEASURED mismatching: overrun probe {a}");
+        assert!(false, "a planted run: see the MEASURED line (a mismatch is the plant caught)");
+    } else {
+        chk.finish();
+    }
+}
+
+/// Upstream defect (#210 item 1): `GetRunAheadMetricsCommandSize` does not match `FillBufferWithRunAheadMetricsCommand` (and
+/// `addRunAheadMetricsCommand`). Measured on the C++: one run-ahead metrics command (player 1, frame 7, id 9, relay 3,
+/// latency 0.5, fps 30): the size says 15, the fill writes 16 bytes. **The defect is one byte, not the two the brief
+/// assumed:** the size counts a stray `sizeof(UnsignedByte)` after the `D` and leaves out the 2-byte fps (net one short). The
+/// Rust draft reproduces both numbers (the pack test compares them on 2,400 such commands).
+#[test]
+fn the_known_upstream_run_ahead_metrics_size_omits_the_fps() {
+    let spec = [1u32, 1, 6, 1, 7, 9, 3, 0.5f32.to_bits(), 30];
+    let _one = CPP.lock().unwrap_or_else(|e| e.into_inner());
+    let c = cpp_run(&spec);
+    let mut made = Made::default();
+    let r = rust_pack(&spec, &mut made);
+    drop(_one);
+    let (size, fill_len) = (c[0], c[1]);
+    println!("C++: GetRunAheadMetricsCommandSize = {size}, FillBufferWithCommand wrote {fill_len} bytes; Rust: {} and {}", r[0], r[1]);
+    assert_eq!((size, fill_len), (15, 16));
+    assert_eq!(r, c);
+}
+
+/// The room checks at the edge: `n` filler commands (progress messages for three players, keep-alives or player-leave messages,
+/// whose different headers give different packet lengths) bring the packet close to 476 bytes, then one command of each kind
+/// with a header that repeats or changes the filler's; the whole log (sizes, fills, `isRoomFor`, the add results, the packets)
+/// is compared. Load-complete and time-out-start are the overrun probe's.
+#[test]
+fn the_room_checks_agree_at_the_edge_of_a_full_packet() {
+    let mut g = Gen::new(0x215_0006);
+    let mut chk = Check::new("room boundary probe: the whole log");
+    let (mut probes, mut refused, mut accepted_tight) = (0u64, 0u64, 0u64);
+    for kind in (0..=29u32).filter(|k| ![12, 13, 15, 16, 22].contains(k)) {
+        for filler in [14u32, 9, 5] {
+            for n in (0..160u32).step_by(1) {
+                for variant in 0..2u32 {
+                    let mut v = vec![1, n + 1];
+                    for k in 0..n {
+                        v.extend_from_slice(&[filler, k % 3, 10, 100 + k, 4]);
+                        if filler != 9 {
+                            v.push(k % 7);
+                        }
+                    }
+                    let mut c = Ctx { player: (n + 1) % 3, frame: 10, relay: 4, id: 100 + n, ack_kind: 99, ack_orig: 0, ack_cmd: 0 };
+                    if variant == 1 {
+                        c.player = 5;
+                        c.frame = 11;
+                        c.relay = 9;
+                        c.id = 7000;
+                    }
+                    // a game message with few arguments, a short chat, a small file: the sizes that straddle the edge
+                    gen_cmd_kind(&mut g, &mut c, &mut v, false, false, kind);
+                    probes += 1;
+                    let _one = CPP.lock().unwrap_or_else(|e| e.into_inner());
+                    let cc = cpp_run(&v);
+                    let mut made = Made::default();
+                    let r = rust_pack(&v, &mut made);
+                    drop(_one);
+                    if r != cc {
+                        show("room probe", probes, &r, &cc);
+                    }
+                    refused += cc.windows(2).filter(|w| w[0] == 0 && w[1] == 0).count() as u64 * 0;
+                    accepted_tight += made.packets.last().map(|p| (p.len() > 470) as u64).unwrap_or(0);
+                    chk.eq(r, cc, || format!("kind {kind} filler {filler} n {n} variant {variant}"));
+                }
+            }
+        }
+    }
+    println!("{probes} probes, {accepted_tight} ended with a packet over 470 bytes{}", if refused > 0 { "" } else { "" });
+    if planted() {
+        let a = chk.report();
+        println!("MEASURED mismatching: room probe {a}");
         assert!(false, "a planted run: see the MEASURED line (a mismatch is the plant caught)");
     } else {
         chk.finish();

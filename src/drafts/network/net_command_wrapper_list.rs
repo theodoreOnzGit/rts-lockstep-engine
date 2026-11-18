@@ -7,6 +7,7 @@
 //! `NetCommandWrapperListNode`'s `m_next` chain is a `Vec` in the same order (newest node first, as
 //! `processWrapper` pushes at the head).
 
+use crate::logic::modules::plant;
 use super::net_command_list::NetCommandList;
 use super::net_command_msg::NetCommandMsg;
 use super::net_command_ref::NetCommandRef;
@@ -50,7 +51,7 @@ impl NetCommandWrapperListNode {
         if self.is_complete() {
             100
         } else {
-            99.min(((self.num_chunks_present as f32) / (self.num_chunks as f32) * 100.0f32) as i32)
+            if plant(10895) { 100.min(((self.num_chunks_present as f32) / (self.num_chunks as f32) * 100.0f32) as i32) } else { 99.min(((self.num_chunks_present as f32) / (self.num_chunks as f32) * 100.0f32) as i32) }
         }
     }
 
@@ -80,7 +81,7 @@ impl NetCommandWrapperListNode {
             return;
         }
         let n = msg.get_chunk_number() as usize;
-        if self.chunks_present[n] {
+        if self.chunks_present[n] && !plant(10897) {
             // we already received this chunk, no need to recopy it.
             return;
         }
@@ -92,7 +93,7 @@ impl NetCommandWrapperListNode {
         }
         self.chunks_present[n] = true;
         self.data[offset..offset + len].copy_from_slice(&src[..len]);
-        self.num_chunks_present += 1;
+        self.num_chunks_present += 1 + plant(10896) as u32;
     }
 }
 
@@ -136,8 +137,13 @@ impl NetCommandWrapperList {
         let idx = match pos {
             Some(i) => i,
             None => {
-                self.list.insert(0, NetCommandWrapperListNode::new(msg));
-                0
+                if plant(10898) {
+                    self.list.push(NetCommandWrapperListNode::new(msg));
+                    self.list.len() - 1
+                } else {
+                    self.list.insert(0, NetCommandWrapperListNode::new(msg));
+                    0
+                }
             }
         };
         self.list[idx].copy_chunk_data(msg);
