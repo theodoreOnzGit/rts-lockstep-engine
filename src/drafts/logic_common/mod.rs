@@ -14,3 +14,7 @@ pub mod video_player;
 pub mod debug_display;
 pub mod ray_effect;
 pub mod smudge;
+pub mod demoralize_special_power;
+pub mod pow_truck_ai_update;
+pub mod prison_behavior;
+pub mod propaganda_center_behavior;
