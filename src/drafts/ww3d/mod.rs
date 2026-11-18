@@ -69,3 +69,4 @@ pub mod shdrenderer;
 pub mod texproject;
 pub mod metalmap;
 pub mod stripoptimizer;
+pub mod visrasterizer;
