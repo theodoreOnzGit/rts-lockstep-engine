@@ -8,3 +8,6 @@ pub mod hermite_spline;
 pub mod cardinal_spline;
 pub mod catmull_rom_spline;
 pub mod tcb_spline;
+pub mod euler;
+pub mod lookup_table;
+pub mod frustum;
