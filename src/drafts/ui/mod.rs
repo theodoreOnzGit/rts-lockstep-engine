@@ -16,3 +16,7 @@ pub mod window_video_manager;
 pub mod credits_menu;
 pub mod disconnect_window;
 pub mod establish_connections_window;
+pub mod game_info_window;
+pub mod popup_communicator;
+pub mod w3d_game_window_manager;
+pub mod w3d_motd;
