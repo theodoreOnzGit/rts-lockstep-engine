@@ -4,3 +4,4 @@
 pub mod user_preferences;
 pub mod anim2d;
 pub mod drawable;
+pub mod in_game_ui;
