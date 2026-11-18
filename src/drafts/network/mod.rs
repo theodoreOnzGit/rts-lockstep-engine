@@ -25,3 +25,6 @@ pub mod network_util;
 pub mod transport;
 pub mod udp;
 pub mod user;
+pub mod staging_room_game_info;
+pub mod buddy_thread;
+pub mod persistent_storage_thread;
