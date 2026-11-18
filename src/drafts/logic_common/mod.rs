@@ -18,3 +18,6 @@ pub mod demoralize_special_power;
 pub mod pow_truck_ai_update;
 pub mod prison_behavior;
 pub mod propaganda_center_behavior;
+pub mod w3d_module_factory;
+pub mod win32_os_display;
+pub mod cd_manager;
