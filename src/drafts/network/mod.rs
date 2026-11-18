@@ -13,6 +13,7 @@ pub mod connection;
 pub mod connection_manager;
 pub mod disconnect_manager;
 pub mod frame_data;
+pub mod game_spy_game_info;
 pub mod frame_data_manager;
 pub mod frame_metrics;
 pub mod net_command_list;
