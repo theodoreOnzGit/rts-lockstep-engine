@@ -1,10 +1,12 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 6,000 operation sequences (test: tests/differential_draft_netlogic.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/FrameDataManager.h
 //!   GeneralsMD/Code/GameEngine/Source/GameNetwork/FrameDataManager.cpp
 
 use super::frame_data::{FrameData, FrameDataReturnType};
+use crate::logic::modules::plant;
 use super::net_command_list::NetCommandList;
 use super::net_command_msg::{NetCommandMsgPtr, NetworkFrameLimits};
 
@@ -34,7 +36,8 @@ impl FrameDataManager {
     }
 
     fn index(&self, frame: u32) -> usize {
-        (frame % self.limits.frame_data_length as u32) as usize
+        let len = if plant(11861) { self.limits.frame_data_length - 1 } else { self.limits.frame_data_length };
+        (frame % len.max(1) as u32) as usize
     }
 
     /// `FrameDataManager::init` (FrameDataManager.cpp:53): inits every frame; a local manager's frames announce
@@ -42,13 +45,15 @@ impl FrameDataManager {
     pub fn init(&mut self) {
         for i in 0..self.frame_data.len() {
             self.frame_data[i].init();
-            if self.is_local {
+            if self.is_local && !plant(11862) {
                 let c = self.frame_data[i].get_command_count();
                 self.frame_data[i].set_frame_command_count(c);
             }
         }
         self.is_quitting = false;
-        self.quit_frame = 0;
+        if !plant(11869) {
+            self.quit_frame = 0;
+        }
     }
 
     /// `reset`: `init()`.
@@ -65,7 +70,7 @@ impl FrameDataManager {
         let frame = msg.read().get_execution_frame();
         let frameindex = self.index(frame);
         self.frame_data[frameindex].add_command(msg);
-        if self.is_local {
+        if self.is_local && !plant(11863) {
             let c = self.frame_data[frameindex].get_command_count();
             self.frame_data[frameindex].set_frame_command_count(c);
         }
@@ -93,10 +98,11 @@ impl FrameDataManager {
     pub fn reset_frame(&mut self, frame: u32, is_advancing: bool) {
         let frameindex = self.index(frame);
         self.frame_data[frameindex].reset();
-        if is_advancing {
-            self.frame_data[frameindex].set_frame(frame.wrapping_add(self.limits.max_frames_ahead as u32));
+        if is_advancing != plant(11865) {
+            let ahead = if plant(11864) { self.limits.frame_data_length } else { self.limits.max_frames_ahead };
+            self.frame_data[frameindex].set_frame(frame.wrapping_add(ahead as u32));
         }
-        if self.is_local {
+        if self.is_local && !plant(11866) {
             let c = self.frame_data[frameindex].get_command_count();
             self.frame_data[frameindex].set_frame_command_count(c);
         }
@@ -110,7 +116,7 @@ impl FrameDataManager {
 
     /// `setFrameCommandCount`.
     pub fn set_frame_command_count(&mut self, frame: u32, command_count: u32) {
-        let i = self.index(frame);
+        let i = self.index(if plant(11870) { frame.wrapping_add(1) } else { frame });
         self.frame_data[i].set_frame_command_count(command_count);
     }
 
@@ -123,6 +129,7 @@ impl FrameDataManager {
     /// `startingFrame`, wrapping the ring.
     pub fn zero_frames(&mut self, starting_frame: u32, num_frames: u32) {
         let mut frame_index = self.index(starting_frame);
+        let num_frames = if plant(11867) && num_frames > 0 { num_frames - 1 } else { num_frames };
         for _ in 0..num_frames {
             self.frame_data[frame_index].zero_frame();
             frame_index += 1;
@@ -139,7 +146,7 @@ impl FrameDataManager {
 
     /// `setQuitFrame`: also sets the quitting flag.
     pub fn set_quit_frame(&mut self, frame: u32) {
-        self.is_quitting = true;
+        self.is_quitting = !plant(11868);
         self.quit_frame = frame;
     }
 
@@ -151,5 +158,12 @@ impl FrameDataManager {
     /// `getIsQuitting`.
     pub fn get_is_quitting(&self) -> bool {
         self.is_quitting
+    }
+
+    /// Test support, not upstream (`m_frameData` is protected and `FrameData::getFrame` is read through it by the differential test,
+    /// tests/differential_draft_netlogic.rs): the `getFrame` of the ring's entry at `index`.
+    #[doc(hidden)]
+    pub fn get_frame_data_frame(&self, index: u32) -> u32 {
+        self.frame_data[index as usize].get_frame()
     }
 }

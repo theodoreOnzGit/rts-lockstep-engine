@@ -11243,6 +11243,7 @@ mod differential {
         // --- end p1w5-world ---
 
         drafts_netpkt(&up, &shim, &dif, &ww); // #215: the network drafts (group netpkt), see the function at the end of this module
+        drafts_netlogic(&up, &shim, &dif, &ww); // #215 (group netlogic): the network bookkeeping drafts, see the function at the end of this module
 
         for p in [
             "differential",
@@ -12104,6 +12105,87 @@ mod differential {
                 .include(up.join("Libraries/Include"))
                 .file(dif.join(wrapper));
             b.compile(lib);
+        }
+    }
+
+    /// (#215, group netlogic) The network bookkeeping drafts' references: FrameDataManager.cpp, FrameData.cpp, NetCommandList.cpp,
+    /// NetCommandRef.cpp, NetCommandMsg.cpp, NetworkUtil.cpp compiled unchanged, FrameMetrics.cpp in a copy with one for-scope
+    /// edit (`i` declared in the first loop, used by the second: MSVC's pre-standard scope), all through
+    /// differential/wrap_draft_netlogic.cpp.
+    fn drafts_netlogic(up: &Path, shim: &Path, dif: &Path, ww: &Path) {
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let gen = out_dir.join("netlogic_gen");
+        std::fs::create_dir_all(&gen).expect("create netlogic_gen");
+        let fm = read_upstream(up.join("GameEngine/Source/GameNetwork/FrameMetrics.cpp"));
+        let (a, b) = (
+            "\tfor (Int i = 0; i < TheGlobalData->m_networkFPSHistoryLength; ++i) {\n",
+            "\tInt i;\n\tfor (i = 0; i < TheGlobalData->m_networkFPSHistoryLength; ++i) {\n",
+        );
+        assert_eq!(fm.matches(a).count(), 1, "FrameMetrics.cpp: init's first loop must occur once");
+        std::fs::write(gen.join("FrameMetrics.cpp"), fm.replacen(a, b, 1)).expect("write FrameMetrics.cpp");
+        let mut cfg = cc::Build::new();
+        base(&mut cfg);
+        cfg.include(&gen)
+            .include(dif.join("shim_netlogic"))
+            .include(dif.join("shim_netpkt"))
+            .include(shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(ww.join("WWMath"))
+            .include(ww.join("WWLib"))
+            .file(dif.join("wrap_draft_netlogic.cpp"));
+        cfg.compile("upstream_draft_netlogic");
+        // the GameSpy config (GSConfig.cpp whole, on differential/shim_gsconfig), in a library of its own
+        let mut gc = cc::Build::new();
+        base(&mut gc);
+        gc.define("AsciiString", Some("GcAsciiString"))
+            .define("UnicodeString", Some("GcUnicodeString"))
+            .define("TheDynamicMemoryAllocator", Some("GcDynamicMemoryAllocator"))
+            .include(dif.join("shim_gsconfig"))
+            .include(dif.join("shim_netpkt"))
+            .include(dif.join("shim_ascii"))
+            .include(shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(ww.join("WWMath"))
+            .include(ww.join("WWLib"))
+            .flag("-include")
+            .flag(dif.join("shim_ascii/ascii_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_draft_gsconfig.cpp"))
+            .file(up.join("GameEngine/Source/Common/System/AsciiString.cpp"));
+        gc.compile("upstream_draft_gsconfig");
+        // the ladder list (LadderDefs.cpp whole, on differential/shim_ladder), in a library of its own
+        let mut ld = cc::Build::new();
+        base(&mut ld);
+        ld.define("AsciiString", Some("LdAsciiString"))
+            .define("UnicodeString", Some("LdUnicodeString"))
+            .define("TheDynamicMemoryAllocator", Some("LdDynamicMemoryAllocator"))
+            .include(dif.join("shim_ladder"))
+            .include(dif.join("shim_netpkt"))
+            .include(dif.join("shim_ascii"))
+            .include(shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(ww.join("WWMath"))
+            .include(ww.join("WWLib"))
+            .flag("-include")
+            .flag(dif.join("shim_ladder/ladder_prelude.h").to_str().expect("UTF-8 path"))
+            .file(dif.join("wrap_draft_ladder.cpp"))
+            .file(dif.join("wrap_draft_user.cpp"))
+            .file(up.join("GameEngine/Source/Common/System/AsciiString.cpp"));
+        ld.compile("upstream_draft_ladder");
+        for p in [
+            "differential/wrap_draft_netlogic.cpp",
+            "differential/wrap_draft_gsconfig.cpp",
+            "differential/shim_gsconfig",
+            "differential/wrap_draft_ladder.cpp",
+            "differential/shim_ladder",
+            "differential/wrap_draft_user.cpp",
+            "differential/shim_netlogic",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameNetwork",
+            "upstream/GeneralsMD/Code/GameEngine/Include/GameNetwork",
+        ] {
+            println!("cargo:rerun-if-changed={p}");
         }
     }
 }
