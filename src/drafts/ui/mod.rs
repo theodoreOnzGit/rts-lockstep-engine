@@ -24,3 +24,4 @@ pub mod w3d_main_menu;
 pub mod load_screen;
 pub mod lan_map_select_menu;
 pub mod network_direct_connect;
+pub mod download_menu;
