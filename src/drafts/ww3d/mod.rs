@@ -18,3 +18,5 @@ pub mod lightenvironment;
 pub mod matrixmapper;
 pub mod projector;
 pub mod decalsys;
+pub mod texturefilter;
+pub mod bitmaphandler;
