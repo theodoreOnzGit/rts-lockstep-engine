@@ -11,3 +11,6 @@ pub mod display_string_manager;
 pub mod parabolic_ease;
 pub mod language_filter;
 pub mod video_player;
+pub mod debug_display;
+pub mod ray_effect;
+pub mod smudge;
