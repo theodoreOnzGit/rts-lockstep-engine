@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! Differential-tested in part (#215, tests/differential_draft_propaganda.rs): new, on_delete, update and on_removing match the upstream C++ on 20,000 sequences. Not covered: the module data's Default and INI key, and the Snapshot impl.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameLogic/Module/PropagandaCenterBehavior.h
@@ -13,6 +14,7 @@ use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 
 use super::prison_behavior::PrisonBehaviorModuleData;
+use crate::logic::modules::plant;
 
 /// `PropagandaCenterBehaviorModuleData`.
 #[derive(Clone, Debug, PartialEq)]
@@ -78,7 +80,7 @@ impl PropagandaCenterBehavior {
     pub fn on_delete<W: PropagandaWorld>(&mut self, w: &mut W) {
         // go through our list of brainwashed objects, and if they are still under our control, return them to their original owners
         for &id in self.brainwashed_list.iter() {
-            if w.object_exists(id) {
+            if w.object_exists(id) || plant(11526) {
                 // return this object under the control of the original owner
                 w.restore_original_team(id);
             }
@@ -97,19 +99,36 @@ impl PropagandaCenterBehavior {
             if w.object_exists(self.brainwashing_subject_id) {
                 let subject = self.brainwashing_subject_id;
                 // if we've been in here long enough, we come out brainwashed
-                if w.get_frame().wrapping_sub(self.brainwashing_subject_start_frame) >= self.data.brainwash_duration {
+                let long_enough = if plant(11528) {
+                    (w.get_frame() as i32).wrapping_sub(self.brainwashing_subject_start_frame as i32) >= self.data.brainwash_duration as i32
+                } else if plant(11521) {
+                    w.get_frame().wrapping_sub(self.brainwashing_subject_start_frame) > self.data.brainwash_duration
+                } else {
+                    w.get_frame().wrapping_sub(self.brainwashing_subject_start_frame) >= self.data.brainwash_duration
+                };
+                if long_enough {
                     // only can exit if the prison allows us to
                     if w.reserve_door_for_exit(subject) {
                         // place this object under the control of the player
                         w.set_temporary_team_to_owners_default(us, subject);
                         // remove any surrender status from this object
-                        w.clear_surrendered(subject);
+                        if !plant(11524) {
+                            w.clear_surrendered(subject);
+                        }
                         // add this object to our brainwashed list if we're not already in it
-                        if !self.brainwashed_list.iter().any(|&i| i == subject) {
-                            self.brainwashed_list.insert(0, subject);
+                        if plant(11523) || !self.brainwashed_list.iter().any(|&i| i == subject) {
+                            if plant(11522) {
+                                self.brainwashed_list.push(subject);
+                            } else {
+                                self.brainwashed_list.insert(0, subject);
+                            }
                         }
                         // exit the prison
                         w.exit_object_via_door(subject);
+                        if plant(11529) {
+                            self.brainwashing_subject_id = INVALID_ID;
+                            self.brainwashing_subject_start_frame = 0;
+                        }
                     }
                 }
             }
@@ -120,7 +139,9 @@ impl PropagandaCenterBehavior {
             if let Some(obj) = w.first_contained(us) {
                 // assign brainwashing subject on this frame
                 self.brainwashing_subject_id = obj;
-                self.brainwashing_subject_start_frame = w.get_frame();
+                if !plant(11527) {
+                    self.brainwashing_subject_start_frame = w.get_frame();
+                }
             }
         }
     }
@@ -130,7 +151,9 @@ impl PropagandaCenterBehavior {
         // if we're removing the brainwashing subject, NULL the pointer
         if self.brainwashing_subject_id == obj {
             self.brainwashing_subject_id = INVALID_ID;
-            self.brainwashing_subject_start_frame = 0;
+            if !plant(11525) {
+                self.brainwashing_subject_start_frame = 0;
+            }
         }
     }
 }

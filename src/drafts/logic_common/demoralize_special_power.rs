@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! Differential-tested in part (#215, tests/differential_draft_demoralize.rs): do_special_power_at_location and do_special_power_at_object match the upstream C++ on 100,000 cases. Not covered: the module data's field names and Default, and the Snapshot impl.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameLogic/Module/DemoralizeSpecialPower.h
@@ -11,6 +12,7 @@
 use crate::common::base_type::Coord3D;
 use crate::common::game_type::ObjectId;
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::modules::plant;
 
 /// `DemoralizeSpecialPowerModuleData` (after `SpecialPowerModuleData`).
 #[derive(Clone, Debug, PartialEq)]
@@ -99,33 +101,55 @@ impl DemoralizeSpecialPower {
             None => return,
         };
         // call the base class action cause we are *EXTENDING* functionality
-        w.special_power_base_do_at_location(source, loc, angle, command_options);
+        if !plant(11517) {
+            w.special_power_base_do_at_location(source, loc, angle, command_options);
+        }
         // the demoralize special power increases in range and duration of effect the more units we have captured within us
         let mut duration: u32 = self.data.base_duration_in_frames;
         let mut range: f32 = self.data.base_range;
         if let Some(count) = w.contain_count(source) {
             // for every captured unit we get a bonus
-            duration = duration.wrapping_add(count.wrapping_mul(self.data.bonus_duration_per_captured_in_frames));
+            duration = if plant(11518) { duration.saturating_add(count.saturating_mul(self.data.bonus_duration_per_captured_in_frames)) } else { duration.wrapping_add(count.wrapping_mul(self.data.bonus_duration_per_captured_in_frames)) };
             // cap at the max
-            if duration > self.data.max_duration_in_frames {
+            if duration > self.data.max_duration_in_frames && !plant(11511) {
                 duration = self.data.max_duration_in_frames;
             }
             // increase the range for every prisoner we got
-            range += (count as f32) * self.data.bonus_range_per_captured;
+            range += if plant(11513) { self.data.bonus_range_per_captured } else { (count as f32) * self.data.bonus_range_per_captured };
             // cap at the max
+            if range > self.data.max_range && !plant(11512) {
+                range = if plant(11520) { self.data.base_range } else { self.data.max_range };
+            }
+        } else if plant(11514) {
+            if duration > self.data.max_duration_in_frames {
+                duration = self.data.max_duration_in_frames;
+            }
             if range > self.data.max_range {
                 range = self.data.max_range;
             }
         }
+        if plant(11516) {
+            if let Some(fx) = self.data.fx_list.clone() {
+                w.do_fx_pos(&fx, loc);
+            }
+        }
         // scan the objects in the area range and demoralize them
-        for obj in w.iterate_enemy_neutral_infantry_in_range(source, loc, range) {
+        for (k, obj) in w.iterate_enemy_neutral_infantry_in_range(source, loc, range).into_iter().enumerate() {
+            if plant(11519) && k > 0 {
+                break;
+            }
             // demoralize only affects with ai of course
             w.set_demoralized(obj, duration);
+        }
+        if plant(11517) {
+            w.special_power_base_do_at_location(source, loc, angle, command_options);
         }
         // play an effect at the destination location
         if let Some(fx) = self.data.fx_list.clone() {
             // execute FX
-            w.do_fx_pos(&fx, loc);
+            if !plant(11516) {
+                w.do_fx_pos(&fx, loc);
+            }
         }
     }
 
@@ -136,7 +160,7 @@ impl DemoralizeSpecialPower {
             return;
         }
         if let Some(o) = obj {
-            let pos = w.position(o);
+            let pos = if plant(11515) { w.position(source) } else { w.position(o) };
             self.do_special_power_at_location(w, source, Some(&pos), angle, command_options);
         }
     }

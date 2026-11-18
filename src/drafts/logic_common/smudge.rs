@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! Differential-tested in part (#215, tests/differential_draft_smudge.rs): add/remove of sets and smudges and both resets match the upstream C++ on 10,000 sequences (the free lists' order included). Not covered: drop_manager (upstream's destructor is undefined once its free set list is empty), init, the count and hardware-support accessors (plain fields).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameClient/Smudge.h
@@ -11,6 +12,7 @@
 
 use std::collections::VecDeque;
 
+use crate::logic::modules::plant;
 use crate::ww::vector2::Vector2;
 use crate::ww::vector3::Vector3;
 
@@ -110,14 +112,23 @@ impl SmudgePool {
         // Return all smudgeSets back to free pool.
         while let Some(head) = self.used_smudge_set_list.pop_front() {
             self.set_reset(head); // free all smudges.
-            self.free_smudge_set_list.push_back(head);
+            if plant(11531) {
+                self.free_smudge_set_list.push_front(head);
+            } else {
+                self.free_smudge_set_list.push_back(head);
+            }
+            if plant(11537) {
+                break;
+            }
         }
     }
 
     /// `SmudgeManager::addSmudgeSet()`: the head of the free list if any (moved to the used list's tail), else a new set.
     pub fn add_smudge_set(&mut self) -> usize {
         if let Some(set) = self.free_smudge_set_list.pop_front() {
-            self.used_smudge_set_list.push_back(set);
+            if !plant(11536) {
+                self.used_smudge_set_list.push_back(set);
+            }
             return set;
         }
         self.sets.push(SmudgeSet::default());
@@ -131,7 +142,11 @@ impl SmudgePool {
         if let Some(pos) = self.used_smudge_set_list.iter().position(|&s| s == set) {
             self.used_smudge_set_list.remove(pos);
         }
-        self.free_smudge_set_list.push_front(set);
+        if plant(11530) {
+            self.free_smudge_set_list.push_back(set);
+        } else {
+            self.free_smudge_set_list.push_front(set);
+        }
     }
 
     /// `SmudgeManager::getSmudgeCountLastFrame()`.
@@ -152,13 +167,18 @@ impl SmudgePool {
     /// `SmudgeSet::reset()`: every used smudge goes to the free list's head, one by one.
     pub fn set_reset(&mut self, set: usize) {
         while let Some(head) = self.sets[set].used_smudge_list.pop_front() {
-            self.free_smudge_list.push_front(head); // add to free list
+            if plant(11533) {
+                self.free_smudge_list.push_back(head);
+            } else {
+                self.free_smudge_list.push_front(head); // add to free list
+            }
         }
     }
 
     /// `SmudgeSet::addSmudgeToSet()`: the free list's head if any, else a new smudge; appended to the set's list; the count goes up.
     pub fn add_smudge_to_set(&mut self, set: usize) -> usize {
-        let smudge = match self.free_smudge_list.pop_front() {
+        let recycled = if plant(11534) { None } else { self.free_smudge_list.pop_front() };
+        let smudge = match recycled {
             Some(s) => s, // remove from free list
             None => {
                 self.smudges.push(Smudge::default());
@@ -175,8 +195,14 @@ impl SmudgePool {
         if let Some(pos) = self.sets[set].used_smudge_list.iter().position(|&s| s == smudge) {
             self.sets[set].used_smudge_list.remove(pos);
         }
-        self.free_smudge_list.push_front(smudge);
-        self.sets[set].used_smudge_count -= 1;
+        if plant(11532) {
+            self.free_smudge_list.push_back(smudge);
+        } else {
+            self.free_smudge_list.push_front(smudge);
+        }
+        if !plant(11535) {
+            self.sets[set].used_smudge_count -= 1;
+        }
     }
 }
 
