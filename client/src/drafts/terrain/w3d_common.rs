@@ -23,6 +23,106 @@ impl SphereClass {
     pub fn new(center: Vector3, radius: f32) -> Self {
         SphereClass { center, radius }
     }
+
+    /// `SphereClass::SphereClass(const Vector3 *Position, const int VertCount)` (sphere.h:114): the bounding sphere of
+    /// a point set by the algorithm of Graphics Gems I page 301 (within about 5% of the optimal one). `positions` must
+    /// not be empty (upstream reads `Position[0]` unconditionally).
+    pub fn from_points(positions: &[Vector3]) -> SphereClass {
+        let vert_count = positions.len();
+        let mut xmin = positions[0];
+        let mut xmax = positions[0];
+        let mut ymin = positions[0];
+        let mut ymax = positions[0];
+        let mut zmin = positions[0];
+        let mut zmax = positions[0];
+
+        // FIRST PASS: finding the 6 minima and maxima points
+        for i in 1..vert_count {
+            let p = positions[i];
+            if p.x < xmin.x {
+                xmin = p;
+            }
+            if p.x > xmax.x {
+                xmax = p;
+            }
+            if p.y < ymin.y {
+                ymin = p;
+            }
+            if p.y > ymax.y {
+                ymax = p;
+            }
+            if p.z < zmin.z {
+                zmin = p;
+            }
+            if p.z > zmax.z {
+                zmax = p;
+            }
+        }
+
+        // xspan = distance between the 2 points xmin and xmax squared. same goes for yspan and zspan.
+        let span = |a: &Vector3, b: &Vector3| -> f64 {
+            let dx = (b.x - a.x) as f64;
+            let dy = (b.y - a.y) as f64;
+            let dz = (b.z - a.z) as f64;
+            dx * dx + dy * dy + dz * dz
+        };
+        let xspan = span(&xmin, &xmax);
+        let yspan = span(&ymin, &ymax);
+        let zspan = span(&zmin, &zmax);
+
+        // Set points dia1 and dia2 to the maximally separated pair. This will be the diameter of the initial sphere
+        let mut dia1 = xmin;
+        let mut dia2 = xmax;
+        let mut maxspan = xspan;
+
+        if yspan > maxspan {
+            maxspan = yspan;
+            dia1 = ymin;
+            dia2 = ymax;
+        }
+        if zspan > maxspan {
+            dia1 = zmin;
+            dia2 = zmax;
+        }
+
+        // Compute initial center and radius and radius squared
+        let mut center = Vector3::default();
+        center.x = (dia1.x + dia2.x) / 2.0;
+        center.y = (dia1.y + dia2.y) / 2.0;
+        center.z = (dia1.z + dia2.z) / 2.0;
+
+        let dx = (dia2.x - center.x) as f64;
+        let dy = (dia2.y - center.y) as f64;
+        let dz = (dia2.z - center.z) as f64;
+
+        let mut radsqr = dx * dx + dy * dy + dz * dz;
+        let mut radius = radsqr.sqrt();
+
+        // SECOND PASS: increment current sphere if any points fall outside of it.
+        for i in 0..vert_count {
+            let dx = (positions[i].x - center.x) as f64;
+            let dy = (positions[i].y - center.y) as f64;
+            let dz = (positions[i].z - center.z) as f64;
+
+            let testrad2 = dx * dx + dy * dy + dz * dz;
+
+            if testrad2 > radsqr {
+                // this point was outside the old sphere, compute a new center point and radius which contains this point
+                let testrad = testrad2.sqrt();
+
+                // adjust center and radius
+                radius = (radius + testrad) / 2.0;
+                radsqr = radius * radius;
+
+                let oldtonew = testrad - radius;
+                center.x = ((radius * center.x as f64 + oldtonew * positions[i].x as f64) / testrad) as f32;
+                center.y = ((radius * center.y as f64 + oldtonew * positions[i].y as f64) / testrad) as f32;
+                center.z = ((radius * center.z as f64 + oldtonew * positions[i].z as f64) / testrad) as f32;
+            }
+        }
+
+        SphereClass { center, radius: radius as f32 }
+    }
 }
 
 /// `class AABoxClass` (aabox.h): `Center`, `Extent`.
