@@ -37,3 +37,4 @@ pub mod intersec;
 pub mod rect;
 pub mod surfaceclass;
 pub mod font3d;
+pub mod render2d;
