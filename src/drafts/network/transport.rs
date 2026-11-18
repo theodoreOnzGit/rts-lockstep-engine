@@ -16,6 +16,7 @@
 //! translated; `setLatency`/`setPacketLoss` store the flags and nothing reads them. Winsock start-up
 //! (`WSAStartup`/`WSACleanup`) has no counterpart: the socket is the [`UDP`] backend.
 
+use crate::logic::modules::plant;
 use std::sync::{Arc, RwLock};
 
 use crate::common::crc::Crc;
@@ -42,9 +43,11 @@ pub fn encrypt_buf(buf: &mut [u8], len: usize) {
         let o = i * 4;
         let mut w = u32::from_le_bytes([buf[o], buf[o + 1], buf[o + 2], buf[o + 3]]);
         w ^= mask;
-        w = w.swap_bytes(); // htonl
+        if !plant(10906) {
+            w = w.swap_bytes(); // htonl
+        }
         buf[o..o + 4].copy_from_slice(&w.to_le_bytes());
-        mask = mask.wrapping_add(0x0000_0321); // just for fun
+        mask = mask.wrapping_add(if plant(10907) { 0x0000_0123 } else { 0x0000_0321 }); // just for fun
     }
 }
 
@@ -56,7 +59,7 @@ pub fn decrypt_buf(buf: &mut [u8], len: usize) {
         let o = i * 4;
         let mut w = u32::from_le_bytes([buf[o], buf[o + 1], buf[o + 2], buf[o + 3]]);
         w = w.swap_bytes(); // htonl
-        w ^= mask;
+        w ^= if plant(10908) { mask >> 1 } else { mask };
         buf[o..o + 4].copy_from_slice(&w.to_le_bytes());
         mask = mask.wrapping_add(0x0000_0321);
     }

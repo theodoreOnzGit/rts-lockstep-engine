@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 8,000 operation sequences (163,628 operations) and, through getCommandList, 14,730 packets (test: tests/differential_draft_netpkt.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/NetCommandList.h
@@ -13,6 +14,7 @@
 //! that is not on a list (the result of `NetPacket::ConstructNetCommandMsgFromRawData`, or one taken off with
 //! [`NetCommandList::remove_message`]) is a plain [`NetCommandRef`] value.
 
+use crate::logic::modules::plant;
 use super::net_command_msg::{NetCommandBody, NetCommandMsg, NetCommandMsgPtr, NetCommandType};
 use super::net_command_ref::{NetCommandRef, NetCommandRefId};
 use super::network_util::does_command_require_a_command_id;
@@ -120,7 +122,7 @@ impl NetCommandList {
             let temp = self.add_message(list.r(id).msg.clone());
             if let Some(t) = temp {
                 let relay = list.r(id).relay;
-                self.rm(t).set_relay(relay);
+                self.rm(t).set_relay(if plant(10915) { 0 } else { relay });
             }
             msg = next;
         }
@@ -135,7 +137,7 @@ impl NetCommandList {
             (n.prev, n.next)
         };
         if self.last_message_inserted == Some(id) {
-            self.last_message_inserted = next;
+            self.last_message_inserted = if plant(10917) { prev } else { next };
         }
         if let Some(p) = prev {
             self.rm(p).set_next(next);
@@ -191,7 +193,7 @@ impl NetCommandList {
                 None => true,
                 Some(tn) => self.ty(tn) > mt || self.player(tn) > mp || self.cmd_id(tn) > mid,
             };
-            if self.ty(lmi) == mt && self.player(lmi) == mp && self.cmd_id(lmi) < mid && next_after {
+            if self.ty(lmi) == mt && (self.player(lmi) == mp || plant(10914)) && self.cmd_id(lmi) < mid && next_after {
                 if self.is_equal_command_msg_ids(lmi, &node.msg) {
                     return None;
                 }
@@ -219,7 +221,7 @@ impl NetCommandList {
             }
         }
 
-        if mt > self.ty(last) {
+        if if plant(10913) { mt >= self.ty(last) } else { mt > self.ty(last) } {
             // easy optimization for a command that goes at the end of the list
             if self.is_equal_command_msg_ids(last, &node.msg) {
                 return None;
@@ -233,7 +235,7 @@ impl NetCommandList {
             return Some(id);
         }
 
-        if mt < self.ty(first) {
+        if if plant(10911) { mt <= self.ty(first) } else { mt < self.ty(first) } {
             if self.is_equal_command_msg_ids(first, &node.msg) {
                 return None;
             }
@@ -262,7 +264,7 @@ impl NetCommandList {
 
         // Now find the player position.
         while let Some(t) = tempmsg {
-            if mt == self.ty(t) && mp > self.player(t) {
+            if mt == self.ty(t) && (if plant(10910) { mp >= self.player(t) } else { mp > self.player(t) }) {
                 tempmsg = self.r(t).next;
             } else {
                 break;
@@ -274,7 +276,7 @@ impl NetCommandList {
 
         // Find the position within the player's section based on the sort number.
         while let Some(t) = tempmsg {
-            if mt == self.ty(t) && mp == self.player(t) && msort > self.sort(t) {
+            if mt == self.ty(t) && mp == self.player(t) && (if plant(10912) { msort >= self.sort(t) } else { msort > self.sort(t) }) {
                 tempmsg = self.r(t).next;
             } else {
                 break;
@@ -365,7 +367,7 @@ impl NetCommandList {
     pub fn find_message_by_id(&self, command_id: u16, player_id: u8) -> Option<NetCommandRefId> {
         let mut retval = self.first;
         while let Some(id) = retval {
-            if does_command_require_a_command_id(self.ty(id))
+            if (does_command_require_a_command_id(self.ty(id)) || plant(10916))
                 && self.cmd_id(id) == command_id
                 && self.player(id) == player_id as u32
             {

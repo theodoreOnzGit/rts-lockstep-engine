@@ -12,6 +12,7 @@
 //! no trait objects). Shared ownership is [`NetCommandMsgPtr`] (`Arc<RwLock<..>>`); `attach`/`detach` keep upstream's
 //! `m_referenceCount` bookkeeping, but the memory is freed by the `Arc`.
 
+use crate::logic::modules::plant;
 use std::sync::{Arc, RwLock};
 
 use crate::common::ascii_string::AsciiString;
@@ -466,7 +467,7 @@ impl NetCommandMsg {
     pub fn get_sort_number(&self) -> i32 {
         match &self.body {
             NetCommandBody::AckBoth(a) | NetCommandBody::AckStage1(a) | NetCommandBody::AckStage2(a) => {
-                a.command_id as i32
+                if plant(10886) { self.id as i32 } else { a.command_id as i32 }
             }
             _ => self.id as i32,
         }
@@ -477,7 +478,7 @@ impl NetCommandMsg {
     pub fn get_contents_as_ascii_string(&self) -> Vec<u8> {
         match &self.body {
             NetCommandBody::GameCommand(g) => {
-                let mut v = b"Type:".to_vec();
+                let mut v = if plant(10887) { b"Type ".to_vec() } else { b"Type:".to_vec() };
                 v.extend_from_slice(g.ty.command_string().as_bytes());
                 v
             }
