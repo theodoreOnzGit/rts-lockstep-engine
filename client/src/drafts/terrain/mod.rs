@@ -12,3 +12,4 @@ pub mod w3d_bridge_buffer;
 pub mod w3d_road_buffer;
 pub mod w3d_snow;
 pub mod w3d_tree_buffer;
+pub mod w3d_terrain_tracks;
