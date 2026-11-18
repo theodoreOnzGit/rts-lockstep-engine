@@ -42,7 +42,6 @@ use rts_lockstep_engine::common::base_type::{real_to_int_ceil, real_to_int_floor
 use rts_lockstep_engine::common::game_type::{PathfindLayer, LAYER_GROUND};
 use rts_lockstep_engine::logic::terrain_visual::{MAP_HEIGHT_SCALE, MAP_XY_FACTOR};
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
-use rts_lockstep_engine::ww::vector2::Vector2;
 use rts_lockstep_engine::ww::vector3::Vector3;
 use rts_lockstep_engine::ww::wwmath;
 
@@ -2001,7 +2000,3 @@ impl W3DProjectedShadowManager {
         }
     }
 }
-
-/// `Vector2` appears in upstream's `updateTexture` (`uvData`, unused); kept so the include list reads as upstream's.
-#[allow(dead_code)]
-type UnusedUvData = Vector2;
