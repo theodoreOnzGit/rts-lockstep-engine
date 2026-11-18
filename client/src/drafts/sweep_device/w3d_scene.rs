@@ -16,9 +16,13 @@
 //! Excluded / not drafted (listed in the #213 comment):
 //! - `updatePlayerColorPasses` (W3DScene.cpp:925): its body is inside `#ifdef USE_NON_STENCIL_OCCLUSION`, which no header
 //!   defines, so it is an empty function in the retail build. Drafted as that empty function.
-//! - `flushOccludedObjectsIntoStencil` (W3DScene.cpp:1326): the stencil player-colour pass (colour assignment per player and
-//!   the per-colour draw order) is D3D stencil state around that loop; left for a follow-up.
+//! - ~~`flushOccludedObjectsIntoStencil` (W3DScene.cpp:1326): left for a follow-up.~~ **Corrected 2026-11-18 (second pass,
+//!   #213):** drafted at the bottom of this file as an ordered plan ([`OccludedStencilStep`]); the D3D stencil
+//!   render states are named steps, the object bucketing, colour-index assignment and draw order are translated as written.
 
+use rts_lockstep_engine::common::game_common::MAX_PLAYER_COUNT;
+use rts_lockstep_engine::formats::texture::colorspace::{hsv_to_rgb, rgb_to_hsv};
+use rts_lockstep_engine::formats::w3d::mesh::dx8_convert_color;
 use rts_lockstep_engine::ww::vector3::Vector3;
 
 /// An opaque `RenderObjClass *` of the scene's lists.
@@ -308,4 +312,245 @@ pub fn do_render<C: Copy>(camera: &mut Option<C>, cam: C, draw: &mut impl FnMut(
     *camera = Some(cam);
     draw(cam);
     *camera = None;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// flushOccludedObjectsIntoStencil
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// `MAX_VISIBLE_OCCLUDED_PLAYER_OBJECTS` (W3DScene.cpp:1325): the most occluded objects kept per player.
+pub const MAX_VISIBLE_OCCLUDED_PLAYER_OBJECTS: usize = 512;
+/// `NUMBER_PLAYER_COLOR_BITS` (W3DScene.cpp:1202): 4 bits encode 8 players, because the indices start at 1.
+pub const NUMBER_PLAYER_COLOR_BITS: i32 = 4;
+/// `DrawableInfo::ERF_IS_TRANSLUCENT`: set in a render object's drawable info flags (the verified `ERF_IS_OCCLUDED`
+/// above is 0x0001; the flag values are read from the caller's [`OccludeeInfo::is_translucent`]).
+///
+/// `playerIndexToColorIndex` (W3DScene.cpp:1205): the 4 low bits of `player_index`, bit-reversed, so low stencil bits
+/// stay free for shadows.
+pub fn player_index_to_color_index(player_index: i32) -> i32 {
+    let tmp = player_index;
+    let mut result = 0;
+    // Player index is stored in 4 bits
+    for i in 0..NUMBER_PLAYER_COLOR_BITS {
+        let flipped_position = NUMBER_PLAYER_COLOR_BITS - 1 - i; // correct position of bit after it's flipped left/right
+        if flipped_position > i {
+            // shifting left
+            result |= (tmp & (1 << i)) << (flipped_position - i);
+        } else {
+            // shifting right
+            result |= (tmp & (1 << i)) >> (i - flipped_position);
+        }
+    }
+    result
+}
+
+/// One potentially occluded object (`m_potentialOccludees[i]`) with what the function reads from its `DrawableInfo` /
+/// `Object`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OccludeeInfo {
+    pub object: SceneObjectHandle,
+    /// `object->getControllingPlayer()->getPlayerIndex()`.
+    pub controlling_player_index: i32,
+    /// `object->getControllingPlayer()->getPlayerColor()` (0xRRGGBB).
+    pub player_color: i32,
+    /// `drawInfo->m_flags & DrawableInfo::ERF_IS_TRANSLUCENT`.
+    pub is_translucent: bool,
+}
+
+/// What `flushOccludedObjectsIntoStencil` reads from the scene and the globals.
+#[derive(Clone, Debug, Default)]
+pub struct OccludedStencilInputs {
+    /// `m_potentialOccludees[0..m_numPotentialOccludees]`.
+    pub potential_occludees: Vec<OccludeeInfo>,
+    /// `m_potentialOccluders[0..m_numPotentialOccluders]`.
+    pub potential_occluders: Vec<SceneObjectHandle>,
+    /// `m_nonOccludersOrOccludees[0..m_numNonOccluderOrOccludee]`.
+    pub non_occluders_or_occludees: Vec<SceneObjectHandle>,
+    /// `ThePlayerList ? getLocalPlayer()->getPlayerIndex() : 0`, passed on to each `renderOneObject`.
+    pub local_player_index: i32,
+    /// `TheGlobalData->m_occludedLuminanceScale`.
+    pub occluded_luminance_scale: f32,
+    /// `TheGlobalData->m_useShadowVolumes`.
+    pub use_shadow_volumes: bool,
+}
+
+/// A step of `flushOccludedObjectsIntoStencil`, in upstream's order. The D3D stencil states are named after the block
+/// they belong to; the values are in the variant docs.
+#[derive(Clone, Debug, PartialEq)]
+pub enum OccludedStencilStep {
+    /// `TheW3DShadowManager->setStencilShadowMask(mask)`.
+    SetStencilShadowMask(u32),
+    /// Occludee pass set-up: STENCILENABLE, ZENABLE true; STENCILMASK / WRITEMASK 0xffffffff; FUNC ALWAYS; ZFAIL and
+    /// FAIL KEEP; PASS REPLACE (always store the player index unless occluded by another player's occludees).
+    StencilStoreColorIndexSetup,
+    /// `D3DRS_STENCILREF = colour index << 3`.
+    StencilRef(i32),
+    /// `TheDX8MeshRenderer.Flush()` (and `SHD_FLUSH` where upstream calls it).
+    Flush,
+    /// Translucent object: STENCILFUNC NEVER (no frame buffer writes), STENCILFAIL REPLACE (always replace the stencil).
+    StencilNeverReplace,
+    /// After a translucent object: STENCILFAIL KEEP, STENCILFUNC ALWAYS.
+    StencilRestoreKeepAlways,
+    /// `renderOneObject(rinfo, robj, localPlayerIndex)`.
+    RenderOneObject { object: SceneObjectHandle, local_player_index: i32 },
+    /// `D3DRS_STENCILENABLE = FALSE`.
+    StencilDisable,
+    /// Occluder pass set-up: STENCILENABLE, ZENABLE true; REF 0xffffffff; MASK 0xffffffff; WRITEMASK 0x80 (only the
+    /// MSB); FUNC ALWAYS; ZFAIL / FAIL KEEP; PASS REPLACE.
+    StencilOccluderSetup,
+    /// `renderStenciledPlayerColor(color, stencilRef, clear)` (W3DScene.cpp:1229): a full-screen quad at the tactical
+    /// view's rectangle, drawn where the stencil matches. `color` is `DX8Wrapper::Convert_Color(rgb, 0.5)`.
+    RenderStenciledPlayerColor { color: u32, stencil_ref: u32, clear: bool },
+    /// `D3DRS_AMBIENT = Convert_Color(Get_Ambient_Light(), 0)`.
+    RestoreAmbient,
+}
+
+/// `RTS3DScene::flushOccludedObjectsIntoStencil` (W3DScene.cpp:1326): the stencil version of the occlusion pass.
+///
+/// 1. The stencil shadow mask is cleared.
+/// 2. If there are both potential occludees and potential occluders: the occludees are bucketed by controlling player
+///    (a bucket takes at most 512 objects, extra ones are dropped with an assert), each player with objects gets the next
+///    colour index (`playerIndexToColorIndex(usedPlayerColorIndex++)`, starting at 1) and a colour made from his
+///    player colour with HSV value scaled by `m_occludedLuminanceScale`, converted with alpha 0.5. Each player's objects
+///    are drawn with `STENCILREF = colourIndex << 3`; a translucent object is drawn alone between two flushes with the
+///    stencil function NEVER/REPLACE (colour writes off, since translucent objects draw at the end of the frame). Then the
+///    objects that are neither occluders nor occludees, then the occluders (writing only the stencil MSB), then one
+///    full-screen quad per visible player colour, and the shadow mask becomes the OR of the stencil refs used. With 8 or
+///    more visible colours and shadow volumes, the stencil is cleared to leave only the MSBs and the mask is
+///    `0x80808080`.
+/// 3. Else, if anything is queued: occludees, occluders and the rest are drawn normally.
+/// 4. The scene ambient is restored.
+pub fn flush_occluded_objects_into_stencil(inp: &OccludedStencilInputs) -> Vec<OccludedStencilStep> {
+    use OccludedStencilStep as S;
+    let mut steps: Vec<S> = Vec::new();
+
+    let max_players = MAX_PLAYER_COUNT as usize;
+    let mut player_objects: Vec<Vec<OccludeeInfo>> = vec![Vec::new(); max_players];
+    let mut player_color_index: Vec<i32> = vec![-1; max_players];
+    let mut visible_player_colors: Vec<u32> = Vec::with_capacity(max_players);
+
+    let mut used_player_color_index: i32 = 1;
+
+    // Assume no player colors are visible and all stencil bits are free for use by shadows.
+    steps.push(S::SetStencilShadowMask(0));
+
+    let local = inp.local_player_index;
+
+    if !inp.potential_occludees.is_empty() && !inp.potential_occluders.is_empty() {
+        // bucket sort all possibly occluded objects by player index/color.
+        for o in &inp.potential_occludees {
+            let index = o.controlling_player_index as usize;
+            if player_objects[index].len() >= MAX_VISIBLE_OCCLUDED_PLAYER_OBJECTS {
+                // DEBUG_ASSERTCRASH(FALSE, ("Exceeded Maximum Number of potentially occluded models"));
+                continue;
+            }
+            player_objects[index].push(*o);
+        }
+
+        steps.push(S::StencilStoreColorIndexSetup);
+
+        // Find out which player indices are actually used and remap them to a color index. Render all objects using the
+        // same color index at once. Potential occludees are rendered first so they z-sort correctly behind an occluder.
+        let mut rgb = [0.0f32; 3];
+        for i in 0..max_players {
+            let num_objects = player_objects[i].len();
+            if num_objects != 0 {
+                // this player has some objects so draw them using his color index.
+                if player_color_index[i] == -1 {
+                    // color index not assigned yet: assign a new color index to this player
+                    player_color_index[i] = player_index_to_color_index(used_player_color_index);
+                    used_player_color_index += 1;
+                    // assign a color to this index by copying it from the controlling player of all objects in this list.
+                    let color = player_objects[i][0].player_color;
+                    let mut hsv = rgb_to_hsv([
+                        ((color >> 16) & 0xff) as f32 / 255.0,
+                        ((color >> 8) & 0xff) as f32 / 255.0,
+                        (color & 0xff) as f32 / 255.0,
+                    ]);
+                    hsv[2] *= inp.occluded_luminance_scale;
+                    let _ = hsv_to_rgb(&mut rgb, hsv); // on Err the previous rgb stays, as upstream's `rgb`
+                    visible_player_colors.push(dx8_convert_color([rgb[0], rgb[1], rgb[2], 0.5]));
+                }
+
+                let this_player_color_index = player_color_index[i];
+
+                // Store this object's color index into bits 3-6 of stencil buffer
+                steps.push(S::StencilRef(this_player_color_index << 3));
+
+                // Render all of this player's objects for which we care when they are occluded.
+                for o in &player_objects[i] {
+                    if o.is_translucent {
+                        steps.push(S::Flush); // render all the submitted meshes using current stencil function (+ SHD_FLUSH)
+                        // Disable writing to color buffer since translucent objects are rendered at end of frame.
+                        steps.push(S::StencilNeverReplace);
+                        steps.push(S::RenderOneObject { object: o.object, local_player_index: local });
+                        steps.push(S::Flush);
+                        steps.push(S::StencilRestoreKeepAlways);
+                    } else {
+                        steps.push(S::RenderOneObject { object: o.object, local_player_index: local });
+                    }
+                }
+
+                steps.push(S::Flush);
+            }
+        }
+        // Stencil buffer is now filled with color indices of potentially occluded objects. Draw non-occluder or
+        // occludee objects such as small rocks, shrubs, etc. here so they don't interfere with building occlusion.
+        steps.push(S::StencilDisable); // these objects are not stored in stencil
+        for object in &inp.non_occluders_or_occludees {
+            steps.push(S::RenderOneObject { object: *object, local_player_index: local });
+        }
+        steps.push(S::Flush);
+
+        // Draw occluder objects so they cover up and modify stencil MSB wherever they are in front of other objects.
+        steps.push(S::StencilOccluderSetup);
+
+        // Render all potential occluders on top of already rendered potential occludees.
+        for object in &inp.potential_occluders {
+            steps.push(S::RenderOneObject { object: *object, local_player_index: local });
+        }
+        steps.push(S::Flush);
+
+        // We now have a stencil buffer where pixels that are occluded have a bit pattern of 1INDX000. INDX contains the
+        // occluded player's color index. Walk through all the player colors and draw them wherever the stencil matches.
+        let mut used_player_color_bits: u32 = 0;
+        let num_visible_player_colors = visible_player_colors.len() as i32;
+        for i in 0..num_visible_player_colors {
+            let color = visible_player_colors[i as usize];
+            let stencil_ref = ((player_index_to_color_index(i + 1) << 3) | 0x80) as u32;
+            steps.push(S::RenderStenciledPlayerColor { color, stencil_ref, clear: false });
+            used_player_color_bits |= stencil_ref; // keep track of all bits used for occlusion/player colors.
+        }
+
+        steps.push(S::SetStencilShadowMask(used_player_color_bits));
+        if num_visible_player_colors >= 8 && inp.use_shadow_volumes {
+            // With 8 or more visible players only 3 bits are left for stencil shadows (7 overlapping shadows): clear the
+            // stencil, leaving only the MSB set on occluded player pixels so the shadow code does not overwrite them.
+            steps.push(S::RenderStenciledPlayerColor { color: 0, stencil_ref: 0, clear: true });
+            // msb indicates occluded player pixels so ignore it when filling screen with shadow
+            steps.push(S::SetStencilShadowMask(0x8080_8080));
+        }
+
+        steps.push(S::StencilDisable);
+    } else if !inp.non_occluders_or_occludees.is_empty()
+        || !inp.potential_occluders.is_empty()
+        || !inp.potential_occludees.is_empty()
+    {
+        // no occluded objects so don't need to render anything special. Just draw the queued up objects like normal
+        // because they were skipped in the main scene traversal.
+        for o in &inp.potential_occludees {
+            steps.push(S::RenderOneObject { object: o.object, local_player_index: local });
+        }
+        for object in &inp.potential_occluders {
+            steps.push(S::RenderOneObject { object: *object, local_player_index: local });
+        }
+        for object in &inp.non_occluders_or_occludees {
+            steps.push(S::RenderOneObject { object: *object, local_player_index: local });
+        }
+        steps.push(S::Flush);
+    }
+
+    // Reset scene ambient because we sometimes mess around with it to make objects glow, etc. when processing drawables.
+    steps.push(S::RestoreAmbient);
+    steps
 }
