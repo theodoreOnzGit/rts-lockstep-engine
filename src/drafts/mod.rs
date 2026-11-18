@@ -6,3 +6,8 @@ pub mod logic_common;
 pub mod network;
 pub mod wwlib;
 pub mod ww3d;
+pub mod sweep_ww3d;
+pub mod sweep_script;
+pub mod sweep_wwlib;
+pub mod sweep_common_client;
+pub mod sweep_gui_logic;
