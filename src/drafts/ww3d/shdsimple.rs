@@ -116,3 +116,79 @@ impl Default for ShdSimpleDefClass {
         Self::new()
     }
 }
+
+// ---- the instance class (added in the second pass; the definition above was drafted first) ----
+
+use super::handles::TextureHandle;
+use crate::ww::vector4::Vector4;
+
+/// `class Shd6SimpleClass` (shdsimple.h): the version-6 (fixed function) implementation. It copies its colours out of the definition
+/// at construction and fills a `D3DMATERIAL8`. Translated: construction, `Get_Pass_Count` (1), `Get_Texture_Count` (1),
+/// `Peek_Texture`, `Use_HW_Vertex_Processing` (true), `Get_Vertex_Stream_Count` (1), `Get_Vertex_Size`,
+/// `Copy_Vertex_Stream`. Device-only, not translated: `Init`/`Shutdown` (empty), `Apply_Shared`, `Apply_Instance`
+/// (`DX8Wrapper::Set_DX8_Texture_Stage_State`, `Set_Vertex_Shader`, `Set_DX8_Render_State`, `Set_DX8_Material`, `Set_Texture`).
+#[derive(Clone, Debug)]
+pub struct Shd6SimpleClass {
+    /// `ShdInterfaceClass(def, SHDDEF_CLASSID_SIMPLE)`.
+    pub class_id: u32,
+    /// `Texture`.
+    pub texture: Option<TextureHandle>,
+    /// `Ambient` (alpha 1.0).
+    pub ambient: Vector4,
+    /// `Diffuse` (alpha 1.0).
+    pub diffuse: Vector4,
+    /// `Material`: the `D3DMATERIAL8` colours the constructor fills (the rest is zeroed).
+    pub material: D3DMaterial8Colors,
+}
+
+impl Shd6SimpleClass {
+    /// `Shd6SimpleClass::Shd6SimpleClass(def)`. `get_texture(name)` is `WW3DAssetManager::Get_Texture`.
+    pub fn new<F: FnMut(&str) -> TextureHandle>(def: &ShdSimpleDefClass, mut get_texture: F) -> Self {
+        let texture = Some(get_texture(def.get_texture_name()));
+        let a = *def.get_ambient();
+        let d = *def.get_diffuse();
+        Shd6SimpleClass {
+            class_id: SHDDEF_CLASSID_SIMPLE,
+            texture,
+            ambient: Vector4 { x: a.x, y: a.y, z: a.z, w: 1.0 },
+            diffuse: Vector4 { x: d.x, y: d.y, z: d.z, w: 1.0 },
+            // Material->Ambient/Diffuse = a/d, the rest zero (memset)
+            material: D3DMaterial8Colors { ambient: [a.x, a.y, a.z], diffuse: [d.x, d.y, d.z], specular: [0.0; 3], power: 0.0 },
+        }
+    }
+
+    /// `Get_Pass_Count`.
+    pub fn get_pass_count(&self) -> i32 {
+        1
+    }
+
+    /// `Get_Texture_Count`.
+    pub fn get_texture_count(&self) -> usize {
+        1
+    }
+
+    /// `Peek_Texture(idx)`.
+    pub fn peek_texture(&self, _idx: usize) -> Option<TextureHandle> {
+        self.texture
+    }
+
+    /// `Use_HW_Vertex_Processing`.
+    pub fn use_hw_vertex_processing(&self) -> bool {
+        true
+    }
+
+    /// `Get_Vertex_Stream_Count`.
+    pub fn get_vertex_stream_count(&self) -> u32 {
+        1
+    }
+
+    /// `Get_Vertex_Size(stream)`.
+    pub fn get_vertex_size(&self, _stream: u32) -> usize {
+        std::mem::size_of::<VertexFormatXYZNDUV1>()
+    }
+
+    /// `Copy_Vertex_Stream(stream, dest_buffer, vss, vertex_count)`: see `shdchunk::copy_vertex_stream_xyzn_duv1`.
+    pub fn copy_vertex_stream(&self, vss: &VertexStreamStruct, vertex_count: usize) -> Vec<VertexFormatXYZNDUV1> {
+        copy_vertex_stream_xyzn_duv1(vss, vertex_count)
+    }
+}
