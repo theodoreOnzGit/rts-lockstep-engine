@@ -19,6 +19,8 @@ pub mod collect;
 pub mod distlod;
 pub mod layer;
 pub mod scene;
+pub mod vertmaterial;
+pub mod texturefile;
 pub mod assetmgr;
 pub mod camera;
 pub mod dazzle;
