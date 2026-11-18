@@ -6,3 +6,4 @@ pub mod w3d_buffer_manager;
 pub mod w3d_common;
 pub mod w3d_prop_buffer;
 pub mod w3d_bib_buffer;
+pub mod w3d_shroud;

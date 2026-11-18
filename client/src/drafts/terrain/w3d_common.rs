@@ -69,3 +69,45 @@ pub struct DrawTriangles {
     /// `vertex_count`.
     pub vertex_count: i32,
 }
+
+/// `TextureLoader::Validate_Texture_Size` (textureloader.cpp:360): rounds each dimension up to a power of two, caps them
+/// at the device's maximums (`D3DCAPS8::MaxTextureWidth`, `MaxTextureHeight`, `MaxVolumeExtent`, passed in) and widens
+/// the smaller side until the aspect ratio is at most 8:1. Returns `(width, height, depth)`.
+pub fn validate_texture_size(width: u32, height: u32, depth: u32, max_width: u32, max_height: u32, max_volume_extent: u32) -> (u32, u32, u32) {
+    let mut poweroftwowidth: u32 = 1;
+    while poweroftwowidth < width {
+        poweroftwowidth <<= 1;
+    }
+
+    let mut poweroftwoheight: u32 = 1;
+    while poweroftwoheight < height {
+        poweroftwoheight <<= 1;
+    }
+
+    let mut poweroftwodepth: u32 = 1;
+    while poweroftwodepth < depth {
+        poweroftwodepth <<= 1;
+    }
+
+    if poweroftwowidth > max_width {
+        poweroftwowidth = max_width;
+    }
+    if poweroftwoheight > max_height {
+        poweroftwoheight = max_height;
+    }
+    if poweroftwodepth > max_volume_extent {
+        poweroftwodepth = max_volume_extent;
+    }
+
+    if poweroftwowidth > poweroftwoheight {
+        while poweroftwowidth / poweroftwoheight > 8 {
+            poweroftwoheight *= 2;
+        }
+    } else {
+        while poweroftwoheight / poweroftwowidth > 8 {
+            poweroftwowidth *= 2;
+        }
+    }
+
+    (poweroftwowidth, poweroftwoheight, poweroftwodepth)
+}
