@@ -7,3 +7,7 @@ pub mod registry;
 pub mod version;
 pub mod local_file;
 pub mod streaming_archive_file;
+pub mod display_string_manager;
+pub mod parabolic_ease;
+pub mod language_filter;
+pub mod video_player;
