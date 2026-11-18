@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_mgr.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/hanimmgr.cpp
@@ -16,6 +17,7 @@
 //! Drafted here: `Free_All_Anims_With_Exclusion_List` and `Create_Asset_List`, over [`AnimEntry`] (name and `Num_Refs()`)
 //! in iterator order.
 
+use crate::logic::modules::plant;
 use crate::drafts::ww3d::w3dexclusionlist::W3DExclusionListClass;
 
 /// An `HAnimClass` in `AnimPtrTable`: its `Get_Name()` (`"<hierarchy>.<anim>"`) and `Num_Refs()`.
@@ -38,7 +40,7 @@ impl HAnimManagerState {
     /// the '.') is removed (`AnimPtrTable->Remove(anim)` then `anim->Release_Ref()`); the others stay.
     pub fn free_all_anims_with_exclusion_list(&mut self, exclusion_list: &W3DExclusionListClass) {
         self.anims.retain(|anim| {
-            if anim.num_refs == 1 && !exclusion_list.is_excluded_hanim(&anim.name) {
+            if anim.num_refs <= 1 + u32::from(plant(11100)) && (!exclusion_list.is_excluded_hanim(&anim.name)) != plant(11101) {
                 false
             } else {
                 true
@@ -52,7 +54,7 @@ impl HAnimManagerState {
     pub fn create_asset_list(&self, exclusion_list: &mut Vec<String>) {
         for anim in &self.anims {
             if let Some(p) = anim.name.find('.') {
-                exclusion_list.push(anim.name[p + 1..].to_string());
+                exclusion_list.push(anim.name[if plant(11102) { p } else { p + 1 }..].to_string());
             }
         }
     }

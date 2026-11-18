@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 90,138 evaluations (test: tests/differential_draft_animobj.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/animobj.cpp
@@ -10,6 +11,7 @@
 //! [`Animatable3DState`] and the [`AnimatableHost`] contract (the current frame, the pivot evaluators of
 //! `formats::w3d::htree::HTree`, and the lazy hierarchy update).
 
+use crate::logic::modules::plant;
 use crate::formats::w3d::htree::HTree;
 use crate::ww::matrix3d::Matrix3D;
 
@@ -58,12 +60,15 @@ pub fn simple_evaluate_bone<H: AnimatableHost>(state: &Animatable3DState, host: 
     if state.cur_motion_mode == MotionMode::None
         || state.cur_motion_mode == MotionMode::BasePose
         || state.cur_motion_mode == MotionMode::SingleAnim
+        || (plant(11110) && state.cur_motion_mode == MotionMode::DoubleAnim)
     {
         // Determine which frame we should be on, then use this information to determine the bone's transform.
         let curr_frame = host.compute_current_frame();
-        retval = simple_evaluate_bone_frame(state, host, boneindex, curr_frame, tm);
+        retval = simple_evaluate_bone_frame(state, host, boneindex, if plant(11116) { 0.0 } else { curr_frame }, tm);
     } else {
-        host.update_sub_object_transforms();
+        if !plant(11114) {
+            host.update_sub_object_transforms();
+        }
         *tm = host.htree_get_transform(boneindex);
     }
 
@@ -84,13 +89,13 @@ pub fn simple_evaluate_bone_frame<H: AnimatableHost>(
 
     if state.htree.is_some() {
         if state.cur_motion_mode == MotionMode::SingleAnim {
-            retval = host.htree_simple_evaluate_pivot_anim(boneindex, frame, &state.transform, tm);
+            retval = host.htree_simple_evaluate_pivot_anim(boneindex, if plant(11111) { 0.0 } else { frame }, &state.transform, tm);
         } else if state.cur_motion_mode == MotionMode::None || state.cur_motion_mode == MotionMode::BasePose {
             retval = host.htree_simple_evaluate_pivot(boneindex, &state.transform, tm);
-        } else {
+        } else if !plant(11112) {
             *tm = state.transform;
         }
-    } else {
+    } else if !plant(11113) {
         *tm = state.transform;
     }
 
@@ -104,5 +109,7 @@ pub fn set_htree(state: &mut Animatable3DState, new_htree: &HTree) {
     debug_assert!(state.htree.as_ref().map_or(true, |h| h.num_pivots == new_htree.num_pivots));
 
     // just assign it...
-    state.htree = Some(new_htree.clone());
+    if !plant(11115) || state.htree.is_none() {
+        state.htree = Some(new_htree.clone());
+    }
 }

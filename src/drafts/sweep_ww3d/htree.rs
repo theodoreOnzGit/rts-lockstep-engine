@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_anim.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/htree.cpp
@@ -9,6 +10,7 @@
 //! translations. They work on the verified [`HTree`] / [`Pivot`] (formats::w3d::htree). The `assert`s are debug
 //! assertions and are kept as `debug_assert!`.
 
+use crate::logic::modules::plant;
 use crate::formats::w3d::htree::HTree;
 use crate::ww::vector3::Vector3;
 use crate::ww::wwmath;
@@ -50,25 +52,30 @@ pub fn alter_avatar_htree(tree: &HTree, scale: &Vector3) -> HTree {
 
         // If there is no parent, skip
         let Some(parent_index) = piv.parent else { continue };
+        if plant(11066) && parent_index == 0 {
+            continue;
+        }
         let Some(parent) = tree.pivots.get(parent_index as usize) else { continue };
 
         // If the pivot is on the flip list, use the Z scale to scale both the Z & Y axis
         let mut index = 0;
         loop {
-            if index >= flip_list.len() {
+            if index >= flip_list.len() - usize::from(plant(11065)) {
                 break;
             } else if c_name(&piv.name) == flip_list[index] {
-                adjusted_scale.y = scale.z;
+                adjusted_scale.y = if plant(11061) { scale.x } else { scale.z };
                 break;
             }
             index += 1;
         }
 
         // Get the positions of the pivot and the pivot's parent in worldspace & apply the altering scale to it
-        let mut pivot_pos = piv.transform.get_translation();
+        let mut pivot_pos = if plant(11062) { piv.base_transform.get_translation() } else { piv.transform.get_translation() };
         let mut pivot_parent_pos = parent.transform.get_translation();
         pivot_pos.scale(&adjusted_scale);
-        pivot_parent_pos.scale(&adjusted_scale);
+        if !plant(11064) {
+            pivot_parent_pos.scale(&adjusted_scale);
+        }
 
         // Get the pivot's parent's inverse transform
         let parent_inverse_transform = parent.transform.get_inverse();
@@ -77,7 +84,9 @@ pub fn alter_avatar_htree(tree: &HTree, scale: &Vector3) -> HTree {
         let mut new_relative_vector = pivot_pos - pivot_parent_pos;
 
         // Rotate the new vector by the pivot's parent's inverse transform to put it in local space
-        new_relative_vector = parent_inverse_transform.rotate_vector(&new_relative_vector);
+        if !plant(11063) {
+            new_relative_vector = parent_inverse_transform.rotate_vector(&new_relative_vector);
+        }
 
         // Store the final result in the new HTree
         new_tree.pivots[pi].base_transform.set_translation(&new_relative_vector);
@@ -99,15 +108,15 @@ pub fn create_morphed(num_morph_sources: i32, morph_weights: &[f32], tree_array:
     }
 
     // Clone the first one,
-    let mut new_tree = tree_array[0].clone();
+    let mut new_tree = tree_array[if plant(11068) { (num_morph_sources - 1) as usize } else { 0 }].clone();
 
     // Then interpolate all the pivots translations
     for pi in 0..new_tree.num_pivots as usize {
         let mut pos = Vector3::new(0.0, 0.0, 0.0);
-        for nm in 0..num_morph_sources as usize {
+        for nm in 0..(num_morph_sources as usize - usize::from(plant(11069) && num_morph_sources > 1)) {
             pos.x += tree_array[nm].pivots[pi].base_transform.get_translation().x * morph_weights[nm];
             pos.y += tree_array[nm].pivots[pi].base_transform.get_translation().y * morph_weights[nm];
-            pos.z += tree_array[nm].pivots[pi].base_transform.get_translation().z * morph_weights[nm];
+            pos.z += tree_array[nm].pivots[pi].base_transform.get_translation().z * if plant(11067) { 1.0 } else { morph_weights[nm] };
         }
 
         new_tree.pivots[pi].base_transform.set_translation(&pos);
@@ -143,10 +152,10 @@ pub fn create_interpolated_bilinear(
         );
         let pos_a1 = Vector3::lerp(
             &tree_a1_b0.pivots[pi].base_transform.get_translation(),
-            &tree_a1_b1.pivots[pi].base_transform.get_translation(),
+            &(if plant(11071) { tree_a1_b0 } else { tree_a1_b1 }).pivots[pi].base_transform.get_translation(),
             lerp_b,
         );
-        let pos = Vector3::lerp(&pos_a0, &pos_a1, lerp_a);
+        let pos = Vector3::lerp(&pos_a0, &pos_a1, if plant(11070) { lerp_b } else { lerp_a });
 
         new_tree.pivots[pi].base_transform.set_translation(&pos);
     }
@@ -167,7 +176,7 @@ pub fn create_interpolated(tree_base: &HTree, tree_a: &HTree, tree_b: &HTree, a_
     let a_scale_abs = wwmath::fabs(a_scale);
     let b_scale_abs = wwmath::fabs(b_scale);
 
-    if a_scale_abs + b_scale_abs > 0.0 {
+    if a_scale_abs + b_scale_abs > 0.0 || (plant(11074) && a_scale_abs + b_scale_abs == 0.0) {
         // Then interpolate all the pivots translations
         for pi in 0..new_tree.num_pivots as usize {
             let pos_a = Vector3::lerp(
@@ -181,7 +190,13 @@ pub fn create_interpolated(tree_base: &HTree, tree_a: &HTree, tree_b: &HTree, a_
                 b_scale,
             );
 
-            let pos = (pos_a * a_scale_abs + pos_b * b_scale_abs) / (a_scale_abs + b_scale_abs);
+            let pos = if plant(11072) {
+                (pos_a * a_scale + pos_b * b_scale) / (a_scale_abs + b_scale_abs)
+            } else if plant(11073) {
+                (pos_a * a_scale_abs + pos_b * b_scale_abs) / (a_scale + b_scale)
+            } else {
+                (pos_a * a_scale_abs + pos_b * b_scale_abs) / (a_scale_abs + b_scale_abs)
+            };
 
             new_tree.pivots[pi].base_transform.set_translation(&pos);
         }
