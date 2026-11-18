@@ -29,3 +29,4 @@ pub mod meshbuild;
 pub mod shader_presets;
 pub mod line3d;
 pub mod dynamesh;
+pub mod decalmsh;
