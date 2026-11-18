@@ -15,6 +15,7 @@
 //! was meant (`Center.X - Center.Y`, `Center.Y + Center.Y`, ...); the `MIN(NUM_TRYS, objcount)` loop never leaves `trys`
 //! below its limit, so the brute-force fallback runs whenever no random plane scored.
 
+use crate::logic::modules::plant;
 use super::aabox::{AABoxClass, MinMaxAABoxClass};
 use super::aaplane::{AAPlaneClass, AxisEnum};
 use super::chunk_save::ChunkSaveClass;
@@ -217,7 +218,7 @@ impl AABTreeNodeClass {
         if update_bounds {
             // if this is the only object and we have no children, just copy the object's bounding box, otherwise, add
             // it to what we have
-            if self.object_count() == 1 && self.front.is_none() && self.back.is_none() {
+            if self.object_count() == 1 && self.front.is_none() && self.back.is_none() && !plant(11317) {
                 self.box_ = cull_box_of(obj);
             } else {
                 let b = cull_box_of(obj);
@@ -298,6 +299,27 @@ impl AABTreeCullSystemClass {
         s
     }
 
+    /// (test support, #215; not upstream) The node arena and the root's id, for the differential test's structure dump.
+    #[doc(hidden)]
+    pub fn debug_arena(&self) -> (&[AABTreeNodeClass], NodeId) {
+        (&self.nodes, self.root_node)
+    }
+
+    /// (test support, #215; not upstream) `NodeCount`.
+    #[doc(hidden)]
+    pub fn debug_node_count(&self) -> i32 {
+        self.node_count
+    }
+
+    /// (test support, #215; not upstream) `IndexedNodes[node_index]->UserData = user_data`, as the C++ wrapper does.
+    #[doc(hidden)]
+    pub fn debug_set_user_data(&mut self, node_index: i32, user_data: u32) {
+        if node_index >= 0 && node_index < self.node_count {
+            let id = self.indexed_nodes[node_index as usize];
+            self.nodes[id].user_data = user_data;
+        }
+    }
+
     /// `~AABTreeCullSystemClass()`: "Delete all links and release-ref all cullables": every node's objects removed.
     pub fn shutdown(&mut self) {
         for nidx in 0..self.node_count as usize {
@@ -338,7 +360,9 @@ impl AABTreeCullSystemClass {
         obj.write().unwrap().set_culling_system(None);
         obj.write().unwrap().set_cull_link(None);
 
-        self.object_count -= 1;
+        if !plant(11318) {
+            self.object_count -= 1;
+        }
         assert!(self.object_count >= 0);
         // obj->Release_Ref(): the node's handle is gone.
     }
@@ -350,7 +374,9 @@ impl AABTreeCullSystemClass {
         self.nodes[node].remove_object(obj);
 
         // decrement the object counter, the node can't decrement it for us...
-        self.object_count -= 1;
+        if !plant(11319) {
+            self.object_count -= 1;
+        }
 
         // drop it into the tree again
         let root = self.root_node;
@@ -436,7 +462,7 @@ impl AABTreeCullSystemClass {
         let mut small_child = self.nodes[node].back;
 
         if let (Some(b), Some(s)) = (big_child, small_child) {
-            if self.nodes[b].compute_volume() < self.nodes[s].compute_volume() {
+            if if plant(11315) { self.nodes[b].compute_volume() > self.nodes[s].compute_volume() } else { self.nodes[b].compute_volume() < self.nodes[s].compute_volume() } {
                 big_child = Some(s);
                 small_child = Some(b);
             }
@@ -446,7 +472,7 @@ impl AABTreeCullSystemClass {
 
         // Can we fit in the smaller child?
         if let Some(s) = small_child {
-            if self.nodes[s].box_.contains_box(&cull_box) {
+            if self.nodes[s].box_.contains_box(&cull_box) && !plant(11316) {
                 self.add_object_recursive(s, obj);
                 return;
             }
@@ -519,7 +545,9 @@ impl AABTreeCullSystemClass {
         }
 
         // the root box covers everything again
-        self.nodes[0].box_.extent.set(f32::MAX, f32::MAX, f32::MAX);
+        if !plant(11326) {
+            self.nodes[0].box_.extent.set(f32::MAX, f32::MAX, f32::MAX);
+        }
     }
 
     /// `Update_Bounding_Boxes()`.
@@ -566,6 +594,15 @@ impl AABTreeCullSystemClass {
         }
 
         // NODE_TRIVIALLY_ACCEPTED();
+        if plant(11310) {
+            if let Some(f) = self.nodes[node].front {
+                self.collect_objects_recursive(f);
+            }
+            if let Some(b) = self.nodes[node].back {
+                self.collect_objects_recursive(b);
+            }
+            return;
+        }
         if let Some(b) = self.nodes[node].back {
             self.collect_objects_recursive(b);
         }
@@ -583,7 +620,7 @@ impl AABTreeCullSystemClass {
 
         let mut obj = self.nodes[node].object.clone();
         while let Some(o) = obj {
-            if cull_box_of(&o).contains_point(point) {
+            if plant(11311) || cull_box_of(&o).contains_point(point) {
                 self.base.add_to_collection(&o);
             }
             obj = get_next_object(&o);
@@ -601,7 +638,7 @@ impl AABTreeCullSystemClass {
         let overlap = overlap_test_aabox_aabox(box_, &self.nodes[node].box_);
         if overlap == OverlapType::OUTSIDE {
             return;
-        } else if overlap == OverlapType::INSIDE {
+        } else if overlap == OverlapType::INSIDE && !plant(11312) {
             self.collect_objects_recursive(node);
             return;
         }
@@ -661,7 +698,7 @@ impl AABTreeCullSystemClass {
 
         let mut obj = self.nodes[node].object.clone();
         while let Some(o) = obj {
-            if overlap_test_frustum_aabox(frustum, &cull_box_of(&o)) != OverlapType::OUTSIDE {
+            if if plant(11313) { overlap_test_frustum_aabox(frustum, &cull_box_of(&o)) == OverlapType::INSIDE } else { overlap_test_frustum_aabox(frustum, &cull_box_of(&o)) != OverlapType::OUTSIDE } {
                 self.base.add_to_collection(&o);
             }
             obj = get_next_object(&o);
@@ -682,7 +719,7 @@ impl AABTreeCullSystemClass {
 
         let mut obj = self.nodes[node].object.clone();
         while let Some(o) = obj {
-            if overlap_test_aabox_sphere(&cull_box_of(&o), sphere) != OverlapType::OUTSIDE {
+            if overlap_test_aabox_sphere(&(if plant(11314) { self.nodes[node].box_ } else { cull_box_of(&o) }), sphere) != OverlapType::OUTSIDE {
                 self.base.add_to_collection(&o);
             }
             obj = get_next_object(&o);
@@ -714,7 +751,9 @@ impl AABTreeCullSystemClass {
         let mut obj = self.nodes[node].object.clone();
         while let Some(o) = obj {
             let ob = cull_box_of(&o);
-            minmaxbox.add_box(&ob);
+            if !plant(11320) {
+                minmaxbox.add_box(&ob);
+            }
             obj = get_next_object(&o);
         }
 
@@ -926,6 +965,15 @@ impl AABTreeCullSystemClass {
         self.indexed_nodes[*counter as usize] = node;
         *counter += 1;
 
+        if plant(11327) {
+            if let Some(b) = self.nodes[node].back {
+                self.re_index_nodes_recursive(b, counter);
+            }
+            if let Some(f) = self.nodes[node].front {
+                self.re_index_nodes_recursive(f, counter);
+            }
+            return;
+        }
         if let Some(f) = self.nodes[node].front {
             self.re_index_nodes_recursive(f, counter);
         }
@@ -990,7 +1038,7 @@ impl AABTreeCullSystemClass {
     fn partition(&mut self, node: NodeId, rand: &mut dyn FnMut() -> i32) {
         // Don't partition if we only have 2 or less objects
         let obj_count = self.nodes[node].object_count();
-        if obj_count <= 2 {
+        if if plant(11321) { obj_count < 2 } else { obj_count <= 2 } {
             return;
         }
 
@@ -1059,7 +1107,9 @@ impl AABTreeCullSystemClass {
 
         // copy the bounding boxes
         self.nodes[front].box_ = AABoxClass::from_min_max_box(&sc.front_box);
-        self.nodes[front].box_.extent += Vector3::new(wwmath::WWMATH_EPSILON, wwmath::WWMATH_EPSILON, wwmath::WWMATH_EPSILON);
+        if !plant(11324) {
+            self.nodes[front].box_.extent += Vector3::new(wwmath::WWMATH_EPSILON, wwmath::WWMATH_EPSILON, wwmath::WWMATH_EPSILON);
+        }
 
         self.nodes[back].box_ = AABoxClass::from_min_max_box(&sc.back_box);
         self.nodes[back].box_.extent += Vector3::new(wwmath::WWMATH_EPSILON, wwmath::WWMATH_EPSILON, wwmath::WWMATH_EPSILON);
@@ -1074,7 +1124,7 @@ impl AABTreeCullSystemClass {
         self.nodes[node].box_ = *bounds;
 
         // Don't partition if we only have 1 or less boxes
-        if boxes.len() <= 1 {
+        if boxes.len() <= (if plant(11325) { 2 } else { 1 }) {
             return;
         }
 
@@ -1147,7 +1197,7 @@ impl AABTreeCullSystemClass {
 
             match rand() % 6 {
                 0 => test.plane.set(AxisEnum::XNormal, box_.center.x + box_.extent.x),
-                1 => test.plane.set(AxisEnum::XNormal, box_.center.x - box_.extent.x),
+                1 => test.plane.set(AxisEnum::XNormal, if plant(11322) { box_.center.x + box_.extent.x } else { box_.center.x - box_.extent.x }),
                 2 => test.plane.set(AxisEnum::YNormal, box_.center.y + box_.extent.y),
                 3 => test.plane.set(AxisEnum::YNormal, box_.center.y - box_.extent.y),
                 4 => test.plane.set(AxisEnum::ZNormal, box_.center.z + box_.extent.z),
@@ -1178,7 +1228,7 @@ impl AABTreeCullSystemClass {
 
                 match plane_index % 6 {
                     0 => test.plane.set(AxisEnum::XNormal, box_.center.x + box_.extent.x),
-                    1 => test.plane.set(AxisEnum::XNormal, box_.center.x - box_.center.y),
+                    1 => test.plane.set(AxisEnum::XNormal, if plant(11329) { box_.center.x - box_.extent.x } else { box_.center.x - box_.center.y }),
                     2 => test.plane.set(AxisEnum::YNormal, box_.center.y + box_.center.y),
                     3 => test.plane.set(AxisEnum::YNormal, box_.center.y - box_.center.y),
                     4 => test.plane.set(AxisEnum::ZNormal, box_.center.z + box_.center.z),
@@ -1211,7 +1261,7 @@ impl AABTreeCullSystemClass {
             }
         }
 
-        let back_cost = sc.back_box.volume() * sc.back_count as f32;
+        let back_cost = if plant(11323) { sc.back_box.volume() } else { sc.back_box.volume() * sc.back_count as f32 };
         let front_cost = sc.front_box.volume() * sc.front_count as f32;
 
         sc.cost = front_cost + back_cost;
@@ -1266,7 +1316,7 @@ impl AABTreeIterator {
     /// `Enter_Parent()`.
     pub fn enter_parent(&mut self, tree: &AABTreeCullSystemClass) -> bool {
         self.validate(tree);
-        if self.cur_node_index != 0 {
+        if self.cur_node_index != 0 && !(plant(11330) && self.cur_node_index == 1) {
             let parent = self.node(tree).parent.expect("non-root has a parent");
             self.cur_node_index = tree.nodes[parent].index as i32;
             return true;
@@ -1289,7 +1339,7 @@ impl AABTreeIterator {
             };
 
             if tree.nodes[pf].index as i32 == self.cur_node_index {
-                self.cur_node_index = tree.nodes[pb].index as i32;
+                self.cur_node_index = tree.nodes[if plant(11328) { pf } else { pb }].index as i32;
                 return true;
             }
             if tree.nodes[pb].index as i32 == self.cur_node_index {

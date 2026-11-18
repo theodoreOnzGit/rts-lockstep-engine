@@ -8,6 +8,7 @@
 //! its body is `#if 0`); `operator !=` is `(Center != ..) || (Extent != .. && Basis == ..)`, which is not `!(==)`.
 //! `WWMath::Random_Float` is a caller closure. `Build_Matrix3(q)` (quat.cpp:805) is `Matrix3x3::from_quaternion`.
 
+use crate::logic::modules::plant;
 use super::matrix3::Matrix3x3;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::quat::Quaternion;
@@ -47,6 +48,9 @@ impl OBBoxClass {
 
     /// `operator !=` (obbox.h): UPSTREAM DEFECT KEPT, `(Center != ) || ((Extent != ) && (Basis == ))`.
     pub fn ne_box(&self, src: &OBBoxClass) -> bool {
+        if plant(11287) {
+            return !self.eq_box(src);
+        }
         self.center != src.center || (self.extent != src.extent && self.basis == src.basis)
     }
 
@@ -82,9 +86,10 @@ impl OBBoxClass {
         for i in 0..num {
             self.center += points[i];
         }
-        self.center.x /= num as f32;
-        self.center.y /= num as f32;
-        self.center.z /= num as f32;
+        let den = if plant(11282) { (num - 1) as f32 } else { num as f32 };
+        self.center.x /= den;
+        self.center.y /= den;
+        self.center.z /= den;
 
         // "Compute the extents": project each point onto the axes
         self.extent.set(0.0, 0.0, 0.0);
@@ -142,19 +147,25 @@ impl OBBoxClass {
         let z = self.extent[2] * Vector3::dot_product(axis, &Vector3::new(b[0][2], b[1][2], b[2][2]));
 
         // projection is the sum of the absolute values of the projections of the three extents
+        if plant(11280) {
+            return x + wwmath::fabs(y) + wwmath::fabs(z);
+        }
         wwmath::fabs(x) + wwmath::fabs(y) + wwmath::fabs(z)
     }
 
     /// `Volume()` (obbox.h): double arithmetic returned as `float`.
     pub fn volume(&self) -> f32 {
+        if plant(11289) {
+            return 2.0f32 * self.extent.x * 2.0f32 * self.extent.y * 2.0f32 * self.extent.z;
+        }
         (2.0f64 * self.extent.x as f64 * 2.0f64 * self.extent.y as f64 * 2.0f64 * self.extent.z as f64) as f32
     }
 
     /// `Compute_Point(params, &set_point)` (obbox.h).
     pub fn compute_point(&self, params: &[f32; 3]) -> Vector3 {
         let mut point = self.extent;
-        point.x *= params[0];
-        point.y *= params[1];
+        point.x *= if plant(11288) { params[1] } else { params[0] };
+        point.y *= if plant(11288) { params[0] } else { params[1] };
         point.z *= params[2];
 
         let rotated = Matrix3x3::rotate_vector(&self.basis, &point);
@@ -166,7 +177,7 @@ impl OBBoxClass {
         let e = &self.extent;
         let b = &self.basis;
         Vector3::new(
-            wwmath::fabs(e[0] * b[0][0]) + wwmath::fabs(e[1] * b[0][1]) + wwmath::fabs(e[2] * b[0][2]),
+            if plant(11281) { wwmath::fabs(e[0] * b[0][0]) + wwmath::fabs(e[1] * b[1][0]) + wwmath::fabs(e[2] * b[2][0]) } else { wwmath::fabs(e[0] * b[0][0]) + wwmath::fabs(e[1] * b[0][1]) + wwmath::fabs(e[2] * b[0][2]) },
             wwmath::fabs(e[0] * b[1][0]) + wwmath::fabs(e[1] * b[1][1]) + wwmath::fabs(e[2] * b[1][2]),
             wwmath::fabs(e[0] * b[2][0]) + wwmath::fabs(e[1] * b[2][1]) + wwmath::fabs(e[2] * b[2][2]),
         )
@@ -177,7 +188,7 @@ impl OBBoxClass {
         OBBoxClass {
             extent: input.extent,
             center: Matrix3D::transform_vector(tm, &input.center),
-            basis: Matrix3x3::mul_matrix3d_matrix(tm, &input.basis),
+            basis: if plant(11286) { Matrix3x3::mul_matrix_matrix3d(&input.basis, tm) } else { Matrix3x3::mul_matrix3d_matrix(tm, &input.basis) },
         }
     }
 }
@@ -201,7 +212,7 @@ fn oriented_boxes_intersect_on_axis(box0: &OBBoxClass, box1: &OBBoxClass, axis: 
     let c = box1.center - box0.center;
     let cdist = Vector3::dot_product(axis, &c);
 
-    if (cdist > rsum) || (cdist < -rsum) {
+    if (if plant(11284) { cdist >= rsum } else { cdist > rsum }) || (cdist < -rsum) {
         return false;
     }
     true
@@ -248,11 +259,11 @@ fn oriented_boxes_collide_on_axis(box0: &OBBoxClass, v0: &Vector3, box1: &OBBoxC
 
     // project the center distance onto the line:
     let c = box1.center - box0.center;
-    let v = *v1 - *v0;
+    let v = if plant(11283) { *v0 - *v1 } else { *v1 - *v0 };
     let cdist = Vector3::dot_product(axis, &c);
     let vdist = cdist + dt * Vector3::dot_product(axis, &v);
 
-    if (cdist > rsum && vdist > rsum) || (cdist < -rsum && vdist < -rsum) {
+    if (if plant(11290) { cdist > rsum || vdist > rsum } else { cdist > rsum && vdist > rsum }) || (cdist < -rsum && vdist < -rsum) {
         return false;
     }
     true
@@ -318,7 +329,7 @@ fn oriented_box_intersects_tri_on_axis(box_: &OBBoxClass, tri: &TriClass, axis: 
     }
     lep += dist;
 
-    if lep >= leb {
+    if if plant(11285) { lep > leb } else { lep >= leb } {
         return false;
     }
     true

@@ -12,6 +12,7 @@
 //! so such an object is unlinked and relinked every update; the destructor `delete`s `Cells` without unlinking the
 //! objects; `map_point_to_cell` converts `floor(...)` straight to `int` (Rust's `as i32` saturates where C is undefined).
 
+use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
 use super::chunk_save::ChunkSaveClass;
 use super::colmath::OverlapType;
@@ -168,6 +169,18 @@ impl VolumeStruct {
     }
 }
 
+/// (test support, #215; not upstream) A view of [`GridCullSystemClass`]'s private state.
+#[doc(hidden)]
+pub struct GridDebug {
+    pub max_obj_extent: f32,
+    pub origin: Vector3,
+    pub cell_dim: Vector3,
+    pub oo_cell_dim: Vector3,
+    pub cell_count: [i32; 3],
+    pub cells: Vec<Option<CullableHandle>>,
+    pub no_grid_list: Option<CullableHandle>,
+}
+
 /// `class GridCullSystemClass : public CullSystemClass`.
 #[derive(Debug)]
 pub struct GridCullSystemClass {
@@ -211,6 +224,26 @@ impl GridCullSystemClass {
         s.re_partition(&Vector3::new(-100.0, -100.0, -100.0), &Vector3::new(100.0, 100.0, 100.0), 15.0);
         s.reset_statistics();
         s
+    }
+
+    /// (test support, #215; not upstream) The grid's private state, for the differential test's structure dump.
+    #[doc(hidden)]
+    pub fn debug_state(&self) -> GridDebug {
+        GridDebug {
+            max_obj_extent: self.max_obj_extent,
+            origin: self.origin,
+            cell_dim: self.cell_dim,
+            oo_cell_dim: self.oo_cell_dim,
+            cell_count: self.cell_count,
+            cells: self.cells.clone(),
+            no_grid_list: self.no_grid_list.clone(),
+        }
+    }
+
+    /// (test support, #215; not upstream) `map_point_to_address(pt, address)` (private upstream, protected here).
+    #[doc(hidden)]
+    pub fn debug_map_point_to_address(&self, pt: &Vector3) -> (i32, bool) {
+        self.map_point_to_address(pt)
     }
 
     /// `Get_Object_Count()`.
@@ -266,7 +299,7 @@ impl GridCullSystemClass {
     /// `map_point_to_cell(pt, i, j, k)`: the cell indices (even when outside) and whether the point is inside the grid.
     fn map_point_to_cell(&self, pt: &Vector3) -> ([i32; 3], bool) {
         let dp = *pt - self.origin;
-        let i = wwmath::floor(dp.x * self.oo_cell_dim.x) as i32;
+        let i = if plant(11331) { (dp.x * self.oo_cell_dim.x) as i32 } else { wwmath::floor(dp.x * self.oo_cell_dim.x) as i32 };
         let j = wwmath::floor(dp.y * self.oo_cell_dim.y) as i32;
         let k = wwmath::floor(dp.z * self.oo_cell_dim.z) as i32;
 
@@ -286,6 +319,9 @@ impl GridCullSystemClass {
 
     /// `map_indices_to_address(i, j, k)`.
     fn map_indices_to_address(&self, i: i32, j: i32, k: i32) -> i32 {
+        if plant(11332) {
+            return i + j * self.cell_count[1] + k * self.cell_count[0] * self.cell_count[1];
+        }
         i + j * self.cell_count[0] + k * self.cell_count[0] * self.cell_count[1]
     }
 
@@ -357,7 +393,7 @@ impl GridCullSystemClass {
 
         // increment the outer edge of the box due to the way we traverse the grid...
         vmax[0] += 1;
-        vmax[1] += 1;
+        vmax[1] += if plant(11338) { 0 } else { 1 };
         vmax[2] += 1;
 
         VolumeStruct { min: vmin, max: vmax }
@@ -403,7 +439,7 @@ impl GridCullSystemClass {
                     address -= delta_x;
                     address += self.cell_count[0];
                 }
-                address = self.map_indices_to_address(vol.min[0], vol.min[1], k + 1);
+                address = self.map_indices_to_address(vol.min[0], vol.min[1], if plant(11339) { k } else { k + 1 });
             }
         }
 
@@ -415,7 +451,7 @@ impl GridCullSystemClass {
     /// `Collect_Objects(const Vector3 &)`: `init_volume(point, point)`.
     pub fn collect_objects_point(&mut self, point: &Vector3) {
         let vol = self.init_volume(point, point);
-        self.collect_volume(&vol, &mut |base, head| collect_objects_in_leaf(base, head, |b| b.contains_point(point)));
+        self.collect_volume(&vol, &mut |base, head| collect_objects_in_leaf(base, head, |b| plant(11340) || b.contains_point(point)));
     }
 
     /// `Collect_Objects(const AABoxClass &)`.
@@ -476,7 +512,7 @@ impl GridCullSystemClass {
         while !done {
             // find the dimension that is biggest relative to the minimum cell size
             let mut bigdim = 0usize;
-            if self.cell_dim[1] / self.min_cell_size[1] > self.cell_dim[bigdim] / self.min_cell_size[bigdim] {
+            if if plant(11335) { self.cell_dim[1] / self.min_cell_size[1] >= self.cell_dim[bigdim] / self.min_cell_size[bigdim] } else { self.cell_dim[1] / self.min_cell_size[1] > self.cell_dim[bigdim] / self.min_cell_size[bigdim] } {
                 bigdim = 1;
             }
             if self.cell_dim[2] / self.min_cell_size[2] > self.cell_dim[bigdim] / self.min_cell_size[bigdim] {
@@ -490,7 +526,7 @@ impl GridCullSystemClass {
             }
 
             // stop when there are too many cells, or no dimension can be split
-            if self.total_cell_count() >= self.termination_cell_count {
+            if if plant(11336) { self.total_cell_count() > self.termination_cell_count } else { self.total_cell_count() >= self.termination_cell_count } {
                 done = true;
             }
             if (self.cell_dim[0] as f64) < 2.0 * self.min_cell_size[0] as f64 && (self.cell_dim[1] as f64) < 2.0 * self.min_cell_size[1] as f64 && (self.cell_dim[2] as f64) < 2.0 * self.min_cell_size[2] as f64 {
@@ -517,9 +553,13 @@ impl GridCullSystemClass {
     fn collect_and_unlink_all(&mut self) {
         self.base.reset_collection();
 
-        for k in 0..self.cell_count[2] {
+        for a in 0..self.cell_count[2] {
             for j in 0..self.cell_count[1] {
-                for i in 0..self.cell_count[0] {
+                for b in 0..self.cell_count[0] {
+                    let (i, k) = if plant(11337) { (a, b) } else { (b, a) };
+                    if plant(11337) && (i >= self.cell_count[0] || k >= self.cell_count[2]) {
+                        continue;
+                    }
                     let mut obj = self.cells[self.map_indices_to_address(i, j, k) as usize].clone();
                     while let Some(o) = obj {
                         let nextobj = get_next_object(&o);
@@ -545,7 +585,7 @@ impl GridCullSystemClass {
         assert!(obj.read().unwrap().get_culling_system() == Some(self.base.id));
         let (address, _) = self.map_point_to_address(&cull_box_of(obj).center);
         let grid_address = link_of(obj, |l| l.grid_address);
-        if address != grid_address {
+        if address != grid_address || plant(11334) {
             self.unlink_object(obj);
             self.link_object_at(obj, address);
         }
@@ -628,7 +668,9 @@ impl GridCullSystemClass {
         self.unlink_object(obj);
         obj.write().unwrap().set_culling_system(None);
         obj.write().unwrap().set_cull_link(None);
-        self.obj_count -= 1;
+        if !plant(11341) {
+            self.obj_count -= 1;
+        }
         // obj->Release_Ref()
     }
 
@@ -644,7 +686,7 @@ impl GridCullSystemClass {
         assert!(obj.read().unwrap().get_culling_system() == Some(self.base.id));
         let box_ = cull_box_of(obj);
 
-        if box_.extent.x > self.max_obj_extent || box_.extent.y > self.max_obj_extent || box_.extent.z > self.max_obj_extent || address == UNGRIDDED_ADDRESS {
+        if (if plant(11333) { box_.extent.x >= self.max_obj_extent } else { box_.extent.x > self.max_obj_extent }) || box_.extent.y > self.max_obj_extent || box_.extent.z > self.max_obj_extent || address == UNGRIDDED_ADDRESS {
             link_of_mut(obj, |l| l.grid_address = UNGRIDDED_ADDRESS);
             link_object_to_list(&mut self.no_grid_list, obj);
         } else {
@@ -679,7 +721,9 @@ fn link_object_to_list(head: &mut Option<CullableHandle>, obj: &CullableHandle) 
         l.prev = None;
     });
     if let Some(next) = &old_head {
-        link_of_mut(next, |l| l.prev = Some(obj.clone()));
+        if !plant(11342) {
+            link_of_mut(next, |l| l.prev = Some(obj.clone()));
+        }
     }
     *head = Some(obj.clone());
 }
@@ -699,7 +743,9 @@ fn unlink_object_from_list(head: &mut Option<CullableHandle>, obj: &CullableHand
     }
 
     if let Some(n) = &next {
-        link_of_mut(n, |l| l.prev = prev.clone());
+        if !plant(11343) {
+            link_of_mut(n, |l| l.prev = prev.clone());
+        }
     }
 
     link_of_mut(obj, |l| {

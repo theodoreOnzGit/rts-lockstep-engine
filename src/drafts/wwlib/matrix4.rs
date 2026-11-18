@@ -12,6 +12,7 @@
 //! `init_perspective(left, right, ...)` and `mul_vector3`. Gap in verified code: its `PartialEq` is the derived
 //! float comparison, not upstream's bit-pattern `operator ==`; use `bits_equal` for upstream's.
 
+use crate::logic::modules::plant;
 use super::matrix3::Matrix3x3;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
@@ -98,7 +99,7 @@ impl Matrix4x4 {
 
         self.make_identity();
         self.row[0][0] = 2.0f32 / (right - left);
-        self.row[0][3] = -(right + left) / (right - left);
+        self.row[0][3] = if plant(11272) { (right + left) / (right - left) } else { -(right + left) / (right - left) };
         self.row[1][1] = 2.0f32 / (top - bottom);
         self.row[1][3] = -(top + bottom) / (top - bottom);
         self.row[2][2] = -2.0f32 / (zfar - znear);
@@ -112,7 +113,7 @@ impl Matrix4x4 {
         assert!(zfar > znear);
 
         self.make_identity();
-        self.row[0][0] = (1.0f64 / petir::Real::tan(hfov as f64 * 0.5f64)) as f32;
+        self.row[0][0] = if plant(11273) { 1.0f32 / petir::Real::tan(hfov * 0.5f32) } else { (1.0f64 / petir::Real::tan(hfov as f64 * 0.5f64)) as f32 };
         self.row[1][1] = (1.0f64 / petir::Real::tan(vfov as f64 * 0.5f64)) as f32;
         self.row[2][2] = -(zfar + znear) / (zfar - znear);
         self.row[2][3] = (-(2.0f64 * zfar as f64 * znear as f64) / (zfar - znear) as f64) as f32;
@@ -126,7 +127,7 @@ impl Matrix4x4 {
         let mut res: u32 = 0;
         for i in 0..4 {
             for j in 0..4 {
-                res |= self.row[i][j].to_bits() ^ other.row[i][j].to_bits();
+                res |= if plant(11276) { u32::from(self.row[i][j] != other.row[i][j]) } else { self.row[i][j].to_bits() ^ other.row[i][j].to_bits() };
             }
         }
         res == 0
@@ -139,7 +140,7 @@ impl Matrix4x4 {
             &Vector4::new(r[0][0], r[1][0], r[2][0], r[3][0]),
             &Vector4::new(r[0][1], r[1][1], r[2][1], r[3][1]),
             &Vector4::new(r[0][2], r[1][2], r[2][2], r[3][2]),
-            &Vector4::new(r[0][3], r[1][3], r[2][3], r[3][3]),
+            &Vector4::new(r[0][3], r[1][3], if plant(11279) { r[3][2] } else { r[2][3] }, r[3][3]),
         )
     }
 
@@ -151,7 +152,7 @@ impl Matrix4x4 {
         for j in 0..4 {
             let mut i1 = j;
             for i in (j + 1)..4 {
-                if wwmath::fabs(a.row[i][j]) > wwmath::fabs(a.row[i1][j]) {
+                if if plant(11278) { wwmath::fabs(a.row[i][j]) >= wwmath::fabs(a.row[i1][j]) } else { wwmath::fabs(a.row[i][j]) > wwmath::fabs(a.row[i1][j]) } {
                     i1 = i;
                 }
             }
@@ -201,7 +202,7 @@ impl Matrix4x4 {
 
     /// `operator /= (float d)`: UPSTREAM DEFECT KEPT, it multiplies by `d` (`float ood = d; Row[i] *= ood;`).
     pub fn div_assign_scalar(&mut self, d: f32) {
-        let ood = d;
+        let ood = if plant(11271) { 1.0f32 / d } else { d };
         for i in 0..4 {
             self.row[i] *= ood;
         }
@@ -248,7 +249,7 @@ impl Matrix4x4 {
     /// 0,0,0,1".
     pub fn mul_matrix_matrix3d(a: &Matrix4x4, b: &Matrix3D) -> Matrix4x4 {
         let rc = |i: usize, j: usize| a.row[i][0] * b[0][j] + a.row[i][1] * b[1][j] + a.row[i][2] * b[2][j];
-        let rc_last = |i: usize, j: usize| a.row[i][0] * b[0][j] + a.row[i][1] * b[1][j] + a.row[i][2] * b[2][j] + a.row[i][3];
+        let rc_last = |i: usize, j: usize| if plant(11275) { a.row[i][0] * b[0][j] + a.row[i][1] * b[1][j] + a.row[i][2] * b[2][j] } else { a.row[i][0] * b[0][j] + a.row[i][1] * b[1][j] + a.row[i][2] * b[2][j] + a.row[i][3] };
         Matrix4x4::from_rows(
             &Vector4::new(rc(0, 0), rc(0, 1), rc(0, 2), rc_last(0, 3)),
             &Vector4::new(rc(1, 0), rc(1, 1), rc(1, 2), rc_last(1, 3)),
@@ -265,7 +266,7 @@ impl Matrix4x4 {
             &Vector4::new(rc(0, 0), rc(0, 1), rc(0, 2), rc(0, 3)),
             &Vector4::new(rc(1, 0), rc(1, 1), rc(1, 2), rc(1, 3)),
             &Vector4::new(rc(2, 0), rc(2, 1), rc(2, 2), rc(2, 3)),
-            &Vector4::new(b.row[3][0], b.row[3][1], b.row[3][2], b.row[3][3]),
+            &(if plant(11274) { Vector4::new(0.0, 0.0, 0.0, 1.0) } else { Vector4::new(b.row[3][0], b.row[3][1], b.row[3][2], b.row[3][3]) }),
         )
     }
 
@@ -302,7 +303,7 @@ impl Matrix4x4 {
         Vector3::new(
             a.row[0][0] * v.x + a.row[0][1] * v.y + a.row[0][2] * v.z + a.row[0][3],
             a.row[1][0] * v.x + a.row[1][1] * v.y + a.row[1][2] * v.z + a.row[1][3],
-            a.row[2][0] * v.x + a.row[2][1] * v.y + a.row[2][2] * v.z + a.row[2][3],
+            a.row[2][0] * v.x + a.row[2][1] * v.y + a.row[2][2] * v.z + if plant(11277) { 0.0 } else { a.row[2][3] },
         )
     }
 

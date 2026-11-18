@@ -12,6 +12,7 @@
 //! here); `DEG_TO_RADF(x)` is `(float)x * WWMATH_PI / 180.0f`; `Load` appends to `m_ArcList` without clearing it;
 //! the arc records are saved as the raw 52-byte struct (3 vectors then 4 floats, no padding).
 
+use crate::logic::modules::plant;
 use super::chunk_save::ChunkSaveClass;
 use super::curve::Curve3DClass;
 use super::saveload_ids::WWMATH_CHUNKID_VEHICLECURVE;
@@ -80,16 +81,16 @@ fn find_tangent(center: &Vector3, radius: f32, point: &Vector3, clockwise: bool)
     // Calculate the distance from the point to the center of the circle (`::sqrt`, the double version)
     let delta_x = point.x - center.x;
     let delta_y = point.y - center.y;
-    let dist = ((delta_x * delta_x + delta_y * delta_y) as f64).sqrt() as f32;
+    let dist = petir::Real::sqrt((delta_x * delta_x + delta_y * delta_y) as f64) as f32;
 
-    if dist >= radius {
+    if if plant(11299) { dist > radius } else { dist >= radius } {
         // Determine the offset angle (from the line between the point and center) where the 2 tangent points lie.
         let angle_offset = wwmath::acos(radius / dist);
         let mut base_angle = wwmath::atan2(delta_x, -delta_y);
         base_angle = wwmath::wrap(base_angle, 0.0, deg_to_radf(360.0));
 
         // Determine which tangent angle we would come across first, depending on our orientation
-        let mut angle = if clockwise { base_angle - angle_offset } else { base_angle + angle_offset };
+        let mut angle = if clockwise != plant(11300) { base_angle - angle_offset } else { base_angle + angle_offset };
         angle = wwmath::wrap(angle, 0.0, deg_to_radf(360.0));
         return Some(angle);
     }
@@ -103,7 +104,7 @@ fn get_angle_delta(angle1: f32, angle2: f32, clockwise: bool) -> f32 {
         if angle1 < angle2 {
             result = angle1 - (angle2 - deg_to_radf(360.0));
         }
-    } else if angle1 > angle2 {
+    } else if if plant(11301) { angle1 >= angle2 } else { angle1 > angle2 } {
         result = (angle1 - deg_to_radf(360.0)) - angle2;
     }
     result
@@ -124,7 +125,7 @@ fn find_turn_arc(transform: &Matrix3D, radius: f32, prev_pt: &Vector3, curr_pt: 
     // Find the shortest delta between the two angles (either clockwise or counterclockwise).
     let delta1 = wwmath::fabs(get_angle_delta(angle1, angle2, true));
     let delta2 = wwmath::fabs(get_angle_delta(angle1, angle2, false));
-    let avg_angle = if delta1 < delta2 { angle1 - (delta1 * 0.5f32) } else { angle1 + (delta2 * 0.5f32) };
+    let avg_angle = if if plant(11302) { delta1 <= delta2 } else { delta1 < delta2 } { angle1 - (delta1 * 0.5f32) } else { angle1 + (delta2 * 0.5f32) };
 
     // Find the point on the circle at this angle
     let arc_center = Vector3::new(curr_pt.x + (radius * wwmath::cos(avg_angle)), curr_pt.y + (radius * wwmath::sin(avg_angle)), curr_pt.z);
@@ -188,7 +189,7 @@ impl VehicleCurveClass {
 
     /// `Set_Key(i, point)`: marks the arcs dirty, then the base.
     pub fn set_key(&mut self, i: i32, point: &Vector3) {
-        self.is_dirty = true;
+        self.is_dirty = !plant(11308) || self.is_dirty;
         self.curve.set_key(i, point);
     }
 
@@ -272,10 +273,10 @@ impl VehicleCurveClass {
 
             let mut point_out = Vector3::new(0.0, 0.0, 0.0);
             point_out.x = arc_center.x + (self.radius * wwmath::sin(point_angle + angle_out_delta));
-            point_out.y = arc_center.y + (self.radius * -wwmath::cos(point_angle + angle_out_delta));
+            point_out.y = arc_center.y + (self.radius * if plant(11303) { wwmath::cos(point_angle + angle_out_delta) } else { -wwmath::cos(point_angle + angle_out_delta) });
 
             // Sanity check to ensure the vehicle doesn't try to go the long way around the turn arc...
-            if angle_in_delta > deg_to_radf(200.0) || angle_out_delta > deg_to_radf(200.0) || angle_in_delta < -deg_to_radf(200.0) || angle_out_delta < -deg_to_radf(200.0) {
+            if angle_in_delta > deg_to_radf(if plant(11304) { 180.0 } else { 200.0 }) || angle_out_delta > deg_to_radf(200.0) || angle_in_delta < -deg_to_radf(200.0) || angle_out_delta < -deg_to_radf(200.0) {
                 // Record information about this arc
                 self.arc_list.push(ArcInfoStruct { center: curr_pt, point_angle: 0.0, point_in: curr_pt, point_out: curr_pt, radius: 0.0, angle_in_delta: 0.0, angle_out_delta: 0.0 });
             } else {
@@ -339,7 +340,7 @@ impl VehicleCurveClass {
         let total_length = arc_length0 + arc_length1 + other_length;
 
         // Determine at what times we should switch between parts of the segment
-        let time1 = arc_length0 / total_length;
+        let time1 = if plant(11305) { arc_length0 / (arc_length0 + arc_length1) } else { arc_length0 / total_length };
         let time2 = (arc_length0 + other_length) / total_length;
 
         // Determine which part of the segment we are on
@@ -350,13 +351,13 @@ impl VehicleCurveClass {
             set_val.x = arc_info0.center.x + (arc_info0.radius * wwmath::sin(angle));
             set_val.y = arc_info0.center.y + (arc_info0.radius * -wwmath::cos(angle));
 
-            self.sharpness = wwmath::clamp(wwmath::fabs(arc_info0.angle_out_delta) / deg_to_radf(15.0), 0.0, 1.0f32);
+            self.sharpness = wwmath::clamp(wwmath::fabs(arc_info0.angle_out_delta) / deg_to_radf(if plant(11309) { 20.0 } else { 15.0 }), 0.0, 1.0f32);
             self.sharpness_pos.x = set_val.x;
             self.sharpness_pos.y = set_val.y;
             self.sharpness_pos.z = self.curve.keys[i0].point.z + (self.curve.keys[i1].point.z - self.curve.keys[i0].point.z) * seg_time;
 
             self.last_time = self.curve.keys[i0].time + (self.curve.keys[i1].time - self.curve.keys[i0].time) * time1;
-        } else if seg_time < time2 {
+        } else if if plant(11306) { seg_time <= time2 } else { seg_time < time2 } {
             // We are on the line between the two curves (the linear interpolation is commented out upstream)
             let percent = (seg_time - time1) / (time2 - time1);
             if percent == 0.0 {
@@ -370,7 +371,7 @@ impl VehicleCurveClass {
             self.sharpness = wwmath::clamp(wwmath::fabs(arc_info1.angle_out_delta) / deg_to_radf(15.0), 0.0, 1.0f32);
             self.sharpness_pos = arc_info1.point_in;
 
-            self.last_time = self.curve.keys[i0].time + (self.curve.keys[i1].time - self.curve.keys[i0].time) * time2;
+            self.last_time = self.curve.keys[i0].time + (self.curve.keys[i1].time - self.curve.keys[i0].time) * if plant(11307) { time1 } else { time2 };
         } else {
             // We are on the ending curve of the segment (the interpolation is commented out upstream)
             let angle = arc_info1.point_angle + arc_info1.angle_out_delta;
