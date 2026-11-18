@@ -40,3 +40,6 @@ pub mod font3d;
 pub mod render2d;
 pub mod bwrender;
 pub mod bmp2d;
+pub mod textdraw;
+pub mod txt;
+pub mod txt2d;
