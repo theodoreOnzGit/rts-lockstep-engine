@@ -14,3 +14,6 @@ pub mod frustum;
 pub mod lcw;
 pub mod rle;
 pub mod base64;
+pub mod math_util;
+pub mod misc_util;
+pub mod pointer_remap;
