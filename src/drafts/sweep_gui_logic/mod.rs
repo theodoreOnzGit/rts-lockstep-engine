@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #213): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Sweep 2 (#213) group `gui_logic`: the `Class::method` definitions of GameClient/GUI, GameLogic (Object, AI, System,
 //! Map) and GameNetwork whose names appear nowhere in the verified port or the first-pass drafts.
