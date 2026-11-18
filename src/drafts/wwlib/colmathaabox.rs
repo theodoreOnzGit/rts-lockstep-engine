@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_colmath.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmathaabox.h
@@ -8,7 +9,9 @@
 //! `Collide(AABox, move, Tri)` from colmathaabtri.cpp (`super::colmathaabtri`). The `#if 0` "alternate Overlap Test
 //! for AABox-Ray" is not translated. Upstream defects kept: `Overlap_Test(AABox, Sphere)` is marked "TODO: this
 //! function seems incorrect" and only tests the box grown by the radius per axis; `Collide(AABox, AABox)` writes
-//! `Normal[AxisId]` with `AxisId == -1` (an out-of-range write upstream) if no axis ever raised `MaxFrac` above 0.
+//! `Normal[AxisId]` with `AxisId == -1` (an out-of-range write upstream: `Normal[-1]` is the `Fraction` before it, set from
+//! the never-set `Side`; CONFIRMED by running the C++, 159 of 20,000 random cases) if no axis ever raised `MaxFrac` above 0.
+//! The draft skips that write (a defined deviation); the differential test does not compare those inputs.
 
 use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
@@ -179,12 +182,12 @@ pub fn collide_aabox_plane(box_: &AABoxClass, move_vector: &Vector3, plane: &Pla
     let mv = Vector3::dot_product(&plane.n, move_vector);
 
     if dist > extent {
-        if (if plant(10470) { dist + mv >= extent } else { dist + mv > extent }) {
+        if dist + mv > extent {
             // entire move ok!
             frac = 1.0f32;
         } else {
             // partial move allowed
-            frac = (extent - dist) / mv;
+            frac = (if plant(10470) { (dist - extent) / mv } else { (extent - dist) / mv });
         }
     } else if dist < -extent {
         if dist + mv < -extent {
@@ -287,8 +290,8 @@ fn aab_separation_test(context: &mut AABCollisionStruct, axis: usize) -> bool {
 
 /// `CollisionMath::Collide(const AABoxClass & box, const Vector3 & move, const AABoxClass & box2, result)`
 /// (colmathaabox.cpp:559): sweeps `box` along `move` against the stationary `box2`. Contact point computation is not
-/// supported upstream (it only prints a debug message). `Normal[AxisId]` with `AxisId == -1` panics here on the index
-/// (undefined behaviour upstream).
+/// supported upstream (it only prints a debug message). `Normal[AxisId]` with `AxisId == -1` is skipped here (undefined
+/// behaviour upstream; ~~"panics here on the index"~~ **Corrected 2026-11-18 (#215):** the draft now skips the write).
 pub fn collide_aabox_aabox(box_: &AABoxClass, move_: &Vector3, box2: &AABoxClass, result: &mut CastResultStruct) -> bool {
     let mut context = AABCollisionStruct::new(box_, move_, box2, &Vector3::new(0.0, 0.0, 0.0));
 

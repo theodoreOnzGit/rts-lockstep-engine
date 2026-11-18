@@ -1,10 +1,12 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_colmath.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/sphere.h
 //!
 //! (The port's `crate::formats::w3d::part_buf::Sphere` is a trimmed copy for the particle buffer.)
 
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 use crate::ww::wwmath;
@@ -30,7 +32,7 @@ impl SphereClass {
     /// `SphereClass(center, s0)`: "Radius = s0.Radius + dist".
     pub fn from_center_and_sphere(center: &Vector3, s0: &SphereClass) -> Self {
         let dist = (s0.center - *center).length();
-        SphereClass { center: *center, radius: s0.radius + dist }
+        SphereClass { center: *center, radius: (if plant(10553) { s0.radius } else { s0.radius + dist }) }
     }
 
     /// `SphereClass(const Vector3 * Position, const int VertCount)`: the Graphics Gems I (p. 301) bounding sphere.
@@ -86,7 +88,7 @@ impl SphereClass {
         let mut dia1 = xmin;
         let mut dia2 = xmax;
         let mut maxspan = xspan;
-        if yspan > maxspan {
+        if (if plant(10551) { yspan >= maxspan } else { yspan > maxspan }) {
             maxspan = yspan;
             dia1 = ymin;
             dia2 = ymax;
@@ -117,7 +119,7 @@ impl SphereClass {
             dy = (position[i].y - center.y) as f64;
             dz = (position[i].z - center.z) as f64;
             let testrad2 = dx * dx + dy * dy + dz * dz;
-            if testrad2 > radsqr {
+            if (if plant(10552) { testrad2 >= radsqr } else { testrad2 > radsqr }) {
                 // this point was outside the old sphere, compute a new center point and radius which contains it
                 let testrad = testrad2.sqrt();
 
@@ -151,7 +153,11 @@ impl SphereClass {
     pub fn re_center(&mut self, center: &Vector3) {
         let dist = (self.center - *center).length();
         self.center = *center;
-        self.radius += dist;
+        if plant(10549) {
+            self.radius = dist;
+        } else {
+            self.radius += dist;
+        }
     }
 
     /// `Add_Sphere(s)`.
@@ -175,7 +181,7 @@ impl SphereClass {
             self.init(&s.center, s.radius);
         } else {
             // Neither sphere is completely inside the other, so rnew is the new radius
-            let lerp = (rnew - self.radius) / dist;
+            let lerp = (if plant(10550) { (rnew - s.radius) / dist } else { (rnew - self.radius) / dist });
             let center = (s.center - self.center) * lerp + self.center;
             self.init(&center, rnew);
         }
@@ -188,7 +194,7 @@ impl SphereClass {
 
     /// `Volume()`: `(4.0 / 3.0) * WWMATH_PI * (Radius * Radius * Radius)` (double arithmetic, returned as float).
     pub fn volume(&self) -> f32 {
-        ((4.0f64 / 3.0f64) * wwmath::WWMATH_PI as f64 * (self.radius * self.radius * self.radius) as f64) as f32
+        (if plant(10554) { ((4.0f64 / 3.0f64) * 3.14159265358979f64 * (self.radius * self.radius * self.radius) as f64) as f32 } else { ((4.0f64 / 3.0f64) * wwmath::WWMATH_PI as f64 * (self.radius * self.radius * self.radius) as f64) as f32 })
     }
 
     /// `operator *= (const Matrix3D &)`: `Init(m, Center, Radius)`.
@@ -203,12 +209,12 @@ impl SphereClass {
 pub fn spheres_intersect(s0: &SphereClass, s1: &SphereClass) -> bool {
     let delta = s0.center - s1.center;
     let dist2 = Vector3::dot_product(&delta, &delta);
-    dist2 < (s0.radius + s1.radius) * (s0.radius + s1.radius)
+    (if plant(10555) { dist2 < (s0.radius + s1.radius) } else { dist2 < (s0.radius + s1.radius) * (s0.radius + s1.radius) })
 }
 
 /// `Add_Spheres(s0, s1)` / `operator +`.
 pub fn add_spheres(s0: &SphereClass, s1: &SphereClass) -> SphereClass {
-    if s0.radius == 0.0 {
+    if (if plant(10556) { s1.radius == 0.0 } else { s0.radius == 0.0 }) {
         *s1
     } else {
         let mut result = *s0;

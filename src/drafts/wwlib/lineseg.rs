@@ -1,5 +1,7 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Covered by tests/differential_draft_colmath.rs (#215): `new`, `from_transformed`, `compute_point`, `find_point_closest_to`, `find_intersection`, the getters. NOT covered: `set_random` (needs `WWMath::Random_Float`), `set`.
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/lineseg.h
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/lineseg.cpp
@@ -7,6 +9,7 @@
 //! The port's `crate::client::pick_drawable::LineSeg` is the same class trimmed to what the picking ray needs; this is
 //! the full `LineSegClass`. `WWMath::Random_Float` is a caller closure.
 
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 
@@ -48,7 +51,7 @@ impl LineSegClass {
         self.p0 = Matrix3D::transform_vector(tm, &that.p0);
         self.p1 = Matrix3D::transform_vector(tm, &that.p1);
         self.dp = self.p1 - self.p0;
-        self.dir = Matrix3D::rotate_vector_by(tm, &that.dir);
+        self.dir = if plant(10562) { that.dir } else { Matrix3D::rotate_vector_by(tm, &that.dir) };
         self.length = that.length;
     }
 
@@ -98,7 +101,7 @@ impl LineSegClass {
 
     /// `Compute_Point(t, &set)`: `Vector3::Add(P0, t*DP, set)`.
     pub fn compute_point(&self, t: f32) -> Vector3 {
-        Vector3::add_vectors(&self.p0, &(t * self.dp))
+        Vector3::add_vectors(&self.p0, &((if plant(10557) { t * self.dir } else { t * self.dp })))
     }
 
     /// `LineSegClass::Find_Point_Closest_To` (lineseg.cpp:140).
@@ -111,7 +114,7 @@ impl LineSegClass {
         if dotprod <= 0.0 {
             return self.p0;
         } else if dotprod >= self.length {
-            return self.p1;
+            return if plant(10558) { self.p0 } else { self.p1 };
         }
 
         // Find point on line seg that is closest to pos passed in.
@@ -128,7 +131,7 @@ impl LineSegClass {
         let bottom1 = Vector3::dot_product(&cross1, &cross1);
 
         let cross3 = Vector3::cross_product(&other_line.dir, &self.dir);
-        let cross4 = Vector3::cross_product(&(self.p0 - other_line.p0), &self.dir);
+        let cross4 = Vector3::cross_product(&((if plant(10560) { other_line.p0 - self.p0 } else { self.p0 - other_line.p0 })), &self.dir);
         let top2 = Vector3::dot_product(&cross4, &cross3);
         let bottom2 = Vector3::dot_product(&cross3, &cross3);
 
@@ -140,7 +143,7 @@ impl LineSegClass {
             // Calculate the closest points on both lines.
             let p1 = self.p0 + (self.dir * length1);
             let p2 = other_line.p0 + (other_line.dir * length2);
-            return Some((p1, length1 / self.length, p2, length2 / self.length));
+            return Some((p1, (if plant(10559) { length1 / other_line.length } else { length1 / self.length }), p2, length2 / self.length));
         }
         None
     }
@@ -150,6 +153,6 @@ impl LineSegClass {
         self.dp = self.p1 - self.p0;
         self.dir = self.dp;
         self.dir.normalize();
-        self.length = self.dp.length();
+        self.length = if plant(10561) { self.dir.length() } else { self.dp.length() };
     }
 }

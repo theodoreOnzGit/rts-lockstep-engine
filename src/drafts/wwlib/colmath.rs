@@ -1,5 +1,7 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Covered by tests/differential_draft_colmath.rs (#215): `eval_overlap_mask`, `eval_overlap_collision` (through every overlap test), and the constants. NOT covered: `ColmathStatsStruct` (`new`, `reset`; the counters are debug-only upstream).
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmath.h
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmath.cpp

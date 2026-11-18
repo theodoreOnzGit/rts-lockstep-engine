@@ -40,8 +40,135 @@
 //!
 //! # Results
 //!
-//! `cargo +1.97.1 test --release --features "differential untested-drafts" --test differential_draft_colmath -- --nocapture`
-//! prints one `DIFF` line per function. The planted bugs (`L9_PLANT=<id>`, ids 10461..) are run one at a time.
+//! Recorded 2026-11-18, `cargo +1.97.1 test --release --features "differential untested-drafts" --test
+//! differential_draft_colmath -- --nocapture` (default 20,000 cases per function, seed `0x215_C011 ^ (op << 32)`):
+//! **0 mismatches in every one of the 109 functions** (37 overlap tests, 8 intersection tests, 14 `Collide`s, 50 shape
+//! members, 109 `DIFF` lines in all; max ULP 0, no NaN-payload-only cases), after the three draft fixes listed below.
+//! Excluded inputs per function are printed in each `    name: ... excluded` line (159 of 20,000 AABox-AABox collides, 0.8 %;
+//! 24 to 73 of the OBB-OBB collides, 0.1 to 0.4 %; 3 to 7 of the latter with only the contact point masked).
+//!
+//! Fixed in the drafts by this test (each a mismatch first, then 0): `obbtri_compute_contact_point` omitted the clamp of
+//! `x[]` to the box extents (213 of 20,000 `Collide(OBB, Tri)` cases; the draft's comment said the clamp was commented
+//! out upstream, it is live code); `Oriented_Box_Intersects_Tri` flipped a copy of `A[i]` where upstream flips `A[i]`
+//! itself, which the cross products then use (3 of 20,000); `MinMaxAABoxClass::Add_Box(min, max)` `assert!`ed `max >=
+//! min` where the release build's `WWASSERT` is empty.
+//!
+//! Predictions written before the first run: 0 mismatches everywhere except the known `Normal[-1]` inputs. Misses: the
+//! uninitialised `Side` / `x[3]` reads of the OBB-OBB collides (about 0.4 %, see Excluded inputs), the obb-tri clamp, the
+//! `Oriented_Box_Intersects_Tri` copy and the `assert!` above; and a `Fraction` pre-fill above 1, which makes a "hit" with
+//! no axis set (outside `CastResultStruct`'s domain, so the pre-fill stays at most 1).
+//!
+//! # Planted bugs
+//!
+//! `L9_PLANT=<id>` (ids 10461 to 10563) makes the draft take a wrong branch (`crate::logic::modules::plant`, which only the
+//! `differential` feature reads). The run then prints a `PLANTCASES` line per function; every plant is caught, in the number
+//! of cases (of 20,000) shown for the worst-hit function:
+//!
+//! | id | file | planted | instead of | caught |
+//! |---|---|---|---|---|
+//! | 10461 | `colmath.rs` | `res.fraction <= 1.0f32` instead of `res.fraction < 1.0f32` | 4 ops, worst-hit `Overlap_Test(OBBox, LineSeg)` 18573 of 20,000 |
+//! | 10462 | `colmath.rs` | `(mask & !POS) == 0` instead of `(mask & !(POS \| ON)) == 0` | 6 ops, worst-hit `Overlap_Test(AAPlane, Tri)` 725 of 20,000 |
+//! | 10463 | `colmath.rs` | `(mask & !NEG) == 0` instead of `(mask & !(NEG \| ON)) == 0` | 6 ops, worst-hit `Overlap_Test(AAPlane, Tri)` 780 of 20,000 |
+//! | 10464 | `colmathaabox.rs` | `wwmath::fabs(point.y - box_.center.y) >= box_.extent.y` instead of `wwmath::fabs(point.y - box_.center.y) > box_.extent.y` | 4 ops, worst-hit `Overlap_Test(AABox, Vector3)` 56 of 20,000 |
+//! | 10465 | `colmathaabox.rs` | `(dc.z - box2.extent.z > -box_.extent.z)` instead of `(dc.z - box2.extent.z >= -box_.extent.z)` | 2 ops, worst-hit `Overlap_Test(AABox, AABox)` 5 of 20,000 |
+//! | 10466 | `colmathaabox.rs` | `box_.extent.x + box2.extent.x <= wwmath::fabs(dc.x)` instead of `box_.extent.x + box2.extent.x < wwmath::fabs(dc.x)` | 1 ops, worst-hit `Intersection_Test(AABox, AABox)` 86 of 20,000 |
+//! | 10467 | `colmathaabox.rs` | `box_.extent.y` instead of `box_.extent.y + sphere.radius` | 1 ops, worst-hit `Overlap_Test(AABox, Sphere)` 2618 of 20,000 |
+//! | 10468 | `colmathaabox.rs` | `wwmath::max(dp_proj, 0.0f32)` instead of `wwmath::min(dp_proj, 0.0f32)` | 2 ops, worst-hit `Overlap_Test(AABox, LineSeg)` 638 of 20,000 |
+//! | 10469 | `colmathaabox.rs` | `wwmath::fabs(axis.z * box_.extent.x)` instead of `wwmath::fabs(axis.z * box_.extent.z)` | 2 ops, worst-hit `Overlap_Test(AABox, LineSeg)` 310 of 20,000 |
+//! | 10470 | `colmathaabox.rs` | `(dist - extent) / mv` instead of `(extent - dist) / mv` | 1 ops, worst-hit `Collide(AABox, move, Plane)` 1331 of 20,000 |
+//! | 10471 | `colmathaabox.rs` | `box_.center + result.fraction * *move_vector` instead of `box_.center + result.fraction * *move_vector + move_extent * move_dir` | 1 ops, worst-hit `Collide(AABox, move, Plane)` 1027 of 20,000 |
+//! | 10472 | `colmathaabox.rs` | `u0 + wwmath::WWMATH_EPSILON < -rsum` instead of `u0 - wwmath::WWMATH_EPSILON < -rsum` | 1 ops, worst-hit `Collide(AABox, move, AABox)` 97 of 20,000 |
+//! | 10473 | `colmathaabox.rs` | `context.side as f32` instead of `(-context.side) as f32` | 1 ops, worst-hit `Collide(AABox, move, AABox)` 1805 of 20,000 |
+//! | 10474 | `colmathplane.rs` | `delta > wwmath::WWMATH_EPSILON` instead of `delta > COINCIDENCE_EPSILON` | 11 ops, worst-hit `Overlap_Test(Plane, LineSeg)` 106 of 20,000 |
+//! | 10475 | `colmathplane.rs` | `plane.dist - point[plane.normal as usize]` instead of `point[plane.normal as usize] - plane.dist` | 3 ops, worst-hit `Overlap_Test(AAPlane, Vector3)` 19167 of 20,000 |
+//! | 10476 | `colmathplane.rs` | `delta < -sphere.radius` instead of `delta < sphere.radius` | 1 ops, worst-hit `Overlap_Test(AAPlane, Sphere)` 7324 of 20,000 |
+//! | 10477 | `colmathplane.rs` | `(box_.center[n] - box_.extent[n]) - plane.dist` instead of `(box_.center[n] + box_.extent[n]) - plane.dist` | 1 ops, worst-hit `Overlap_Test(AAPlane, AABox)` 6223 of 20,000 |
+//! | 10478 | `colmathplane.rs` | `overlap_test_plane_point(plane, &posfarpt) == OverlapType::Pos` instead of `overlap_test_plane_point(plane, &negfarpt) == OverlapType::Pos` | 3 ops, worst-hit `Overlap_Test(Plane, AABox)` 7879 of 20,000 |
+//! | 10479 | `colmathplane.rs` | `extent.z` instead of `-extent.z` | 6 ops, worst-hit `Overlap_Test(Frustum, OBBox, planes_passed)` 3217 of 20,000 |
+//! | 10480 | `colmathplane.rs` | `dist <= -sphere.radius` instead of `dist < -sphere.radius` | 2 ops, worst-hit `Overlap_Test(Plane, Sphere)` 49 of 20,000 |
+//! | 10481 | `colmathplane.rs` | `Matrix3x3::rotate_vector(&box_.basis, &plane.n)` instead of `Matrix3x3::transpose_rotate_vector(&box_.basis, &plane.n)` | 3 ops, worst-hit `Overlap_Test(Frustum, OBBox, planes_passed)` 3359 of 20,000 |
+//! | 10482 | `colmathplane.rs` | `0` instead of `overlap_test_plane_point(plane, line.get_p1()).bits()` | 1 ops, worst-hit `Overlap_Test(Plane, LineSeg)` 5352 of 20,000 |
+//! | 10483 | `colmathsphere.rs` | `wwmath::fabs(dc.y) <= box_.extent.y + sphere.radius` instead of `wwmath::fabs(dc.y) < box_.extent.y + sphere.radius` | 2 ops, worst-hit `Overlap_Test(Sphere, AABox)` 34 of 20,000 |
+//! | 10484 | `colmathsphere.rs` | `box_.extent.y < wwmath::fabs(box_rel_center.z)` instead of `box_.extent.z < wwmath::fabs(box_rel_center.z)` | 2 ops, worst-hit `Overlap_Test(Sphere, OBBox)` 624 of 20,000 |
+//! | 10485 | `colmathsphere.rs` | `r2 < sphere.radius - COINCIDENCE_EPSILON` instead of `r2 < sphere.radius * sphere.radius - COINCIDENCE_EPSILON` | 1 ops, worst-hit `Overlap_Test(Sphere, Vector3)` 899 of 20,000 |
+//! | 10486 | `colmathsphere.rs` | `dist2 == 0.0` instead of `dist2 == 0.0 && sphere.radius == sphere2.radius` | 1 ops, worst-hit `Overlap_Test(Sphere, Sphere)` 4 of 20,000 |
+//! | 10487 | `colmathsphere.rs` | `sphere.radius` instead of `sphere.radius + sphere2.radius` | 1 ops, worst-hit `Overlap_Test(Sphere, Sphere)` 3530 of 20,000 |
+//! | 10488 | `colmathfrustum.rs` | `*planes_passed |= plane_bit` skipped instead of recorded | 2 ops, worst-hit `Overlap_Test(Frustum, AABox, planes_passed)` 8451 of 20,000 |
+//! | 10489 | `colmathfrustum.rs` | `(mask & OverlapType::INSIDE.bits()) != 0` instead of `mask == OverlapType::INSIDE.bits()` | 5 ops, worst-hit `Overlap_Test(Frustum, OBBox)` 2819 of 20,000 |
+//! | 10490 | `colmathfrustum.rs` | `OverlapType::OVERLAPPED.bits()` instead of `OverlapType::INSIDE.bits()` | 2 ops, worst-hit `Overlap_Test(Frustum, AABox, planes_passed)` 1604 of 20,000 |
+//! | 10491 | `colmathline.rs` | `line.get_p1()[n] - plane.dist` instead of `line.get_p0()[n] - plane.dist` | 1 ops, worst-hit `Collide(LineSeg, AAPlane)` 6582 of 20,000 |
+//! | 10492 | `colmathline.rs` | `(t <= 0.0f32) \|\| (t > 1.0f32)` instead of `(t < 0.0f32) \|\| (t > 1.0f32)` | 1 ops, worst-hit `Collide(LineSeg, Plane)` 304 of 20,000 |
+//! | 10493 | `colmathline.rs` | `Vector3::dot_product(&tri.n, &tri.v[1])` instead of `Vector3::dot_product(&tri.n, &tri.v[0])` | 1 ops, worst-hit `Collide(LineSeg, Tri)` 398 of 20,000 |
+//! | 10494 | `colmathline.rs` | `(clen + d) * *line.get_dir()` instead of `(clen - d) * *line.get_dir()` | 1 ops, worst-hit `Collide(LineSeg, Sphere)` 1901 of 20,000 |
+//! | 10495 | `colmathline.rs` | `test.p0[i] >= test.max[i]` instead of `test.p0[i] > test.max[i]` | 3 ops, worst-hit `Collide(LineSeg, AABox)` 126 of 20,000 |
+//! | 10496 | `colmathline.rs` | `maxt[i] < maxt[intersection_plane]` instead of `maxt[i] > maxt[intersection_plane]` | 3 ops, worst-hit `Overlap_Test(OBBox, LineSeg)` 1427 of 20,000 |
+//! | 10497 | `colmathline.rs` | `test.side == BOX_SIDE_POSITIVE` instead of `test.side == BOX_SIDE_NEGATIVE` | 1 ops, worst-hit `Collide(LineSeg, OBBox)` 1124 of 20,000 |
+//! | 10498 | `colmathline.rs` | `box_.basis.mul_vector(line.get_dp())` instead of `box_.basis.transpose().mul_vector(line.get_dp())` | 2 ops, worst-hit `Overlap_Test(OBBox, LineSeg)` 956 of 20,000 |
+//! | 10499 | `colmathline.rs` | `test.fraction <= res.fraction` instead of `test.fraction < res.fraction` | 1 ops, worst-hit `Collide(LineSeg, AABox)` 60 of 20,000 |
+//! | 10500 | `colmathobbox.rs` | `wwmath::fabs(localpoint.z) >= box_.extent.z` instead of `wwmath::fabs(localpoint.z) > box_.extent.z` | 1 ops, worst-hit `Overlap_Test(OBBox, Vector3)` 32 of 20,000 |
+//! | 10501 | `colmathobbox.rs` | `box_.center + result.fraction * *move_vector` instead of `box_.center + result.fraction * *move_vector + move_extent * move_dir` | 1 ops, worst-hit `Collide(OBBox, move, Plane)` 972 of 20,000 |
+//! | 10502 | `colmathobbox.rs` | `dist <= -extent` instead of `dist < -extent` | 1 ops, worst-hit `Collide(OBBox, move, Plane)` 133 of 20,000 |
+//! | 10503 | `colmathobbox.rs` | `OverlapType::Neg` instead of `OverlapType::Both` | 1 ops, worst-hit `Overlap_Test(AABox, OBBox)` 3970 of 20,000 |
+//! | 10504 | `colmathobbox.rs` | `Matrix3x3::rotate_vector(&box_.basis, &(*point - box_.center))` instead of `Matrix3x3::transpose_rotate_vector(&box_.basis, &(*point - box_.center` | 1 ops, worst-hit `Overlap_Test(OBBox, Vector3)` 251 of 20,000 |
+//! | 10505 | `colmathaabtri.rs` | `lp - leb0 < 0.0f32` instead of `lp - leb0 <= 0.0f32` | 2 ops, worst-hit `Collide(AABox, move, Tri)` 229 of 20,000 |
+//! | 10506 | `colmathaabtri.rs` | `leb1 - leb0 >= 0.0f32` instead of `leb1 - leb0 > 0.0f32` | 2 ops, worst-hit `Overlap_Test(AABox, Tri)` 312 of 20,000 |
+//! | 10507 | `colmathaabtri.rs` | `self.box_extent.z * wwmath::fabs(self.test_axis.y)` instead of `self.box_extent.z * wwmath::fabs(self.test_axis.z)` | 1 ops, worst-hit `Collide(AABox, move, Tri)` 375 of 20,000 |
+//! | 10508 | `colmathaabtri.rs` | `0.0f32` instead of `-0.01f32` | 1 ops, worst-hit `Collide(AABox, move, Tri)` 103 of 20,000 |
+//! | 10509 | `colmathaabtri.rs` | `(self.side as f32)` instead of `-(self.side as f32)` | 1 ops, worst-hit `Collide(AABox, move, Tri)` 1704 of 20,000 |
+//! | 10510 | `colmathaabtri.rs` | `cc.max_frac < result.fraction` instead of `cc.max_frac <= result.fraction` | 1 ops, worst-hit `Collide(AABox, move, Tri)` 15 of 20,000 |
+//! | 10511 | `colmathaabtri.rs` | `lp - leb0 > wwmath::WWMATH_EPSILON` instead of `lp - leb0 > -wwmath::WWMATH_EPSILON` | 1 ops, worst-hit `Intersection_Test(AABox, Tri)` 32 of 20,000 |
+//! | 10512 | `colmathaabtri.rs` | `wwmath::fabs(self.an[1])` instead of `wwmath::fabs(self.an[2])` | 1 ops, worst-hit `Intersection_Test(AABox, Tri)` 265 of 20,000 |
+//! | 10513 | `colmathaabtri.rs` | `ic.e[1].z` instead of `ic.e[1].y` | 1 ops, worst-hit `Intersection_Test(AABox, Tri)` 766 of 20,000 |
+//! | 10514 | `colmathobbtri.rs` | `lp - leb0 > eps` instead of `lp - leb0 > -eps` | 2 ops, worst-hit `Collide(OBBox, move, Tri, move2)` 141 of 20,000 |
+//! | 10515 | `colmathobbtri.rs` | `cc.max_frac < result.fraction` instead of `cc.max_frac <= result.fraction` | 1 ops, worst-hit `Collide(OBBox, move, Tri, move2)` 7 of 20,000 |
+//! | 10516 | `colmathobbtri.rs` | `self.point == 1` instead of `self.point == 0` | 1 ops, worst-hit `Collide(OBBox, move, Tri, move2)` 524 of 20,000 |
+//! | 10517 | `colmathobbtri.rs` | `x[2] < -self.box_.extent.y` instead of `x[2] < -self.box_.extent.z` | 1 ops, worst-hit `Collide(OBBox, move, Tri, move2)` 50 of 20,000 |
+//! | 10518 | `colmathobbtri.rs` | `newc - newv0` instead of `newv0 - newc` | 1 ops, worst-hit `Collide(OBBox, move, Tri, move2)` 577 of 20,000 |
+//! | 10519 | `colmathobbtri.rs` | `lp - leb0 > eps` instead of `lp - leb0 > -eps` | 1 ops, worst-hit `Intersection_Test(OBBox, Tri)` 168 of 20,000 |
+//! | 10520 | `colmathobbtri.rs` | `wwmath::fabs(self.an[1])` instead of `wwmath::fabs(self.an[2])` | 1 ops, worst-hit `Intersection_Test(OBBox, Tri)` 335 of 20,000 |
+//! | 10521 | `colmathobbtri.rs` | `cc.basis_axis(ext[0], cc.ae[i][0], cc.ae[i][1])` instead of `cc.basis_axis(ext[i], cc.ae[i][0], cc.ae[i][1])` | 1 ops, worst-hit `Intersection_Test(OBBox, Tri)` 784 of 20,000 |
+//! | 10522 | `colmathobbobb.rs` | `tmp >= context.max_frac` instead of `tmp > context.max_frac` | 3 ops, worst-hit `Collide(OBBox, move, AABox, move2)` 915 of 20,000 |
+//! | 10523 | `colmathobbobb.rs` | `eval_side(ab[0][0], side) * context.box1.extent[2]` instead of `-eval_side(ab[0][0], side) * context.box1.extent[2]` | 3 ops, worst-hit `Collide(OBBox, move, OBBox, move2)` 37 of 20,000 |
+//! | 10524 | `colmathobbobb.rs` | `Vector3::dot_product(&-context.b[1], &dcnew) + ab[0][1] * x[0] + ab[2]` instead of `Vector3::dot_product(&-context.b[1], &dcnew) + ab[0][1] * x[0] + ab[2]` | 3 ops, worst-hit `Collide(OBBox, move, OBBox, move2)` 20 of 20,000 |
+//! | 10525 | `colmathobbobb.rs` | `context.side as f32` instead of `(-context.side) as f32` | 3 ops, worst-hit `Collide(OBBox, move, AABox, move2)` 2108 of 20,000 |
+//! | 10526 | `colmathobbobb.rs` | `wwmath::fabs(context.box0.extent[0] * context.ab[axis_index][0])` instead of `wwmath::fabs(context.box0.extent[0] * context.ab[0][axis_index])` | 5 ops, worst-hit `Intersection_Test(AABox, OBBox)` 176 of 20,000 |
+//! | 10527 | `colmathobbobb.rs` | `(u >= rsum) \|\| (u < -rsum)` instead of `(u > rsum) \|\| (u < -rsum)` | 5 ops, worst-hit `Intersection_Test(AABox, OBBox)` 47 of 20,000 |
+//! | 10528 | `colmathobbobb.rs` | `context.box0.extent[i] >= 0.0f32` instead of `context.box0.extent[i] > 0.0f32` | 5 ops, worst-hit `Intersection_Test(OBBox, OBBox)` 50 of 20,000 |
+//! | 10529 | `colmathobbobb.rs` | `!context.start_bad` instead of `!result.start_bad` | 3 ops, worst-hit `Collide(OBBox, move, AABox, move2)` 34 of 20,000 |
+//! | 10530 | `aabox.rs` | `min.z > point.y` instead of `min.z > point.z` | 1 ops, worst-hit `AABoxClass::Add_Point` 5594 of 20,000 |
+//! | 10531 | `aabox.rs` | `newmax.update_max(&(b.center - b.extent))` instead of `newmax.update_max(&(b.center + b.extent))` | 1 ops, worst-hit `AABoxClass::Add_Box(AABox)` 16121 of 20,000 |
+//! | 10532 | `aabox.rs` | `wwmath::fabs(x) + y + wwmath::fabs(z)` instead of `wwmath::fabs(x) + wwmath::fabs(y) + wwmath::fabs(z)` | 2 ops, worst-hit `AABoxClass::Project_To_Axis` 6608 of 20,000 |
+//! | 10533 | `aabox.rs` | `2.0f32 * self.extent.x * 2.0f32 * self.extent.y * 2.0f32 * self.extent` instead of `(2.0f64 * self.extent.x as f64 * 2.0f64 * self.extent.y as f64 * 2.0f6` | 1 ops, worst-hit `AABoxClass::Volume` 617 of 20,000 |
+//! | 10534 | `aabox.rs` | `other_box.max_corner.y >= bmax.y` instead of `other_box.max_corner.y > bmax.y` | 1 ops, worst-hit `AABoxClass::Contains(MinMax)` 35 of 20,000 |
+//! | 10535 | `aabox.rs` | `self.center = (*max - *min) * 0.5f32` instead of `self.center = (*max + *min) * 0.5f32` | 2 ops, worst-hit `AABoxClass::Init_Min_Max` 19946 of 20,000 |
+//! | 10536 | `aabox.rs` | `false` instead of `b.min_corner == b.max_corner` | 1 ops, worst-hit `MinMaxAABoxClass::Add_Box(MinMax)` 58 of 20,000 |
+//! | 10537 | `aabox.rs` | `false` instead of `b.extent == Vector3::new(0.0, 0.0, 0.0)` | 1 ops, worst-hit `MinMaxAABoxClass::Add_Box(AABox)` 261 of 20,000 |
+//! | 10538 | `aabox.rs` | `size.x * size.y * size.x` instead of `size.x * size.y * size.z` | 1 ops, worst-hit `MinMaxAABoxClass::Volume` 17162 of 20,000 |
+//! | 10539 | `aabox.rs` | `MinMaxAABoxClass { min_corner: b.center + b.extent, max_corner: b.cent` instead of `MinMaxAABoxClass { min_corner: b.center - b.extent, max_corner: b.cent` | 1 ops, worst-hit `MinMaxAABoxClass::Init(AABox)` 19775 of 20,000 |
+//! | 10540 | `aabox.rs` | `self.max_corner -= *pos;` instead of `self.max_corner += *pos;` | 1 ops, worst-hit `MinMaxAABoxClass::Translate` 19939 of 20,000 |
+//! | 10541 | `aabox.rs` | `self.center -= *trans;` instead of `self.center += *trans;` | 1 ops, worst-hit `AABoxClass::Translate` 19947 of 20,000 |
+//! | 10542 | `obbox.rs` | `Vector3::dot_product(axis, &Vector3::new(b[0][0], b[0][1], b[0][2]))` instead of `Vector3::dot_product(axis, &Vector3::new(b[0][0], b[1][0], b[2][0]))` | 5 ops, worst-hit `OBBoxClass::Project_To_Axis` 8167 of 20,000 |
+//! | 10543 | `obbox.rs` | `2.0f32 * self.extent.x * 2.0f32 * self.extent.y * 2.0f32 * self.extent` instead of `(2.0f64 * self.extent.x as f64 * 2.0f64 * self.extent.y as f64 * 2.0f6` | 1 ops, worst-hit `OBBoxClass::Volume` 655 of 20,000 |
+//! | 10544 | `obbox.rs` | `params[0]` instead of `params[1]` | 4 ops, worst-hit `OBBoxClass::Compute_Point` 14691 of 20,000 |
+//! | 10545 | `obbox.rs` | `e[1] * b[0][1]` instead of `wwmath::fabs(e[1] * b[0][1])` | 1 ops, worst-hit `OBBoxClass::Compute_Axis_Aligned_Extent` 3944 of 20,000 |
+//! | 10546 | `obbox.rs` | `input.center` instead of `Matrix3D::transform_vector(tm, &input.center)` | 1 ops, worst-hit `OBBoxClass::Transform` 19973 of 20,000 |
+//! | 10547 | `obbox.rs` | `lep > leb` instead of `lep >= leb` | 1 ops, worst-hit `Oriented_Box_Intersects_Tri` 124 of 20,000 |
+//! | 10548 | `obbox.rs` | `{ let mut c = a[i]; oriented_box_intersects_tri_on_axis(box_, tri, &mu` instead of `oriented_box_intersects_tri_on_axis(box_, tri, &mut a[i])` | 1 ops, worst-hit `Oriented_Box_Intersects_Tri` 3 of 20,000 |
+//! | 10549 | `sphere.rs` | `self.radius = dist;` instead of `self.radius += dist;` | 1 ops, worst-hit `SphereClass::Re_Center` 18006 of 20,000 |
+//! | 10550 | `sphere.rs` | `(rnew - s.radius) / dist` instead of `(rnew - self.radius) / dist` | 2 ops, worst-hit `SphereClass::Add_Sphere` 17480 of 20,000 |
+//! | 10551 | `sphere.rs` | `yspan >= maxspan` instead of `yspan > maxspan` | 1 ops, worst-hit `SphereClass(points, count)` 161 of 20,000 |
+//! | 10552 | `sphere.rs` | `testrad2 >= radsqr` instead of `testrad2 > radsqr` | 1 ops, worst-hit `SphereClass(points, count)` 4002 of 20,000 |
+//! | 10553 | `sphere.rs` | `s0.radius` instead of `s0.radius + dist` | 1 ops, worst-hit `SphereClass(center, sphere)` 19997 of 20,000 |
+//! | 10554 | `sphere.rs` | `((4.0f64 / 3.0f64) * 3.14159265358979f64 * (self.radius * self.radius ` instead of `((4.0f64 / 3.0f64) * wwmath::WWMATH_PI as f64 * (self.radius * self.ra` | 1 ops, worst-hit `SphereClass::Volume` 6125 of 20,000 |
+//! | 10555 | `sphere.rs` | `dist2 < (s0.radius + s1.radius)` instead of `dist2 < (s0.radius + s1.radius) * (s0.radius + s1.radius)` | 1 ops, worst-hit `Spheres_Intersect` 4060 of 20,000 |
+//! | 10556 | `sphere.rs` | `s1.radius == 0.0` instead of `s0.radius == 0.0` | 1 ops, worst-hit `Add_Spheres` 3487 of 20,000 |
+//! | 10557 | `lineseg.rs` | `t * self.dir` instead of `t * self.dp` | 1 ops, worst-hit `LineSegClass::Compute_Point` 14899 of 20,000 |
+//! | 10558 | `lineseg.rs` | `self.p0` instead of `self.p1` | 1 ops, worst-hit `LineSegClass::Find_Point_Closest_To` 3940 of 20,000 |
+//! | 10559 | `lineseg.rs` | `length1 / other_line.length` instead of `length1 / self.length` | 1 ops, worst-hit `LineSegClass::Find_Intersection` 15565 of 20,000 |
+//! | 10560 | `lineseg.rs` | `other_line.p0 - self.p0` instead of `self.p0 - other_line.p0` | 1 ops, worst-hit `LineSegClass::Find_Intersection` 15603 of 20,000 |
+//! | 10561 | `lineseg.rs` | `self.dir.length()` instead of `self.dp.length()` | 4 ops, worst-hit `LineSegClass(that, tm)` 17602 of 20,000 |
+//! | 10562 | `lineseg.rs` | `that.dir` instead of `Matrix3D::rotate_vector_by(tm, &that.dir)` | 1 ops, worst-hit `LineSegClass(that, tm)` 13100 of 20,000 |
+//! | 10563 | `aaplane.rs` | `-1.0f32` instead of `1.0f32` | 1 ops, worst-hit `AAPlaneClass::Get_Normal` 20000 of 20,000 |
 
 mod support;
 
@@ -75,8 +202,14 @@ extern "C" {
     fn ref_dcm_run(input: *const u32, nin: i32, out: *mut u32, cap: i32) -> i32;
 }
 
+/// colmathaabtri.cpp keeps its collision contexts in `static` objects (`static BTCollisionStruct CollisionContext;`,
+/// `static AABTIntersectStruct IntersectContext;`), so the C++ calls are serialised: found when the four test functions
+/// ran in parallel and `Collide(AABox, Tri)` differed in 4,216 of 20,000 cases, none when run alone.
+static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn cpp(input: &[u32]) -> Vec<u32> {
     let mut out = vec![0u32; 64];
+    let _guard = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // SAFETY: both buffers are valid for the lengths given.
     let n = unsafe { ref_dcm_run(input.as_ptr(), input.len() as i32, out.as_mut_ptr(), out.len() as i32) };
     assert!(n >= 0 && n as usize <= out.len(), "ref_dcm_run op {} returned {n}", input[0]);
@@ -684,7 +817,8 @@ fn run_op(name: &str, op: u32, seed: u64) -> (u64, u64) {
             hits += 1;
         }
     }
-    println!("    {name}: {n} cases, {excluded} excluded, {masked} with the contact point masked, first word histogram {outcomes:?}");
+    let hist = if outcomes.len() <= 8 { format!("{outcomes:?}") } else { format!("{} distinct values", outcomes.len()) };
+    println!("    {name}: {n} cases, {excluded} excluded, {masked} with the contact point masked, first word: {hist}");
     if planted() {
         println!("PLANTCASES {name}: {missed_cases} of {n} cases differ");
     }

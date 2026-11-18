@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_colmath.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmathline.h
@@ -57,11 +58,11 @@ pub fn collide_line_aaplane(line: &LineSegClass, plane: &AAPlaneClass, result: &
         return false;
     }
 
-    let num = -(line.get_p0()[n] - plane.dist);
+    let num = -((if plant(10491) { line.get_p1()[n] - plane.dist } else { line.get_p0()[n] - plane.dist }));
     let t = num / den;
 
     // "If t is not between 0 and 1, the line containing the segment intersects the plane but the segment does not"
-    if (if plant(10491) { (t < 0.0f32) || (t >= 1.0f32) } else { (t < 0.0f32) || (t > 1.0f32) }) {
+    if (t < 0.0f32) || (t > 1.0f32) {
         return false;
     }
 

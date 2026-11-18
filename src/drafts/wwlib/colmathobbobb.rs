@@ -1,4 +1,10 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_colmath.rs);
+//! not yet wired into the game.
+//!
+//! Upstream undefined behaviour found by the differential test (#215): when no separating axis ever sets `AxisId` (it stays
+//! `INTERSECTION`) the C++ reads the never-set `Side` (`Normal *= -Side`) and, with `ComputeContactPoint`, the never-set
+//! `x[3]` of `compute_contact_point`. The draft has `Side` 0 and `x` 0. About 0.1 to 0.4 % of random cases; the test does not
+//! compare those inputs. The `AXIS_A1B1` contact point's reciprocal `den` (a slip upstream) is kept and matches.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmathobbobb.cpp

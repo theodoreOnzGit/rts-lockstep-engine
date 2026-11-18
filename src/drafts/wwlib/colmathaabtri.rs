@@ -1,4 +1,8 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_colmath.rs);
+//! not yet wired into the game.
+//!
+//! Upstream note (#215): the C++ keeps its collision context in a `static` object, so it is not reentrant (the differential
+//! test serialises the calls). The `Intersection_Test(AABox, Tri)` slip `AE[0][1] = E[1].Y` is kept and matches.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmathaabtri.cpp
