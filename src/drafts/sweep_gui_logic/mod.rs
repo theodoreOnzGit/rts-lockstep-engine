@@ -11,3 +11,4 @@ pub mod chinook_ai_update;
 pub mod misc_object_accessors;
 pub mod partition_manager;
 pub mod physics_update;
+pub mod network;
