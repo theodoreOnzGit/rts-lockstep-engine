@@ -12,6 +12,8 @@ pub mod hmorphanim;
 pub mod htree;
 pub mod animobj;
 pub mod boxrobj;
+pub mod rendobj;
+pub mod mesh;
 pub mod assetmgr;
 pub mod camera;
 pub mod dazzle;
