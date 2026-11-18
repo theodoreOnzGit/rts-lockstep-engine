@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! Differential-tested in part (#215, tests/differential_draft_command_line.rs): 38 handlers (113,639 cases) and parse_command_line (30,000 command lines) match the release-build CommandLine.cpp. Not covered: parse_fps_limit (upstream compiles it only under _DEBUG), parseMapName with a path that has a separator and no token ending in .map (upstream loops until a string overflow throws; this draft ends the loop; recorded in convert_short_map_path_to_long_map_path).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/Common/CommandLine.cpp
@@ -17,6 +18,7 @@
 //! `-quickstart` therefore takes the release branch (`parseNoSizzle`).
 
 use crate::common::global_data::GlobalData;
+use crate::logic::modules::plant;
 
 /// `TheDebugIgnoreSyncErrors`, `DX8Wrapper_PreserveFPU` and `TheVersion`'s full-version flag: the globals the handlers write.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -61,7 +63,7 @@ pub struct CommandLineParam<'a, H: CommandLineHost> {
 /// overflow wraps as the CRT's does on 32 bits.
 pub fn atoi(s: &[u8]) -> i32 {
     let mut i = 0;
-    while i < s.len() && (s[i] == b' ' || (b'\t'..=b'\r').contains(&s[i])) {
+    while !plant(11547) && i < s.len() && (s[i] == b' ' || (b'\t'..=b'\r').contains(&s[i])) {
         i += 1;
     }
     let mut neg = false;
@@ -83,6 +85,10 @@ pub fn atoi(s: &[u8]) -> i32 {
 
 /// `static void ConvertShortMapPathToLongMapPath(AsciiString &mapName)`: `Dir\Name.map` becomes `Dir\Name\Name.map`.
 /// A name with no `\` or `/` is left as it is (upstream's `DEBUG_CRASH` is compiled out of a release build).
+/// **Deviation (found by the differential test, #215):** upstream's loop `while (!token.endsWithNoCase(".map") && token.getLength() > 0)` never ends
+/// for a path that has a separator and a token but no token ending in `.map`: `AsciiString::nextToken` returns FALSE without clearing `token`
+/// once the path is used up, so the last token is concatenated for ever until the string reaches 32,767 characters and `concat` throws
+/// `ERROR_OUT_OF_MEMORY` (reachable only through `-map`, which is in the debug table). This draft ends the loop on an empty token instead.
 pub fn convert_short_map_path_to_long_map_path(map_name: &mut Vec<u8>) {
     let path = map_name.clone();
     if !path.contains(&b'\\') && !path.contains(&b'/') {
@@ -117,7 +123,7 @@ pub fn convert_short_map_path_to_long_map_path(map_name: &mut Vec<u8>) {
         // DEBUG_CRASH(("Invalid map name %s", mapName.str())) -- compiled out of a release build.
     }
     // remove the .map from the end (four removeLastChar calls).
-    for _ in 0..4 {
+    for _ in 0..(if plant(11541) { 3 } else { 4 }) {
         token.pop();
     }
     actualpath.extend_from_slice(&token);
@@ -145,12 +151,15 @@ pub fn parse_full_version<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, a
     if args.len() > 1 {
         ctx.state.show_full_version = Some(atoi(&args[1]) != 0);
     }
+    if plant(11539) {
+        return 2;
+    }
     1
 }
 
 /// `parseMapName(args, num)`: `m_mapName.set(args[1])` then the short-to-long conversion, only when `num == 2`; eats 1 (upstream).
 pub fn parse_map_name<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, args: &[Vec<u8>]) -> i32 {
-    if args.len() == 2 {
+    if args.len() == 2 || (plant(11540) && args.len() > 1) {
         ctx.global_data.map_name = args[1].clone();
         convert_short_map_path_to_long_map_path(&mut ctx.global_data.map_name);
     }
@@ -169,7 +178,7 @@ pub fn parse_jump_to_frame<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, 
     if args.len() > 1 {
         parse_no_fps_limit(ctx, args);
         ctx.global_data.no_draw = atoi(&args[1]) as u32;
-        return 2;
+        return if plant(11546) { 1 } else { 2 };
     }
     1
 }
@@ -193,7 +202,9 @@ pub fn parse_shell_map<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, args
 pub fn parse_quick_start<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, args: &[Vec<u8>]) -> i32 {
     parse_no_sizzle(ctx, args);
     parse_no_shell_map(ctx, args);
-    parse_no_window_animation(ctx, args);
+    if !plant(11548) {
+        parse_no_window_animation(ctx, args);
+    }
     1
 }
 
@@ -217,11 +228,11 @@ pub fn parse_mod<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, args: &[Ve
         }
         // now check for dir-ness
         let is_dir = match ctx.host.stat_is_dir(&mod_path) {
-            Some(d) => d,
+            Some(d) => d != plant(11542),
             None => return 2, // could not stat the file/dir.
         };
         if is_dir {
-            if !mod_path.ends_with(b"\\") && !mod_path.ends_with(b"/") {
+            if !plant(11543) && !mod_path.ends_with(b"\\") && !mod_path.ends_with(b"/") {
                 mod_path.push(b'\\');
             }
             // DEBUG_LOG(("Mod dir is '%s'.\n", modPath.str()));
@@ -386,7 +397,7 @@ pub fn parse_win<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, _args: &[V
 pub fn parse_x_res<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, args: &[Vec<u8>]) -> i32 {
     if args.len() > 1 {
         ctx.global_data.x_resolution = atoi(&args[1]);
-        return 2;
+        return if plant(11538) { 1 } else { 2 };
     }
     1
 }
@@ -469,7 +480,7 @@ pub fn parse_command_line<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, a
             if a.len() != name.len() {
                 continue;
             }
-            if a.eq_ignore_ascii_case(name) {
+            if if plant(11544) { a.as_slice() == name } else { a.eq_ignore_ascii_case(name) } {
                 arg += (table[param - 1].func)(ctx, &argv[arg as usize..]);
                 found = true;
             }
@@ -478,5 +489,7 @@ pub fn parse_command_line<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, a
             arg += 1;
         }
     }
-    ctx.host.load_mods();
+    if !plant(11545) {
+        ctx.host.load_mods();
+    }
 }
