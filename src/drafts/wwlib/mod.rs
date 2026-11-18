@@ -48,3 +48,6 @@ pub mod definitionfactory;
 pub mod definitionfactorymgr;
 pub mod definitionmgr;
 pub mod twiddler;
+pub mod md5;
+pub mod sha;
+pub mod fixed;
