@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 9,000 to 55,000 calls per member (test: tests/differential_draft_lists.rs);
+//! not yet wired into the game.
+//! Not covered: `read_node` (`return true;`).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/distlod.cpp
@@ -11,6 +13,7 @@
 
 use crate::ww::vector3::Vector3;
 
+use crate::logic::modules::plant;
 /// `DistLODClass::LODNodeClass`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LodNode {
@@ -61,19 +64,19 @@ impl DistLodState {
 
     /// `DistLODClass::Get_Snap_Point(index, set)` (distlod.cpp:1037): the highest-detail model's point.
     pub fn get_snap_point<H: DistLodHost>(&self, host: &H, index: i32, set: &mut Vector3) {
-        host.model_get_snap_point(self.lods[0].model, index, set);
+        host.model_get_snap_point(self.lods[if plant(11696) { self.cur_lod as usize } else { 0 }].model, index, set);
     }
 
     /// `DistLODClass::Update_Lod(camera)` (distlod.cpp:1097): "evaluate the distance from the camera and select an LOD
     /// based on it": `Quick_Length` of the camera-to-model-sphere-centre vector; closer than the current level's
     /// `ResUpDist` goes up one level of detail, farther than its `ResDownDist` down one.
     pub fn update_lod<H: DistLodHost>(&mut self, host: &mut H, camera_position: &Vector3) {
-        let center = host.model_bounding_sphere_center(self.lods[self.cur_lod as usize].model);
-        let dist = (*camera_position - center).quick_length();
+        let center = host.model_bounding_sphere_center(self.lods[if plant(11698) { 0 } else { self.cur_lod as usize }].model);
+        let dist = if plant(11697) { (*camera_position - center).length() } else { (*camera_position - center).quick_length() };
 
-        if dist < self.lods[self.cur_lod as usize].res_up_dist {
+        if if plant(11691) { dist <= self.lods[self.cur_lod as usize].res_up_dist } else { dist < self.lods[self.cur_lod as usize].res_up_dist } {
             self.increment_lod(host);
-        } else if dist > self.lods[self.cur_lod as usize].res_down_dist {
+        } else if if plant(11692) { dist >= self.lods[self.cur_lod as usize].res_down_dist } else { dist > self.lods[self.cur_lod as usize].res_down_dist } {
             self.decrement_lod(host);
         }
     }
@@ -81,7 +84,7 @@ impl DistLodState {
     /// `DistLODClass::Increment_Lod()` (distlod.cpp:1125): "TODO: change the order in which models are stored"; one level
     /// toward 0, with the scene notifications around the switch.
     pub fn increment_lod<H: DistLodHost>(&mut self, host: &mut H) {
-        if self.cur_lod > 0 {
+        if if plant(11693) { self.cur_lod > 1 } else { self.cur_lod > 0 } {
             if host.is_in_scene() {
                 host.model_notify_removed(self.lods[self.cur_lod as usize].model);
             }
@@ -94,7 +97,7 @@ impl DistLodState {
 
     /// `DistLODClass::Decrement_Lod()` (distlod.cpp:1152): one level away from 0, below `LodCount - 1`.
     pub fn decrement_lod<H: DistLodHost>(&mut self, host: &mut H) {
-        if self.cur_lod < self.lods.len() as i32 - 1 {
+        if self.cur_lod < self.lods.len() as i32 - if plant(11694) { 2 } else { 1 } {
             if host.is_in_scene() {
                 host.model_notify_removed(self.lods[self.cur_lod as usize].model);
             }

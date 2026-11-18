@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215, tests/differential_draft_shapes.rs): `render_sphere`, `vis_render_sphere` and the sphere mesh `Generate` are NOT tested; the other members match (20,000 cases each); `Init_Material` now returns `SphereMaterialSetup`.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/sphereobj.cpp
@@ -11,6 +12,7 @@
 
 use crate::drafts::sweep_ww3d::ringobj::{RingMesh as SphereMesh, VertexXyzNduv2};
 use crate::formats::w3d::part_buf::{AT_MAX_LOD, AT_MIN_LOD};
+use crate::logic::modules::plant;
 
 /// `SPHERE_NUM_LOD`, `SPHERE_LOWEST_LOD`, `SPHERE_HIGHEST_LOD` (sphereobj.h:221-223).
 pub const SPHERE_NUM_LOD: usize = 10;
@@ -56,14 +58,16 @@ impl SphereShared {
         if !self.array_valid {
             let mut size = SPHERE_LOWEST_LOD;
             let mut step = SPHERE_HIGHEST_LOD - SPHERE_LOWEST_LOD;
-            step /= SPHERE_NUM_LOD as f32;
+            step /= if plant(11731) { (SPHERE_NUM_LOD + 1) as f32 } else { SPHERE_NUM_LOD as f32 };
             self.lod_costs[0] = 0.000001;
             for i in 0..SPHERE_NUM_LOD {
                 host.generate_sphere_mesh(&mut self.mesh_array[i], size);
                 self.lod_costs[i + 1] = self.mesh_array[i].face_ct as f32;
                 size += step;
                 let mut m = std::mem::take(&mut self.mesh_array[i]);
-                host.set_alpha_vector(&mut m, alphavector);
+                if !(plant(11732) && i == SPHERE_NUM_LOD - 1) {
+                    host.set_alpha_vector(&mut m, alphavector);
+                }
                 self.mesh_array[i] = m;
             }
             self.array_valid = true;
@@ -76,16 +80,42 @@ impl SphereShared {
         for lod in 1..=SPHERE_NUM_LOD {
             let polycount = self.lod_costs[lod];
             let benefit_factor = 1.0 - (0.5 / (polycount * polycount));
-            values[lod] = (benefit_factor * screen_area * lod_bias) / polycount;
+            values[lod] = if plant(11734) { benefit_factor * screen_area * (lod_bias / polycount) } else { (benefit_factor * screen_area * lod_bias) / polycount };
         }
-        values[SPHERE_NUM_LOD + 1] = AT_MAX_LOD;
+        values[SPHERE_NUM_LOD + 1] = if plant(11736) { AT_MIN_LOD } else { AT_MAX_LOD };
     }
 }
 
-/// `SphereRenderObjClass::Init_Material` (sphereobj.cpp:348): as the ring's, with lighting enabled. Returns
-/// (ambient, diffuse, specular, emissive, opacity, shininess, lighting).
-pub fn init_material() -> ([f32; 3], [f32; 3], [f32; 3], [f32; 3], f32, f32, bool) {
-    ([0.0; 3], [0.0; 3], [0.0; 3], [1.0; 3], 0.25, 0.0, true)
+/// `SphereRenderObjClass::Init_Material` (sphereobj.cpp:348): the sphere's vertex material (as the ring's, with lighting
+/// enabled) and shader: `SphereShader = ShaderClass::_PresetAlphaShader` and then
+/// `SphereShader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE)` ("Looks like sphere's were coded with backwards normals!").
+/// ~~Returned a 7-tuple without the cull mode, and the doc said "as the ring's, with lighting enabled"~~ **Corrected
+/// 2026-11-18 (#215, group ww3dgeo):** upstream also disables backface culling on the shader; the differential test logs the
+/// `Set_Cull_Mode` call and the draft had no way to say it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SphereMaterialSetup {
+    pub ambient: [f32; 3],
+    pub diffuse: [f32; 3],
+    pub specular: [f32; 3],
+    pub emissive: [f32; 3],
+    pub opacity: f32,
+    pub shininess: f32,
+    pub lighting: bool,
+    /// `SphereShader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE)` was called after the shader was set to the preset.
+    pub cull_mode_disabled: bool,
+}
+
+pub fn init_material() -> SphereMaterialSetup {
+    SphereMaterialSetup {
+        ambient: [0.0; 3],
+        diffuse: [0.0; 3],
+        specular: [0.0; 3],
+        emissive: [1.0; 3],
+        opacity: 0.25,
+        shininess: 0.0,
+        lighting: !plant(11747),
+        cull_mode_disabled: !plant(11748),
+    }
 }
 
 /// `render_sphere` flag `USE_ALPHA_VECTOR`.
@@ -141,6 +171,9 @@ pub fn get_default_color(first_key: Option<[f32; 3]>, color: [f32; 3]) -> [f32; 
 
 /// `SphereRenderObjClass::Get_Default_Alpha` (sphereobj.cpp:994).
 pub fn get_default_alpha(first_key: Option<f32>, alpha: f32) -> f32 {
+    if plant(11750) && first_key.is_some() {
+        return alpha;
+    }
     first_key.unwrap_or(alpha)
 }
 

@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on about 14,000 to 29,000 calls per member (test: tests/differential_draft_lists.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/collect.cpp
@@ -11,6 +12,7 @@
 //! (proxy.h: a name and a transform), shared with `HLodClass`.
 
 use crate::drafts::sweep_ww3d::hlod::ProxyClass;
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 
@@ -52,13 +54,23 @@ impl CollectionState {
     /// the bounding volumes, and tells the object it was added to the scene if the collection is in one.
     pub fn add_sub_object<H: CollectionHost>(&mut self, host: &mut H, subobj: usize) -> i32 {
         host.sub_object_add_ref(subobj);
-        host.sub_object_set_container(subobj);
-        host.sub_object_set_transform(subobj, &self.transform);
+        if plant(11684) {
+            host.sub_object_set_transform(subobj, &self.transform);
+            host.sub_object_set_container(subobj);
+        } else {
+            host.sub_object_set_container(subobj);
+            host.sub_object_set_transform(subobj, &self.transform);
+        }
         self.sub_objects.push(subobj);
         let res = 1;
-        host.update_sub_object_bits();
-        host.update_obj_space_bounding_volumes();
-        if host.is_in_scene() {
+        if plant(11690) {
+            host.update_obj_space_bounding_volumes();
+            host.update_sub_object_bits();
+        } else {
+            host.update_sub_object_bits();
+            host.update_obj_space_bounding_volumes();
+        }
+        if plant(11685) || host.is_in_scene() {
             host.sub_object_notify_added(subobj);
         }
         res
@@ -67,7 +79,7 @@ impl CollectionState {
     /// `CollectionClass::Snap_Point_Count()` (collect.cpp:720): the snap-point count, 0 with none.
     pub fn snap_point_count(&self) -> i32 {
         match &self.snap_points {
-            Some(sp) => sp.len() as i32,
+            Some(sp) => sp.len() as i32 - i32::from(plant(11686)),
             None => 0,
         }
     }
@@ -78,9 +90,11 @@ impl CollectionState {
         match &self.snap_points {
             Some(sp) => *set = sp[index as usize],
             None => {
-                set.x = 0.0;
-                set.y = 0.0;
-                set.z = 0.0;
+                if !plant(11687) {
+                    set.x = 0.0;
+                    set.y = 0.0;
+                    set.z = 0.0;
+                }
             }
         }
     }
@@ -89,7 +103,7 @@ impl CollectionState {
     pub fn get_proxy(&self, index: i32, proxy: &mut ProxyClass) -> bool {
         let mut retval = false;
 
-        if index >= 0 && (index as usize) < self.proxy_list.len() {
+        if (if plant(11688) { index > 0 } else { index >= 0 }) && (index as usize) < self.proxy_list.len() {
             // Return the proxy information to the caller
             *proxy = self.proxy_list[index as usize].clone();
             retval = true;
@@ -100,6 +114,6 @@ impl CollectionState {
 
     /// `CollectionClass::Get_Proxy_Count()` (collect.cpp:912): `ProxyList.Count()`.
     pub fn get_proxy_count(&self) -> i32 {
-        self.proxy_list.len() as i32
+        self.proxy_list.len() as i32 + i32::from(plant(11689))
     }
 }

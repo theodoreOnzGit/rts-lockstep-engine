@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215, tests/differential_draft_shapes.rs): `render_ring`, `vis_render_ring` and `RingMeshClass::Generate` are NOT tested; the other members match (20,000 cases each).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/ringobj.cpp
@@ -9,6 +10,7 @@
 //! `vis_render_ring` is `WWASSERT(0)` upstream (never called): translated as the assert.
 
 use crate::formats::w3d::part_buf::{AT_MAX_LOD, AT_MIN_LOD};
+use crate::logic::modules::plant;
 
 /// `RING_NUM_LOD`, `RING_LOWEST_LOD`, `RING_HIGHEST_LOD` (ringobj.h:96-98).
 pub const RING_NUM_LOD: usize = 20;
@@ -31,16 +33,17 @@ pub struct RingMesh {
 impl RingMesh {
     /// `RingMeshClass::Set_Tiling` (ringobj.cpp:1457): re-derive the U coordinates of the vertex pairs.
     pub fn set_tiling(&mut self, count: i32) {
-        if self.tile_count != count {
+        if self.tile_count != count || plant(11742) {
+            let old_tile_count = self.tile_count;
             self.tile_count = count;
-            let u_inc = self.tile_count as f32 / self.slices as f32;
-            let mut u_value = 0.0f32;
+            let u_inc = if plant(11743) { old_tile_count as f32 / self.slices as f32 } else { self.tile_count as f32 / self.slices as f32 };
+            let mut u_value = if plant(11745) { u_inc } else { 0.0f32 };
             let mut index = 0;
             while index < self.vertex_ct {
                 self.vtx_uv[index] = [u_value, 0.0];
                 self.vtx_uv[index + 1] = [u_value, 1.0];
                 u_value += u_inc;
-                index += 2;
+                index += if plant(11744) { 1 } else { 2 };
             }
         }
     }
@@ -92,22 +95,27 @@ impl RingShared {
             let mut size = RING_LOWEST_LOD;
             let mut step = RING_HIGHEST_LOD - RING_LOWEST_LOD;
             step /= RING_NUM_LOD as f32;
-            self.lod_costs[0] = 0.000001;
+            self.lod_costs[0] = if plant(11728) { 0.00001 } else { 0.000001 };
             for i in 0..RING_NUM_LOD {
+                if plant(11727) {
+                    size += step;
+                }
                 host.generate_ring_mesh(&mut self.mesh_array[i], size);
-                self.lod_costs[i + 1] = self.mesh_array[i].face_ct as f32;
-                size += step;
+                self.lod_costs[if plant(11729) { i } else { i + 1 }] = self.mesh_array[i].face_ct as f32;
+                if !plant(11727) {
+                    size += step;
+                }
             }
-            self.array_valid = true;
+            self.array_valid = !plant(11730);
         }
     }
 
     /// `RingRenderObjClass::calculate_value_array` (ringobj.cpp:394): the LOD value (benefit per polygon) table.
     pub fn calculate_value_array(&self, screen_area: f32, lod_bias: f32, values: &mut [f32]) {
         values[0] = AT_MIN_LOD;
-        for lod in 1..=RING_NUM_LOD {
+        for lod in 1..=(if plant(11735) { RING_NUM_LOD - 1 } else { RING_NUM_LOD }) {
             let polycount = self.lod_costs[lod];
-            let benefit_factor = 1.0 - (0.5 / (polycount * polycount));
+            let benefit_factor = if plant(11733) { 1.0 - (0.5 / polycount) } else { 1.0 - (0.5 / (polycount * polycount)) };
             values[lod] = (benefit_factor * screen_area * lod_bias) / polycount;
         }
         values[RING_NUM_LOD + 1] = AT_MAX_LOD; // Post-inc value will flag max LOD.
@@ -118,7 +126,7 @@ impl RingShared {
 /// shininess; the shader is `ShaderClass::_PresetAlphaShader`. Returns (ambient, diffuse, specular, emissive, opacity,
 /// shininess).
 pub fn init_material() -> ([f32; 3], [f32; 3], [f32; 3], [f32; 3], f32, f32) {
-    ([0.0; 3], [0.0; 3], [0.0; 3], [1.0; 3], 0.25, 0.0)
+    ([0.0; 3], [0.0; 3], [0.0; 3], [1.0; 3], if plant(11746) { 0.5 } else { 0.25 }, 0.0)
 }
 
 /// `RingRenderObjClass::render_ring` (ringobj.cpp:521): `ring` is `RingMeshArray[CurrentLOD - 1]`. The vertices take one
@@ -169,6 +177,9 @@ pub fn vis_render_ring() {
 
 /// `RingRenderObjClass::Get_Default_Color` (ringobj.cpp:752): the first colour key, else the current colour.
 pub fn get_default_color(first_key: Option<[f32; 3]>, color: [f32; 3]) -> [f32; 3] {
+    if plant(11749) {
+        return color;
+    }
     first_key.unwrap_or(color)
 }
 
@@ -191,7 +202,7 @@ pub fn get_default_outer_scale(first_key: Option<[f32; 2]>, outer_scale: [f32; 2
 /// centre and extent.
 pub fn update_cached_box(translation: [f32; 3], obj_space_center: [f32; 3], obj_space_extent: [f32; 3]) -> ([f32; 3], [f32; 3]) {
     (
-        [translation[0] + obj_space_center[0], translation[1] + obj_space_center[1], translation[2] + obj_space_center[2]],
+        [translation[0] + obj_space_center[0], translation[1] + if plant(11737) { obj_space_center[0] } else { obj_space_center[1] }, translation[2] + obj_space_center[2]],
         obj_space_extent,
     )
 }

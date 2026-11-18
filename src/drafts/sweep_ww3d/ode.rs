@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per integrator (test: tests/differential_draft_ode.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/ode.cpp
@@ -12,6 +13,8 @@
 
 /// `StateVectorClass` (ode.h:59): a `DynamicVectorClass<float>`.
 pub type StateVector = Vec<f32>;
+
+use crate::logic::modules::plant;
 
 /// `ODESystemClass` (ode.h:72). `Compute_Derivatives(t, test_state, dydt, start_index)` is called here with the
 /// default `start_index = 0`; `test_state` is `None` for upstream's `NULL` ("the current state").
@@ -31,7 +34,7 @@ pub fn euler_integrate<S: OdeSystem>(sys: &mut S, dt: f32) {
     sys.get_state(&mut y0);
     let n = y0.len();
     let mut dydt: StateVector = vec![0.0; n];
-    sys.compute_derivatives(0.0, None, &mut dydt, 0);
+    sys.compute_derivatives(if plant(11669) { dt } else { 0.0 }, None, &mut dydt, 0);
 
     let mut y1: StateVector = vec![0.0; n];
     for i in 0..n {
@@ -53,11 +56,11 @@ pub fn midpoint_integrate<S: OdeSystem>(sys: &mut S, dt: f32) {
 
     // Compute the midpoint between the Euler solution and the input values.
     for i in 0..n {
-        ymid[i] = y0[i] + dt * dydt[i] / 2.0;
+        ymid[i] = if plant(11661) { y0[i] + dt * (dydt[i] / 2.0) } else { y0[i] + dt * dydt[i] / 2.0 };
     }
 
     // Re-compute derivatives at this point.
-    sys.compute_derivatives(dt / 2.0, Some(&ymid), &mut dydt, 0);
+    sys.compute_derivatives(if plant(11666) { dt } else { dt / 2.0 }, Some(&ymid), &mut dydt, 0);
 
     // Use these derivatives to compute the solution.
     let mut y1: StateVector = vec![0.0; n];
@@ -70,7 +73,7 @@ pub fn midpoint_integrate<S: OdeSystem>(sys: &mut S, dt: f32) {
 /// `IntegrationSystem::Runge_Kutta_Integrate(sys, dt)` (ode.cpp:183): classical fourth-order Runge-Kutta.
 pub fn runge_kutta_integrate<S: OdeSystem>(sys: &mut S, dt: f32) {
     let dt2 = dt / 2.0;
-    let dt6 = dt / 6.0;
+    let dt6 = if plant(11662) { dt * (1.0 / 6.0) } else { dt / 6.0 };
 
     let mut y0: StateVector = Vec::new();
     sys.get_state(&mut y0);
@@ -96,14 +99,14 @@ pub fn runge_kutta_integrate<S: OdeSystem>(sys: &mut S, dt: f32) {
     // Third Step
     sys.compute_derivatives(dt2, Some(&yt), &mut dym, 0);
     for i in 0..n {
-        yt[i] = y0[i] + dt * dym[i];
+        yt[i] = if plant(11667) { y0[i] + dt2 * dym[i] } else { y0[i] + dt * dym[i] };
         dym[i] += dyt[i];
     }
 
     // Fourth Step
     sys.compute_derivatives(dt, Some(&yt), &mut dyt, 0);
     for i in 0..n {
-        y1[i] = y0[i] + dt6 * (dydt[i] + dyt[i] + 2.0 * dym[i]);
+        y1[i] = y0[i] + dt6 * (dydt[i] + dyt[i] + if plant(11663) { dym[i] } else { 2.0 * dym[i] });
     }
 
     sys.set_state(&y1, 0);
@@ -135,7 +138,7 @@ pub fn runge_kutta5_integrate<S: OdeSystem>(odesys: &mut S, dt: f32) {
     let c1: f32 = 37.0 / 378.0;
     let c3: f32 = 250.0 / 621.0;
     let c4: f32 = 125.0 / 594.0;
-    let c6: f32 = 512.0 / 1771.0;
+    let c6: f32 = if plant(11664) { 512.0 / 1711.0 } else { 512.0 / 1771.0 };
     let dc5: f32 = -277.0 / 14336.0;
     let dc1: f32 = c1 - 2825.0 / 27648.0;
     let dc3: f32 = c3 - 18575.0 / 48384.0;
@@ -169,7 +172,7 @@ pub fn runge_kutta5_integrate<S: OdeSystem>(odesys: &mut S, dt: f32) {
     }
 
     // Third step
-    odesys.compute_derivatives(a3 * dt, Some(&ytmp), &mut ak3, 0);
+    odesys.compute_derivatives(if plant(11665) { a2 * dt } else { a3 * dt }, Some(&ytmp), &mut ak3, 0);
     for i in 0..veclen {
         ytmp[i] = y0[i] + dt * (b41 * dydt[i] + b42 * ak2[i] + b43 * ak3[i]);
     }
@@ -183,7 +186,7 @@ pub fn runge_kutta5_integrate<S: OdeSystem>(odesys: &mut S, dt: f32) {
     // Fifth step
     odesys.compute_derivatives(a5 * dt, Some(&ytmp), &mut ak5, 0);
     for i in 0..veclen {
-        ytmp[i] = y0[i] + dt * (b61 * dydt[i] + b62 * ak2[i] + b63 * ak3[i] + b64 * ak4[i] + b65 * ak5[i]);
+        ytmp[i] = y0[i] + dt * (b61 * dydt[i] + b62 * ak2[i] + b63 * ak3[i] + b64 * ak4[i] + b65 * if plant(11668) { ak4[i] } else { ak5[i] });
     }
 
     // Sixth step

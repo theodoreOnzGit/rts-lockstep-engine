@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on about 110,000 calls (test: tests/differential_draft_lists.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/streakRender.cpp
@@ -7,6 +8,7 @@
 //! and one texture coordinate) grown on demand to 1.5x the request. `_INTERNAL` (an internal-build define, not set in the
 //! release) would fill it with `(float)0xdeadbeef`; that block is not translated.
 
+use crate::logic::modules::plant;
 /// `VertexFormatXYZUV1` (dx8fvf.h:174).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct VertexFormatXYZUV1 {
@@ -28,8 +30,8 @@ impl StreakVertexBuffer {
     /// old array is deleted and a new one of `number + (number >> 1)` vertices allocated (the old contents are NOT kept).
     /// Returns the array.
     pub fn get_vertex_buffer(&mut self, number: u32) -> &mut [VertexFormatXYZUV1] {
-        if number as usize > self.vertex_buffer.len() {
-            let number_to_alloc = number.wrapping_add(number >> 1);
+        if if plant(11682) { number as usize >= self.vertex_buffer.len() } else { number as usize > self.vertex_buffer.len() } {
+            let number_to_alloc = if plant(11681) { number.wrapping_add(number >> 1).wrapping_add(1) } else { number.wrapping_add(number >> 1) };
             self.vertex_buffer = vec![VertexFormatXYZUV1::default(); number_to_alloc as usize];
         }
         &mut self.vertex_buffer[..]

@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on about 18,000 calls per member (test: tests/differential_draft_intersec.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/intersec.cpp
@@ -12,6 +13,7 @@
 //! this legacy path is kept for completeness.
 
 use crate::drafts::ww3d::intersec::{IntersectionClass, IntersectionResultClass};
+use crate::logic::modules::plant;
 
 /// `ViewportClass` as `Intersect_Screen_Point_Layer` reads it: `Min` and `Max` corners.
 #[derive(Clone, Copy, Debug, Default)]
@@ -57,7 +59,9 @@ pub fn intersect_screen_point_render_object<H: IntersectHost>(
     robj: usize,
     final_result: Option<&mut IntersectionResultClass>,
 ) -> bool {
-    host.get_screen_ray(picker, screen_x, screen_y, layer);
+    if !plant(11704) {
+        host.get_screen_ray(picker, screen_x, screen_y, layer);
+    }
     intersect_render_object(picker, host, robj, final_result)
 }
 
@@ -75,7 +79,9 @@ pub fn intersect_render_object<H: IntersectHost>(
             // FinalResult = &Result: the callee writes into the picker's own result
             let mut own = picker.result;
             let hit = host.robj_intersect(robj, picker, &mut own);
-            picker.result = own;
+            if !plant(11703) {
+                picker.result = own;
+            }
             hit
         }
     }
@@ -93,20 +99,24 @@ pub fn intersect_screen_point_layer<H: IntersectHost>(
     layer: usize,
 ) -> bool {
     // mark this object as not intersecting yet
-    picker.result.intersects = false;
+    if !plant(11705) {
+        picker.result.intersects = false;
+    }
 
     let v = host.layer_camera_viewport(layer);
 
-    if (screen_x < v.min_x) || (screen_x > v.max_x) || (screen_y < v.min_y) || (screen_y > v.max_y) {
+    if (if plant(11699) { screen_x <= v.min_x } else { screen_x < v.min_x }) || (screen_x > v.max_x) || (screen_y < v.min_y) || (screen_y > v.max_y) {
         return false;
     }
 
-    picker.result.range = host.layer_camera_depth(layer); // scene->depth * scene->zstop;
+    if !plant(11700) {
+        picker.result.range = host.layer_camera_depth(layer);
+    } // scene->depth * scene->zstop;
 
     // get the ray for these screen coordinates
     host.get_screen_ray(picker, screen_x, screen_y, layer);
 
-    host.intersect_layer(picker, layer, false)
+    host.intersect_layer(picker, layer, plant(11702))
 }
 
 /// `IntersectionClass::Intersect_Hierarchy_Sphere_Quick(Hierarchy, FinalResult)` (intersec.cpp:252): "simply returns true
@@ -118,12 +128,13 @@ pub fn intersect_hierarchy_sphere_quick<H: IntersectHost>(
     hierarchy: usize,
     final_result: &mut IntersectionResultClass,
 ) -> bool {
-    let mut counter = host.get_num_sub_objects(hierarchy);
+    let total = host.get_num_sub_objects(hierarchy);
+    let mut counter = total;
     while counter > 0 {
         counter -= 1;
         // you already own a reference to this object indirectly..
-        let obj = host.get_sub_object(hierarchy, counter);
-        if host.robj_intersect_sphere_quick(obj, picker, final_result) {
+        let obj = host.get_sub_object(hierarchy, if plant(11701) { total - 1 - counter } else { counter });
+        if if plant(11706) { host.robj_intersect_sphere(obj, picker, final_result) } else { host.robj_intersect_sphere_quick(obj, picker, final_result) } {
             return true;
         }
     }
