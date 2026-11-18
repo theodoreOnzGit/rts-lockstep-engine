@@ -11,10 +11,15 @@ publish = false
 # no Bevy, so its tests run with `--no-default-features` without compiling the renderer.
 default = ["app"]
 app = ["dep:bevy"]
+# Untested drafts (#202), in `src/drafts/`: written without compiling or testing. Off by default.
+untested-drafts = ["app", "rts-lockstep-engine/untested-drafts"]
 
 [dependencies]
 # The game logic (phase 1). The client only reads it and sends it the game's own commands (see `src/lib.rs`).
 rts-lockstep-engine = { path = ".." }
+# PETIR at the logic crate's exact version (no new crate: the logic crate already builds it), for the drafts' C `double`
+# maths (`(Real)cos(double)` and the rest) in `src/drafts/terrain/double_math.rs` (#214).
+petir = { version = "=0.0.1", default-features = false }
 
 # Bevy at an exact version, default features off: the renderer (core pipeline, PBR), UI, windowing, input, assets, logging.
 # `webgl2` is the web backend (WebGL2 runs in every current browser; a WebGPU build is a later step: Bevy builds one web
