@@ -16,3 +16,4 @@ pub mod w3d_tank_draw;
 pub mod w3d_dependency_model_draw;
 pub mod w3d_police_car_draw;
 pub mod w3d_supply_draw;
+pub mod w3d_mouse;

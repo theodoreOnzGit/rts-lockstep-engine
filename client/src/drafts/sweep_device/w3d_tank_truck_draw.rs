@@ -1,7 +1,7 @@
 //! UNTESTED DRAFT (#202, #213): written without compiling or testing. Not part of the verified port until it is
 //! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
 //!
-//! Translated from (EA'"'"'s GPLv3 release, upstream commit 0a05454d):
+//! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Drawable/Draw/W3DTankTruckDraw.cpp
 //!
 //! Sweep 2 (#213): `W3DTankTruckDraw::tossEmitters` (W3DTankTruckDraw.cpp:187) has the same body as

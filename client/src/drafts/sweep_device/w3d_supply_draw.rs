@@ -1,7 +1,7 @@
 //! UNTESTED DRAFT (#202, #213): written without compiling or testing. Not part of the verified port until it is
 //! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
 //!
-//! Translated from (EA'"'"'s GPLv3 release, upstream commit 0a05454d):
+//! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Drawable/Draw/W3DSupplyDraw.cpp
 //!
 //! Sweep 2 (#213): `W3DSupplyDraw::updateDrawModuleSupplyStatus`.
@@ -24,7 +24,7 @@ impl Default for W3DSupplyDrawState {
 }
 
 impl W3DSupplyDrawState {
-    /// `W3DSupplyDraw::updateDrawModuleSupplyStatus` (W3DSupplyDraw.cpp:71): the base class'"'"'s CARRYING condition, then the
+    /// `W3DSupplyDraw::updateDrawModuleSupplyStatus` (W3DSupplyDraw.cpp:71): the base class's CARRYING condition, then the
     /// supply piles shown in proportion to `currentSupply / maxSupply`: bones named `<prefix>NN` between the old and new
     /// shown count are hidden (fewer) or shown (more), in index order. `count_bones(prefix)` is
     /// `getDrawable()->getPristineBonePositions(prefix, 1, NULL, NULL, INT_MAX)`.
