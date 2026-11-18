@@ -24,3 +24,4 @@ pub mod shddef;
 pub mod shddeffactory;
 pub mod shddefmanager;
 pub mod shdinterface;
+pub mod composite;
