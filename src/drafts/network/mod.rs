@@ -36,3 +36,4 @@ pub mod ladder_defs;
 pub mod download_manager;
 pub mod main_menu_utils;
 pub mod firewall_helper;
+pub mod peer_defs;
