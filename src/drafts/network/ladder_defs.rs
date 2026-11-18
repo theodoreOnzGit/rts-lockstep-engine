@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 12,000 worlds (test: tests/differential_draft_ladder.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/GameSpy/LadderDefs.h
@@ -23,6 +24,7 @@ use crate::common::ascii_string::AsciiString;
 
 use super::net_command_msg::MAX_SLOTS;
 use super::persistent_storage_thread::atoi;
+use crate::logic::modules::plant;
 
 /// `class LadderInfo`.
 #[derive(Clone, Debug)]
@@ -155,8 +157,11 @@ pub fn parse_ladder<H: LadderHost>(host: &H, raw: &AsciiString) -> Option<Ladder
             let mut token_port = AsciiString::default();
             let mut token_homepage = AsciiString::default();
             let mut h = line.clone();
-            let _ = h.remove_last_char(); // the '>'
-            let mut rest = from_bytes(if h.str().len() >= 7 { &h.str()[7..] } else { b"" }); // the "<Ladder "
+            if !plant(11897) {
+                let _ = h.remove_last_char(); // the '>'
+            }
+            let skip = if plant(11896) { 6 } else { 7 };
+            let mut rest = from_bytes(if h.str().len() >= skip { &h.str()[skip..] } else { b"" }); // the "<Ladder "
             let _ = rest.next_token(&mut token_addr, Some(b"\" "));
             let _ = rest.next_token(&mut token_port, Some(b" "));
             let _ = rest.next_token(&mut token_homepage, Some(b" "));
@@ -167,46 +172,53 @@ pub fn parse_ladder<H: LadderHost>(host: &H, raw: &AsciiString) -> Option<Ladder
                 l.name.pop(); // Per Harvard's request, ladder names are limited to 20 chars
             }
             l.address = token_addr;
-            l.port = atoi(token_port.str()) as u16;
+            l.port = if plant(11898) { atoi(token_port.str()) as u8 as u16 } else { atoi(token_port.str()) as u16 };
             l.homepage_url = token_homepage;
             lad = Some(l);
         } else if lad.is_some() && line.starts_with(b"Name ") {
-            lad.as_mut().unwrap().name = host.multi_byte_to_wide_single_line(&s[5..]);
+            lad.as_mut().unwrap().name = host.multi_byte_to_wide_single_line(&s[if plant(11899) { 4 } else { 5 }..]);
         } else if lad.is_some() && line.starts_with(b"Desc ") {
-            lad.as_mut().unwrap().description = host.multi_byte_to_wide_single_line(&s[5..]);
+            lad.as_mut().unwrap().description = host.multi_byte_to_wide_single_line(&s[5..s.len() - plant(11900) as usize]);
         } else if lad.is_some() && line.starts_with(b"Loc ") {
-            lad.as_mut().unwrap().location = host.multi_byte_to_wide_single_line(&s[4..]);
+            lad.as_mut().unwrap().location = host.multi_byte_to_wide_single_line(&s[if plant(11919) { 5 } else { 4 }..]);
         } else if lad.is_some() && line.starts_with(b"TeamSize ") {
             lad.as_mut().unwrap().players_per_team = atoi(&s[9..]);
         } else if lad.is_some() && line.starts_with(b"RandomMaps ") {
-            lad.as_mut().unwrap().random_maps = atoi(&s[11..]) != 0;
+            lad.as_mut().unwrap().random_maps = if plant(11902) { atoi(&s[11..]) == 1 } else { atoi(&s[11..]) != 0 };
         } else if lad.is_some() && line.starts_with(b"RandomFactions ") {
-            lad.as_mut().unwrap().random_factions = atoi(&s[15..]) != 0;
+            lad.as_mut().unwrap().random_factions = if plant(11921) { atoi(&s[15..]) == 1 } else { atoi(&s[15..]) != 0 };
         } else if lad.is_some() && line.starts_with(b"Faction ") {
             let faction = from_bytes(&s[8..]);
             let out = host.all_side_strings();
             if out.iter().any(|f| *f == faction) {
                 // valid faction - now check for dupes
                 let l = lad.as_mut().unwrap();
-                if !l.valid_factions.iter().any(|f| *f == faction) {
+                if !l.valid_factions.iter().any(|f| *f == faction) || plant(11903) {
                     l.valid_factions.push(faction);
                 }
             }
         } else if lad.is_some() && line.starts_with(b"MinWins ") {
-            lad.as_mut().unwrap().min_wins = atoi(&s[8..]);
+            if plant(11907) {
+                lad.as_mut().unwrap().max_wins = atoi(&s[8..]);
+            } else {
+                lad.as_mut().unwrap().min_wins = atoi(&s[8..]);
+            }
         } else if lad.is_some() && line.starts_with(b"MaxWins ") {
             lad.as_mut().unwrap().max_wins = atoi(&s[8..]);
         } else if lad.is_some() && line.starts_with(b"CryptedPass ") {
-            lad.as_mut().unwrap().crypted_password = from_bytes(&s[12..]);
+            lad.as_mut().unwrap().crypted_password = from_bytes(&s[if plant(11918) { 11 } else { 12 }..]);
         } else if lad.is_some() && s == b"</Ladder>" {
             // end of a ladder
             let mut l = lad.take().unwrap();
-            if l.players_per_team >= 1 && l.players_per_team <= MAX_SLOTS / 2 {
+            if l.players_per_team >= 1 && l.players_per_team <= MAX_SLOTS / 2 - plant(11901) as i32 {
                 if l.valid_factions.is_empty() {
                     // No factions specified.  Using all.
                     l.valid_factions.clear();
                     for side in host.playable_non_boss_sides() {
                         l.valid_factions.push(side);
+                    }
+                    if plant(11904) {
+                        l.valid_factions.reverse();
                     }
                 }
                 // (else: debug log of each faction's INI:Faction marker text only)
@@ -216,7 +228,7 @@ pub fn parse_ladder<H: LadderHost>(host: &H, raw: &AsciiString) -> Option<Ladder
                     for map_name in host.qm_maps() {
                         // check sizes on the maps before allowing them
                         if let Some(n) = host.map_num_players(&map_name) {
-                            if n >= l.players_per_team * 2 {
+                            if n >= l.players_per_team * 2 + plant(11906) as i32 {
                                 l.valid_maps.push(map_name);
                             }
                         }
@@ -234,11 +246,11 @@ pub fn parse_ladder<H: LadderHost>(host: &H, raw: &AsciiString) -> Option<Ladder
             if map_name.is_not_empty() {
                 let map_name = host.map_path_for(&map_name);
                 let qm_maps = host.qm_maps();
-                if qm_maps.iter().any(|m| *m == map_name) {
+                if qm_maps.iter().any(|m| *m == map_name) || plant(11917) {
                     // check sizes on the maps before allowing them
                     if let Some(n) = host.map_num_players(&map_name) {
                         let l = lad.as_mut().unwrap();
-                        if n >= l.players_per_team * 2 {
+                        if n >= l.players_per_team * 2 + plant(11905) as i32 {
                             l.valid_maps.push(map_name);
                         }
                     }
@@ -246,7 +258,9 @@ pub fn parse_ladder<H: LadderHost>(host: &H, raw: &AsciiString) -> Option<Ladder
             }
         } else {
             // bad ladder - kill it
-            lad = None;
+            if !plant(11916) {
+                lad = None;
+            }
         }
     }
     None
@@ -275,7 +289,7 @@ impl LadderList {
         let mut in_ladders = false;
         let mut in_special_ladders = false;
         let mut in_ladder = false;
-        let mut index = 1;
+        let mut index = if plant(11908) { 0 } else { 1 };
         let mut raw_ladder = AsciiString::default();
 
         while raw_motd.next_token(&mut line, Some(b"\n")).unwrap_or(false) {
@@ -296,7 +310,7 @@ impl LadderList {
             } else if in_special_ladders && s == b"</SpecialLadders>" {
                 in_special_ladders = false;
             } else if in_ladders || in_special_ladders {
-                if line.starts_with(b"<Ladder ") && !in_ladder {
+                if line.starts_with(b"<Ladder ") && (!in_ladder || plant(11915)) {
                     in_ladder = true;
                     raw_ladder.clear();
                     let _ = raw_ladder.concat(&s);
@@ -308,7 +322,7 @@ impl LadderList {
                     if let Some(mut lad) = parse_ladder(host, &raw_ladder) {
                         lad.index = index;
                         index += 1;
-                        if in_ladders {
+                        if in_ladders != plant(11920) {
                             list.standard_ladders.push(lad);
                         } else {
                             list.special_ladders.push(lad);
@@ -329,7 +343,8 @@ impl LadderList {
 
     /// `findLadder(addr, port)`: special, then standard, then local ladders.
     pub fn find_ladder(&self, addr: &AsciiString, port: u16) -> Option<&LadderInfo> {
-        for l in self.special_ladders.iter().chain(self.standard_ladders.iter()).chain(self.local_ladders.iter()) {
+        let (first, second) = if plant(11909) { (&self.standard_ladders, &self.special_ladders) } else { (&self.special_ladders, &self.standard_ladders) };
+        for l in first.iter().chain(second.iter()).chain(self.local_ladders.iter()) {
             if l.address == *addr && l.port == port {
                 return Some(l);
             }
@@ -342,7 +357,8 @@ impl LadderList {
         if index == 0 {
             return None;
         }
-        for l in self.special_ladders.iter().chain(self.standard_ladders.iter()).chain(self.local_ladders.iter()) {
+        let local: &[LadderInfo] = if plant(11910) { &[] } else { &self.local_ladders };
+        for l in self.special_ladders.iter().chain(self.standard_ladders.iter()).chain(local.iter()) {
             if l.index == index {
                 return Some(l);
             }
@@ -367,9 +383,13 @@ impl LadderList {
     fn load_local_ladders<H: LadderHost>(&mut self, host: &H) {
         let mut index = -1;
         for mut filename in host.local_ladder_files() {
-            let _ = filename.to_lower();
+            if !plant(11914) {
+                let _ = filename.to_lower();
+            }
             self.check_ladder(host, &filename, index);
-            index -= 1;
+            if !plant(11912) {
+                index -= 1;
+            }
         }
     }
 
@@ -389,7 +409,7 @@ impl LadderList {
         if li.address.is_empty() {
             return;
         }
-        if li.port == 0 {
+        if li.port == 0 && !plant(11911) {
             return;
         }
         if li.valid_maps.is_empty() {
@@ -397,7 +417,7 @@ impl LadderList {
         }
         li.index = index;
         // ladders are QM-only at this point, which kinda invalidates the whole concept of local ladders.  Oh well.
-        li.valid_qm = false; // no local ladders in QM
+        li.valid_qm = plant(11913); // no local ladders in QM
         li.valid_custom = false;
         self.local_ladders.push(li);
     }

@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 12,000 config texts (test: tests/differential_draft_gsconfig.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/GameSpy/GSConfig.h
@@ -22,6 +23,7 @@ use std::collections::BTreeSet;
 use crate::common::ascii_string::AsciiString;
 
 use super::persistent_storage_thread::atoi;
+use crate::logic::modules::plant;
 
 /// `MAX_RANKS` (RankPointValue.h).
 pub const MAX_RANKS: usize = 10;
@@ -142,7 +144,9 @@ impl GameSpyConfig {
             if len > 0 && line.try_get_char_at(len - 1).unwrap_or(0) == b'\r' {
                 let _ = line.remove_last_char(); // there is a trailing '\r'
             }
-            let _ = line.trim();
+            if !plant(11884) {
+                let _ = line.trim();
+            }
             if line.is_empty() {
                 continue;
             }
@@ -169,7 +173,7 @@ impl GameSpyConfig {
                 sec.qm_bot = true;
             } else if sec.qm_bot && l == b"</QMBot>" {
                 sec.qm_bot = false;
-            } else if not_in && l == b"<VIP>" {
+            } else if (not_in || plant(11885)) && l == b"<VIP>" {
                 sec.vip = true;
             } else if sec.vip && l == b"</VIP>" {
                 sec.vip = false;
@@ -185,12 +189,14 @@ impl GameSpyConfig {
                 let _ = line.to_lower();
                 if line.get_length() != 0 {
                     let val = atoi(line.str());
-                    if val > 0 {
+                    if val > 0 || (plant(11886) && val == 0) {
                         c.vip.insert(val);
                     }
                 }
             } else if sec.ping_servers {
-                let _ = line.to_lower();
+                if !plant(11887) {
+                    let _ = line.to_lower();
+                }
                 c.ping_servers.push(line.clone());
             } else if sec.ping_duration {
                 let _ = line.to_lower();
@@ -200,7 +206,13 @@ impl GameSpyConfig {
                             b"reps" => c.ping_reps = atoi(v.str()),
                             b"timeout" => c.ping_timeout = atoi(v.str()),
                             b"low" => c.ping_cutoff_good = atoi(v.str()),
-                            b"med" => c.ping_cutoff_bad = atoi(v.str()),
+                            b"med" => {
+                                if plant(11894) {
+                                    c.ping_cutoff_good = atoi(v.str())
+                                } else {
+                                    c.ping_cutoff_bad = atoi(v.str())
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -212,21 +224,21 @@ impl GameSpyConfig {
                 let mut port_str = AsciiString::default();
                 let _ = line.next_token(&mut host_str, Some(b":"));
                 let _ = line.next_token(&mut port_str, Some(b":\n\r"));
-                if host_str.is_not_empty() && port_str.is_not_empty() {
+                if if plant(11893) { host_str.is_not_empty() || port_str.is_not_empty() } else { host_str.is_not_empty() && port_str.is_not_empty() } {
                     c.mangler_hosts.push(host_str);
-                    c.mangler_ports.push(atoi(port_str.str()) as u16);
+                    c.mangler_ports.push(if plant(11888) { atoi(port_str.str()) as u8 as u16 } else { atoi(port_str.str()) as u16 });
                 }
             } else if sec.qm_maps {
                 let _ = line.to_lower();
                 if let Some(map_name) = qm_map_lookup(line.str()) {
-                    c.qm_maps.push(AsciiString::try_from_bytes(&map_name).unwrap_or_default());
+                    c.qm_maps.push(AsciiString::try_from_bytes(if plant(11890) { line.str() } else { &map_name }).unwrap_or_default());
                 }
             } else if sec.qm_bot {
                 let _ = line.to_lower();
                 if let Some((key, val)) = key_val(&mut line) {
                     if key.str() == b"id" {
                         if let Some(v) = val {
-                            c.qm_bot_id = atoi(v.str());
+                            c.qm_bot_id = if plant(11895) { atoi(v.str()) as u8 as i32 } else { atoi(v.str()) };
                         }
                     }
                 }
@@ -238,7 +250,13 @@ impl GameSpyConfig {
                         match key.str() {
                             b"retryinterval" => c.nat_retry_interval = n,
                             b"manglerretries" => c.nat_max_mangler_retries = n,
-                            b"manglerinterval" => c.nat_mangler_retry_interval = n as i64,
+                            b"manglerinterval" => {
+                                if plant(11889) {
+                                    c.nat_keepalive_interval = n as i64
+                                } else {
+                                    c.nat_mangler_retry_interval = n as i64
+                                }
+                            }
                             b"keepaliveinterval" => c.nat_keepalive_interval = n as i64,
                             b"porttimeout" => c.nat_port_timeout = n as i64,
                             b"roundtimeout" => c.nat_round_timeout = n as i64,
@@ -247,18 +265,22 @@ impl GameSpyConfig {
                     }
                 }
             } else if sec.custom {
-                let _ = line.to_lower();
+                if !plant(11883) {
+                    let _ = line.to_lower();
+                }
                 let mut key = AsciiString::default();
                 let mut val = AsciiString::default();
                 if line.next_token(&mut key, Some(b" =")).unwrap_or(false) && line.next_token(&mut val, Some(b" =")).unwrap_or(false) {
                     if key.str() == b"restricted" {
-                        c.restrict_games_to_lobby = atoi(val.str()) != 0;
+                        c.restrict_games_to_lobby = if plant(11892) { atoi(val.str()) == 1 } else { atoi(val.str()) != 0 };
                     }
                     // else Unknown key in Custom block
                 }
             } else {
                 let _ = c.leftover_config.concat(&l);
-                let _ = c.leftover_config.concat_char(b'\n');
+                if !plant(11882) {
+                    let _ = c.leftover_config.concat_char(b'\n');
+                }
             }
         }
         c
@@ -304,7 +326,7 @@ impl GameSpyConfig {
     pub fn get_points_for_rank(&self, rank: i32) -> i32 {
         let mut r = rank;
         if r >= MAX_RANKS as i32 {
-            r = MAX_RANKS as i32 - 1;
+            r = MAX_RANKS as i32 - if plant(11891) { 2 } else { 1 };
         }
         if r < 0 {
             r = 0;
