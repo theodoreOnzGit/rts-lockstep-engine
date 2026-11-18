@@ -32,3 +32,4 @@ pub mod dynamesh;
 pub mod decalmsh;
 pub mod streak_render;
 pub mod streak;
+pub mod sortingrenderer;
