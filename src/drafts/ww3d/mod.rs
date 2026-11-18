@@ -17,3 +17,4 @@ pub mod light;
 pub mod lightenvironment;
 pub mod matrixmapper;
 pub mod projector;
+pub mod decalsys;
