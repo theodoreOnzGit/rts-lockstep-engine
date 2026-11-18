@@ -21,3 +21,4 @@ pub mod w3d_waypoint_buffer;
 pub mod w3d_shadow;
 pub mod w3d_projected_shadow;
 pub mod w3d_volumetric_shadow;
+pub mod w3d_shader_manager;
