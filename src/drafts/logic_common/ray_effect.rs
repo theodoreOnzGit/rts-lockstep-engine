@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 3,000 operation sequences of up to 600 operations (test: tests/differential_draft_ray_effect.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameClient/RayEffect.h
@@ -9,6 +10,7 @@
 
 use crate::common::base_type::Coord3D;
 use crate::common::game_type::ObjectId;
+use crate::logic::modules::plant;
 
 /// `MAX_RAY_EFFECTS`.
 pub const MAX_RAY_EFFECTS: usize = 128;
@@ -57,6 +59,12 @@ impl RayEffectSystem {
 
     /// `RayEffectSystem::reset()`: "nothing dynamic going on here, just initialize it".
     pub fn reset(&mut self) {
+        if plant(11509) {
+            for e in self.effect_data.iter_mut() {
+                e.draw = None;
+            }
+            return;
+        }
         self.init();
     }
 
@@ -68,7 +76,15 @@ impl RayEffectSystem {
             _ => return,
         };
         // search for a free effect slot
-        let slot = (0..MAX_RAY_EFFECTS).find(|&i| self.effect_data[i].draw.is_none());
+        let slot = if plant(11503) {
+            (0..MAX_RAY_EFFECTS).rev().find(|&i| self.effect_data[i].draw.is_none())
+        } else if plant(11506) {
+            Some((0..MAX_RAY_EFFECTS).find(|&i| self.effect_data[i].draw.is_none()).unwrap_or(0))
+        } else if plant(11508) {
+            self.find_entry(draw).or((0..MAX_RAY_EFFECTS).find(|&i| self.effect_data[i].draw.is_none()))
+        } else {
+            (0..MAX_RAY_EFFECTS).find(|&i| self.effect_data[i].draw.is_none())
+        };
         // if no free slots we can't do it
         if let Some(i) = slot {
             // add the data to the entry
@@ -84,8 +100,20 @@ impl RayEffectSystem {
             Some(d) => d,
             None => return,
         };
+        if plant(11504) {
+            for e in self.effect_data.iter_mut() {
+                if e.draw == Some(draw) {
+                    e.draw = None;
+                }
+            }
+            return;
+        }
         if let Some(i) = self.find_entry(draw) {
             self.effect_data[i].draw = None;
+            if plant(11505) {
+                self.effect_data[i].start_loc = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
+                self.effect_data[i].end_loc = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
+            }
         }
     }
 
@@ -96,7 +124,14 @@ impl RayEffectSystem {
             None => return,
         };
         if let Some(i) = self.find_entry(draw) {
-            *effect_data = self.effect_data[i];
+            if plant(11507) {
+                effect_data.draw = self.effect_data[i].draw;
+                effect_data.start_loc = self.effect_data[i].start_loc;
+            } else {
+                *effect_data = self.effect_data[i];
+            }
+        } else if plant(11510) {
+            *effect_data = RayEffectData::zeroed();
         }
     }
 }
