@@ -11,3 +11,6 @@ pub mod tcb_spline;
 pub mod euler;
 pub mod lookup_table;
 pub mod frustum;
+pub mod lcw;
+pub mod rle;
+pub mod base64;
