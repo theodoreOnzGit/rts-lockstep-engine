@@ -70,3 +70,4 @@ pub mod texproject;
 pub mod metalmap;
 pub mod stripoptimizer;
 pub mod visrasterizer;
+pub mod texturethumbnail;
