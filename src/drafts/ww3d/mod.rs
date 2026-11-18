@@ -1,2 +1,75 @@
-//! UNTESTED DRAFT (#202): written without compiling or testing. Not part of the verified port until it is compiled,
-//! differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #206): written without compiling or testing. Not part of the verified port until it is
+//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//!
+//! Drafts of `Libraries/Source/WWVegas/WW3D2` and `wwshade` (#206).
+
+pub mod handles;
+pub mod matpass;
+pub mod polyinfo;
+pub mod rinfo;
+pub mod assetstatus;
+pub mod w3dexclusionlist;
+pub mod static_sort_list;
+pub mod renderobjectrecycler;
+pub mod coltest;
+pub mod matinfo;
+pub mod light;
+pub mod lightenvironment;
+pub mod matrixmapper;
+pub mod projector;
+pub mod decalsys;
+pub mod texturefilter;
+pub mod bitmaphandler;
+pub mod shddef;
+pub mod shddeffactory;
+pub mod shddefmanager;
+pub mod shdinterface;
+pub mod composite;
+pub mod meshbuild;
+pub mod shader_presets;
+pub mod line3d;
+pub mod dynamesh;
+pub mod decalmsh;
+pub mod streak_render;
+pub mod streak;
+pub mod sortingrenderer;
+pub mod intersec;
+pub mod rect;
+pub mod surfaceclass;
+pub mod font3d;
+pub mod render2d;
+pub mod bwrender;
+pub mod bmp2d;
+pub mod textdraw;
+pub mod txt;
+pub mod txt2d;
+pub mod meshmdl;
+pub mod shdchunk;
+pub mod shdsimple;
+pub mod shdglossmask;
+pub mod shdcubemap;
+pub mod shdbumpdiff;
+pub mod shdbumpspec;
+pub mod shd6bumpdiff;
+pub mod shd6bumpspec;
+pub mod shd7bumpdiff;
+pub mod shd7bumpspec;
+pub mod shd8bumpdiff;
+pub mod shd8bumpspec;
+pub mod shdlegacyw3d;
+pub mod shdhwshader;
+pub mod shdlib;
+pub mod shdforcelinks;
+pub mod shdloader;
+pub mod shattersystem;
+pub mod w3d_dep;
+pub mod shdsubmesh;
+pub mod shdmesh;
+pub mod shdrenderer;
+pub mod texproject;
+pub mod metalmap;
+pub mod stripoptimizer;
+pub mod visrasterizer;
+pub mod texturethumbnail;
+pub mod texturefile;
+pub mod texfcach;
