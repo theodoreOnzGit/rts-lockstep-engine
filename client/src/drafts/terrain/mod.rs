@@ -18,3 +18,5 @@ pub mod w3d_smudge;
 pub mod w3d_terrain_background;
 pub mod flat_height_map;
 pub mod w3d_waypoint_buffer;
+pub mod w3d_shadow;
+pub mod w3d_projected_shadow;
