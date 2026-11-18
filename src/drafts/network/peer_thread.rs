@@ -2141,7 +2141,7 @@ impl PeerThread {
             if resp.message.profile_id == self.g.matchbot_profile_id {
                 let mut pos = 0;
                 let cmd = strtok_space(message, &mut pos);
-                if cmd == Some(b"MBOT:POOLSIZE") {
+                if cmd == Some(&b"MBOT:POOLSIZE"[..]) {
                     let mut pool_size = 0;
                     loop {
                         let pool_str = strtok_space(message, &mut pos);
@@ -2194,7 +2194,7 @@ impl PeerThread {
             if resp.message.is_private && resp.message.profile_id == self.g.matchbot_profile_id {
                 let mut pos = 0;
                 let cmd = strtok_space(message, &mut pos);
-                if cmd == Some(b"MBOT:MATCHED") {
+                if cmd == Some(&b"MBOT:MATCHED"[..]) {
                     let map_num = strtok_space(message, &mut pos).map(|s| s.to_vec());
                     let seed = strtok_space(message, &mut pos).map(|s| s.to_vec());
                     let mut name: [Option<Vec<u8>>; SLOTS] = Default::default();
@@ -2227,7 +2227,7 @@ impl PeerThread {
                         let s = a(seed.as_deref().unwrap_or(b""));
                         self.handle_qm_match(host, m, s, &name, &ip, &side, &color, &nat);
                     }
-                } else if cmd == Some(b"MBOT:WORKING") {
+                } else if cmd == Some(&b"MBOT:WORKING"[..]) {
                     let pool_size = strtok_space(message, &mut pos)
                         .map(super::persistent_storage_thread::atoi)
                         .unwrap_or(0);
@@ -2236,7 +2236,7 @@ impl PeerThread {
                     r.qm_status.status = QmStatus::Working;
                     r.qm_status.pool_size = pool_size;
                     self.queue.add_response(r);
-                } else if cmd == Some(b"MBOT:WIDENINGSEARCH") {
+                } else if cmd == Some(&b"MBOT:WIDENINGSEARCH"[..]) {
                     let mut r = PeerResponse::default();
                     r.peer_response_type = PeerResponseType::QuickMatchStatus;
                     r.qm_status.status = QmStatus::WideningSearch;
