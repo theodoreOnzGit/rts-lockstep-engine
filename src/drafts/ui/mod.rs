@@ -33,3 +33,4 @@ pub mod wol_ladder_screen;
 pub mod wol_locale_select_popup;
 pub mod wol_qm_score_screen;
 pub mod popup_join_game;
+pub mod popup_host_game;
