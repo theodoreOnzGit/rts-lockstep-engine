@@ -63,6 +63,9 @@ pub mod common;
 pub mod formats;
 pub mod logic;
 pub mod ww;
+/// UNTESTED DRAFTS (#202): not compiled, not tested. Behind the `untested-drafts` feature, off by default.
+#[cfg(feature = "untested-drafts")]
+pub mod drafts;
 
 #[cfg(feature = "differential")]
 #[doc(hidden)]

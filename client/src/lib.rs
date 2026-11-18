@@ -54,6 +54,9 @@ pub mod terrain;
 pub mod text_metrics;
 pub mod ui;
 pub mod view;
+/// UNTESTED DRAFTS (#202): not compiled, not tested. Behind the `untested-drafts` feature, off by default.
+#[cfg(feature = "untested-drafts")]
+pub mod drafts;
 
 #[cfg(feature = "app")]
 pub mod app;

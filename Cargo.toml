@@ -16,6 +16,9 @@ default = []
 # into the crate, so tests can compare Rust and C++ outputs bit for bit.
 # Needs a C++ compiler and `git submodule update --init`. Off by default.
 differential = ["dep:cc"]
+# Untested drafts (#202): translations written without compiling or testing, in `src/drafts/`. Off by default, so they
+# cannot break the verified build. Each draft is compiled, differential-tested and moved out of `drafts` before it counts.
+untested-drafts = []
 
 [dependencies]
 # PETIR, the owner's no_std core-numerics crate (outram-park-backend

@@ -11,6 +11,8 @@ publish = false
 # no Bevy, so its tests run with `--no-default-features` without compiling the renderer.
 default = ["app"]
 app = ["dep:bevy"]
+# Untested drafts (#202), in `src/drafts/`: written without compiling or testing. Off by default.
+untested-drafts = ["app", "rts-lockstep-engine/untested-drafts"]
 
 [dependencies]
 # The game logic (phase 1). The client only reads it and sends it the game's own commands (see `src/lib.rs`).
