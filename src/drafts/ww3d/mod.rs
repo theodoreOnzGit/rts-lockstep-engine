@@ -33,3 +33,7 @@ pub mod decalmsh;
 pub mod streak_render;
 pub mod streak;
 pub mod sortingrenderer;
+pub mod intersec;
+pub mod rect;
+pub mod surfaceclass;
+pub mod font3d;
