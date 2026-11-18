@@ -13,3 +13,5 @@ pub mod static_sort_list;
 pub mod renderobjectrecycler;
 pub mod coltest;
 pub mod matinfo;
+pub mod light;
+pub mod lightenvironment;
