@@ -2,3 +2,4 @@
 //! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
 
 pub mod user_preferences;
+pub mod anim2d;
