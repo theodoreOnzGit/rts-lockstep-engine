@@ -862,6 +862,19 @@ impl WorldClient {
         self.world.players.get_nth(self.player).map_or((0, (0, 0)), |p| (p.money.count_money(), (p.energy.production(frame), p.energy.consumption())))
     }
 
+    /// (#195) What `W3DCommandBarGenExpDraw` reads of the local player (`isPlayerActive()`, `getSkillPoints()`,
+    /// `getSkillPointsLevelUp()`, `getSkillPointsLevelDown()`); `None` without one. Read only.
+    pub fn gen_exp_points(&self) -> Option<crate::client::w3d_command_bar::GenExpPoints> {
+        let p = self.world.players.get_nth(self.player)?;
+        let active = crate::logic::world::player_ops::player_is_player_active(&self.world, self.player).unwrap_or(false);
+        Some(crate::client::w3d_command_bar::GenExpPoints { active, skill_points: p.skill_points, level_up: p.level_up, level_down: p.level_down })
+    }
+
+    /// (#195) `TheGlobalData`'s power bar values (`W3DPowerDraw`), `None` without the global data.
+    pub fn power_bar_globals(&self) -> Option<crate::client::w3d_command_bar::PowerBarGlobals> {
+        self.world.statics.global_data.the_global_data().map(crate::client::w3d_command_bar::PowerBarGlobals::of)
+    }
+
     fn object(&self, obj: ObjectId) -> Option<&crate::logic::world::object::Object> {
         self.world.find_object(obj)
     }

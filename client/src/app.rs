@@ -2725,7 +2725,11 @@ fn game_ui(
     let sel = c.ui.first_selected_drawable().filter(|&o| rts_lockstep_engine::client::selection_info::SelectionInfoHost::is_locally_controlled(&c.client, o) && c.ui.select_count() == 1);
     let queue = sel.map(|o| c.client.production_queue(o)).unwrap_or_default();
     let (money, power) = c.client.money_and_power();
-    let state = crate::ui::GameUi::bar_state(sel, &mut c.client, queue, money, power);
+    let mut state = crate::ui::GameUi::bar_state(sel, &mut c.client, queue, money, power);
+    // (#195) what `W3DPowerDraw` and `W3DCommandBarGenExpDraw` read: `TheGlobalData`'s power bar values and the local
+    // player's experience, from the World (read only)
+    state.power_globals = c.client.power_bar_globals();
+    state.gen_exp = c.client.gen_exp_points();
     // (#35) the popups of this selection's buttons, by button (#138: ~~a new selection shows none~~ the popup is the
     // bar's, which shows what `populateBuildTooltipLayout` was last given)
     g.tooltip_lines = state.commands.iter().zip(&state.tooltips).filter_map(|(c, t)| Some((c.as_ref()?.button, crate::ui::tooltip_lines(t.as_ref()?)))).collect();
@@ -2881,7 +2885,8 @@ fn spawn_quads(commands: &mut Commands, root: Entity, quads: &[crate::ui::UiQuad
                     None => rect,
                 };
                 let tint = rgba(q.tint.unwrap_or([255, 255, 255, 255]), q.dim);
-                e.insert(ImageNode { image: h, rect: Some(rect), color: tint, image_mode: bevy::ui::widget::NodeImageMode::Stretch, ..default() });
+                // (#195) `flip`: a reversed `drawImage` rectangle mirrors the image
+                e.insert(ImageNode { image: h, rect: Some(rect), color: tint, image_mode: bevy::ui::widget::NodeImageMode::Stretch, flip_x: q.flip.0, flip_y: q.flip.1, ..default() });
             }
             None => {
                 if let Some(c) = q.color {

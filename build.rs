@@ -4415,10 +4415,10 @@ mod differential {
                 scb.compile("upstream_scheme_bar");
             }
 
-            // GitHub #194: the command bar's grid, the push button clocks and the scheme's bar images
-            // (differential/wrap_command_bar_draw.cpp, which lists the cuts). Cut verbatim into OUT_DIR/command_bar_draw_gen
-            // from W3DControlBar.cpp, W3DDisplay.cpp, GameWindow.cpp, GadgetPushButton.h, ControlBar.cpp and
-            // ControlBarScheme.cpp. No text is edited. Each anchor (and each whole-text cut) must occur once.
+            // GitHub #194: the command bar's grid, the push button clocks and the scheme's bar images; #195: the other
+            // draw callbacks of W3DControlBar.cpp (differential/wrap_command_bar_draw.cpp, which lists the cuts). Cut
+            // verbatim into OUT_DIR/command_bar_draw_gen from W3DControlBar.cpp, W3DDisplay.cpp, GameWindow.cpp,
+            // GadgetPushButton.h, ControlBar.cpp, ControlBarScheme.cpp and GameWindowGlobal.cpp. No text is edited. Each anchor (and each whole-text cut) must occur once.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_command_bar_draw.cpp");
                 let piece = |text: &str, file: &str, from: &str, to: &str| -> String {
@@ -4433,7 +4433,13 @@ mod differential {
                     assert_eq!(text.matches(cut).count(), 1, "{file}: a whole-text cut must occur once: {cut:?}");
                     cut.to_string()
                 };
+                // (#195) a cut from its start to the end of the file
+                let tail = |text: &str, file: &str, from: &str| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    text[text.find(from).expect("from")..].to_string()
+                };
                 let dev = up.join("GameEngineDevice/Source/W3DDevice/GameClient");
+                let gwg = read_upstream(up.join("GameEngine/Source/GameClient/GUI/GameWindowGlobal.cpp"));
                 let cbw = read_upstream(dev.join("GUI/GUICallbacks/W3DControlBar.cpp"));
                 let disp = read_upstream(dev.join("W3DDisplay.cpp"));
                 let gw = read_upstream(up.join("GameEngine/Source/GameClient/GUI/GameWindow.cpp"));
@@ -4448,6 +4454,12 @@ mod differential {
                     ("cbd_disabled.inc", whole(&gpb, "GadgetPushButton.h", "inline void GadgetButtonSetDisabledImage( GameWindow *g, const Image *image )\t\t\t\t\t{ g->winSetDisabledImage( 0, image ); g->winSetEnabledImage( 5, NULL );g->winSetEnabledImage( 6, NULL );}\n")),
                     ("cbd_bar_images.inc", piece(&cb, "ControlBar.cpp", "void ControlBar::updateBuildQueueDisabledImages( const Image *image )\n", "void ControlBar::updateBuildUpClockColor( Color color)\n")),
                     ("cbd_init_images.inc", whole(&sc, "ControlBarScheme.cpp", "\t\tTheControlBar->updateBuildQueueDisabledImages( m_buttonQueueImage );\n\t\tTheControlBar->updateRightHUDImage(m_rightHUDImage);\n")),
+                    // GitHub #195: the other draw callbacks of W3DControlBar.cpp, and GameWindowManager::winDrawImage
+                    ("cbd_cameo.inc", piece(&cbw, "W3DControlBar.cpp", "void W3DCameoMovieDraw( GameWindow *window, WinInstanceData *instData )\n", "void W3DLeftHUDDraw( GameWindow *window, WinInstanceData *instData )\n")),
+                    ("cbd_power.inc", piece(&cbw, "W3DControlBar.cpp", "void W3DRightHUDDraw( GameWindow *window, WinInstanceData *instData )\n", "void W3DPowerDrawA( GameWindow *window, WinInstanceData *instData )\n")),
+                    ("cbd_gen_exp_top.inc", piece(&cbw, "W3DControlBar.cpp", "void W3DCommandBarGenExpDraw( GameWindow *window, WinInstanceData *instData )\n", "void W3DCommandBarBackgroundDraw( GameWindow *window, WinInstanceData *instData )\n")),
+                    ("cbd_help_popup.inc", tail(&cbw, "W3DControlBar.cpp", "void W3DCommandBarHelpPopupDraw( GameWindow *window, WinInstanceData *instData )\n")),
+                    ("cbd_win_draw_image.inc", piece(&gwg, "GameWindowGlobal.cpp", "void GameWindowManager::winDrawImage( const Image *image, Int startX, Int startY, \n", "// GameWindowManager::winFillRect =====")),
                 ];
                 let gen = out_dir.join("command_bar_draw_gen");
                 std::fs::create_dir_all(&gen).expect("create command_bar_draw_gen");

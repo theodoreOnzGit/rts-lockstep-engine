@@ -31,7 +31,7 @@
 //!   `acosf`, `asinf`, `atanf`, `atan2f`, `tanf`, and `sqrtf`, which g++
 //!   substitutes for `(float)sqrt((double)f)`): petir's `f32` `Real`;
 //! - C `double` functions (`sin`, `cos`, `sincos`, `tan`, `acos`, `asin`,
-//!   `atan`, `atan2`, `sqrt`), which upstream calls on `float` arguments and
+//!   `atan`, `atan2`, `sqrt`, and since #195 `log10`), which upstream calls on `float` arguments and
 //!   casts back (`(float)acos(val)`): petir's `f64` `Real`. The differential
 //!   build's shim `math.h` keeps g++ from resolving those calls to `float`
 //!   overloads instead (see `differential/shim/math.h`).
@@ -127,6 +127,11 @@ pub extern "C" fn sqrt(x: f64) -> f64 {
 #[no_mangle]
 pub extern "C" fn sqrtf(x: f32) -> f32 {
     Real::sqrt(x)
+}
+/// (#195) C's double `log10`, which `W3DControlBar.cpp`'s `logN` calls on `Real` arguments (the power bar).
+#[no_mangle]
+pub extern "C" fn log10(x: f64) -> f64 {
+    Real::log10(x)
 }
 
 /// SplitMix64: a small, seedable, platform-independent generator for test

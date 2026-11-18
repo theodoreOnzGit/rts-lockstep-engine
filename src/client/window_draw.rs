@@ -256,10 +256,18 @@ fn push_button_extras(wm: &mut GameWindowManager, w: WinId, (x, y): (i32, i32), 
             out.push(DrawItem::RectClock { x, y, w: sx, h: sy, percent: p.percent_clock, color: p.color_clock, inverse: p.draw_clock == ClockKind::Inverse });
             p.draw_clock = ClockKind::None;
         }
-        if p.draw_border && p.color_border != WIN_COLOR_UNDEFINED {
-            out.push(DrawItem::OpenRect { x: x - 1, y: y - 1, w: sx + 2, h: sy + 2, color: p.color_border });
-        }
     }
+    if let Some(b) = push_button_border(wm, w, (x, y), (sx, sy)) {
+        out.push(b);
+    }
+}
+
+/// (#195) The end of `W3DGadgetPushButtonDraw` and its image draws (W3DPushButton.cpp:273, 442, 701): with a special
+/// border (`GadgetButtonSetBorder`, `drawBorder` and a colour not `GAME_COLOR_UNDEFINED`),
+/// `drawOpenRect(x - 1, y - 1, width + 2, height + 2, 1, colorBorder)` around the button at `(x, y)` of `size`.
+pub fn push_button_border(wm: &GameWindowManager, w: WinId, (x, y): (i32, i32), (sx, sy): (i32, i32)) -> Option<DrawItem> {
+    let UserData::PushButton(Some(p)) = &wm.ext[w].user else { return None };
+    (p.draw_border && p.color_border != WIN_COLOR_UNDEFINED).then_some(DrawItem::OpenRect { x: x - 1, y: y - 1, w: sx + 2, h: sy + 2, color: p.color_border })
 }
 
 /// `W3DGadgetPushButtonDraw`: colours 0 (1 when selected) of the state.

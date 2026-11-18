@@ -9,12 +9,14 @@
 //! the layout's 800x600 space ([`UiQuad`]); `app` draws them with Bevy UI nodes. ~~Upstream's own drawing
 //! (`W3DGameWinDefaultDraw`, the gadget draw functions, `W3DPowerDraw`) is not translated~~ **Corrected 2026-11-10
 //! (#34):** `W3DGameWinDefaultDraw` and the push button, check box, radio button and static text draws are translated
-//! (`client::window_draw`, a draw list), but the bar does not draw from them yet (`W3DPowerDraw` and ~~the command bar's
-//! own draws~~ **Corrected 2026-11-17 (#194):** the command bar's draws other than `W3DCommandBarGridDraw` (translated,
-//! `rts_lockstep_engine::client::w3d_command_bar`, and drawn by [`GameUi::frame`]) and the scheme layers' (#136) are not
-//! translated: #195); here: a window with
+//! (`client::window_draw`, a draw list), but the bar does not draw from them yet (~~`W3DPowerDraw` and~~ ~~the command
+//! bar's own draws~~ **Corrected 2026-11-17 (#194):** the command bar's draws other than `W3DCommandBarGridDraw`
+//! (translated, `rts_lockstep_engine::client::w3d_command_bar`, and drawn by [`GameUi::frame`]) and the scheme layers'
+//! (#136) are not translated: #195 **Corrected 2026-11-18 (#195):** all of W3DControlBar.cpp's draw callbacks are
+//! translated and drawn by [`GameUi::frame`] for a window that names them, `W3DPowerDraw` included); here: a window with
 //! `WIN_STATUS_IMAGE` is drawn as its state's first image stretched over its region, any other as its first colour,
-//! text centred; the power bar as production against consumption. That part is new.
+//! text centred; the power bar as production against consumption (**Corrected 2026-11-18 (#195):** only for a power
+//! window whose draw callback is not `W3DPowerDraw`, as the synthetic bar's). That part is new.
 //!
 //! Since #35, the selected object's portrait (`ControlBar.wnd:WinUnitSelected`, `CameoWindow`, `UnitUpgrade1..5`, from
 //! `client::control_bar_popup::set_portrait_by_object`) and each command button's popup description
@@ -88,6 +90,13 @@
 //! queue buttons and the right HUD with its colours. All differential-tested
 //! (`tests/differential_command_bar_draw.rs`).
 //!
+//! Since #195, the rest of W3DControlBar.cpp's draw callbacks: a shown window whose callback is `W3DPowerDraw`,
+//! `W3DCommandBarGenExpDraw`, `W3DCommandBarHelpPopupDraw`, `W3DCommandBarTopDraw`, `W3DRightHUDDraw` or
+//! `W3DCameoMovieDraw` draws through its translation ([`GameUi::frame`]), reading the local player's power, experience and
+//! `TheGlobalData`'s power bar values from the World ([`BarState`]); a reversed image rectangle is drawn mirrored
+//! ([`UiQuad::flip`]); and each command window gets `setCommandBarBorder` ([`GameUi::sync`]) and draws its special border
+//! after its clock, as the push button's draw does. Differential-tested (`tests/differential_command_bar_draw.rs`).
+//!
 //! The client still never changes the simulation: everything here reads the `World`.
 
 use std::collections::BTreeMap;
@@ -101,6 +110,7 @@ use rts_lockstep_engine::client::control_bar_gen_star::{GenStar, GenStarHost, Ge
 use rts_lockstep_engine::client::animate_window::anim;
 use rts_lockstep_engine::client::control_bar_animate::{ControlBarAnimate, SpecialPowerShortcut};
 use rts_lockstep_engine::client::build_tooltip::{command_button_tooltip, command_gets_tooltip, control_bar_init_tooltips, BuildTooltip, BuildTooltipHost, ControlBarInitHost, COMMAND_BUTTON_TOOLTIP, NON_COMMAND_BUTTONS};
+use rts_lockstep_engine::client::build_tooltip::set_command_bar_border;
 use rts_lockstep_engine::logic::command_button::CommandButton;
 use rts_lockstep_engine::client::control_bar_stage::{
     clear_game_data_control_bar, create_control_bar, game_engine_init_control_bar, script_control_bar, set_toggle_images, start_new_game_control_bar, toggle_control_bar,
@@ -108,7 +118,10 @@ use rts_lockstep_engine::client::control_bar_stage::{
 };
 use rts_lockstep_engine::client::image::ImageCollection;
 use rts_lockstep_engine::client::gadget;
-use rts_lockstep_engine::client::w3d_command_bar::{push_button_clock, update_build_queue_disabled_images, update_right_hud_image, w3d_command_bar_grid_draw, ClockPiece};
+use rts_lockstep_engine::client::w3d_command_bar::{
+    push_button_clock, update_build_queue_disabled_images, update_right_hud_image, w3d_cameo_movie_draw, w3d_command_bar_gen_exp_draw, w3d_command_bar_grid_draw, w3d_command_bar_help_popup_draw, w3d_command_bar_top_draw, w3d_power_draw,
+    w3d_right_hud_draw, ClockPiece, GenExpPoints, PowerBarGlobals,
+};
 use rts_lockstep_engine::client::window_manager::{data_win, ggm, gwm, key, DrawFunc, DrawItem, GameWindowManager, GuiHost, MsgHandled, NoGuiHost, WinInputReturnCode, WindowMsgData};
 use rts_lockstep_engine::client::window_script::{win_status, GameWindow, WinId, WindowScript, WndHost, WIN_COLOR_UNDEFINED};
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
@@ -643,6 +656,8 @@ pub struct UiQuad {
     /// (#78) A line not along an axis (`drawLine`): the quad is the line laid flat about its centre, turned clockwise by
     /// the angle whose `(sin, cos)` this is.
     pub rotation: Option<(f32, f32)>,
+    /// (#195) The image mirrored across (x) and up and down (y): a `drawImage` whose rectangle was handed over reversed.
+    pub flip: (bool, bool),
 }
 
 /// `WIN_DRAW_LINE_WIDTH` (W3DGadget.h, 1.0): the width every outline and line of the windows' draws is given upstream
@@ -717,9 +732,19 @@ pub fn draw_list_quads<H: GuiHost>(items: &[DrawItem], host: &H) -> Vec<UiQuad> 
                 out.push(UiQuad { color: color(*c), ..q });
             }
             DrawItem::Image { image, x0, y0, x1, y1, color: c, grayscale, clip } => {
-                let Some((rect, uv)) = clipped([*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32], *clip) else { continue };
+                // (#195) a rectangle handed over reversed (`W3DCommandBarGenExpDraw`'s top piece runs upward) draws the
+                // image mirrored, as the 2D renderer's quad from those corners does
+                let flip = (x1 < x0, y1 < y0);
+                let (l, r) = if flip.0 { (*x1, *x0) } else { (*x0, *x1) };
+                let (t, b) = if flip.1 { (*y1, *y0) } else { (*y0, *y1) };
+                let Some((rect, uv)) = clipped([l as f32, t as f32, r as f32, b as f32], *clip) else { continue };
+                let uv = uv.map(|[u0, v0, u1, v1]| {
+                    let (u0, u1) = if flip.0 { (1.0 - u1, 1.0 - u0) } else { (u0, u1) };
+                    let (v0, v1) = if flip.1 { (1.0 - v1, 1.0 - v0) } else { (v0, v1) };
+                    [u0, v0, u1, v1]
+                });
                 let tint = (*c != 0xFFFF_FFFF).then(|| rgba(*c));
-                out.push(UiQuad { rect, image: Some(image.clone()), uv, tint, dim: *grayscale, ..Default::default() });
+                out.push(UiQuad { rect, image: Some(image.clone()), uv, tint, dim: *grayscale, flip, ..Default::default() });
             }
             DrawItem::Text { text, x, y, color: c, font, word_wrap, clip, .. } => {
                 if text.is_empty() {
@@ -820,6 +845,13 @@ pub struct BarState {
     pub hot_keys: Vec<(usize, Vec<u8>)>,
     /// (#138) Whether each command window gets `commandButtonTooltip` (`setControlCommand`: a text label or sciences).
     pub tooltip_funcs: Vec<bool>,
+    /// (#195) Each command window's button's `ButtonBorderType` (`getCommandButtonMappedBorderType()`), for
+    /// `setControlCommand`'s `setCommandBarBorder`.
+    pub borders: Vec<i32>,
+    /// (#195) `TheGlobalData`'s power bar values (`W3DPowerDraw`), `None` without the global data.
+    pub power_globals: Option<PowerBarGlobals>,
+    /// (#195) What `W3DCommandBarGenExpDraw` reads of the local player, `None` without one.
+    pub gen_exp: Option<GenExpPoints>,
 }
 
 /// ~~`TooltipTimer`: when the popup of a command button shows (new: the hover delay, a phone's long press and the last
@@ -1095,8 +1127,9 @@ impl GameUi {
         let tooltips = commands.iter().map(|c| c.as_ref().and_then(|c| h.button(c.button)).map(|b| populate_build_tooltip_layout(&b, h))).collect();
         let tooltip_funcs = commands.iter().map(|c| c.as_ref().and_then(|c| h.button(c.button)).is_some_and(|b| command_gets_tooltip(b.labels[0].is_empty(), !b.science.is_empty()))).collect();
         let portrait = set_portrait_by_object(selected, h);
+        let borders = commands.iter().map(|c| c.as_ref().and_then(|c| h.button(c.button)).map_or(0, |b| b.border)).collect();
         let (queue, queue_clock) = populate_build_queue(&queue);
-        BarState { selected, commands, queue, queue_clock, money, power, portrait, tooltips, hot_keys, tooltip_funcs }
+        BarState { selected, commands, queue, queue_clock, money, power, portrait, tooltips, hot_keys, tooltip_funcs, borders, ..Default::default() }
     }
 
     /// Whether a window is drawn: it and every ancestor not hidden, with the context parents shown as
@@ -1162,6 +1195,16 @@ impl GameUi {
             if c.enabled != (self.wm.tree.windows[w].status & win_status::ENABLED != 0) {
                 self.wm.win_enable(w, c.enabled);
             }
+        }
+        // (#195) `setControlCommand`'s `setCommandBarBorder(button, getCommandButtonMappedBorderType())`
+        // (`rts_lockstep_engine::client::build_tooltip::set_command_bar_border`) on each command window with a command, in
+        // the scheme's border colours ([`Self::bar_colors`]); [`Self::frame`] draws the border as the push button's draw.
+        let border_colors = self.bar_colors.border_colors();
+        for (slot, w) in self.command_windows.clone().into_iter().enumerate() {
+            let (Some(w), Some(Some(_))) = (w, s.commands.get(slot)) else { continue };
+            let kind = s.borders.get(slot).copied().unwrap_or(0);
+            let mut h = BarInitHost { wm: &mut self.wm, images: &self.images, found: Vec::new(), data: &mut self.non_command_buttons, border_colors };
+            set_command_bar_border(w, kind, &mut h);
         }
     }
 
@@ -1483,8 +1526,13 @@ impl GameUi {
     /// (`rts_lockstep_engine::client::w3d_command_bar::w3d_command_bar_grid_draw`, in [`Self::bar_colors`]'s
     /// `getBorderColor`), which sets the window's enabled border colour as upstream's does; and each command or queue
     /// button with a clock gets `GadgetButtonDrawInverseClock`'s `drawRemainingRectClock` in the build-up clock colour.
+    ///
+    /// (#195) And so do the shown windows whose draw callback is one of W3DControlBar.cpp's others
+    /// ([`Self::device_draws`]): `W3DPowerDraw`, `W3DCommandBarGenExpDraw`, `W3DCommandBarHelpPopupDraw`,
+    /// `W3DCommandBarTopDraw`, `W3DRightHUDDraw` and `W3DCameoMovieDraw`; and a command window with a special border
+    /// (`setCommandBarBorder`) draws it after its clock, as `W3DGadgetPushButtonImageDraw` does.
     pub fn frame(&mut self, s: &BarState) -> Vec<UiQuad> {
-        let grids = self.grid_draws(s);
+        let grids = self.device_draws(s);
         let mut out = Vec::new();
         let scheme = self.schemes.current_scheme();
         // (#136) the layers are drawn by windows inside `ControlBarParent` (`W3DCommandBarBackgroundDraw`,
@@ -1526,15 +1574,37 @@ impl GameUi {
     }
 
     /// (#194) `W3DCommandBarGridDraw` (W3DControlBar.cpp:466) for each shown window whose draw callback it is, in the
-    /// bar's `getBorderColor`: the draw list of each.
-    fn grid_draws(&mut self, s: &BarState) -> BTreeMap<WinId, Vec<DrawItem>> {
-        let grid = DrawFunc::Host(b"W3DCommandBarGridDraw".to_vec());
-        let ws: Vec<WinId> = (0..self.wm.tree.windows.len()).filter(|&w| self.wm.ext.get(w).is_some_and(|e| e.draw == grid) && self.shown(w, s)).collect();
+    /// bar's `getBorderColor`: the draw list of each. ~~`grid_draws`~~ **Corrected 2026-11-18 (#195):** renamed, and
+    /// the other callbacks of W3DControlBar.cpp (`rts_lockstep_engine::client::w3d_command_bar`, differential-tested) the
+    /// same way: `W3DPowerDraw` (:118) with the local player's power ([`BarState::power`]; the client has no observer's
+    /// bar) and [`BarState::power_globals`], `W3DCommandBarGenExpDraw` (:492) with [`BarState::gen_exp`],
+    /// `W3DCommandBarHelpPopupDraw` (:917), `W3DCommandBarTopDraw` (:616, nothing), `W3DRightHUDDraw` (:98) and
+    /// `W3DCameoMovieDraw` (:49, no video buffer: nothing). The images are found in the mapped images.
+    fn device_draws(&mut self, s: &BarState) -> BTreeMap<WinId, Vec<DrawItem>> {
+        const NAMES: [&[u8]; 7] = [b"W3DCommandBarGridDraw", b"W3DPowerDraw", b"W3DCommandBarGenExpDraw", b"W3DCommandBarHelpPopupDraw", b"W3DCommandBarTopDraw", b"W3DRightHUDDraw", b"W3DCameoMovieDraw"];
+        let callback = |e: &DrawFunc| match e {
+            DrawFunc::Host(n) => NAMES.iter().position(|m| *m == &n[..]),
+            _ => None,
+        };
+        let ws: Vec<(WinId, usize)> = (0..self.wm.tree.windows.len()).filter_map(|w| Some((w, self.wm.ext.get(w).and_then(|e| callback(&e.draw))?))).filter(|&(w, _)| self.shown(w, s)).collect();
         let border = self.bar_colors.get_border_color();
+        let images = &self.images;
+        let find = |n: &[u8]| images.find_image_by_name(n).map(|i| i.image_size);
         ws.into_iter()
-            .map(|w| {
+            .map(|(w, which)| {
                 let mut items = Vec::new();
-                w3d_command_bar_grid_draw(&mut self.wm, w, border, &mut items);
+                match which {
+                    0 => w3d_command_bar_grid_draw(&mut self.wm, w, border, &mut items),
+                    1 => w3d_power_draw(&mut self.wm, w, Some(s.power), s.power_globals, find, &mut items),
+                    2 => w3d_command_bar_gen_exp_draw(&mut self.wm, w, s.gen_exp.unwrap_or_default(), find, &mut items),
+                    3 => w3d_command_bar_help_popup_draw(&mut self.wm, w, find, &mut items),
+                    4 => w3d_command_bar_top_draw(&mut items),
+                    5 => w3d_right_hud_draw(&self.wm, w, &mut items),
+                    _ => {
+                        // (no video buffer: Bink was never released)
+                        let _ = w3d_cameo_movie_draw(&self.wm, w, false);
+                    }
+                }
                 (w, items)
             })
             .collect()
@@ -1631,8 +1701,14 @@ impl GameUi {
                 out.extend(clock_quads(&p, self.bar_colors.build_up_clock));
             }
         }
-        if Some(w) == self.power {
-            // the power bar (new drawing): consumption against production
+        // (#195) then the special border `setCommandBarBorder` gave a push button (the command windows and the non-command
+        // buttons; `rts_lockstep_engine::client::window_draw::push_button_border`, W3DPushButton.cpp's)
+        if let Some(b) = rts_lockstep_engine::client::window_draw::push_button_border(&self.wm, w, (x, y), win.size) {
+            out.extend(draw_list_quads(&[b], &NoGuiHost));
+        }
+        if Some(w) == self.power && !grids.contains_key(&w) {
+            // the power bar (new drawing): consumption against production. (#195) Only for a power window whose draw
+            // callback is not `W3DPowerDraw` (the synthetic bar's); upstream's is drawn by its translation above.
             let (p, c) = s.power;
             let frac = if p <= 0 { 0.0 } else { (c as f32 / p as f32).min(1.0) };
             let colr = if c > p { [220, 40, 30, 255] } else { [40, 200, 60, 255] };
@@ -2290,6 +2366,76 @@ mod tests {
         assert_eq!(clock[0].rect, [260.0, 480.0, 285.0, 530.0]);
         assert!(clock.iter().all(|c| c.rect[0] >= 260.0 && c.rect[1] >= 480.0 && c.rect[2] <= 310.0 && c.rect[3] <= 530.0));
         assert!(q.iter().position(|q| q.color == Some([1, 2, 3, 200])).expect("a clock") > button, "drawn over the button");
+    }
+
+    /// #195: a window whose draw callback is `W3DPowerDraw` at (600, 455)-(690, 465), with `PowerPointG` 10x10 and
+    /// `PowerBarSlider` 6x10 in the mapped images, `TheGlobalData`'s base 10, intervals 3 and yellow range 5, and the local
+    /// player's production 100 and consumption 10. Predicted before the run (as the library's `the_power_bar`, moved to
+    /// (600, 455)): six `PowerPointG` quads from x 600 to 660, a seventh at 660..670 shown whole (its clip region
+    /// (660, 455, 690, 465) does not cut it), the slider at 627..633, all 455..465, and the window's own fill (40, 40, 60)
+    /// not drawn (upstream's callback draws no background). And a command window whose button's border type is `BUILD`
+    /// (1) with the bar's build border colour 0xFF0A0B0C: after its clock, its outline at (259, 479)-(311, 531), four
+    /// quads of (10, 11, 12, 255); with type `NONE` none.
+    #[test]
+    fn the_power_bar_and_the_command_borders_are_drawn() {
+        use rts_lockstep_engine::client::control_bar_command::{CommandAvailability, CommandSlot};
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            let b = if p == b"Window\\ControlBar.wnd" {
+                let wnd = String::from_utf8(b).expect("text");
+                let at = wnd.find("WINDOW\n WINDOWTYPE = USER;\n SCREENRECT = UPPERLEFT: 250 470").expect("the command window");
+                let mut dd = String::from("IMAGE: NoImage, COLOR: 40 40 60 255, BORDERCOLOR: 0 0 0 255");
+                for _ in 0..8 {
+                    dd.push_str(", IMAGE: NoImage, COLOR: 0 0 0 0, BORDERCOLOR: 0 0 0 0");
+                }
+                let power = format!("WINDOW\n WINDOWTYPE = USER;\n SCREENRECT = UPPERLEFT: 600 455, BOTTOMRIGHT: 690 465, CREATIONRESOLUTION: 800 600;\n NAME = \"ControlBar.wnd:TestPower\";\n STATUS = ENABLED;\n DRAWCALLBACK = \"W3DPowerDraw\";\n ENABLEDDRAWDATA = {dd};\nEND\n");
+                format!("{}{}{}", &wnd[..at], power, &wnd[at..]).into_bytes()
+            } else if p.starts_with(b"Data\\INI\\MappedImages") {
+                let mut s = b.clone();
+                s.extend_from_slice(b"MappedImage PowerPointG\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeight = 64\n  Coords = Left:0 Top:0 Right:10 Bottom:10\n  Status = NONE\nEnd\nMappedImage PowerBarSlider\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeight = 64\n  Coords = Left:0 Top:0 Right:6 Bottom:10\n  Status = NONE\nEnd\n");
+                s
+            } else {
+                b
+            };
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
+        let mut ui = *ui;
+        assert!(ui.images.find_image_by_name(b"PowerPointG").is_some(), "the test's mapped images");
+        let st = BarState { power: (100, 10), power_globals: Some(PowerBarGlobals { base: 10, intervals: 3.0, yellow_range: 5 }), ..Default::default() };
+        let q = ui.frame(&st);
+        let named = |n: &[u8]| -> Vec<[f32; 4]> { q.iter().filter(|q| q.image.as_deref() == Some(n)).map(|q| q.rect).collect() };
+        let bar: Vec<[f32; 4]> = (0..7).map(|i| [600.0 + 10.0 * i as f32, 455.0, 610.0 + 10.0 * i as f32, 465.0]).collect();
+        assert_eq!(named(b"PowerPointG"), bar);
+        assert_eq!(named(b"PowerBarSlider"), vec![[627.0, 455.0, 633.0, 465.0]]);
+        assert!(q.iter().all(|q| !(q.rect == [601.0, 456.0, 689.0, 464.0] && q.color == Some([40, 40, 60, 255]))), "no fill");
+        ui.bar_colors.border_build = 0xFF0A_0B0Cu32 as i32;
+        let slot = CommandSlot { button: 0, image: None, label: Vec::new(), description: Vec::new(), availability: CommandAvailability::NotReady, clock: Some(30), enabled: false, not_ready: true, always_color: false, check_like: false, checked: false };
+        for (kind, want) in [(1, 4), (0, 0)] {
+            let st = BarState { selected: Some(1), commands: vec![Some(slot.clone())], borders: vec![kind], ..Default::default() };
+            ui.sync(&st);
+            let q = ui.frame(&st);
+            let border: Vec<[f32; 4]> = q.iter().filter(|q| q.color == Some([10, 11, 12, 255])).map(|q| q.rect).collect();
+            assert_eq!(border.len(), want, "border type {kind}");
+            if want > 0 {
+                assert_eq!(border, vec![[259.0, 479.0, 311.0, 480.0], [259.0, 530.0, 311.0, 531.0], [259.0, 479.0, 260.0, 531.0], [310.0, 479.0, 311.0, 531.0]]);
+            }
+        }
+    }
+
+    /// #195: a `drawImage` whose rectangle runs upward (`W3DCommandBarGenExpDraw`'s top piece, (0, 50)-(10, 45)) is the
+    /// quad (0, 45, 10, 50) drawn mirrored up and down; cut by a clip (0, 47, 10, 50) its screen rows 47..50, which are
+    /// the image's v 0..0.6 once mirrored (uv (0, 0, 1, 0.6)). Predicted before the run; **result:** as predicted.
+    #[test]
+    fn a_reversed_image_rectangle_is_mirrored() {
+        let it = |clip| DrawItem::Image { image: b"Top".to_vec(), x0: 0, y0: 50, x1: 10, y1: 45, color: 0xFFFF_FFFF, grayscale: false, clip };
+        let q = draw_list_quads(&[it(None)], &NoGuiHost);
+        assert_eq!((q[0].rect, q[0].flip, q[0].uv), ([0.0, 45.0, 10.0, 50.0], (false, true), None));
+        let q = draw_list_quads(&[it(Some((0, 47, 10, 50)))], &NoGuiHost);
+        assert_eq!((q[0].rect, q[0].flip, q[0].uv), ([0.0, 47.0, 10.0, 50.0], (false, true), Some([0.0, 0.0, 1.0, 0.6])));
     }
 
     /// #136: the bar hidden, shown, lowered and raised (`ToggleControlBar`, `ButtonLarge`'s `toggleControlBarStage`).

@@ -127,6 +127,56 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#195, the rest of W3DControlBar.cpp's draw callbacks and the command windows' borders (2026-11-18, GitHub #195).**
+- **What was open (read first).** Searched `power bar`, `power_draw`, `GenExp`, `HelpPopup`, `Helpbox`, `border`,
+  `draw_image`, `set_command_bar_border` and the push button draw in `src/client/` and `client/src/`. Found:
+  `W3DLeftHUDDraw` (`w3d_radar`), `W3DDrawMapPreview` and `drawSkinnyBorder` (`w3d_map_preview`), `W3DNoDraw`
+  (`window_manager`), the background and foreground draws (#136's scheme layers) and `W3DCommandBarGridDraw` (#194)
+  already translated. `setCommandBarBorder` was translated (`build_tooltip::set_command_bar_border`, #144) and the push
+  button draw already drew the special border (`window_draw::push_button_extras`), but the bar's command windows are drawn
+  by the client's own path and never got either. `W3DPowerDraw`, `W3DCommandBarGenExpDraw`, `W3DCommandBarHelpPopupDraw`,
+  `W3DCommandBarTopDraw`, `W3DRightHUDDraw`, `W3DCameoMovieDraw` and `logN` were absent; the client drew a power bar of
+  its own (new drawing). `W3DPowerDrawA` (:285) is named by no lexicon (W3DFunctionLexicon.cpp:72-94): not translated.
+- **Translated** (`src/client/w3d_command_bar.rs`): `W3DCameoMovieDraw` (W3DControlBar.cpp:49), `W3DRightHUDDraw` (:98),
+  `logN` (:107), `W3DPowerDraw` (:118, with its player choice as `power_draw_energy`), `W3DCommandBarGenExpDraw` (:492),
+  `W3DCommandBarTopDraw` (:616, draws nothing) and `W3DCommandBarHelpPopupDraw` (:917), with
+  `GameWindowManager::winDrawImage` (GameWindowGlobal.cpp:77); `push_button_border` split out of the push button draw
+  (W3DPushButton.cpp:273, 442, 701), unchanged in behaviour.
+- **Upstream quirks kept.** `logN` rounds `log10(value)` to `Real` and divides it by the double `log10(base)` (C's
+  double `log10`, as MSVC's `math.h`). Float-to-`Int` is x86's (`0x80000000` for NaN, infinities and out of range), so no
+  power used puts the needle at `0x80000000`, then left-aligned. The experience bar's top piece is handed over upside
+  down (its rectangle's y0 below y1); the client draws such an image mirrored (`UiQuad::flip`, new glue).
+- **Where it differs.** Upstream finds its images once (function statics); here each draw. A zero-sized centre image, or
+  `levelUp == levelDown`, which upstream divides by (a crash), draw nothing.
+- **Wired** (`client/src/ui.rs`). `GameUi::frame` draws every shown window whose callback is one of these through its
+  translation (`device_draws`, the renamed `grid_draws`), with the local player's power, `TheGlobalData`'s power bar
+  values and the local player's experience read from the World (`WorldClient::power_bar_globals`, `gen_exp_points`,
+  read only). The client's own power bar is drawn only for a power window without `W3DPowerDraw` (the synthetic bar's).
+  `GameUi::sync` gives each command window `setCommandBarBorder` with its button's `ButtonBorderType`
+  (`BarState::borders`), and `frame` draws a push button's special border after its clock.
+- **Differential** (`the_other_command_bar_draws_are_upstreams` in `tests/differential_command_bar_draw.rs`; 5 more
+  verbatim cuts in `differential/wrap_command_bar_draw.cpp`; `log10` interposed to petir's in `tests/support`). 20,000
+  cases: power bars with random players, energy, global data and image sizes; experience bars; popup frames; right HUDs;
+  cameo windows; top draws; `logN` bits. Every `drawImage` (image, rectangle, colour, clip region) compared word for word.
+  - *Predicted:* 0 mismatches; 15 plants caught.
+  - *Result:* **0 mismatches** (power 6,042, experience 4,964, popup 4,006, right HUD 1,571, cameo 966, top 823,
+    logN 1,628; 167,876 images, 7,653 clipped). Before it, three harness misses: a crash (the file's two tests ran the
+    C++ globals at once; now a lock), the C++ output buffer too small, and 6 right-HUD harness mismatches (an `IMAGE`
+    window without an image draws nothing, hiding the default draw's call).
+  - *Plants 10431-10445: 15 of 15 caught*: 10431 52; 10432 1,055; 10433 3,025; 10434 98; 10435 1,076; 10436 235;
+    10437 601; 10438 2,441; 10439 2,351; 10440 660; 10441 2,760; 10442 1,246; 10443 2,499; 10444 748; 10445 484.
+  - **Predictions missed.** The first 10442 (the popup's no-room test at `< 0`) was caught 0 times: at exactly no room
+    both branches draw the same two rectangles, an equivalent mutant; it was replaced. 10431 (52, not ~80) and 10434 (98,
+    not ~150) were caught less often than guessed.
+- **Tests.** Three new lib tests (`the_power_bar`, `the_generals_experience_bar`, `the_help_popups_frame`) and two client
+  tests (`the_power_bar_and_the_command_borders_are_drawn`, `a_reversed_image_rectangle_is_mirrored`), all passing on the
+  first run as predicted in their doc comments. The full runs are on #195.
+- **Left.** The slot exit image (`ControlBar::updateSlotExitImage`, ControlBar.cpp:3101): it writes the logic's command
+  buttons' images, so it needs a client-side override (#197). The help popup's frame is translated but the client draws
+  the popup as its own panel, not from `ControlBarPopupDescription.wnd` (#198). Which windows of the game's own
+  `ControlBar.wnd` name these callbacks was not seen (no game files here), and the client has no observer's bar, so the
+  power bar is always the local player's (#199).
+
 **#194, the bar's scheme colours drawn and its queue and right HUD images (2026-11-17, GitHub #194, sections "Colours
 held but not drawn" and "The rest of `ControlBarScheme::init`'s bar updates").**
 - **What was open (read first).** #145 made `GameUi::bar_colors` hold the scheme's build-up clock colour and command bar
@@ -175,8 +225,9 @@ held but not drawn" and "The rest of `ControlBarScheme::init`'s bar updates").**
 - **Tests.** Three new lib tests (`w3d_command_bar`'s) and one new client test (`the_schemes_colours_are_drawn`). The
   client's `the_draw_list_becomes_quads` changed for the clock's quads. All passed on the first run, as predicted in their
   doc comments. The full runs are on #194.
-- **Left (#195).** The slot exit image (it changes the logic's command buttons). `W3DCommandBarGenExpDraw`,
-  `HelpPopupDraw` and `W3DPowerDraw`. The command windows' button borders. Which window of the game's `ControlBar.wnd`
+- **Left (#195).** The slot exit image (it changes the logic's command buttons). ~~`W3DCommandBarGenExpDraw`,
+  `HelpPopupDraw` and `W3DPowerDraw`. The command windows' button borders.~~ **Corrected 2026-11-18 (#195):** those
+  draws and the borders are translated and drawn (#195's entry); the slot exit image is still left. Which window of the game's `ControlBar.wnd`
   names the grid draw: not seen, no game files here. The death events (#194's third section) are untouched.
 
 **#145, the bar's scheme setters and colours (2026-11-17, GitHub #145, section "The bar's init and popups").**

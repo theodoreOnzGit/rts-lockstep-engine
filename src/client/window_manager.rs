@@ -681,6 +681,11 @@ fn gadget_style(style: u32) -> u32 {
 }
 
 impl GameWindowManager {
+    /// (#195) The display's clip region while it is on (`Display::setClipRegion`; `None` after `enableClipping(FALSE)`).
+    pub fn display_clip(&self) -> Option<(i32, i32, i32, i32)> {
+        self.clip
+    }
+
     /// A manager for a display of `display` pixels.
     pub fn new(display: (i32, i32)) -> Self {
         GameWindowManager { display, ..Default::default() }

@@ -3809,7 +3809,9 @@ extern "C" {
 
     // GitHub #194: W3DControlBar.cpp's W3DCommandBarGridDraw, W3DDisplay's drawRectClock and drawRemainingRectClock,
     // GameWindow::winSetEnabledBorderColor, GadgetButtonSetDisabledImage, ControlBar's updateBuildQueueDisabledImages and
-    // updateRightHUDImage, and ControlBarScheme::init's two lines calling them, verbatim
+    // updateRightHUDImage, and ControlBarScheme::init's two lines calling them, verbatim; #195: W3DControlBar.cpp's
+    // W3DCameoMovieDraw, W3DRightHUDDraw, logN, W3DPowerDraw, W3DCommandBarGenExpDraw, W3DCommandBarTopDraw and
+    // W3DCommandBarHelpPopupDraw with GameWindowManager::winDrawImage (kinds 4 to 10)
     // (differential/wrap_command_bar_draw.cpp, which documents the words).
     pub fn ref_command_bar_draw_case(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
