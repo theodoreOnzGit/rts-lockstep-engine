@@ -28,3 +28,6 @@ pub mod user;
 pub mod staging_room_game_info;
 pub mod buddy_thread;
 pub mod persistent_storage_thread;
+pub mod peer_thread;
+pub mod ping_thread;
+pub mod game_results_thread;
