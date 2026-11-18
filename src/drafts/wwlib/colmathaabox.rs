@@ -307,7 +307,11 @@ pub fn collide_aabox_aabox(box_: &AABoxClass, move_: &Vector3, box2: &AABoxClass
     if context.max_frac < result.fraction {
         result.fraction = context.max_frac;
         result.normal.set(0.0, 0.0, 0.0);
-        result.normal[context.axis_id as usize] = (-context.side) as f32;
+        // DEVIATION (defined behaviour where upstream is not): with `AxisId == -1` upstream writes `Normal[-1]` (the
+        // `Fraction` before it) with `-Side` of an uninitialised `Side`; here the write is skipped.
+        if context.axis_id >= 0 {
+            result.normal[context.axis_id as usize] = (-context.side) as f32;
+        }
         if result.compute_contact_point {
             // upstream: WWDEBUG_SAY(("AABox-AABox collision does not currently support contact point computation"))
         }

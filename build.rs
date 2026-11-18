@@ -10850,6 +10850,7 @@ mod differential {
             .file(dif.join("wrap_wwmath.cpp"))
             .file(ww.join("WWMath/matrix3d.cpp"));
         wm.compile("upstream_wwmath");
+        drafts_colmath(&shim, &dif, &ww);
 
         // #11, the terrain (differential/wrap_terrain_mesh.cpp, where the stand-ins for the D3D device, the file system
         // and TheTerrainTypes are). Nothing is transcribed but those stand-ins and the members of WorldHeightMap and
@@ -11259,5 +11260,22 @@ mod differential {
         ] {
             println!("cargo:rerun-if-changed={p}");
         }
+    }
+
+    /// (#215) The WWMath collision maths drafts' reference: upstream's colmath*.cpp, aabox.cpp, obbox.cpp, lineseg.cpp and
+    /// tri.cpp compiled whole and unchanged (no cut, no edit), with differential/wrap_draft_colmath.cpp on top.
+    fn drafts_colmath(shim: &Path, dif: &Path, ww: &Path) {
+        println!("cargo:rerun-if-changed=differential/wrap_draft_colmath.cpp");
+        let wm = ww.join("WWMath");
+        let mut cm = cc::Build::new();
+        base(&mut cm);
+        cm.include(shim).include(&wm).include(ww.join("WWLib")).file(dif.join("wrap_draft_colmath.cpp"));
+        for f in [
+            "colmath", "colmathaabox", "colmathaabtri", "colmathfrustum", "colmathline", "colmathobbobb", "colmathobbox",
+            "colmathobbtri", "colmathplane", "colmathsphere", "aabox", "obbox", "lineseg", "tri",
+        ] {
+            cm.file(wm.join(format!("{f}.cpp")));
+        }
+        cm.compile("upstream_draft_colmath");
     }
 }
