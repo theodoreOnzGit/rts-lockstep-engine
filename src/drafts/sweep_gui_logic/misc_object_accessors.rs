@@ -22,7 +22,8 @@
 use crate::common::game_common::VeterancyLevel;
 use crate::common::game_type::{ObjectId, INVALID_ID};
 
-/// `TrainTrack`'s reference count (`m_refCount`).
+/// `TrainTrack`'s reference count (`m_refCount`). The verified port needs none: `TrainTrack` is shared by `Arc`
+/// (`crate::logic::modules::railroad_behavior::TrainTrack`), whose count is the reference count; drafted as the record.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TrainTrackRefCount {
     pub ref_count: i32,
