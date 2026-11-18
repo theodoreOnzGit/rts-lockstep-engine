@@ -111,3 +111,65 @@ pub fn validate_texture_size(width: u32, height: u32, depth: u32, max_width: u32
 
     (poweroftwowidth, poweroftwoheight, poweroftwodepth)
 }
+
+/// `struct VertexFormatXYZDUV2` (dx8fvf.h): position, diffuse, two UV sets. `DX8_FVF_XYZDUV2`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct VertexFormatXYZDUV2 {
+    /// `x`.
+    pub x: f32,
+    /// `y`.
+    pub y: f32,
+    /// `z`.
+    pub z: f32,
+    /// `diffuse`: packed ARGB.
+    pub diffuse: u32,
+    /// `u1`.
+    pub u1: f32,
+    /// `v1`.
+    pub v1: f32,
+    /// `u2`.
+    pub u2: f32,
+    /// `v2`.
+    pub v2: f32,
+}
+
+/// `struct VertexFormatXYZNDUV1` (dx8fvf.h): position, normal, diffuse, one UV set. `DX8_FVF_XYZNDUV1`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct VertexFormatXYZNDUV1 {
+    /// `x`.
+    pub x: f32,
+    /// `y`.
+    pub y: f32,
+    /// `z`.
+    pub z: f32,
+    /// `nx`.
+    pub nx: f32,
+    /// `ny`.
+    pub ny: f32,
+    /// `nz`.
+    pub nz: f32,
+    /// `diffuse`: packed ARGB.
+    pub diffuse: u32,
+    /// `u1`.
+    pub u1: f32,
+    /// `v1`.
+    pub v1: f32,
+}
+
+/// A `TextureClass *` of the device side (`WW3DAssetManager::Get_Texture`), as an opaque id the renderer assigns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TextureHandle(pub u32);
+
+/// The mesh data `MeshClass::Peek_Model()` hands the terrain buffers (`Get_Vertex_Count`, `Get_Vertex_Array`,
+/// `Get_Vertex_Normal_Array`, `Get_UV_Array_By_Index(0)`, `Get_Polygon_Count`, `Get_Polygon_Array`).
+#[derive(Clone, Debug, Default)]
+pub struct MeshModelData {
+    /// `Get_Vertex_Array`.
+    pub vertices: Vec<Vector3>,
+    /// `Get_Vertex_Normal_Array`.
+    pub normals: Vec<Vector3>,
+    /// `Get_UV_Array_By_Index(0)`: `(U, V)` per vertex.
+    pub uvs: Vec<(f32, f32)>,
+    /// `Get_Polygon_Array`: `TriIndex` `(I, J, K)` per polygon.
+    pub polygons: Vec<(u32, u32, u32)>,
+}
