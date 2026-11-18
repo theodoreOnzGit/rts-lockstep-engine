@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #208): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameClient/DisplayStringManager.h
@@ -14,8 +13,8 @@
 //! tracks them, it does not own them). Upstream links through the string's `m_next`/`m_prev` pointers; here the links are the
 //! string's index in the host's arena (`Option<usize>`), and the string's two link fields are [`DisplayStringLinks`].
 
-use crate::common::message_stream::Disposition;
-use crate::common::message_types::{MessageType, MSG_BEGIN_NETWORK_MESSAGES, MSG_CLEAR_GAME_DATA, MSG_END_NETWORK_MESSAGES, MSG_FRAME_TICK, MSG_NEW_GAME};
+use crate::common::message_stream::{Disposition, MessageType};
+use crate::common::message_types::{MSG_BEGIN_NETWORK_MESSAGES, MSG_CLEAR_GAME_DATA, MSG_END_NETWORK_MESSAGES, MSG_FRAME_TICK, MSG_NEW_GAME};
 
 /// `DisplayString::m_next` / `m_prev`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

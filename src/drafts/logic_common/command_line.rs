@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #208): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/Common/CommandLine.cpp
@@ -93,7 +92,7 @@ pub fn convert_short_map_path_to_long_map_path(map_name: &mut Vec<u8>) {
     let seps: &[u8] = b"\\/";
     // AsciiString::nextToken(&token, "\\/"): skips leading separators, takes up to the next separator, and the rest stays.
     let mut rest: &[u8] = &path;
-    let mut next_token = |rest: &mut &[u8]| -> Vec<u8> {
+    let next_token = |rest: &mut &[u8]| -> Vec<u8> {
         let mut start = 0;
         while start < rest.len() && seps.contains(&rest[start]) {
             start += 1;
@@ -387,6 +386,15 @@ pub fn parse_win<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, _args: &[V
 pub fn parse_x_res<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, args: &[Vec<u8>]) -> i32 {
     if args.len() > 1 {
         ctx.global_data.x_resolution = atoi(&args[1]);
+        return 2;
+    }
+    1
+}
+
+/// `parseYRes(args, num)`: `atoi(args[1])` when there is one (eats 2), else eats 1.
+pub fn parse_y_res<H: CommandLineHost>(ctx: &mut CommandLineContext<H>, args: &[Vec<u8>]) -> i32 {
+    if args.len() > 1 {
+        ctx.global_data.y_resolution = atoi(&args[1]);
         return 2;
     }
     1
