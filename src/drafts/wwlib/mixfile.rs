@@ -246,7 +246,7 @@ impl MixFileFactoryClass {
             return;
         }
 
-        // The directory of the archive ( drive + dir)
+        // The directory of the archive (`_splitpath` drive + dir)
         let path = match self.mix_filename.rfind(|c| c == '/' || c == '\\') {
             Some(i) => self.mix_filename[..=i].to_string(),
             None => String::new(),
