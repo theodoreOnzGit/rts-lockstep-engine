@@ -11263,7 +11263,7 @@ mod differential {
     }
 
     /// (#215) The WWMath collision maths drafts' reference: upstream's colmath*.cpp, aabox.cpp, obbox.cpp, lineseg.cpp and
-    /// tri.cpp compiled whole and unchanged (no cut, no edit), with differential/wrap_draft_colmath.cpp on top.
+    /// tri.cpp and matrix3.cpp (OBBoxClass::Transform calls Matrix3x3::Multiply) compiled whole and unchanged (no cut, no edit), with differential/wrap_draft_colmath.cpp on top.
     fn drafts_colmath(shim: &Path, dif: &Path, ww: &Path) {
         println!("cargo:rerun-if-changed=differential/wrap_draft_colmath.cpp");
         let wm = ww.join("WWMath");
@@ -11272,7 +11272,7 @@ mod differential {
         cm.include(shim).include(&wm).include(ww.join("WWLib")).file(dif.join("wrap_draft_colmath.cpp"));
         for f in [
             "colmath", "colmathaabox", "colmathaabtri", "colmathfrustum", "colmathline", "colmathobbobb", "colmathobbox",
-            "colmathobbtri", "colmathplane", "colmathsphere", "aabox", "obbox", "lineseg", "tri",
+            "colmathobbtri", "colmathplane", "colmathsphere", "aabox", "obbox", "lineseg", "tri", "matrix3",
         ] {
             cm.file(wm.join(format!("{f}.cpp")));
         }

@@ -10,6 +10,7 @@
 //! assert in obb->tri collision, investigate later"); `TestSide` is an `int` assigned `-1.0f` / `1.0f`; the contact
 //! normal for `AXIS_N` is `-Side * *Tri.N` (the triangle's own normal) whereas the context's `N` is unnormalised.
 
+use crate::logic::modules::plant;
 use super::colmath::{CastResultStruct, COLLISION_EPSILON};
 use super::obbox::OBBoxClass;
 use crate::ww::tri::TriClass;
@@ -104,7 +105,7 @@ impl BTCollisionStruct {
             eps = COLLISION_EPSILON * self.test_axis.length(); // trying to only compute epsilon if I have to
         }
 
-        if lp - leb0 > -eps {
+        if (if plant(10514) { lp - leb0 > eps } else { lp - leb0 > -eps }) {
             self.start_bad = false;
             if leb1 - leb0 > 0.0f32 {
                 let frac = (lp - leb0) / (leb1 - leb0);
@@ -301,7 +302,7 @@ impl BTCollisionStruct {
             }
         }
 
-        let yval = if self.point == 0 { 0.0f32 } else { 1.0f32 };
+        let yval = if (if plant(10516) { self.point == 1 } else { self.point == 0 }) { 0.0f32 } else { 1.0f32 };
         let den = Vector3::dot_product(&self.n, &self.axe[k][edge]);
         if wwmath::fabs(den) > 0.0f32 {
             let dxe = Vector3::cross_product(&self.final_d, &self.e[edge]);
@@ -329,7 +330,7 @@ impl BTCollisionStruct {
         if self.axis_id >= AXIS_A0E0 {
             let newc = self.box_.center + result.fraction * self.box_move;
             let newv0 = self.tri.v[0] + result.fraction * self.tri_move;
-            self.final_d = newv0 - newc;
+            self.final_d = (if plant(10518) { newc - newv0 } else { newv0 - newc });
         }
 
         match self.axis_id {
@@ -366,7 +367,26 @@ impl BTCollisionStruct {
             _ => {}
         }
 
-        // (the clamp of x[] to the box extents is commented out upstream)
+        // In certain circumstances the x's computed above are outside the size of the box (upstream's comment: the
+        // separating axis is the triangle normal but an AxE axis lines up with it). Upstream clamps all of the x's to
+        // be within the box here. ~~"the clamp is commented out upstream"~~ **Corrected 2026-11-18 (#215):** the clamp is
+        // live code in colmathobbtri.cpp (only the explanation above it is a comment); the differential test found it.
+        if x[0] > self.box_.extent.x {
+            x[0] = self.box_.extent.x;
+        } else if x[0] < -self.box_.extent.x {
+            x[0] = -self.box_.extent.x;
+        }
+        if x[1] > self.box_.extent.y {
+            x[1] = self.box_.extent.y;
+        } else if x[1] < -self.box_.extent.y {
+            x[1] = -self.box_.extent.y;
+        }
+        if x[2] > self.box_.extent.z {
+            x[2] = self.box_.extent.z;
+        } else if (if plant(10517) { x[2] < -self.box_.extent.y } else { x[2] < -self.box_.extent.z }) {
+            x[2] = -self.box_.extent.z;
+        }
+
         result.contact_point.x = self.box_.center.x + x[0] * self.a[0].x + x[1] * self.a[1].x + x[2] * self.a[2].x;
         result.contact_point.y = self.box_.center.y + x[0] * self.a[0].y + x[1] * self.a[1].y + x[2] * self.a[2].y;
         result.contact_point.z = self.box_.center.z + x[0] * self.a[0].z + x[1] * self.a[1].z + x[2] * self.a[2].z;
@@ -473,7 +493,7 @@ pub fn collide_obbox_tri(box_: &OBBoxClass, move_: &Vector3, tri: &TriClass, tri
         cc.max_frac = 0.0f32;
     }
 
-    if cc.max_frac < 1.0f32 && cc.max_frac <= result.fraction {
+    if cc.max_frac < 1.0f32 && (if plant(10515) { cc.max_frac < result.fraction } else { cc.max_frac <= result.fraction }) {
         let mut normal = Vector3::new(0.0, 0.0, 0.0);
         cc.compute_contact_normal(&mut normal);
 
@@ -532,7 +552,7 @@ impl BTIntersectStruct {
         if lp - leb0 <= 0.0f32 {
             eps = COLLISION_EPSILON * self.test_axis.length(); // trying to only compute epsilon if I have to
         }
-        lp - leb0 > -eps
+        (if plant(10519) { lp - leb0 > eps } else { lp - leb0 > -eps })
     }
 
     fn cross_axis(&mut self, dp: f32, leb0: f32) -> bool {
@@ -583,7 +603,7 @@ impl BTIntersectStruct {
             dist = -dist;
         }
 
-        let leb0 = self.box_extent.x * wwmath::fabs(self.an[0]) + self.box_extent.y * wwmath::fabs(self.an[1]) + self.box_extent.z * wwmath::fabs(self.an[2]);
+        let leb0 = self.box_extent.x * wwmath::fabs(self.an[0]) + self.box_extent.y * wwmath::fabs(self.an[1]) + self.box_extent.z * (if plant(10520) { wwmath::fabs(self.an[1]) } else { wwmath::fabs(self.an[2]) });
         let lp = dist; // this is the "optimization", don't have to find lp
         self.separation_test(lp, leb0)
     }
@@ -608,7 +628,7 @@ pub fn intersection_test_obbox_tri(box_: &OBBoxClass, tri: &TriClass) -> bool {
         cc.test_axis = cc.a[i];
         cc.ae[i][0] = Vector3::dot_product(&cc.a[i], &cc.e[0]);
         cc.ae[i][1] = Vector3::dot_product(&cc.a[i], &cc.e[1]);
-        if cc.basis_axis(ext[i], cc.ae[i][0], cc.ae[i][1]) {
+        if (if plant(10521) { cc.basis_axis(ext[0], cc.ae[i][0], cc.ae[i][1]) } else { cc.basis_axis(ext[i], cc.ae[i][0], cc.ae[i][1]) }) {
             return false;
         }
     }

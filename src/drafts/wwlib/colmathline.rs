@@ -10,6 +10,7 @@
 //! `Collide(line, tri)` is written through `PlaneClass(*tri.N, *tri.V[0])` (`D = N . V0`).
 //! (`Overlap_Test(min, max, line)` of colmathline.h is `colmathaabox::overlap_test_min_max_line`.)
 
+use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
 use super::aaplane::AAPlaneClass;
 use super::colmath::CastResultStruct;
@@ -60,7 +61,7 @@ pub fn collide_line_aaplane(line: &LineSegClass, plane: &AAPlaneClass, result: &
     let t = num / den;
 
     // "If t is not between 0 and 1, the line containing the segment intersects the plane but the segment does not"
-    if (t < 0.0f32) || (t > 1.0f32) {
+    if (if plant(10491) { (t < 0.0f32) || (t >= 1.0f32) } else { (t < 0.0f32) || (t > 1.0f32) }) {
         return false;
     }
 
@@ -85,7 +86,7 @@ pub fn collide_line_plane(line: &LineSegClass, plane: &PlaneClass, result: &mut 
     let num = -(Vector3::dot_product(&plane.n, line.get_p0()) - plane.d);
     let t = num / den;
 
-    if (t < 0.0f32) || (t > 1.0f32) {
+    if (if plant(10492) { (t <= 0.0f32) || (t > 1.0f32) } else { (t < 0.0f32) || (t > 1.0f32) }) {
         return false;
     }
 
@@ -105,7 +106,7 @@ pub fn collide_line_plane(line: &LineSegClass, plane: &PlaneClass, result: &mut 
 /// faces collide (no backface test). `TRACK_COLLISION_RAY_TRI` counters are debug-only.
 pub fn collide_line_tri(line: &LineSegClass, tri: &TriClass, res: &mut CastResultStruct) -> bool {
     // "Compute intersection of the line with the plane of the polygon": PlaneClass(*tri.N, *tri.V[0])
-    let plane = PlaneClass { n: tri.n, d: Vector3::dot_product(&tri.n, &tri.v[0]) };
+    let plane = PlaneClass { n: tri.n, d: (if plant(10493) { Vector3::dot_product(&tri.n, &tri.v[1]) } else { Vector3::dot_product(&tri.n, &tri.v[0]) }) };
 
     let den = Vector3::dot_product(&plane.n, line.get_dp());
 
@@ -164,7 +165,7 @@ pub fn collide_line_sphere(line: &LineSegClass, sphere: &SphereClass, res: &mut 
         if frac < res.fraction {
             res.fraction = frac;
 
-            let p = *line.get_p0() + (clen - d) * *line.get_dir();
+            let p = *line.get_p0() + (if plant(10494) { (clen + d) * *line.get_dir() } else { (clen - d) * *line.get_dir() });
             let mut norm = p - sphere.center;
             norm /= sphere.radius;
             res.normal = norm;
@@ -199,7 +200,7 @@ pub fn collide_line_aabox(line: &LineSegClass, box_: &AABoxClass, res: &mut Cast
     }
 
     // Now, if this intersection is before any current intersection that we've found, install our intersection
-    if test.fraction < res.fraction {
+    if (if plant(10499) { test.fraction <= res.fraction } else { test.fraction < res.fraction }) {
         res.fraction = test.fraction;
         assert!(test.side != BOX_SIDE_MIDDLE);
         res.normal = box_normal(test.axis, test.side);
@@ -220,7 +221,7 @@ pub fn collide_line_obbox(line: &LineSegClass, box_: &OBBoxClass, result: &mut C
     test.min = box_.center - box_.extent;
     test.max = box_.center + box_.extent;
     test.p0 = box_.basis.transpose().mul_vector(&(*line.get_p0() - box_.center)) + box_.center;
-    test.dp = box_.basis.transpose().mul_vector(line.get_dp());
+    test.dp = (if plant(10498) { box_.basis.mul_vector(line.get_dp()) } else { box_.basis.transpose().mul_vector(line.get_dp()) });
 
     // check ray against the box, exit if the ray totally missed the box,
     if !test_aligned_box(&mut test) {
@@ -244,7 +245,7 @@ pub fn collide_line_obbox(line: &LineSegClass, box_: &OBBoxClass, result: &mut C
             _ => {}
         }
 
-        if test.side == BOX_SIDE_NEGATIVE {
+        if (if plant(10497) { test.side == BOX_SIDE_POSITIVE } else { test.side == BOX_SIDE_NEGATIVE }) {
             result.normal = -result.normal;
         }
 
@@ -275,7 +276,7 @@ fn test_aligned_box(test: &mut BoxTestStruct) -> bool {
             quadrant[i] = BOX_SIDE_NEGATIVE;
             candidateplane[i] = test.min[i];
             inside = false;
-        } else if test.p0[i] > test.max[i] {
+        } else if (if plant(10495) { test.p0[i] >= test.max[i] } else { test.p0[i] > test.max[i] }) {
             quadrant[i] = BOX_SIDE_POSITIVE;
             candidateplane[i] = test.max[i];
             inside = false;
@@ -303,7 +304,7 @@ fn test_aligned_box(test: &mut BoxTestStruct) -> bool {
     // Get the largest of the maxt's for the final choice of intersection
     let mut intersection_plane = 0usize;
     for i in 1..3 {
-        if maxt[i] > maxt[intersection_plane] {
+        if (if plant(10496) { maxt[i] < maxt[intersection_plane] } else { maxt[i] > maxt[intersection_plane] }) {
             intersection_plane = i;
         }
     }

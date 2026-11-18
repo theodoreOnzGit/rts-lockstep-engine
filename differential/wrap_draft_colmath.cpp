@@ -125,6 +125,21 @@ static void wr_cr(Writer & w, const CastResultStruct & c)
 	w.v(c.ContactPoint);
 }
 
+static Matrix3D rd_tm(Reader & r)
+{
+	float f[12];
+	for (int i = 0; i < 12; i++) {
+		f[i] = r.f();
+	}
+	return Matrix3D(f);
+}
+static MinMaxAABoxClass rd_mm(Reader & r) { Vector3 a = r.v(); Vector3 b = r.v(); return MinMaxAABoxClass(a, b); }
+static void wr_aab(Writer & w, const AABoxClass & b) { w.v(b.Center); w.v(b.Extent); }
+static void wr_mm(Writer & w, const MinMaxAABoxClass & b) { w.v(b.MinCorner); w.v(b.MaxCorner); }
+static void wr_obb(Writer & w, const OBBoxClass & b) { for (int i = 0; i < 3; i++) w.v(b.Basis[i]); w.v(b.Center); w.v(b.Extent); }
+static void wr_sph(Writer & w, const SphereClass & s) { w.v(s.Center); w.f(s.Radius); }
+static void wr_line(Writer & w, const LineSegClass & l) { w.v(l.Get_P0()); w.v(l.Get_P1()); w.v(l.Get_DP()); w.v(l.Get_Dir()); w.f(l.Get_Length()); }
+
 } /* namespace dcm */
 
 using namespace dcm;
@@ -210,6 +225,61 @@ extern "C" int ref_dcm_run(const unsigned * in, int nin, unsigned * out, int cap
 	case 71: { OBBoxClass a = rd_obb(r); Vector3 m = r.v(); TriHolder b; b.set(r); Vector3 m2 = r.v(); CastResultStruct c; rd_cr(r, c); bool k = CM::Collide(a, m, b.t, m2, &c); w.u(k); wr_cr(w, c); break; }
 	case 72: { OBBoxClass a = rd_obb(r); Vector3 m = r.v(); AABoxClass b = rd_aab(r); Vector3 m2 = r.v(); CastResultStruct c; rd_cr(r, c); bool k = CM::Collide(a, m, b, m2, &c); w.u(k); wr_cr(w, c); break; }
 	case 73: { OBBoxClass a = rd_obb(r); Vector3 m = r.v(); OBBoxClass b = rd_obb(r); Vector3 m2 = r.v(); CastResultStruct c; rd_cr(r, c); bool k = CM::Collide(a, m, b, m2, &c); w.u(k); wr_cr(w, c); break; }
+
+	/* ---- AABoxClass / MinMaxAABoxClass (aabox.h, aabox.cpp) ---- */
+	case 100: { AABoxClass a = rd_aab(r); Vector3 p = r.v(); w.f(a.Project_To_Axis(p)); break; }
+	case 101: { AABoxClass a = rd_aab(r); w.f(a.Volume()); break; }
+	case 102: { AABoxClass a = rd_aab(r); Vector3 p = r.v(); w.u(a.Contains(p)); break; }
+	case 103: { AABoxClass a = rd_aab(r); AABoxClass b = rd_aab(r); w.u(a.Contains(b)); break; }
+	case 104: { AABoxClass a = rd_aab(r); MinMaxAABoxClass b = rd_mm(r); w.u(a.Contains(b)); break; }
+	case 105: { AABoxClass a = rd_aab(r); Matrix3D m = rd_tm(r); a.Transform(m); wr_aab(w, a); break; }
+	case 106: { Matrix3D m = rd_tm(r); AABoxClass a = rd_aab(r); AABoxClass o; AABoxClass::Transform(m, a, &o); wr_aab(w, o); break; }
+	case 107: { AABoxClass a = rd_aab(r); Vector3 p = r.v(); a.Add_Point(p); wr_aab(w, a); break; }
+	case 108: { AABoxClass a = rd_aab(r); AABoxClass b = rd_aab(r); a.Add_Box(b); wr_aab(w, a); break; }
+	case 109: { AABoxClass a = rd_aab(r); MinMaxAABoxClass b = rd_mm(r); a.Add_Box(b); wr_aab(w, a); break; }
+	case 110: { int n = (int)r.u(); Vector3 pts[8]; for (int i = 0; i < n; i++) pts[i] = r.v(); AABoxClass a(pts, n); wr_aab(w, a); break; }
+	case 111: { MinMaxAABoxClass b = rd_mm(r); AABoxClass a(b); wr_aab(w, a); break; }
+	case 112: { LineSegClass l = rd_line(r); AABoxClass a; a.Init(l); wr_aab(w, a); break; }
+	case 113: { Vector3 mn = r.v(); Vector3 mx = r.v(); AABoxClass a; a.Init_Min_Max(mn, mx); wr_aab(w, a); break; }
+	case 114: { AABoxClass a = rd_aab(r); Vector3 p = r.v(); a.Translate(p); wr_aab(w, a); break; }
+	case 115: { int n = (int)r.u(); Vector3 pts[8]; for (int i = 0; i < n; i++) pts[i] = r.v(); MinMaxAABoxClass b(pts, n); wr_mm(w, b); break; }
+	case 116: { AABoxClass a = rd_aab(r); MinMaxAABoxClass b(a); wr_mm(w, b); break; }
+	case 117: { MinMaxAABoxClass b = rd_mm(r); Vector3 p = r.v(); b.Add_Point(p); wr_mm(w, b); break; }
+	case 118: { MinMaxAABoxClass b = rd_mm(r); MinMaxAABoxClass c = rd_mm(r); b.Add_Box(c); wr_mm(w, b); break; }
+	case 119: { MinMaxAABoxClass b = rd_mm(r); AABoxClass c = rd_aab(r); b.Add_Box(c); wr_mm(w, b); break; }
+	case 120: { MinMaxAABoxClass b = rd_mm(r); Vector3 mn = r.v(); Vector3 mx = r.v(); b.Add_Box(mn, mx); wr_mm(w, b); break; }
+	case 121: { MinMaxAABoxClass b = rd_mm(r); Matrix3D m = rd_tm(r); b.Transform(m); wr_mm(w, b); break; }
+	case 122: { MinMaxAABoxClass b = rd_mm(r); Vector3 p = r.v(); b.Translate(p); wr_mm(w, b); break; }
+	case 123: { MinMaxAABoxClass b = rd_mm(r); w.f(b.Volume()); break; }
+	case 124: { MinMaxAABoxClass b = rd_mm(r); b.Init_Empty(); wr_mm(w, b); break; }
+	/* ---- OBBoxClass (obbox.h, obbox.cpp) ---- */
+	case 130: { OBBoxClass a = rd_obb(r); Vector3 p = r.v(); w.f(a.Project_To_Axis(p)); break; }
+	case 131: { OBBoxClass a = rd_obb(r); w.f(a.Volume()); break; }
+	case 132: { OBBoxClass a = rd_obb(r); float prm[3]; prm[0] = r.f(); prm[1] = r.f(); prm[2] = r.f(); Vector3 o; a.Compute_Point(prm, &o); w.v(o); break; }
+	case 133: { OBBoxClass a = rd_obb(r); Vector3 o; a.Compute_Axis_Aligned_Extent(&o); w.v(o); break; }
+	case 134: { Matrix3D m = rd_tm(r); OBBoxClass a = rd_obb(r); OBBoxClass o; OBBoxClass::Transform(m, a, &o); wr_obb(w, o); break; }
+	case 135: { OBBoxClass a = rd_obb(r); OBBoxClass b = rd_obb(r); w.u(a == b); break; }
+	case 137: { OBBoxClass a = rd_obb(r); OBBoxClass b = rd_obb(r); w.u(Oriented_Boxes_Intersect(a, b)); break; }
+	case 138: { OBBoxClass a = rd_obb(r); Vector3 v0 = r.v(); OBBoxClass b = rd_obb(r); Vector3 v1 = r.v(); float dt = r.f(); w.u(Oriented_Boxes_Collide(a, v0, b, v1, dt)); break; }
+	case 139: { OBBoxClass a = rd_obb(r); TriHolder t; t.set(r); w.u(Oriented_Box_Intersects_Tri(a, t.t)); break; }
+	/* ---- SphereClass (sphere.h) ---- */
+	case 140: { Matrix3D m = rd_tm(r); Vector3 p = r.v(); float rad = r.f(); SphereClass s(m, p, rad); wr_sph(w, s); break; }
+	case 141: { SphereClass s = rd_sph(r); Vector3 p = r.v(); s.Re_Center(p); wr_sph(w, s); break; }
+	case 142: { SphereClass s = rd_sph(r); SphereClass t = rd_sph(r); s.Add_Sphere(t); wr_sph(w, s); break; }
+	case 143: { SphereClass s = rd_sph(r); Matrix3D m = rd_tm(r); s.Transform(m); wr_sph(w, s); break; }
+	case 144: { SphereClass s = rd_sph(r); w.f(s.Volume()); break; }
+	case 145: { int n = (int)r.u(); Vector3 pts[8]; for (int i = 0; i < n; i++) pts[i] = r.v(); SphereClass s(pts, n); wr_sph(w, s); break; }
+	case 146: { Vector3 p = r.v(); SphereClass t = rd_sph(r); SphereClass s(p, t); wr_sph(w, s); break; }
+	case 147: { SphereClass s = rd_sph(r); Matrix3D m = rd_tm(r); s *= m; wr_sph(w, s); break; }
+	case 148: { SphereClass s = rd_sph(r); SphereClass t = rd_sph(r); w.u(Spheres_Intersect(s, t)); break; }
+	case 149: { SphereClass s = rd_sph(r); SphereClass t = rd_sph(r); SphereClass o = Add_Spheres(s, t); wr_sph(w, o); break; }
+	case 150: { Matrix3D m = rd_tm(r); SphereClass s = rd_sph(r); SphereClass o = Transform_Sphere(m, s); wr_sph(w, o); break; }
+	/* ---- LineSegClass (lineseg.h, lineseg.cpp), AAPlaneClass ---- */
+	case 160: { LineSegClass l = rd_line(r); Matrix3D m = rd_tm(r); LineSegClass o(l, m); wr_line(w, o); break; }
+	case 161: { LineSegClass l = rd_line(r); float t = r.f(); Vector3 o; l.Compute_Point(t, &o); w.v(o); break; }
+	case 162: { LineSegClass l = rd_line(r); Vector3 p = r.v(); w.v(l.Find_Point_Closest_To(p)); break; }
+	case 163: { LineSegClass l = rd_line(r); LineSegClass m = rd_line(r); Vector3 p1 = r.v(); float f1 = r.f(); Vector3 p2 = r.v(); float f2 = r.f(); bool k = l.Find_Intersection(m, &p1, &f1, &p2, &f2); w.u(k); w.v(p1); w.f(f1); w.v(p2); w.f(f2); break; }
+	case 170: { AAPlaneClass a = rd_aap(r); Vector3 o(9, 8, 7); a.Get_Normal(&o); w.v(o); break; }
 
 	default:
 		return -1;

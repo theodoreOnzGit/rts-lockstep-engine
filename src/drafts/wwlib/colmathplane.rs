@@ -9,6 +9,7 @@
 //! Upstream defects kept: `Overlap_Test(AAPlane, Sphere)` tests `delta < sphere.Radius` (not `-Radius`) for NEG;
 //! `Overlap_Test(AAPlane, OBBox)` is "TODO" with `WWASSERT(0)` and returns POS.
 
+use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
 use super::aaplane::AAPlaneClass;
 use super::colmath::{eval_overlap_mask, OverlapType, COINCIDENCE_EPSILON};
@@ -26,7 +27,7 @@ pub fn get_far_extent(normal: &Vector3, extent: &Vector3) -> Vector3 {
     let mut posfarpt = Vector3::new(0.0, 0.0, 0.0);
     posfarpt.x = if wwmath::fast_is_float_positive(normal.x) { extent.x } else { -extent.x };
     posfarpt.y = if wwmath::fast_is_float_positive(normal.y) { extent.y } else { -extent.y };
-    posfarpt.z = if wwmath::fast_is_float_positive(normal.z) { extent.z } else { -extent.z };
+    posfarpt.z = if wwmath::fast_is_float_positive(normal.z) { extent.z } else { (if plant(10479) { extent.z } else { -extent.z }) };
     posfarpt
 }
 
@@ -34,7 +35,7 @@ pub fn get_far_extent(normal: &Vector3, extent: &Vector3) -> Vector3 {
 /// `COINCIDENCE_EPSILON` of the plane is ON.
 pub fn overlap_test_plane_point(plane: &PlaneClass, point: &Vector3) -> OverlapType {
     let delta = Vector3::dot_product(point, &plane.n) - plane.d;
-    if delta > COINCIDENCE_EPSILON {
+    if (if plant(10474) { delta > wwmath::WWMATH_EPSILON } else { delta > COINCIDENCE_EPSILON }) {
         return OverlapType::Pos;
     }
     if delta < -COINCIDENCE_EPSILON {
@@ -51,7 +52,7 @@ pub fn overlap_test_plane_aabox(plane: &PlaneClass, box_: &AABoxClass) -> Overla
     posfarpt += box_.center;
     negfarpt += box_.center;
 
-    if overlap_test_plane_point(plane, &negfarpt) == OverlapType::Pos {
+    if (if plant(10478) { overlap_test_plane_point(plane, &posfarpt) == OverlapType::Pos } else { overlap_test_plane_point(plane, &negfarpt) == OverlapType::Pos }) {
         return OverlapType::Pos;
     }
     if overlap_test_plane_point(plane, &posfarpt) == OverlapType::Neg {
@@ -62,7 +63,7 @@ pub fn overlap_test_plane_aabox(plane: &PlaneClass, box_: &AABoxClass) -> Overla
 
 /// `CollisionMath::Overlap_Test(const AAPlaneClass & plane, const Vector3 & point)` (colmathplane.cpp:40).
 pub fn overlap_test_aaplane_point(plane: &AAPlaneClass, point: &Vector3) -> OverlapType {
-    let delta = point[plane.normal as usize] - plane.dist;
+    let delta = (if plant(10475) { plane.dist - point[plane.normal as usize] } else { point[plane.normal as usize] - plane.dist });
     if delta > COINCIDENCE_EPSILON {
         return OverlapType::Pos;
     }
@@ -96,7 +97,7 @@ pub fn overlap_test_aaplane_sphere(plane: &AAPlaneClass, sphere: &SphereClass) -
     if delta > sphere.radius {
         return OverlapType::Pos;
     }
-    if delta < sphere.radius {
+    if (if plant(10476) { delta < -sphere.radius } else { delta < sphere.radius }) {
         return OverlapType::Neg;
     }
     OverlapType::Both
@@ -119,7 +120,7 @@ pub fn overlap_test_aaplane_aabox(plane: &AAPlaneClass, box_: &AABoxClass) -> Ov
     }
 
     // check the 'max' side of the box
-    delta = (box_.center[n] + box_.extent[n]) - plane.dist;
+    delta = (if plant(10477) { (box_.center[n] - box_.extent[n]) - plane.dist } else { (box_.center[n] + box_.extent[n]) - plane.dist });
     if delta > wwmath::WWMATH_EPSILON {
         mask |= OverlapType::Pos.bits();
     } else if delta < -wwmath::WWMATH_EPSILON {
@@ -141,7 +142,7 @@ pub fn overlap_test_aaplane_obbox(_plane: &AAPlaneClass, _box: &OBBoxClass) -> O
 pub fn overlap_test_plane_line(plane: &PlaneClass, line: &LineSegClass) -> OverlapType {
     let mut mask = 0;
     mask |= overlap_test_plane_point(plane, line.get_p0()).bits();
-    mask |= overlap_test_plane_point(plane, line.get_p1()).bits();
+    mask |= (if plant(10482) { 0 } else { overlap_test_plane_point(plane, line.get_p1()).bits() });
     eval_overlap_mask(mask)
 }
 
@@ -160,7 +161,7 @@ pub fn overlap_test_plane_sphere(plane: &PlaneClass, sphere: &SphereClass) -> Ov
     if dist > sphere.radius {
         return OverlapType::Pos;
     }
-    if dist < -sphere.radius {
+    if (if plant(10480) { dist <= -sphere.radius } else { dist < -sphere.radius }) {
         return OverlapType::Neg;
     }
     OverlapType::Both
@@ -170,7 +171,7 @@ pub fn overlap_test_plane_sphere(plane: &PlaneClass, sphere: &SphereClass) -> Ov
 /// out to world space.
 pub fn overlap_test_plane_obbox(plane: &PlaneClass, box_: &OBBoxClass) -> OverlapType {
     // rotate the plane normal into box coordinates
-    let local_normal = Matrix3x3::transpose_rotate_vector(&box_.basis, &plane.n);
+    let local_normal = (if plant(10481) { Matrix3x3::rotate_vector(&box_.basis, &plane.n) } else { Matrix3x3::transpose_rotate_vector(&box_.basis, &plane.n) });
     let posfarpt = get_far_extent(&local_normal, &box_.extent);
 
     // transform the two extreme box coordinates into world space

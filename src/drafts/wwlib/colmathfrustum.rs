@@ -7,6 +7,7 @@
 //! `CollisionMath::Overlap_Test(FrustumClass, X)`. Upstream: "TODO: Most of these overlap functions actually do not
 //! catch all cases of when the primitive is outside of the frustum...". `result` is the `OverlapType` as an `int`.
 
+use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
 use super::colmath::OverlapType;
 use super::colmathplane::{overlap_test_plane_aabox, overlap_test_plane_obbox, overlap_test_plane_point, overlap_test_plane_sphere, overlap_test_plane_tri};
@@ -28,7 +29,7 @@ fn overlap_all_planes(frustum: &FrustumClass, mut test: impl FnMut(usize) -> Ove
         mask |= result.bits();
     }
     let _ = frustum;
-    if mask == OverlapType::INSIDE.bits() {
+    if (if plant(10489) { (mask & OverlapType::INSIDE.bits()) != 0 } else { mask == OverlapType::INSIDE.bits() }) {
         return OverlapType::INSIDE;
     }
     OverlapType::OVERLAPPED
@@ -46,11 +47,13 @@ fn overlap_planes_passed(planes_passed: &mut i32, mut test: impl FnMut(usize) ->
             if result == OverlapType::OUTSIDE {
                 return OverlapType::OUTSIDE;
             } else if result == OverlapType::INSIDE {
+                if !plant(10488) {
                 *planes_passed |= plane_bit;
+            }
             }
             mask |= result.bits();
         } else {
-            mask |= OverlapType::INSIDE.bits();
+            mask |= if plant(10490) { OverlapType::OVERLAPPED.bits() } else { OverlapType::INSIDE.bits() };
         }
     }
 

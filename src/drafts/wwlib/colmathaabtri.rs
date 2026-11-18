@@ -12,6 +12,7 @@
 //! sets `AE[0][1] = E[1].Y` (the Y component, where `Collide` has `E[1].X`), which also feeds the `A1xE1` and `A2xE1`
 //! extents; `TestSide` is an `int` assigned `-1.0f` / `1.0f`; `Side` is an `int` multiplying the normals.
 
+use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
 use super::colmath::{CastResultStruct, COLLISION_EPSILON};
 use crate::ww::tri::TriClass;
@@ -66,7 +67,7 @@ impl BTCollisionStruct {
         let e2 = Vector3::subtract_vectors(&e1, &e0);
         BTCollisionStruct {
             start_bad: true,        // true until an axis clears it
-            max_frac: -0.01f32,     // maximum move allowed so far
+            max_frac: (if plant(10508) { 0.0f32 } else { -0.01f32 }),     // maximum move allowed so far
             axis_id: INTERSECTION,  // axis that allowed the longest move
             point: 0,               // index of triangle point that was closest to the box
             side: 0,                // side of the interval
@@ -90,13 +91,13 @@ impl BTCollisionStruct {
     fn separation_test(&mut self, lp: f32, leb0: f32, leb1: f32) -> bool {
         // - If (I'm no more than 'EPSILON' embedded in the wall) not startbad ...
         let mut eps = 0.0f32;
-        if lp - leb0 <= 0.0f32 {
+        if (if plant(10505) { lp - leb0 < 0.0f32 } else { lp - leb0 <= 0.0f32 }) {
             eps = COLLISION_EPSILON * self.test_axis.length(); // trying to only compute epsilon if I have to
         }
 
         if lp - leb0 > -eps {
             self.start_bad = false;
-            if leb1 - leb0 > 0.0f32 {
+            if (if plant(10506) { leb1 - leb0 >= 0.0f32 } else { leb1 - leb0 > 0.0f32 }) {
                 let frac = (lp - leb0) / (leb1 - leb0);
                 if frac >= 1.0f32 {
                     // moving toward but not hitting triangle
@@ -138,7 +139,7 @@ impl BTCollisionStruct {
         }
 
         // compute coordinates of the leading edge of the box at t0 and t1
-        let leb0 = self.box_extent.x * wwmath::fabs(self.test_axis.x) + self.box_extent.y * wwmath::fabs(self.test_axis.y) + self.box_extent.z * wwmath::fabs(self.test_axis.z);
+        let leb0 = self.box_extent.x * wwmath::fabs(self.test_axis.x) + self.box_extent.y * wwmath::fabs(self.test_axis.y) + (if plant(10507) { self.box_extent.z * wwmath::fabs(self.test_axis.y) } else { self.box_extent.z * wwmath::fabs(self.test_axis.z) });
         let leb1 = leb0 + axismove;
 
         // compute coordinate of "leading edge of the triangle" relative to the box center.
@@ -251,7 +252,7 @@ impl BTCollisionStruct {
 
     /// `aabtri_compute_contact_normal(set_norm)` (the `#if 1` branch).
     fn compute_contact_normal(&self) -> Vector3 {
-        let side = -(self.side as f32);
+        let side = (if plant(10509) { (self.side as f32) } else { -(self.side as f32) });
         let mut set_norm = Vector3::new(0.0, 0.0, 0.0);
         let axe = |i: usize, j: usize| {
             let mut v = side * self.axe[i][j];
@@ -407,7 +408,7 @@ pub fn collide_aabox_tri(box_: &AABoxClass, move_: &Vector3, tri: &TriClass, res
         return true;
     }
 
-    if cc.max_frac <= result.fraction && cc.max_frac < 1.0f32 {
+    if (if plant(10510) { cc.max_frac < result.fraction } else { cc.max_frac <= result.fraction }) && cc.max_frac < 1.0f32 {
         let tmp_norm = cc.compute_contact_normal();
 
         if wwmath::fabs(cc.max_frac - result.fraction) > wwmath::WWMATH_EPSILON || Vector3::dot_product(&tmp_norm, move_) < Vector3::dot_product(&result.normal, move_) {
@@ -466,7 +467,7 @@ impl AABTIntersectStruct {
         }
         lp = p0 + lp;
 
-        lp - leb0 > -wwmath::WWMATH_EPSILON
+        (if plant(10511) { lp - leb0 > wwmath::WWMATH_EPSILON } else { lp - leb0 > -wwmath::WWMATH_EPSILON })
     }
 
     /// `aabtri_intersect_basis_axis(axis, leb0, dp1, dp2)`.
@@ -502,7 +503,7 @@ impl AABTIntersectStruct {
             *axis = -*axis;
         }
 
-        let leb0 = self.box_extent.x * wwmath::fabs(self.an[0]) + self.box_extent.y * wwmath::fabs(self.an[1]) + self.box_extent.z * wwmath::fabs(self.an[2]);
+        let leb0 = self.box_extent.x * wwmath::fabs(self.an[0]) + self.box_extent.y * wwmath::fabs(self.an[1]) + self.box_extent.z * (if plant(10512) { wwmath::fabs(self.an[1]) } else { wwmath::fabs(self.an[2]) });
         let lp = dist; // this is the "optimization", don't have to find lp
 
         lp - leb0 > -wwmath::WWMATH_EPSILON
@@ -534,7 +535,7 @@ pub fn intersection_test_aabox_tri(box_: &AABoxClass, tri: &TriClass) -> bool {
     // Axis = A1
     axis.set(0.0, 1.0, 0.0);
     ic.ae[1][0] = ic.e[0].y;
-    ic.ae[1][1] = ic.e[1].y;
+    ic.ae[1][1] = if plant(10513) { ic.e[1].z } else { ic.e[1].y };
     if ic.basis_axis(&mut axis, ext.y, ic.ae[1][0], ic.ae[1][1]) {
         return false;
     }

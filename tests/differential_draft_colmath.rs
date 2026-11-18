@@ -45,7 +45,11 @@
 
 mod support;
 
-use rts_lockstep_engine::drafts::wwlib::aabox::AABoxClass;
+use rts_lockstep_engine::drafts::wwlib::aabox::{AABoxClass, MinMaxAABoxClass};
+use rts_lockstep_engine::drafts::wwlib::obbox as obx;
+use rts_lockstep_engine::drafts::wwlib::sphere as sph_mod;
+use rts_lockstep_engine::ww::matrix3d::Matrix3D;
+use rts_lockstep_engine::ww::vector4::Vector4;
 use rts_lockstep_engine::drafts::wwlib::aaplane::{AAPlaneClass, AxisEnum};
 use rts_lockstep_engine::drafts::wwlib::colmath::{CastResultStruct, OverlapType};
 use rts_lockstep_engine::drafts::wwlib::colmathaabox as cab;
@@ -116,6 +120,19 @@ impl<'a> B<'a> {
             18 => 0.0,
             _ => -0.0,
         }
+    }
+    /// A coordinate, written to the stream.
+    fn coord_f(&mut self) -> f32 {
+        let v = self.coord_value();
+        self.f(v)
+    }
+    /// Writes an already-built OBB to the stream.
+    fn copy_obb(&mut self, o: &OBBoxClass) {
+        for i in 0..3 {
+            self.vec_with(o.basis.row[i]);
+        }
+        self.vec_with(o.center);
+        self.vec_with(o.extent);
     }
     fn extent_value(&mut self) -> f32 {
         match self.g.below(20) {
@@ -306,6 +323,62 @@ impl<'a> B<'a> {
         }
         fr
     }
+    /// A transform: a rotation with a translation, the identity, or arbitrary entries.
+    fn tm(&mut self) -> Matrix3D {
+        let mut m = Matrix3D::default();
+        match self.g.below(20) {
+            0..=1 => {
+                for i in 0..3 {
+                    m.row[i] = Vector4::new(0.0, 0.0, 0.0, 0.0);
+                }
+                m.row[0].x = 1.0;
+                m.row[1].y = 1.0;
+                m.row[2].z = 1.0;
+                let t = Vector3::new(self.coord_value(), self.coord_value(), self.coord_value());
+                m.row[0].w = t.x;
+                m.row[1].w = t.y;
+                m.row[2].w = t.z;
+            }
+            2..=7 => {
+                for i in 0..3 {
+                    m.row[i] = Vector4::new(self.g.uniform(-2.0, 2.0), self.g.uniform(-2.0, 2.0), self.g.uniform(-2.0, 2.0), self.coord_value());
+                }
+            }
+            _ => {
+                let mut tmp = B { g: &mut *self.g, w: Vec::new() };
+                let b = tmp.basis();
+                let t = Vector3::new(tmp.coord_value(), tmp.coord_value(), tmp.coord_value());
+                for i in 0..3 {
+                    m.row[i] = Vector4::new(b.row[i].x, b.row[i].y, b.row[i].z, t[i]);
+                }
+            }
+        }
+        for i in 0..3 {
+            self.f(m.row[i].x);
+            self.f(m.row[i].y);
+            self.f(m.row[i].z);
+            self.f(m.row[i].w);
+        }
+        m
+    }
+    fn mm(&mut self) -> MinMaxAABoxClass {
+        let a = self.raw_point();
+        let b = if self.g.below(4) == 0 {
+            // a proper box
+            Vector3::new(a.x + self.extent_value(), a.y + self.extent_value(), a.z + self.extent_value())
+        } else {
+            self.raw_point()
+        };
+        self.vec_with(a);
+        self.vec_with(b);
+        MinMaxAABoxClass::new(a, b)
+    }
+    /// A count word (1 to 5) and that many points.
+    fn pts(&mut self) -> Vec<Vector3> {
+        let n = 1 + self.g.below(5);
+        self.u(n);
+        (0..n).map(|_| self.point()).collect()
+    }
     /// The result pre-fill (never a zero normal, see the module docs).
     fn cr(&mut self) -> CastResultStruct {
         let fraction = match self.g.below(10) {
@@ -348,6 +421,42 @@ fn unset_x_contact(center0: &Vector3, move0: &Vector3, r: &CastResultStruct) -> 
 
 fn ov(o: OverlapType) -> Vec<u32> {
     vec![o.bits() as u32]
+}
+
+fn wv(v: &Vector3) -> Vec<u32> {
+    vec![bits(v.x), bits(v.y), bits(v.z)]
+}
+fn waab(a: &AABoxClass) -> Vec<u32> {
+    let mut o = wv(&a.center);
+    o.extend(wv(&a.extent));
+    o
+}
+fn wmm(a: &MinMaxAABoxClass) -> Vec<u32> {
+    let mut o = wv(&a.min_corner);
+    o.extend(wv(&a.max_corner));
+    o
+}
+fn wobb(a: &OBBoxClass) -> Vec<u32> {
+    let mut o = Vec::new();
+    for i in 0..3 {
+        o.extend(wv(&a.basis.row[i]));
+    }
+    o.extend(wv(&a.center));
+    o.extend(wv(&a.extent));
+    o
+}
+fn wsph(s: &SphereClass) -> Vec<u32> {
+    let mut o = wv(&s.center);
+    o.push(bits(s.radius));
+    o
+}
+fn wline(l: &LineSegClass) -> Vec<u32> {
+    let mut o = wv(l.get_p0());
+    o.extend(wv(l.get_p1()));
+    o.extend(wv(l.get_dp()));
+    o.extend(wv(l.get_dir()));
+    o.push(bits(l.get_length()));
+    o
 }
 
 fn boolw(b: bool) -> Vec<u32> {
@@ -453,6 +562,65 @@ fn make(op: u32, g: &mut Gen) -> (Vec<u32>, Vec<u32>, bool) {
         71 => { let a = b.obb(); let m = b.move_vec(); let t = b.tri(); let m2 = b.move_vec(); let mut r = b.cr(); let k = cotri::collide_obbox_tri(&a, &m, &t, &m2, &mut r); crw(k, &r) }
         72 => { let a = b.obb(); let m = b.move_vec(); let x = b.aab(); let m2 = b.move_vec(); let mut r = b.cr(); let k = cbb::collide_obbox_aabox(&a, &m, &x, &m2, &mut r); mask_contact = k && unset_x_contact(&a.center, &m, &r); crw(k, &r) }
         73 => { let a = b.obb(); let m = b.move_vec(); let x = b.obb(); let m2 = b.move_vec(); let mut r = b.cr(); let k = cbb::collide_obbox_obbox(&a, &m, &x, &m2, &mut r); mask_contact = k && unset_x_contact(&a.center, &m, &r); crw(k, &r) }
+        100 => { let a = b.aab(); let p = b.point(); vec![bits(a.project_to_axis(&p))] }
+        101 => { let a = b.aab(); vec![bits(a.volume())] }
+        102 => { let a = b.aab(); let p = b.point(); boolw(a.contains_point(&p)) }
+        103 => { let a = b.aab(); let x = b.aab(); boolw(a.contains_box(&x)) }
+        104 => { let a = b.aab(); let x = b.mm(); boolw(a.contains_min_max_box(&x)) }
+        105 => { let mut a = b.aab(); let m = b.tm(); a.transform(&m); waab(&a) }
+        106 => { let m = b.tm(); let a = b.aab(); waab(&AABoxClass::transform_into(&m, &a)) }
+        107 => { let mut a = b.aab(); let p = b.point(); a.add_point(&p); waab(&a) }
+        108 => { let mut a = b.aab(); let x = b.aab(); a.add_box(&x); waab(&a) }
+        109 => { let mut a = b.aab(); let x = b.mm(); a.add_min_max_box(&x); waab(&a) }
+        110 => { let p = b.pts(); waab(&AABoxClass::from_points(&p)) }
+        111 => { let x = b.mm(); waab(&AABoxClass::from_min_max_box(&x)) }
+        112 => { let l = b.line(); let mut a = AABoxClass::default(); a.init_line(&l); waab(&a) }
+        113 => { let mn = b.point(); let mx = b.point(); let mut a = AABoxClass::default(); a.init_min_max(&mn, &mx); waab(&a) }
+        114 => { let mut a = b.aab(); let p = b.point(); a.translate(&p); waab(&a) }
+        115 => { let p = b.pts(); wmm(&MinMaxAABoxClass::from_points(&p)) }
+        116 => { let a = b.aab(); wmm(&MinMaxAABoxClass::from_aabox(&a)) }
+        117 => { let mut x = b.mm(); let p = b.point(); x.add_point(&p); wmm(&x) }
+        118 => { let mut x = b.mm(); let y = b.mm(); x.add_min_max_box(&y); wmm(&x) }
+        119 => { let mut x = b.mm(); let a = b.aab(); x.add_box(&a); wmm(&x) }
+        120 => { let mut x = b.mm(); let mn = b.point(); let mx = b.point(); x.add_corners(&mn, &mx); wmm(&x) }
+        121 => { let mut x = b.mm(); let m = b.tm(); x.transform(&m); wmm(&x) }
+        122 => { let mut x = b.mm(); let p = b.point(); x.translate(&p); wmm(&x) }
+        123 => { let x = b.mm(); vec![bits(x.volume())] }
+        124 => { let mut x = b.mm(); x.init_empty(); wmm(&x) }
+        130 => { let a = b.obb(); let p = b.point(); vec![bits(a.project_to_axis(&p))] }
+        131 => { let a = b.obb(); vec![bits(a.volume())] }
+        132 => { let a = b.obb(); let prm = [b.coord_f(), b.coord_f(), b.coord_f()]; wv(&a.compute_point(&prm)) }
+        133 => { let a = b.obb(); wv(&a.compute_axis_aligned_extent()) }
+        134 => { let m = b.tm(); let a = b.obb(); wobb(&OBBoxClass::transform(&m, &a)) }
+        135 => { let a = b.obb(); let x = if b.g.below(3) == 0 { let c = a; b.copy_obb(&c); c } else { b.obb() }; boolw(a.eq_box(&x)) }
+        137 => { let a = b.obb(); let x = b.obb(); boolw(obx::oriented_boxes_intersect(&a, &x)) }
+        138 => { let a = b.obb(); let v0 = b.move_vec(); let x = b.obb(); let v1 = b.move_vec(); let dt = b.coord_f(); boolw(obx::oriented_boxes_collide(&a, &v0, &x, &v1, dt)) }
+        139 => { let a = b.obb(); let t = b.tri(); boolw(obx::oriented_box_intersects_tri(&a, &t)) }
+        140 => { let m = b.tm(); let p = b.point(); let r = b.coord_f(); wsph(&SphereClass::from_matrix(&m, &p, r)) }
+        141 => { let mut s = b.sph(); let p = b.point(); s.re_center(&p); wsph(&s) }
+        142 => { let mut s = b.sph(); let t = b.sph(); s.add_sphere(&t); wsph(&s) }
+        143 => { let mut s = b.sph(); let m = b.tm(); s.transform(&m); wsph(&s) }
+        144 => { let s = b.sph(); vec![bits(s.volume())] }
+        145 => { let p = b.pts(); wsph(&SphereClass::from_points(&p)) }
+        146 => { let p = b.point(); let t = b.sph(); wsph(&SphereClass::from_center_and_sphere(&p, &t)) }
+        147 => { let mut s = b.sph(); let m = b.tm(); s.mul_assign_matrix(&m); wsph(&s) }
+        148 => { let s = b.sph(); let t = b.sph(); boolw(sph_mod::spheres_intersect(&s, &t)) }
+        149 => { let s = b.sph(); let t = b.sph(); wsph(&sph_mod::add_spheres(&s, &t)) }
+        150 => { let m = b.tm(); let s = b.sph(); wsph(&sph_mod::transform_sphere(&m, &s)) }
+        160 => { let l = b.line(); let m = b.tm(); wline(&LineSegClass::from_transformed(&l, &m)) }
+        161 => { let l = b.line(); let t = b.coord_f(); wv(&l.compute_point(t)) }
+        162 => { let l = b.line(); let p = b.point(); wv(&l.find_point_closest_to(&p)) }
+        163 => {
+            let l = b.line();
+            let m = b.line();
+            // the outputs' pre-fill: only written when the lines are not parallel
+            let (p1, f1, p2, f2) = (b.point(), b.coord_f(), b.point(), b.coord_f());
+            match l.find_intersection(&m) {
+                Some((q1, g1, q2, g2)) => { let mut o = vec![1]; o.extend(wv(&q1)); o.push(bits(g1)); o.extend(wv(&q2)); o.push(bits(g2)); o }
+                None => { let mut o = vec![0]; o.extend(wv(&p1)); o.push(bits(f1)); o.extend(wv(&p2)); o.push(bits(f2)); o }
+            }
+        }
+        170 => { let a = b.aap(); wv(&a.get_normal()) }
         _ => panic!("unknown op {op}"),
     };
     (b.w, out, mask_contact)
@@ -490,6 +658,8 @@ fn run_op(name: &str, op: u32, seed: u64) -> (u64, u64) {
     let mut excluded = 0u64;
     let mut hits = 0u64;
     let mut masked = 0u64;
+    let mut missed_cases = 0u64;
+    let mut outcomes: std::collections::BTreeMap<u32, u64> = std::collections::BTreeMap::new();
     for i in 0..n {
         let mut g2 = Gen::new(g.u64());
         let (words, mut r, mask) = make(op, &mut g2);
@@ -506,22 +676,31 @@ fn run_op(name: &str, op: u32, seed: u64) -> (u64, u64) {
                 c[k] = 0;
             }
         }
-        compare(&mut chk, i, &r, &c);
+        if compare(&mut chk, i, &r, &c) {
+            missed_cases += 1;
+        }
+        *outcomes.entry(c[0]).or_insert(0u64) += 1;
         if c[0] != 0 {
             hits += 1;
         }
     }
-    println!("    {name}: {n} cases, {excluded} excluded, {masked} with the contact point masked, {hits} with a nonzero first word");
+    println!("    {name}: {n} cases, {excluded} excluded, {masked} with the contact point masked, first word histogram {outcomes:?}");
+    if planted() {
+        println!("PLANTCASES {name}: {missed_cases} of {n} cases differ");
+    }
+    let _ = hits;
     let (compared, mism) = (chk.compared, chk.mismatches);
     chk.finish_or_report();
     (compared, mism)
 }
 
-fn compare(chk: &mut Check, i: u64, r: &[u32], c: &[u32]) {
+fn compare(chk: &mut Check, i: u64, r: &[u32], c: &[u32]) -> bool {
     assert_eq!(r.len(), c.len(), "case {i}: output length rust {r:?} c++ {c:?}");
+    let before = chk.mismatches;
     for (k, (&a, &b)) in r.iter().zip(c).enumerate() {
         chk.eq(canon(a), canon(b), || format!("case {i} word {k}: rust {r:x?} c++ {c:x?}"));
     }
+    chk.mismatches != before
 }
 
 fn planted() -> bool {
@@ -534,7 +713,7 @@ trait Finish {
 
 impl Finish for Check {
     fn finish_or_report(self) {
-        if planted() {
+        if planted() || std::env::var("KEEP_GOING").is_ok() {
             self.report();
         } else {
             self.finish();
@@ -618,6 +797,64 @@ fn run_group(list: &[(&str, u32)]) {
         }
         run_op(name, *op, 0x215_C011);
     }
+}
+
+const SHAPES: &[(&str, u32)] = &[
+    ("AABoxClass::Project_To_Axis", 100),
+    ("AABoxClass::Volume", 101),
+    ("AABoxClass::Contains(Vector3)", 102),
+    ("AABoxClass::Contains(AABox)", 103),
+    ("AABoxClass::Contains(MinMax)", 104),
+    ("AABoxClass::Transform(tm)", 105),
+    ("AABoxClass::Transform(tm, in, out)", 106),
+    ("AABoxClass::Add_Point", 107),
+    ("AABoxClass::Add_Box(AABox)", 108),
+    ("AABoxClass::Add_Box(MinMax)", 109),
+    ("AABoxClass::Init(points, num)", 110),
+    ("AABoxClass::Init(MinMax)", 111),
+    ("AABoxClass::Init(LineSeg)", 112),
+    ("AABoxClass::Init_Min_Max", 113),
+    ("AABoxClass::Translate", 114),
+    ("MinMaxAABoxClass::Init(points, num)", 115),
+    ("MinMaxAABoxClass::Init(AABox)", 116),
+    ("MinMaxAABoxClass::Add_Point", 117),
+    ("MinMaxAABoxClass::Add_Box(MinMax)", 118),
+    ("MinMaxAABoxClass::Add_Box(AABox)", 119),
+    ("MinMaxAABoxClass::Add_Box(min, max)", 120),
+    ("MinMaxAABoxClass::Transform", 121),
+    ("MinMaxAABoxClass::Translate", 122),
+    ("MinMaxAABoxClass::Volume", 123),
+    ("MinMaxAABoxClass::Init_Empty", 124),
+    ("OBBoxClass::Project_To_Axis", 130),
+    ("OBBoxClass::Volume", 131),
+    ("OBBoxClass::Compute_Point", 132),
+    ("OBBoxClass::Compute_Axis_Aligned_Extent", 133),
+    ("OBBoxClass::Transform", 134),
+    ("OBBoxClass::operator==", 135),
+    ("Oriented_Boxes_Intersect", 137),
+    ("Oriented_Boxes_Collide", 138),
+    ("Oriented_Box_Intersects_Tri", 139),
+    ("SphereClass(Matrix3D, center, radius)", 140),
+    ("SphereClass::Re_Center", 141),
+    ("SphereClass::Add_Sphere", 142),
+    ("SphereClass::Transform", 143),
+    ("SphereClass::Volume", 144),
+    ("SphereClass(points, count)", 145),
+    ("SphereClass(center, sphere)", 146),
+    ("SphereClass::operator*=", 147),
+    ("Spheres_Intersect", 148),
+    ("Add_Spheres", 149),
+    ("Transform_Sphere", 150),
+    ("LineSegClass(that, tm)", 160),
+    ("LineSegClass::Compute_Point", 161),
+    ("LineSegClass::Find_Point_Closest_To", 162),
+    ("LineSegClass::Find_Intersection", 163),
+    ("AAPlaneClass::Get_Normal", 170),
+];
+
+#[test]
+fn shapes_match_upstream() {
+    run_group(SHAPES);
 }
 
 #[test]

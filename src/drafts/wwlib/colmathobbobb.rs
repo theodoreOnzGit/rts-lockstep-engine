@@ -11,6 +11,7 @@
 //! use `den = 1 - AB*AB`); the three "false collision" axes test `!result->StartBad` (the caller's result, not the
 //! context's); `Side` is uninitialised upstream until some axis sets it (0 here).
 
+use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
 use super::colmath::CastResultStruct;
 use super::obbox::OBBoxClass;
@@ -74,12 +75,12 @@ fn obb_intersect_box0_basis(context: &ObbIntersectionStruct, axis_index: usize) 
     let u = Vector3::dot_product(&context.c, &context.a[axis_index]);
 
     // (gth) the epsilon here was not scaled to the length of the axis so it caused problems (so none is used)
-    (u > rsum) || (u < -rsum)
+    (if plant(10527) { (u >= rsum) || (u < -rsum) } else { (u > rsum) || (u < -rsum) })
 }
 
 /// `obb_intersect_box1_basis(context, axis_index)`.
 fn obb_intersect_box1_basis(context: &ObbIntersectionStruct, axis_index: usize) -> bool {
-    let ra = wwmath::fabs(context.box0.extent[0] * context.ab[0][axis_index]) + wwmath::fabs(context.box0.extent[1] * context.ab[1][axis_index]) + wwmath::fabs(context.box0.extent[2] * context.ab[2][axis_index]);
+    let ra = (if plant(10526) { wwmath::fabs(context.box0.extent[0] * context.ab[axis_index][0]) } else { wwmath::fabs(context.box0.extent[0] * context.ab[0][axis_index]) }) + wwmath::fabs(context.box0.extent[1] * context.ab[1][axis_index]) + wwmath::fabs(context.box0.extent[2] * context.ab[2][axis_index]);
     let rb = context.box1.extent[axis_index];
     let rsum = ra + rb;
 
@@ -102,7 +103,7 @@ fn intersect_obb_obb(context: &mut ObbIntersectionStruct) -> bool {
         for j in 0..3 {
             context.ab[i][j] = Vector3::dot_product(&context.a[i], &context.b[j]);
         }
-        if context.box0.extent[i] > 0.0f32 {
+        if (if plant(10528) { context.box0.extent[i] >= 0.0f32 } else { context.box0.extent[i] > 0.0f32 }) {
             if obb_intersect_box0_basis(context, i) {
                 return false;
             }
@@ -295,7 +296,7 @@ fn obb_separation_test(context: &mut ObbCollisionStruct, ra: f32, rb: f32, u0: f
             return true;
         } else if wwmath::fabs(u1 - u0) > 0.0f32 {
             let tmp = (-rsum - u0) / (u1 - u0);
-            if tmp > context.max_frac {
+            if (if plant(10522) { tmp >= context.max_frac } else { tmp > context.max_frac }) {
                 context.max_frac = tmp;
                 context.axis_id = context.test_axis_id;
                 context.side = -1;
@@ -374,7 +375,7 @@ fn compute_contact_normal(context: &ObbCollisionStruct, result: &mut CastResultS
         _ => result.normal,
     };
     // `result->Normal *= -context.Side` (Side is an int)
-    result.normal *= (-context.side) as f32;
+    result.normal *= (if plant(10525) { context.side as f32 } else { (-context.side) as f32 });
 }
 
 /// `eval_side(ab, side)`: the sign of `ab` applied to `side`.
@@ -441,7 +442,7 @@ fn compute_contact_point(context: &ObbCollisionStruct, result: &mut CastResultSt
             x[1] = -eval_side(ab[2][1], side) * context.box0.extent[1];
             x[2] = eval_side(ab[1][1], side) * context.box0.extent[2];
             y[0] = eval_side(ab[0][2], side) * context.box1.extent[0];
-            y[2] = -eval_side(ab[0][0], side) * context.box1.extent[2];
+            y[2] = (if plant(10523) { eval_side(ab[0][0], side) * context.box1.extent[2] } else { -eval_side(ab[0][0], side) * context.box1.extent[2] });
             let den = 1.0f32 - ab[0][1] * ab[0][1];
             if wwmath::fabs(den) > 0.0f32 {
                 x[0] = Vector3::dot_product(&context.a[0], &dcnew);
@@ -491,7 +492,7 @@ fn compute_contact_point(context: &ObbCollisionStruct, result: &mut CastResultSt
             let den = 1.0f32 / (1.0f32 - ab[1][1] * ab[1][1]);
             if wwmath::fabs(den) > 0.0f32 {
                 x[1] = Vector3::dot_product(&context.a[1], &dcnew);
-                x[1] += ab[1][1] * (Vector3::dot_product(&-context.b[1], &dcnew) + ab[0][1] * x[0] + ab[2][1] * x[2]);
+                x[1] += ab[1][1] * ((if plant(10524) { Vector3::dot_product(&-context.b[1], &dcnew) + ab[0][1] * x[0] + ab[2][0] * x[2] } else { Vector3::dot_product(&-context.b[1], &dcnew) + ab[0][1] * x[0] + ab[2][1] * x[2] }));
                 x[1] += ab[1][0] * y[0] + ab[1][2] * y[2];
                 x[1] /= den;
             } else {
@@ -632,7 +633,7 @@ fn collide_obb_obb(context: &mut ObbCollisionStruct, result: &mut CastResultStru
             }
         }
 
-        if !result.start_bad {
+        if (if plant(10529) { !context.start_bad } else { !result.start_bad }) {
             context.test_axis_id = context.axis_id;
 
             // Final three checks are for eliminating false collisions: A[i] x Move0
