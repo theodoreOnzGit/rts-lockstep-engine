@@ -24,7 +24,7 @@
 ** Generate_APT box; 311 Generate_APT box + view dir (3); 312 CullTree ray + start (3) + axis_dir; 313 CullTree Cast_AABox;
 ** 320 AABox Translate (3); 321 AABox Rotate (type). A triangle is v0, v1, v2, N (12 floats as bits).
 **
-** Entry point (extern "C", tests/differential_draft_meshgeom.rs): ref_dmg_run(in, nin, out, cap). See the test for the ops. */
+** Entry point (extern "C", tests/differential_draft_meshgeom.rs): ref_dmeshgeom_run(in, nin, out, cap). See the test for the ops. */
 #include <stdint.h>
 #include <string.h>
 #include <vector>
@@ -221,7 +221,7 @@ public:
 
 }
 
-/* ref_dmg_run(in, nin, out, cap): in = [op, seed, has_cull, nverts, 3*nverts floats, npolys, per poly: 3 indices and 4 plane
+/* ref_dmeshgeom_run(in, nin, out, cap): in = [op, seed, has_cull, nverts, 3*nverts floats, npolys, per poly: 3 indices and 4 plane
 **   floats, then the op's operands]; the script counter starts at 0.
 **   ops (operands -> out, after which the event log follows):
 **   0 Generate_Rigid_APT(view_dir)      view_dir 3 floats, apt prefill n + words        -> [apt n, apt...]
@@ -232,7 +232,7 @@ public:
 **   5..8 cast_aabox_identity / z90 / z180 / z270  translation 3, result prefill (start_bad, normal 3, surface)  -> [ret, start_bad, normal 3, surface]
 **   9 intersect_obbox_brute_force                                                        -> [ret]
 **   10 cast_ray_brute_force, 11 cast_aabox_brute_force, 12 cast_obbox_brute_force  result prefill -> [ret, start_bad, normal 3, surface] */
-extern "C" int ref_dmg_run(const uint32_t * in, int nin, uint32_t * out, int cap)
+extern "C" int ref_dmeshgeom_run(const uint32_t * in, int nin, uint32_t * out, int cap)
 {
 	g_log.clear();
 	const uint32_t * p = in;

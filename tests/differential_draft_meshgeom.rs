@@ -43,7 +43,7 @@ use std::sync::Mutex;
 use support::{Check, Gen};
 
 extern "C" {
-    fn ref_dmg_run(input: *const u32, nin: i32, out: *mut u32, cap: i32) -> i32;
+    fn ref_dmeshgeom_run(input: *const u32, nin: i32, out: *mut u32, cap: i32) -> i32;
 }
 
 static CPP: Mutex<()> = Mutex::new(());
@@ -342,7 +342,7 @@ fn mesh_collision_members_match_upstream() {
             }
             rust.extend(host.log.iter().copied());
             let mut out = vec![0u32; 20_000];
-            let n = unsafe { ref_dmg_run(inp.as_ptr(), inp.len() as i32, out.as_mut_ptr(), out.len() as i32) };
+            let n = unsafe { ref_dmeshgeom_run(inp.as_ptr(), inp.len() as i32, out.as_mut_ptr(), out.len() as i32) };
             assert!(n >= 0, "op {op}");
             out.truncate(n as usize);
             chk[op].eq(rust, out, || format!("case {case} op {op}: {} verts {} polys cull {}", nv, np, mesh.has_cull_tree));
