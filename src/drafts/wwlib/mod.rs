@@ -57,3 +57,4 @@ pub mod sampler;
 pub mod lzo;
 pub mod widestring;
 pub mod tagblock;
+pub mod mixfile;
