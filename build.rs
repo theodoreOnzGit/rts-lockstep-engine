@@ -12148,6 +12148,49 @@ mod differential {
         let uc = read_upstream(cb.join("ControlBarUnderConstruction.cpp"));
         write("ctl_uc.inc", piece(&uc, "ControlBarUnderConstruction.cpp", "void ControlBar::updateConstructionTextDisplay", None));
 
+        // WOLLoginMenu.cpp / UserPreferences / QuotedPrintable.cpp: the login menu's pure logic (see differential/wrap_draft_login.cpp)
+        {
+            let wl = read_upstream(ge.join("Source/GameClient/GUI/GUICallbacks/Menus/WOLLoginMenu.cpp"));
+            // ONE mechanical edit (asserted once): `*c = *c++ ^ *c2++;` is unsequenced (undefined); g++ evaluates the right side first and
+            // then writes the NEXT byte, running past the string. The left side's address is taken first (the draft's reading).
+            let prefs = piece(&wl, "WOLLoginMenu.cpp", "class GameSpyLoginPreferences : public UserPreferences", Some("static const char *PREF_FILENAME"));
+            let ob_from = "*c = *c++ ^ *c2++;";
+            assert_eq!(prefs.matches(ob_from).count(), 1, "WOLLoginMenu.cpp: obfuscate's unsequenced statement");
+            write("login_prefs.inc", format!("/* one mechanical edit: obfuscate's left side is evaluated first (see build.rs) */\n{}", prefs.replace(ob_from, "{ char *lhs_ = c; *lhs_ = *c++ ^ *c2++; }")));
+            write("login_checks.inc", piece(&wl, "WOLLoginMenu.cpp", "static Bool isNickOkay(UnicodeString nick)", Some("/** WOL Login Menu window system callback */")));
+            let qp = read_upstream(ge.join("Source/Common/System/QuotedPrintable.cpp"));
+            write("qp_helpers.inc", piece(&qp, "QuotedPrintable.cpp", "#define MAGIC_CHAR '_'", Some("// Convert unicode strings into ascii quoted-printable strings")));
+            write("qp_to.inc", piece(&qp, "QuotedPrintable.cpp", "// Convert ascii strings into ascii quoted-printable strings", Some("// Convert ascii quoted-printable strings into unicode strings")));
+            write("qp_from.inc", piece(&qp, "QuotedPrintable.cpp", "// Convert ascii quoted-printable strings into ascii strings", None));
+            // the same pieces of UserPreferences.h and UserPreferences.cpp as the #93 build's
+            let uph = read_upstream(ge.join("Include/Common/UserPreferences.h"));
+            let upc = read_upstream(ge.join("Source/Common/UserPreferences.cpp"));
+            write("login_up.inc", format!(
+                "{}\n{}\n",
+                piece(&uph, "UserPreferences.h", "typedef std::map<AsciiString, AsciiString> PreferenceMap;", Some("// OptionsPreferences options menu class")),
+                piece(&upc, "UserPreferences.cpp", "static AsciiString intAsStr(Int val)", Some("// QuickMatchPreferences base class"))
+            ));
+            println!("cargo:rerun-if-changed=differential/wrap_draft_login.cpp");
+            let mut b = cc::Build::new();
+            base(&mut b);
+            b.define("AsciiString", Some("UilogicAsciiString"))
+                .define("UnicodeString", Some("DictShimUnicodeString"))
+                .define("TheDynamicMemoryAllocator", Some("UilogicDynamicMemoryAllocator"))
+                .flag("-fshort-wchar")
+                .flag("-fpermissive")
+                .flag("-fno-operator-names")
+                .include(&gen)
+                .include(dif.join("shim_ascii"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .flag("-include")
+                .flag(dif.join("shim_ascii/ascii_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_draft_login.cpp"))
+                .file(ge.join("Source/Common/System/AsciiString.cpp"));
+            b.compile("draft_uilogic_login");
+        }
+
         for (wrapper, lib) in [("wrap_draft_ctl_timers.cpp", "draft_uilogic_ctl_timers")] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();

@@ -54,7 +54,7 @@ pub fn update_ocl_timer_text_display<H: OclTimerHost>(wm: &mut GameWindowManager
     let bar_window = wm.win_get_window_from_id(None, bar_id);
 
     let minutes = (total_seconds / 60) as i32;
-    let seconds = (total_seconds as i32) - (minutes * 60);
+    let seconds = (total_seconds as i32).wrapping_sub(minutes.wrapping_mul(60));
 
     // format the message
     let text = if (seconds < 10 && !plant(12661)) || (seconds <= 10 && plant(12661)) {

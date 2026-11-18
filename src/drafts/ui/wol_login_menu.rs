@@ -1,4 +1,6 @@
 //! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! Of this file, `obfuscate`, `GameSpyLoginPreferences`, `is_nick_okay` and `is_age_okay` are DIFFERENTIAL-TESTED (#215, tests/differential_draft_login.rs);
+//! the window callbacks and everything else are still untested.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLLoginMenu.cpp
@@ -21,6 +23,7 @@ use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
 use crate::client::window_transitions as wt;
+use crate::logic::modules::plant;
 
 /// `loginTimeoutInMS`.
 const LOGIN_TIMEOUT_IN_MS: u32 = 10000;
@@ -30,23 +33,29 @@ const PREF_FILENAME: &[u8] = b"GameSpyLogin.ini";
 /// `obfuscate(in)` (WOLLoginMenu.cpp:77): XOR with "1337Munkee", the key restarting at its end and a byte equal to
 /// the key byte left as it is (the key index still advances).
 pub fn obfuscate(input: &[u8]) -> Vec<u8> {
-    let xor = b"1337Munkee";
-    let mut buf = input.to_vec();
+    let xor: &[u8] = if plant(12683) { b"1337Munkey" } else { b"1337Munkee" };
+    let key_len = if plant(12682) { xor.len() - 1 } else { xor.len() };
+    // `in.str()` is a C string: the copy ends at the first NUL
+    let end = input.iter().position(|&b| b == 0).unwrap_or(input.len());
+    let mut buf = input[..end].to_vec();
     let mut c2 = 0usize;
     let mut c = 0usize;
     // `while (*c)`: stops at the first NUL
     while c < buf.len() && buf[c] != 0 {
-        if c2 >= xor.len() {
+        if c2 >= key_len {
             c2 = 0;
         }
-        if buf[c] != xor[c2] {
-            // `*c = *c++ ^ *c2++;` — unsequenced in C++; the usual reading is the pre-increment value of both
+        if buf[c] != xor[c2] || plant(12684) {
+            // `*c = *c++ ^ *c2++;` — unsequenced in C++; the reading taken is the left side's address before the increment
+            // (the shipped compiler's order; the differential build pins it with one edit, see build.rs) and the old value of both
             buf[c] ^= xor[c2];
             c += 1;
             c2 += 1;
         } else {
             c += 1;
-            c2 += 1;
+            if !plant(12681) {
+                c2 += 1;
+            }
         }
     }
     buf
@@ -80,18 +89,18 @@ impl GameSpyLoginPreferences {
             if key.starts_with(b"pass_") {
                 let email = key[5..].to_vec();
                 let quo_pass = quoted_printable_to_ascii(&value);
-                let pass = obfuscate(&quo_pass);
+                let pass = if plant(12698) { quo_pass } else { obfuscate(&quo_pass) };
                 self.email_password_map.insert(email, pass);
             }
             // (`if` not `else if`: a "pass_" key also falls to the chain below, matching none of its tests)
             if key.starts_with(b"date_") {
                 let email = key[5..].to_vec();
-                let date = quoted_printable_to_ascii(&value);
+                let date = if plant(12699) { value.clone() } else { quoted_printable_to_ascii(&value) };
                 self.email_date_map.insert(email, date);
             } else if key.starts_with(b"nick_") {
                 let email = key[5..].to_vec();
                 // while (nicks.nextToken(&nick, ",")) m_emailNickMap[email].push_back(nick)
-                for nick in value.split(|&c| c == b',').filter(|t| !t.is_empty()) {
+                for nick in value.split(|&c| c == b',').filter(|t| !t.is_empty() || plant(12700)) {
                     self.email_nick_map.entry(email.clone()).or_default().push(nick.to_vec());
                 }
             }
@@ -115,7 +124,7 @@ impl GameSpyLoginPreferences {
         line(b"lastName = ", &get(b"lastName"));
         line(b"useProfiles = ", &get(b"useProfiles"));
         for (email, pass) in &self.email_password_map {
-            let pass = obfuscate(pass);
+            let pass = if plant(12701) { pass.clone() } else { obfuscate(pass) };
             let quo_pass = ascii_to_quoted_printable(&pass);
             let mut k = b"pass_".to_vec();
             k.extend_from_slice(email);
@@ -123,7 +132,7 @@ impl GameSpyLoginPreferences {
             line(&k, &quo_pass);
         }
         for (email, date) in &self.email_date_map {
-            let d = ascii_to_quoted_printable(date);
+            let d = if plant(12708) { date.clone() } else { ascii_to_quoted_printable(date) };
             let mut k = b"date_".to_vec();
             k.extend_from_slice(email);
             k.extend_from_slice(b" = ");
@@ -133,7 +142,9 @@ impl GameSpyLoginPreferences {
             let mut nicks = Vec::new();
             for n in nicks_list {
                 nicks.extend_from_slice(n);
-                nicks.push(b',');
+                if !plant(12702) {
+                    nicks.push(b',');
+                }
             }
             let mut k = b"nick_".to_vec();
             k.extend_from_slice(email);
@@ -147,7 +158,7 @@ impl GameSpyLoginPreferences {
     /// parts untouched) when there is none or it is not 8 characters.
     pub fn get_date_for_email(&self, email: &[u8], month: &mut Vec<u8>, date: &mut Vec<u8>, year: &mut Vec<u8>) -> Vec<u8> {
         let Some(full) = self.email_date_map.get(email) else { return Vec::new() };
-        if full.len() != 8 {
+        if (full.len() != 8 && !plant(12703)) || (plant(12703) && full.len() < 8) {
             return Vec::new();
         }
         *month = full[0..2].to_vec();
@@ -169,7 +180,7 @@ impl GameSpyLoginPreferences {
     /// `addLogin(email, nick, password, date)`.
     pub fn add_login(&mut self, email: &[u8], nick: &[u8], password: &[u8], date: &[u8]) {
         let nicks = self.email_nick_map.entry(email.to_vec()).or_default();
-        if !nicks.iter().any(|n| n == nick) {
+        if !nicks.iter().any(|n| n == nick) || plant(12704) {
             nicks.push(nick.to_vec());
         }
         self.email_password_map.insert(email.to_vec(), password.to_vec());
@@ -180,45 +191,30 @@ impl GameSpyLoginPreferences {
     pub fn forget_login(&mut self, email: &[u8]) {
         self.email_nick_map.remove(email);
         self.email_password_map.remove(email);
-        self.email_date_map.remove(email);
+        if !plant(12705) {
+            self.email_date_map.remove(email);
+        }
     }
 
     /// `getEmails()`: the keys of the nick map, in map order.
     pub fn get_emails(&self) -> Vec<Vec<u8>> {
+        if plant(12706) {
+            return self.email_password_map.keys().cloned().collect();
+        }
         self.email_nick_map.keys().cloned().collect()
     }
 }
 
-/// `QuotedPrintableToAsciiString(s)` (Common/QuotedPrintable.cpp): `=XX` hex escapes decoded.
+/// `QuotedPrintableToAsciiString(s)` (Common/QuotedPrintable.cpp): `_XY` hex escapes decoded. The verified port's
+/// [`crate::common::map_cache::quoted_printable_to_ascii_string`] (the draft's own copy used `=XX`; upstream's escape
+/// character is `_`: found by the differential test, #215).
 fn quoted_printable_to_ascii(s: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < s.len() {
-        if s[i] == b'=' && i + 2 < s.len() + 0 && i + 2 <= s.len() - 1 + 0 {
-            let hex = std::str::from_utf8(&s[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok());
-            if let Some(b) = hex {
-                out.push(b);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(s[i]);
-        i += 1;
-    }
-    out
+    crate::common::map_cache::quoted_printable_to_ascii_string(s)
 }
 
-/// `AsciiStringToQuotedPrintable(s)`: bytes outside the safe set as `=XX`.
+/// `AsciiStringToQuotedPrintable(s)`: the verified port's [`crate::common::map_cache::ascii_string_to_quoted_printable`].
 fn ascii_to_quoted_printable(s: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    for &c in s {
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
-        } else {
-            out.extend_from_slice(format!("={c:02X}").as_bytes());
-        }
-    }
-    out
+    crate::common::map_cache::ascii_string_to_quoted_printable(s)
 }
 
 /// The file's statics (`NAMEKEY_INVALID` is 0, `NULL` is `None`).
@@ -681,54 +677,84 @@ pub fn wol_login_menu_input<H: WolLoginMenuHost>(wm: &mut GameWindowManager, h: 
 
 /// `isNickOkay(nick)`: the last typed character must be a legal IRC nick character; "-" alone is not allowed.
 pub fn is_nick_okay(nick: &[u16]) -> bool {
-    let legal_irc_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789[]`_^{|}-";
+    let legal_irc_chars = if plant(12688) {
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789[]`_^|}-"
+    } else {
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789[]`_^{|}-"
+    };
     let len = nick.len();
     if len == 0 {
-        return true;
+        return !plant(12686);
     }
-    if len == 1 && nick[0] == '-' as u16 {
+    if len == 1 && nick[0] == '-' as u16 && !plant(12687) {
         return false;
     }
-    let new_char = nick[len - 1];
+    let new_char = if plant(12685) { nick[0] } else { nick[len - 1] };
     legal_irc_chars.encode_utf16().any(|c| c == new_char)
+}
+
+/// `atoi(s)`: optional leading white space (space, `\t`..`\r`) and sign, then digits, stopping at the first other byte; no digits is 0;
+/// a value outside `Int` wraps (the 64-bit `strtol` of glibc, truncated: tested up to 18 digits; the CRT's own on 32 bits wraps
+/// likewise). The draft's first version failed to parse such a value and gave 0, and took Unicode white space.
+fn atoi(s: &[u8]) -> i32 {
+    let mut i = 0;
+    while i < s.len() && (s[i] == b' ' || (b'\t'..=b'\r').contains(&s[i])) {
+        i += 1;
+    }
+    let mut neg = false;
+    if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
+        neg = s[i] == b'-';
+        i += 1;
+    }
+    let mut v: i64 = 0;
+    while i < s.len() && s[i].is_ascii_digit() {
+        v = v.wrapping_mul(10).wrapping_add(i64::from(s[i] - b'0'));
+        i += 1;
+    }
+    (if neg { v.wrapping_neg() } else { v }) as i32
+}
+
+/// `format("%02.2d", n)`: at least two digits (the precision), a `-` first when negative (the `0` flag is ignored with a
+/// precision, and the width of 2 is already met).
+fn format_02_2d(n: i32) -> Vec<u8> {
+    let m = i64::from(n);
+    if n < 0 {
+        format!("-{:02}", -m).into_bytes()
+    } else {
+        format!("{m:02}").into_bytes()
+    }
 }
 
 /// `isAgeOkay(month, day, year)` (WOLLoginMenu.cpp:802): the user must be at least 13 today; `today` is the system
 /// date (`GetDateFormat`). `month` and `day` are rewritten as two digits.
 pub fn is_age_okay(month: &mut Vec<u8>, day: &mut Vec<u8>, year: &[u8], today: (i32, i32, i32)) -> bool {
-    if month.is_empty() || day.is_empty() || year.is_empty() || year.len() != 4 {
+    if month.is_empty() || day.is_empty() || year.is_empty() || (year.len() != 4 && !plant(12696)) {
         return false;
     }
-    let atoi = |s: &[u8]| -> i32 {
-        let t = String::from_utf8_lossy(s);
-        let t = t.trim_start();
-        let digits: String = t.chars().enumerate().take_while(|(i, c)| c.is_ascii_digit() || (*i == 0 && (*c == '-' || *c == '+'))).map(|(_, c)| c).collect();
-        digits.parse::<i32>().unwrap_or(0)
-    };
     let month_int = atoi(month);
     let day_int = atoi(day);
-    if month_int > 12 || day_int > 31 {
+    if (month_int > 12 && !plant(12694)) || (plant(12694) && month_int >= 12) || (day_int > 31 && !plant(12695)) || (plant(12695) && day_int >= 31) {
         return false;
     }
-    *month = format!("{month_int:02}").into_bytes();
-    *day = format!("{day_int:02}").into_bytes();
+    *month = if plant(12697) { month_int.to_string().into_bytes() } else { format_02_2d(month_int) };
+    *day = format_02_2d(day_int);
 
     let (sys_year, sys_month, sys_day) = today;
     let user_year = atoi(year);
-    if sys_year - user_year >= 14 {
+    if (sys_year.wrapping_sub(user_year) >= 14 && !plant(12690)) || (plant(12690) && sys_year.wrapping_sub(user_year) > 14) {
         return true;
-    } else if sys_year - user_year <= 12 {
+    } else if (sys_year.wrapping_sub(user_year) <= 12 && !plant(12691)) || (plant(12691) && sys_year.wrapping_sub(user_year) < 12) {
         return false;
     }
     // exactly 13 years: compare the month, then the day
     let user_month = atoi(month);
-    if sys_month - user_month > 0 {
+    if (sys_month.wrapping_sub(user_month) > 0 && !plant(12692)) || (plant(12692) && sys_month.wrapping_sub(user_month) >= 0) {
         return true;
-    } else if sys_month - user_month < 0 {
+    } else if sys_month.wrapping_sub(user_month) < 0 {
         return false;
     }
     let user_day = atoi(day);
-    if sys_day - user_day < 0 {
+    if (sys_day.wrapping_sub(user_day) < 0 && !plant(12693)) || (plant(12693) && sys_day.wrapping_sub(user_day) <= 0) {
         return false;
     }
     true

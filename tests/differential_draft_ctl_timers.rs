@@ -44,9 +44,9 @@
 //! was needed; prediction met). Planted bugs (same sequences), mismatching sequences of 20,000: 12661 297; 12662 2,256; 12663
 //! 775; 12664 12,509; 12665 9,868; 12666 3,508; 12667 5,715; 12668 16,437; 12669 6,864 (after replacing an equivalent mutant,
 //! which showed 0); 12670 1,908; 12671 15,383; 12672 4,710; 12673 3,044; 12674 11,830; 12675 6,728; 12676 2,790; 12677 3,339.
-//! **17 of 17 caught.** The fewest, 12661, needs a time whose seconds are exactly 10. The draft's `update_ocl_timer_text_display`
-//! `(total_seconds as i32) - (minutes * 60)` wraps for times of 2^31 seconds and more, which the release profile allows (no overflow
-//! checks here); with overflow checks on it would panic where upstream wraps (not exercised: this build has none).
+//! **17 of 17 caught.** The fewest, 12661, needs a time whose seconds are exactly 10. The draft's `seconds` is `wrapping_sub` / `wrapping_mul` (written before the run as plain `-` and `*`, changed in the same
+//! commit, with no behaviour change here): upstream's `Int` arithmetic wraps for times of 2^31 seconds and more, and a plain operator would panic if
+//! overflow checks were ever turned on.
 //!
 //! # Planted bugs
 //!
