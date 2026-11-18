@@ -20,7 +20,7 @@
 //! - `LightPosWorld[0]` starts at (94.0161, 50.499, 200).
 
 use super::w3d_projected_shadow::{ProjectedShadowEnv, W3DProjectedShadowManager};
-use super::w3d_volumetric_shadow::{VolumetricShadowEnv, W3DVolumetricShadowManager};
+use super::w3d_volumetric_shadow::{ShadowGeomSource, VolumetricShadowEnv, W3DVolumetricShadowManager};
 use super::w3d_common::{AABoxClass, RenderObjHandle, SphereClass};
 use rts_lockstep_engine::common::base_type::real_to_int;
 use rts_lockstep_engine::common::game_type::PathfindLayer;
@@ -381,6 +381,42 @@ impl W3DShadowManager {
         if let Some(p) = self.projected.as_mut() {
             p.release_resources();
         }
+    }
+
+    /// `W3DShadowManager::addShadow` (W3DShadow.cpp:166): adds a shadow caster to the rendering system, to the manager its
+    /// type names (`SHADOW_VOLUME` by default; `SHADOW_PROJECTION` and `SHADOW_DECAL` go to the projected system; any
+    /// other type makes no shadow). `geom_source` is the render object's class and models for the volumetric system,
+    /// `draw_is_immobile` is `Some(draw->isKindOf(KINDOF_IMMOBILE))` when there is a drawable.
+    pub fn add_shadow<P: ProjectedShadowEnv, V: VolumetricShadowEnv>(
+        &mut self,
+        robj: Option<ShadowRenderObj>,
+        shadow_info: Option<&ShadowTypeInfo>,
+        geom_source: &ShadowGeomSource,
+        draw_is_immobile: Option<bool>,
+        projected_env: &mut P,
+        volumetric_env: &V,
+    ) -> Option<ShadowHandle> {
+        let mut shadow_type = SHADOW_VOLUME;
+
+        if let Some(info) = shadow_info {
+            shadow_type = info.shadow_type;
+        }
+
+        match shadow_type {
+            SHADOW_VOLUME => {
+                if let Some(v) = self.volumetric.as_mut() {
+                    return v.add_shadow(robj, geom_source, shadow_info, draw_is_immobile, volumetric_env).map(ShadowHandle::Volumetric);
+                }
+            }
+            SHADOW_PROJECTION | SHADOW_DECAL => {
+                if let Some(p) = self.projected.as_mut() {
+                    return p.add_shadow(robj, shadow_info, projected_env).map(ShadowHandle::Projected);
+                }
+            }
+            _ => return None,
+        }
+
+        None
     }
 
     /// `W3DShadowManager::removeShadow` (W3DShadow.cpp:197): `shadow->release()` removes it from its manager.
