@@ -38,3 +38,5 @@ pub mod rect;
 pub mod surfaceclass;
 pub mod font3d;
 pub mod render2d;
+pub mod bwrender;
+pub mod bmp2d;
