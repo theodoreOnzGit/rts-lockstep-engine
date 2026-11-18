@@ -3,6 +3,8 @@
 //!
 //! `GameEngine/Source/GameNetwork`: the lockstep network layer.
 
+pub mod ip_enumeration;
+pub mod lan_game_info;
 pub mod net_command_msg;
 pub mod connection;
 pub mod connection_manager;
