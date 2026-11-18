@@ -6,27 +6,30 @@
 //!
 //! - `asin` and `sqrt` are the verified double routes (`ww::wwmath::asin`, `common::base_type::sqrt_via_double`): bit-exact
 //!   with `(Real)asin(double)` and `(Real)sqrt(double)`.
-//! - `cos`, `sin`, `tan` have NO verified double route public (`common::trig` is the `f32` `cosf`/`sinf`/`tanf`;
+//! - ~~`cos`, `sin`, `tan` have NO verified double route public (`common::trig` is the `f32` `cosf`/`sinf`/`tanf`;
 //!   `geometry::c_cos` is private). They are the `f32` route here, so a result can differ from `(Real)cos(double)` by an ulp.
-//!   GAP: add `petir = { workspace-version }` to `client/Cargo.toml` and call `petir::Real::cos(f64)` here (one file).
+//!   GAP: add `petir = { workspace-version }` to `client/Cargo.toml` and call `petir::Real::cos(f64)` here (one file).~~
+//!   **Corrected 2026-11-18 (#214):** `cos`, `sin`, `tan` go through `petir::Real` in `double`, as the verified
+//!   `common::geometry::c_cos` does (`Real::cos(f64::from(angle)) as f32`); the client now depends on `petir` directly,
+//!   at the logic crate's exact version.
 
 use rts_lockstep_engine::common::base_type::sqrt_via_double;
-use rts_lockstep_engine::common::trig;
+use petir::Real;
 use rts_lockstep_engine::ww::wwmath;
 
 /// `(Real)cos(x)`.
 pub fn c_cos(x: f32) -> f32 {
-    trig::cos(x)
+    Real::cos(f64::from(x)) as f32
 }
 
 /// `(Real)sin(x)`.
 pub fn c_sin(x: f32) -> f32 {
-    trig::sin(x)
+    Real::sin(f64::from(x)) as f32
 }
 
 /// `(Real)tan(x)`.
 pub fn c_tan(x: f32) -> f32 {
-    trig::tan(x)
+    Real::tan(f64::from(x)) as f32
 }
 
 /// `(Real)asin(x)`.
