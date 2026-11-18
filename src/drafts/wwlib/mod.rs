@@ -55,3 +55,4 @@ pub mod rgb;
 pub mod hsv;
 pub mod sampler;
 pub mod lzo;
+pub mod widestring;
