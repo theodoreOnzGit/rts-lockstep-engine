@@ -84,7 +84,7 @@ pub fn create_new_morph<P: MorphPose>(morph: &mut HMorphAnim, channels: i32, ani
     OK
 }
 
-/// `TimeCodedMorphKeysClass::Add_Key(morph_frame, pose_frame)` (hmorphanim.cpp:96): `Keys.Add(MorphKeyStruct(...))`. The
+/// `TimeCodedMorphKeysClass::Add_Key(morph_frame, pose_frame)` (hmorphanim.cpp:91): `Keys.Add(MorphKeyStruct(...))`. The
 /// loaded form stores `repeats` copies of the last key implicitly; they are made explicit first so the new key lands
 /// after them, as `Keys.Add` appends to the full list.
 fn add_key(channel: &mut MorphChannel, morph_frame: u32, pose_frame: u32) {

@@ -9,6 +9,7 @@ pub mod htreemgr;
 pub mod hrawanim;
 pub mod hcanim;
 pub mod hmorphanim;
+pub mod htree;
 pub mod assetmgr;
 pub mod camera;
 pub mod dazzle;
