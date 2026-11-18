@@ -25,3 +25,4 @@ pub mod load_screen;
 pub mod lan_map_select_menu;
 pub mod network_direct_connect;
 pub mod download_menu;
+pub mod lan_game_options_menu;
