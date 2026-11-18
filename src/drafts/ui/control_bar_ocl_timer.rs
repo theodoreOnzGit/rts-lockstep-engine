@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 sequences (test: tests/differential_draft_ctl_timers.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarOCLTimer.cpp
@@ -106,7 +107,7 @@ pub fn populate_ocl_timer<H: OclTimerHost>(wm: &mut GameWindowManager, h: &mut H
         }
     }
     // Another last minute hack due to time constraint and feature creep
-    else if (h.is_tech_building(creator) && h.is_auto_rallypoint(creator) && !plant(12669)) || (plant(12669) && h.is_auto_rallypoint(creator)) {
+    else if h.is_tech_building(creator) && (h.is_auto_rallypoint(creator) != plant(12669)) {
         // This time we want a rally point button to show up instead of a sell button
         let command_button = h.find_command_button(b"Command_SetRallyPoint");
         if let Some(w) = win {
