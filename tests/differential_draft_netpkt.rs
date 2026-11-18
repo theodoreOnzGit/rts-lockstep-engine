@@ -780,6 +780,9 @@ fn gen_cmd_kind(g: &mut Gen, c: &mut Ctx, o: &mut Vec<u32>, big: bool, allow_lc:
         0 | 1 | 2 => {
             if c.ack_kind == kind && g.below(10) < 6 {
                 c.ack_cmd = (c.ack_cmd + 1) & 0xffff;
+                if g.below(5) == 0 {
+                    c.ack_orig = (c.ack_orig + 1) & 7; // the next command id but another original player: not a repeat
+                }
             } else {
                 c.ack_kind = kind;
                 c.ack_cmd = g.below(65536);
@@ -847,6 +850,22 @@ fn gen_pack_case(g: &mut Gen) -> Vec<u32> {
         1..=6 => 2 + g.below(14),
         _ => 10 + g.below(50),
     };
+    if g.below(10) == 0 {
+        // a run of frame commands: the next frame, the next command id, no commands, mostly the same relay (the 'Z' repeat), and
+        // now and then a different relay or a count (not a repeat)
+        let m = 3 + g.below(10);
+        let mut v = vec![1, m];
+        let (mut frame, mut id, mut relay) = (g.below(1000), g.below(65000), g.below(256));
+        for _ in 0..m {
+            if g.below(4) == 0 {
+                relay = g.below(256);
+            }
+            v.extend_from_slice(&[3, c.player, frame, id, relay, if g.below(8) == 0 { 2 } else { 0 }]);
+            frame += 1;
+            id += 1;
+        }
+        return v;
+    }
     let mut v = vec![1, n];
     // Load-complete and time-out-start messages (15, 16) overrun upstream's packet when it is within 3 bytes of full (the
     // known defect: the_known_upstream_overruns), which leaves the C++ heap corrupted; they are generated only among the first

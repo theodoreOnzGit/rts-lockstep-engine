@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 8,000 operation sequences (163,628 operations) and, through getCommandList, 14,730 packets (test: tests/differential_draft_netpkt.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/NetCommandList.h

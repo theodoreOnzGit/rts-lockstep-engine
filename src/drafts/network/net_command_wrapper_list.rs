@@ -51,7 +51,7 @@ impl NetCommandWrapperListNode {
         if self.is_complete() {
             100
         } else {
-            if plant(10895) { 100.min(((self.num_chunks_present as f32) / (self.num_chunks as f32) * 100.0f32) as i32) } else { 99.min(((self.num_chunks_present as f32) / (self.num_chunks as f32) * 100.0f32) as i32) }
+            if plant(10895) { 99.min(((self.num_chunks_present as f32) / (self.num_chunks as f32) * 100.0f32).round() as i32) } else { 99.min(((self.num_chunks_present as f32) / (self.num_chunks as f32) * 100.0f32) as i32) }
         }
     }
 
@@ -137,13 +137,8 @@ impl NetCommandWrapperList {
         let idx = match pos {
             Some(i) => i,
             None => {
-                if plant(10898) {
-                    self.list.push(NetCommandWrapperListNode::new(msg));
-                    self.list.len() - 1
-                } else {
-                    self.list.insert(0, NetCommandWrapperListNode::new(msg));
-                    0
-                }
+                self.list.insert(0, NetCommandWrapperListNode::new(msg));
+                0
             }
         };
         self.list[idx].copy_chunk_data(msg);

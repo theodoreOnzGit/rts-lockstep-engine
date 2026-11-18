@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 6,000 operation sequences (test: tests/differential_draft_netpkt.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/FrameData.h
