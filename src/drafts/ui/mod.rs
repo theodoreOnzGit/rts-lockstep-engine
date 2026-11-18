@@ -21,3 +21,4 @@ pub mod popup_communicator;
 pub mod w3d_game_window_manager;
 pub mod w3d_motd;
 pub mod w3d_main_menu;
+pub mod load_screen;
