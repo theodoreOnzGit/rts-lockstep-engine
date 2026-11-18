@@ -51,10 +51,12 @@ pub const MAX_SCORCH_MARKS: usize = 500;
 pub const SCORCH_MARKS_IN_TEXTURE: i32 = 9;
 /// `SCORCH_PER_ROW`.
 pub const SCORCH_PER_ROW: i32 = 3;
-/// `TERRAIN_LOD_MIN` / `TERRAIN_LOD_MAX` / `TERRAIN_LOD_AUTOMATIC` (GameType.h `TerrainLOD`).
+/// `TERRAIN_LOD_MIN` = 1, `TERRAIN_LOD_MAX` = 7, `TERRAIN_LOD_AUTOMATIC` = 8 (TerrainVisual.h `TerrainLOD`; the port's
+/// `common::global_data` has them too). ~~An earlier draft had MAX 8 and AUTOMATIC 9~~ **Corrected 2026-11-18 (batch
+/// sweep_device):** checked against TerrainVisual.h:176-185.
 pub const TERRAIN_LOD_MIN: i32 = 1;
-pub const TERRAIN_LOD_MAX: i32 = 8;
-pub const TERRAIN_LOD_AUTOMATIC: i32 = 9;
+pub const TERRAIN_LOD_MAX: i32 = 7;
+pub const TERRAIN_LOD_AUTOMATIC: i32 = 8;
 /// `WorldHeightMap::getMaxHeightValue`.
 pub const MAX_HEIGHT_VALUE: i32 = 255;
 
