@@ -15,3 +15,7 @@ pub mod network;
 pub mod game_message_parser;
 pub mod file_transfer;
 pub mod chat;
+pub mod game_info;
+pub mod lan_api_callbacks;
+pub mod lan_game_info;
+pub mod udp;
