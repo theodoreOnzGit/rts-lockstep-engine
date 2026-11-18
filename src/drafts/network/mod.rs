@@ -5,6 +5,8 @@
 
 pub mod net_command_msg;
 pub mod connection;
+pub mod connection_manager;
+pub mod disconnect_manager;
 pub mod frame_data;
 pub mod frame_data_manager;
 pub mod frame_metrics;
