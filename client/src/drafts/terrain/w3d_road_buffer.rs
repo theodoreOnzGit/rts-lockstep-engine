@@ -18,7 +18,7 @@
 //! `LOAD_TEST_ASSETS` is defined (FileSystem.h:92), so the code it guards is translated. `abs(Real)` upstream is
 //! the floating point overload (`<cmath>`): `f32::abs`.
 
-use super::w3d_common::{SphereClass, TextureHandle, VertexFormatXYZDUV1};
+use super::w3d_common::{LineSegClass, SphereClass, TextureHandle, VertexFormatXYZDUV1};
 use rts_lockstep_engine::common::base_type::{real_to_int, PI};
 use rts_lockstep_engine::logic::terrain_visual::{MAP_HEIGHT_SCALE, MAP_XY_FACTOR};
 use rts_lockstep_engine::ww::vector2::Vector2;
@@ -2539,5 +2539,893 @@ impl W3DRoadBuffer {
         self.set_pt(pc2, c2);
         self.set_pt(pc3, c3);
         self.set_pt(pc4, c4);
+    }
+}
+
+/// What `drawRoads` sets for a road type: its texture and the shader passes it draws the whole index range with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RoadTypeDraw {
+    /// Index into `m_roadTypes`.
+    pub road_type: usize,
+    /// `applyTexture()`: the road texture (texture 0 is NULL in wireframe).
+    pub texture: Option<TextureHandle>,
+    /// `Draw_Triangles(0, getNumIndices()/3, 0, getNumVertices())`, repeated once per device pass.
+    pub draw: super::w3d_common::DrawTriangles,
+}
+
+/// `W3DShaderManager::ShaderTypes` values `drawRoads` chooses between.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoadShaderType {
+    /// `ST_ROAD_BASE`.
+    RoadBase,
+    /// `ST_ROAD_BASE_NOISE1`.
+    RoadBaseNoise1,
+    /// `ST_ROAD_BASE_NOISE2`.
+    RoadBaseNoise2,
+    /// `ST_ROAD_BASE_NOISE12`.
+    RoadBaseNoise12,
+}
+
+impl W3DRoadBuffer {
+    /// `W3DRoadBuffer::insert4Way` (W3DRoadBuffer.cpp:2422): inserts a 4 way intersection.
+    pub fn insert_4way(&mut self, loc: Vector2, index1: i32, scale: f32) {
+        let index1u = index1 as usize;
+        let pr1: PtRef;
+        let mut pr2: Option<PtRef> = None;
+        let mut pr3: Option<PtRef> = None;
+        let mut pr4: Option<PtRef> = None;
+        let pc1: PtRef;
+        let mut pc2: Option<PtRef> = None;
+        let mut pc3: Option<PtRef> = None;
+        let mut pc4: Option<PtRef> = None;
+
+        if self.roads[index1u].pt1.loc == loc {
+            pr1 = PtRef { road: index1u, second: true };
+            pc1 = PtRef { road: index1u, second: false };
+        } else {
+            pr1 = PtRef { road: index1u, second: false };
+            pc1 = PtRef { road: index1u, second: true };
+        }
+        for i in (index1 + 1)..self.num_roads {
+            let iu = i as usize;
+            if self.roads[iu].pt1.loc == loc {
+                self.roads[iu].pt1.count = -2;
+                if pr2.is_none() {
+                    pr2 = Some(PtRef { road: iu, second: true });
+                    pc2 = Some(PtRef { road: iu, second: false });
+                } else if pr3.is_none() {
+                    pr3 = Some(PtRef { road: iu, second: true });
+                    pc3 = Some(PtRef { road: iu, second: false });
+                } else {
+                    pr4 = Some(PtRef { road: iu, second: true });
+                    pc4 = Some(PtRef { road: iu, second: false });
+                }
+            }
+            if self.roads[iu].pt2.loc == loc {
+                self.roads[iu].pt2.count = -2;
+                if pr2.is_none() {
+                    pr2 = Some(PtRef { road: iu, second: false });
+                    pc2 = Some(PtRef { road: iu, second: true });
+                } else if pr3.is_none() {
+                    pr3 = Some(PtRef { road: iu, second: false });
+                    pc3 = Some(PtRef { road: iu, second: true });
+                } else {
+                    pr4 = Some(PtRef { road: iu, second: false });
+                    pc4 = Some(PtRef { road: iu, second: true });
+                }
+            }
+        }
+        let (pr2, pr3, pr4) = match (pr2, pr3, pr4) {
+            (Some(a), Some(b), Some(c)) => (a, b, c),
+            _ => return,
+        };
+        let (pc2, pc3, pc4) = (pc2.unwrap(), pc3.unwrap(), pc4.unwrap());
+
+        let mut v1 = self.pt(pr1).loc - loc;
+        v1.normalize();
+        let mut v2 = self.pt(pr2).loc - loc;
+        v2.normalize();
+        let mut v3 = self.pt(pr3).loc - loc;
+        v3.normalize();
+        let mut v4 = self.pt(pr4).loc - loc;
+        v4.normalize();
+
+        let dot12 = Vector2::dot_product(&v1, &v2);
+        let dot13 = Vector2::dot_product(&v1, &v3);
+        let dot14 = Vector2::dot_product(&v1, &v4);
+        let dot23 = Vector2::dot_product(&v2, &v3);
+        let dot24 = Vector2::dot_product(&v2, &v4);
+        let dot34 = Vector2::dot_product(&v3, &v4);
+        // The most negative dot product is the pair that is heading most opposite each other.
+
+        let mut cur_pair = 12;
+        let mut cur_dot = dot12;
+        if dot13 < cur_dot {
+            cur_pair = 13;
+            cur_dot = dot13;
+        }
+        if dot14 < cur_dot {
+            cur_pair = 14;
+            cur_dot = dot14;
+        }
+        if dot23 < cur_dot {
+            cur_pair = 23;
+            cur_dot = dot23;
+        }
+        if dot24 < cur_dot {
+            cur_pair = 24;
+            cur_dot = dot24;
+        }
+        if dot34 < cur_dot {
+            cur_pair = 34;
+        }
+        let do12 = cur_pair == 12; // Do segment 1 to 2
+        let do13 = cur_pair == 13; // Do segment 1 to 3 etc.
+        let do14 = cur_pair == 14;
+        let do23 = cur_pair == 23;
+        let do24 = cur_pair == 24;
+        let do34 = cur_pair == 34;
+
+        let mut align_vector = Vector2::default();
+        if do12 {
+            align_vector = v2 - v1;
+        }
+        if do13 {
+            align_vector = v3 - v1;
+        }
+        if do14 {
+            align_vector = v4 - v1;
+        }
+        if do23 {
+            align_vector = v3 - v2;
+        }
+        if do24 {
+            align_vector = v4 - v2;
+        }
+        if do34 {
+            align_vector = v4 - v3;
+        }
+        align_vector.normalize();
+        align_vector *= (0.5f64 * scale as f64) as f32; // we are offseting one half road width.
+
+        let w = self.roads[index1u].width_in_texture;
+        if do12 {
+            self.offset_4way(pc1, pc2, pc3, pr3, pc4, loc, align_vector, w);
+        }
+        if do13 {
+            self.offset_4way(pc1, pc3, pc2, pr2, pc4, loc, align_vector, w);
+        }
+        if do14 {
+            self.offset_4way(pc1, pc4, pc3, pr3, pc2, loc, align_vector, w);
+        }
+        if do23 {
+            self.offset_4way(pc2, pc3, pc1, pr1, pc4, loc, align_vector, w);
+        }
+        if do24 {
+            self.offset_4way(pc2, pc4, pc1, pr1, pc3, loc, align_vector, w);
+        }
+        if do34 {
+            self.offset_4way(pc3, pc4, pc1, pr1, pc2, loc, align_vector, w);
+        }
+        if align_vector.x < 0.0 {
+            // Since the 4 way intersection is symmetrical, make it go right (pos x)
+            align_vector.x = -align_vector.x;
+            align_vector.y = -align_vector.y;
+        }
+        if !self.check_segments() {
+            return;
+        }
+        let n = self.num_roads as usize;
+        let (r_scale, r_uid) = (self.roads[index1u].scale, self.roads[index1u].unique_id);
+        self.roads[n].pt1.loc.set(loc.x, loc.y);
+        self.roads[n].pt2.loc.set((loc + align_vector).x, (loc + align_vector).y);
+        self.roads[n].pt1.last = true; // if not, that one will clear flag in prior loop.
+        self.roads[n].pt2.last = true; // if not, that one will clear flag in prior loop.
+        self.roads[n].scale = r_scale;
+        self.roads[n].width_in_texture = TEE_WIDTH_ADJUSTMENT; // It is symmetrical.
+        self.roads[n].pt1.count = -4;
+        self.roads[n].type_ = TCorner::FourWay;
+        self.roads[n].unique_id = r_uid;
+        self.num_roads += 1;
+    }
+
+    /// `W3DRoadBuffer::insertTeeIntersections` (W3DRoadBuffer.cpp:2568): inserts Tee intersections at 3 way
+    /// intersections.
+    pub fn insert_tee_intersections(&mut self) {
+        // Insert the tees.
+        let num_road_segments = self.num_roads;
+        for i in 0..num_road_segments {
+            let iu = i as usize;
+            if self.roads[iu].type_ != TCorner::Segment {
+                continue;
+            }
+            if self.roads[iu].pt1.count == 2 {
+                let (l, s) = (self.roads[iu].pt1.loc, self.roads[iu].scale);
+                self.insert_tee(l, i, s);
+            }
+            if self.roads[iu].pt2.count == 2 {
+                let (l, s) = (self.roads[iu].pt2.loc, self.roads[iu].scale);
+                self.insert_tee(l, i, s);
+            }
+            if self.roads[iu].pt1.count == 3 {
+                let (l, s) = (self.roads[iu].pt1.loc, self.roads[iu].scale);
+                self.insert_4way(l, i, s);
+            }
+            if self.roads[iu].pt2.count == 3 {
+                let (l, s) = (self.roads[iu].pt2.loc, self.roads[iu].scale);
+                self.insert_4way(l, i, s);
+            }
+        }
+    }
+
+    /// `W3DRoadBuffer::insertCurveSegments` (W3DRoadBuffer.cpp:2596): inserts curved segments along connected segments.
+    pub fn insert_curve_segments(&mut self) {
+        // Insert the curve segments.
+        let num_road_segments = self.num_roads;
+        let mut segment_start_index: i32 = -1;
+        for i in 0..num_road_segments {
+            let iu = i as usize;
+            if i < num_road_segments - 1 && self.roads[iu].pt1.loc == self.roads[iu + 1].pt2.loc {
+                if self.roads[iu + 1].pt2.count == 1 && self.roads[iu].pt1.count == 1 {
+                    self.insert_curve_segment_at(i, i + 1);
+                    if segment_start_index < 0 {
+                        segment_start_index = i;
+                    }
+                }
+            } else if segment_start_index >= 0 {
+                if self.roads[iu].pt1.loc == self.roads[segment_start_index as usize].pt2.loc {
+                    if self.roads[segment_start_index as usize].pt2.count == 1 && self.roads[iu].pt1.count == 1 {
+                        self.insert_curve_segment_at(i, segment_start_index);
+                    }
+                }
+                segment_start_index = -1;
+            }
+        }
+    }
+
+    /// `W3DRoadBuffer::findCrossTypeJoinVector` (W3DRoadBuffer.cpp:2619): finds a road segment of different type and sets
+    /// the join vector. Returns the other road's unique id, 0 when none.
+    pub fn find_cross_type_join_vector(&self, loc: Vector2, join_vector: &mut Vector2, unique_id: i32) -> i32 {
+        // Insert the curve segments.
+        let num_road_segments = self.num_roads;
+        for i in 0..num_road_segments as usize {
+            // we only want different road types.
+            if self.roads[i].unique_id == unique_id {
+                continue;
+            }
+            // Only join to straight line segments.
+            if self.roads[i].type_ != TCorner::Segment {
+                continue;
+            }
+            let loc1 = self.roads[i].pt1.loc;
+            let loc2 = self.roads[i].pt2.loc;
+            let mut lo = Vector2::new(loc1.x, loc1.y);
+            let mut hi = lo;
+            if lo.x > loc2.x {
+                lo.x = loc2.x;
+            }
+            if lo.y > loc2.y {
+                lo.y = loc2.y;
+            }
+            if hi.x < loc2.x {
+                hi.x = loc2.x;
+            }
+            if hi.y < loc2.y {
+                hi.y = loc2.y;
+            }
+            lo.x -= self.roads[i].scale / 2.0;
+            lo.y -= self.roads[i].scale / 2.0;
+            hi.x += self.roads[i].scale / 2.0;
+            hi.y += self.roads[i].scale / 2.0;
+            if loc.x >= lo.x && loc.y >= lo.y && loc.x <= hi.x && loc.y <= hi.y {
+                let v1 = Vector3::new(loc1.x, loc1.y, 0.0);
+                let v2 = Vector3::new(loc2.x, loc2.y, 0.0);
+                let road_line = LineSegClass::new(v1, v2);
+                let v_loc = Vector3::new(loc.x, loc.y, 0.0);
+                let pt_on_line = road_line.find_point_closest_to(&v_loc);
+                let dist = Vector3::distance(&pt_on_line, &v_loc);
+                if dist < self.roads[i].scale * 0.55 {
+                    let mut road_vec = loc2 - loc1;
+                    if xp_sign(&road_vec, join_vector) == 1 {
+                        road_vec.rotate(PI / 2.0);
+                    } else {
+                        road_vec.rotate(-PI / 2.0);
+                    }
+                    *join_vector = road_vec;
+                    return self.roads[i].unique_id;
+                }
+            }
+        }
+        0
+    }
+
+    /// `W3DRoadBuffer::adjustStacking` (W3DRoadBuffer.cpp:2680): adjusts the stacking order.
+    pub fn adjust_stacking(&mut self, top_unique_id: i32, bottom_unique_id: i32) {
+        let mut i = 0;
+        while i < self.max_road_types {
+            if self.road_types[i as usize].get_unique_id() == top_unique_id {
+                break;
+            }
+            i += 1;
+        }
+        // upstream: DEBUG_ASSERTLOG(i < m_maxRoadTypes, "***** Wrong unique id- john a should fix.")
+        if i >= self.max_road_types {
+            return;
+        }
+
+        let mut j = 0;
+        while j < self.max_road_types {
+            if self.road_types[j as usize].get_unique_id() == bottom_unique_id {
+                break;
+            }
+            j += 1;
+        }
+        if j >= self.max_road_types {
+            return;
+        }
+
+        if self.road_types[i as usize].get_stacking() > self.road_types[j as usize].get_stacking() {
+            return; // It's already on top.
+        }
+        let new_stacking = self.road_types[j as usize].get_stacking();
+        for j in 0..self.max_road_types as usize {
+            if self.road_types[j].get_stacking() > new_stacking {
+                let s = self.road_types[j].get_stacking();
+                self.road_types[j].set_stacking(s + 1);
+            }
+        }
+        self.road_types[i as usize].set_stacking(new_stacking + 1);
+    }
+
+    /// `W3DRoadBuffer::insertCrossTypeJoins` (W3DRoadBuffer.cpp:2713): inserts alpha blend type joins at open ends.
+    pub fn insert_cross_type_joins(&mut self) {
+        // Insert the curve segments.
+        let num_road_segments = self.num_roads;
+        for i in 0..num_road_segments as usize {
+            let loc1: Vector2;
+            let loc2: Vector2;
+            let mut is_pt1 = false;
+            if self.roads[i].pt2.count == 0 && self.roads[i].pt2.is_join {
+                loc1 = self.roads[i].pt2.loc;
+                loc2 = self.roads[i].pt1.loc;
+            } else if self.roads[i].pt1.count == 0 && self.roads[i].pt1.is_join {
+                loc1 = self.roads[i].pt1.loc;
+                loc2 = self.roads[i].pt2.loc;
+                is_pt1 = true;
+            } else {
+                continue;
+            }
+            let mut road_vector = Vector2::new(loc2.x - loc1.x, loc2.y - loc1.y);
+            road_vector.normalize();
+            let mut join_vector = road_vector;
+            let other_id = self.find_cross_type_join_vector(loc1, &mut join_vector, self.roads[i].unique_id);
+            if other_id == 0 {
+                join_vector *= 100.0;
+            }
+            let road_normal = Vector2::new(-road_vector.y, road_vector.x);
+            let join_normal = Vector2::new(-join_vector.y, join_vector.x);
+
+            let (r_scale, r_wit) = (self.roads[i].scale, self.roads[i].width_in_texture);
+            let mut p1 = loc1 + road_normal * r_scale * r_wit / 2.0;
+            let mut p2 = loc2 + road_normal * r_scale * r_wit / 2.0;
+
+            let mut v1 = Vector3::new(p1.x, p1.y, 0.0);
+            let mut v2 = Vector3::new(p2.x, p2.y, 0.0);
+            let mut road_line = LineSegClass::new(v1, v2);
+            let v_loc1 = Vector3::new(loc1.x, loc1.y, 0.0);
+            v1 = Vector3::new(join_normal.x, join_normal.y, 0.0) + v_loc1;
+            let join_line = LineSegClass::new(v_loc1, v1);
+
+            let mut top = self.roads[i].pt1.top;
+            if let Some((p_int1, _, _, _)) = join_line.find_intersection(&road_line) {
+                if is_pt1 {
+                    self.roads[i].pt1.top.set(p_int1.x, p_int1.y);
+                    top = self.roads[i].pt1.top;
+                } else {
+                    self.roads[i].pt2.bottom.set(p_int1.x, p_int1.y);
+                    top = self.roads[i].pt2.bottom;
+                }
+            }
+            p1 = loc1 - road_normal * r_scale * r_wit / 2.0;
+            p2 = loc2 - road_normal * r_scale * r_wit / 2.0;
+            v1.set(p1.x, p1.y, 0.0);
+            v2.set(p2.x, p2.y, 0.0);
+            road_line.set(v1, v2);
+            let mut bottom = self.roads[i].pt1.bottom;
+            if let Some((p_int1, _, _, _)) = join_line.find_intersection(&road_line) {
+                if is_pt1 {
+                    self.roads[i].pt1.bottom.set(p_int1.x, p_int1.y);
+                    bottom = self.roads[i].pt1.bottom;
+                } else {
+                    self.roads[i].pt2.top.set(p_int1.x, p_int1.y);
+                    bottom = self.roads[i].pt2.top;
+                }
+            }
+
+            bottom = bottom - top;
+            let scale_adjustment = bottom.length() / (r_scale * r_wit);
+            if other_id != 0 {
+                let uid = self.roads[i].unique_id;
+                self.adjust_stacking(uid, other_id);
+            }
+            if !self.check_segments() {
+                return;
+            }
+            let n = self.num_roads as usize;
+            self.roads[n].pt1.loc.set(loc1.x, loc1.y);
+            self.roads[n].pt2.loc.set((loc1 + join_vector).x, (loc1 + join_vector).y);
+            self.roads[n].pt1.last = true; // if not, that one will clear flag in prior loop.
+            self.roads[n].pt2.last = true; // if not, that one will clear flag in prior loop.
+            self.roads[n].scale = r_scale;
+            self.roads[n].width_in_texture = r_scale * scale_adjustment;
+            self.roads[n].pt1.count = 0;
+            self.roads[n].type_ = TCorner::AlphaJoin;
+            self.roads[n].unique_id = self.roads[i].unique_id;
+            self.num_roads += 1;
+        }
+    }
+
+    /// `W3DRoadBuffer::miter` (W3DRoadBuffer.cpp:2826): adjusts the end points to create a smooth miter join between road
+    /// segments.
+    pub fn miter(&mut self, ndx1: i32, ndx2: i32) {
+        let (n1, n2) = (ndx1 as usize, ndx2 as usize);
+        // adjust a mitered join.  jba.
+        let mut p1 = Vector3::new(self.roads[n1].pt1.top.x, self.roads[n1].pt1.top.y, 0.0);
+        let mut p2 = Vector3::new(self.roads[n1].pt2.top.x, self.roads[n1].pt2.top.y, 0.0);
+        let mut offset_line1 = LineSegClass::new(p1, p2);
+        p1 = Vector3::new(self.roads[n2].pt1.top.x, self.roads[n2].pt1.top.y, 0.0);
+        p2 = Vector3::new(self.roads[n2].pt2.top.x, self.roads[n2].pt2.top.y, 0.0);
+        let mut offset_line2 = LineSegClass::new(p1, p2);
+        if let Some((p_int1, _, _, _)) = offset_line1.find_intersection(&offset_line2) {
+            self.roads[n2].pt2.top.x = p_int1.x;
+            self.roads[n2].pt2.top.y = p_int1.y;
+            self.roads[n1].pt1.top.x = p_int1.x;
+            self.roads[n1].pt1.top.y = p_int1.y;
+        }
+        p1 = Vector3::new(self.roads[n1].pt1.bottom.x, self.roads[n1].pt1.bottom.y, 0.0);
+        p2 = Vector3::new(self.roads[n1].pt2.bottom.x, self.roads[n1].pt2.bottom.y, 0.0);
+        offset_line1 = LineSegClass::new(p1, p2);
+        p1 = Vector3::new(self.roads[n2].pt1.bottom.x, self.roads[n2].pt1.bottom.y, 0.0);
+        p2 = Vector3::new(self.roads[n2].pt2.bottom.x, self.roads[n2].pt2.bottom.y, 0.0);
+        offset_line2 = LineSegClass::new(p1, p2);
+        if let Some((p_int1, _, _, _)) = offset_line1.find_intersection(&offset_line2) {
+            self.roads[n2].pt2.bottom.x = p_int1.x;
+            self.roads[n2].pt2.bottom.y = p_int1.y;
+            self.roads[n1].pt1.bottom.x = p_int1.x;
+            self.roads[n1].pt1.bottom.y = p_int1.y;
+        }
+    }
+
+    fn loc_of(&self, p: PtRef) -> Vector2 {
+        self.pt(p).loc
+    }
+
+    fn set_loc_of(&mut self, p: PtRef, v: Vector2) {
+        let mut pt = self.pt(p);
+        pt.loc = v;
+        self.set_pt(p, pt);
+    }
+
+    /// `W3DRoadBuffer::insertCurveSegmentAt` (W3DRoadBuffer.cpp:2870): inserts curves at the corner of 2 segments.
+    pub fn insert_curve_segment_at(&mut self, ndx1: i32, ndx2: i32) {
+        let dot_limit: f32 = 0.5; // If the dot product of the new line is less than this, abort.
+        let (n1, n2) = (ndx1 as usize, ndx2 as usize);
+        let radius = self.roads[n1].curve_radius * self.roads[n1].scale;
+        let original_pt = self.roads[n1].pt1.loc;
+        // we got a segment.
+        let mut line1 = LineSegClass::new(
+            Vector3::new(self.roads[n1].pt1.loc.x, self.roads[n1].pt1.loc.y, 0.0),
+            Vector3::new(self.roads[n1].pt2.loc.x, self.roads[n1].pt2.loc.y, 0.0),
+        );
+        let mut line2 = LineSegClass::new(
+            Vector3::new(self.roads[n2].pt1.loc.x, self.roads[n2].pt1.loc.y, 0.0),
+            Vector3::new(self.roads[n2].pt2.loc.x, self.roads[n2].pt2.loc.y, 0.0),
+        );
+        let pr1: PtRef;
+        let pr2: PtRef;
+        let pr3: PtRef;
+        let pr4: PtRef;
+
+        if self.roads[n1].unique_id != self.roads[n2].unique_id {
+            return;
+        }
+        let cur_sin = Vector3::dot_product(&line1.get_dir(), &line2.get_dir());
+        let xpdct = Vector3::cross_product_z(&line1.get_dir(), &line2.get_dir());
+        if xpdct > 0.0 {
+            pr1 = PtRef { road: n1, second: false };
+            pr2 = PtRef { road: n1, second: true };
+            pr3 = PtRef { road: n2, second: false };
+            pr4 = PtRef { road: n2, second: true };
+        } else {
+            pr4 = PtRef { road: n1, second: false };
+            pr3 = PtRef { road: n1, second: true };
+            pr2 = PtRef { road: n2, second: false };
+            pr1 = PtRef { road: n2, second: true };
+            let (a, b, c, d) = (self.loc_of(pr1), self.loc_of(pr2), self.loc_of(pr3), self.loc_of(pr4));
+            line1.set(Vector3::new(a.x, a.y, 0.0), Vector3::new(b.x, b.y, 0.0));
+            line2.set(Vector3::new(c.x, c.y, 0.0), Vector3::new(d.x, d.y, 0.0));
+        }
+        let angle = rts_lockstep_engine::ww::wwmath::acos(cur_sin);
+        let count = angle / (PI / 6.0); // number of 30 degree steps.
+        if (count as f64) < 0.9 || self.roads[n1].pt1.is_angled {
+            self.miter(ndx1, ndx2);
+            return;
+        }
+
+        let mut offset1 = radius * line1.get_dir();
+        let mut offset2 = radius * line2.get_dir();
+        offset1.rotate_z(-PI / 2.0);
+        offset2.rotate_z(-PI / 2.0);
+
+        let (l1, l2, l3, l4) = (self.loc_of(pr1), self.loc_of(pr2), self.loc_of(pr3), self.loc_of(pr4));
+        let mut p1 = Vector3::new(l1.x, l1.y, 0.0) + offset1;
+        let mut p2 = Vector3::new(l2.x, l2.y, 0.0) + offset1;
+        let offset_line1 = LineSegClass::new(p1, p2);
+        p1 = Vector3::new(l3.x, l3.y, 0.0) + offset2;
+        p2 = Vector3::new(l4.x, l4.y, 0.0) + offset2;
+        let offset_line2 = LineSegClass::new(p1, p2);
+        let mut p_int1: Vector3;
+        let mut p_int3 = Vector3::default();
+        if let Some((a, _, _, _)) = offset_line1.find_intersection(&offset_line2) {
+            p_int1 = a;
+            self.roads[n2].pt2.last = true;
+            let cross1 = LineSegClass::new(p_int1, p_int1 - offset2);
+            let cross2 = LineSegClass::new(p_int1, p_int1 - offset1);
+            if let Some((a, _, _, _)) = cross1.find_intersection(&line2) {
+                p_int1 = a;
+            }
+            if let Some((a, _, _, _)) = cross2.find_intersection(&line1) {
+                p_int3 = a;
+            }
+            // Make sure the lines didn't clip out of existence.
+            let mut the_dot = Vector3::dot_product(&line2.get_dir(), &(p_int1 - Vector3::new(l3.x, l3.y, 0.0)));
+            if the_dot < dot_limit {
+                self.set_loc_of(pr1, original_pt);
+                self.set_loc_of(pr4, original_pt);
+                self.miter(ndx1, ndx2);
+                return;
+            }
+            the_dot = Vector3::dot_product(&line1.get_dir(), &(Vector3::new(l2.x, l2.y, 0.0) - p_int3));
+            if the_dot < dot_limit {
+                self.set_loc_of(pr1, original_pt);
+                self.set_loc_of(pr4, original_pt);
+                self.miter(ndx1, ndx2);
+                return;
+            }
+            self.set_loc_of(pr4, Vector2::new(p_int1.x, p_int1.y));
+            let angle = -PI / 6.0; // -30 degrees.
+            let mut pt2 = self.loc_of(pr4);
+            let mut pt1 = self.loc_of(pr3);
+            let mut direction = Vector2::new(pt1.x - pt2.x, pt1.y - pt2.y);
+            // offset = normal of the vector from pt1 to pt2.
+            let mut center_of_curve = Vector2::new(-direction.y, direction.x);
+            center_of_curve.normalize();
+            center_of_curve *= self.roads[n1].curve_radius * self.roads[n1].scale;
+            center_of_curve += pt2;
+
+            Self::rotate_about(&mut pt2, center_of_curve, angle);
+            direction.rotate(angle);
+            pt1 = pt2 + direction;
+
+            // upstream writes m_roads[m_numRoads] before CHECK_SEGMENTS (past the end when full); `roads` has one spare entry
+            let nr = self.num_roads as usize;
+            self.roads[nr].pt1.loc = pt2;
+            self.roads[nr].pt2.loc = pt1;
+
+            if !self.check_segments() {
+                return;
+            }
+            let (c_scale, c_wit, c_rad, c_uid) = (self.roads[n1].scale, self.roads[n1].width_in_texture, self.roads[n1].curve_radius, self.roads[n1].unique_id);
+            self.roads[nr].pt1.last = true; // if not, that one will clear flag in prior loop.
+            self.roads[nr].pt2.last = true; // if not, that one will clear flag in prior loop.
+            self.roads[nr].scale = c_scale;
+            self.roads[nr].width_in_texture = c_wit;
+            self.roads[nr].type_ = TCorner::Curve;
+            self.roads[nr].curve_radius = c_rad;
+            self.roads[nr].unique_id = c_uid;
+            self.num_roads += 1;
+            if count > 2.0 {
+                let mut i = 2;
+                while (i as f32) < count {
+                    // offset = normal of the vector from pt1 to pt2.
+                    direction.rotate(angle);
+                    Self::rotate_about(&mut pt2, center_of_curve, angle);
+                    pt1 = pt2 + direction;
+                    if !self.check_segments() {
+                        return;
+                    }
+                    let nr = self.num_roads as usize;
+                    self.roads[nr].pt1.loc.set(pt2.x, pt2.y);
+                    self.roads[nr].pt2.loc.set(pt1.x, pt1.y);
+                    self.roads[nr].pt1.last = true; // if not, that one will clear flag in prior loop.
+                    self.roads[nr].pt2.last = true; // if not, that one will clear flag in prior loop.
+                    self.roads[nr].scale = c_scale;
+                    self.roads[nr].width_in_texture = c_wit;
+                    self.roads[nr].type_ = TCorner::Curve;
+                    self.roads[nr].curve_radius = c_rad;
+                    self.roads[nr].unique_id = c_uid;
+                    self.num_roads += 1;
+                    i += 1;
+                }
+            }
+
+            self.set_loc_of(pr1, Vector2::new(p_int3.x, p_int3.y));
+
+            self.roads[n1].pt1.last = true;
+            if count > 1.0 {
+                pt2 = self.loc_of(pr1);
+                pt1 = self.loc_of(pr1) + self.loc_of(pr1) - self.loc_of(pr2);
+                direction.set(pt1.x - pt2.x, pt1.y - pt2.y);
+                pt1 = pt2 + direction;
+                if !self.check_segments() {
+                    return;
+                }
+                let nr = self.num_roads as usize;
+                self.roads[nr].pt1.loc.set(pt2.x, pt2.y);
+                self.roads[nr].pt2.loc.set(pt1.x, pt1.y);
+                self.roads[nr].pt1.last = true; // if not, that one will clear flag in prior loop.
+                self.roads[nr].pt2.last = true; // if not, that one will clear flag in prior loop.
+                self.roads[nr].scale = c_scale;
+                self.roads[nr].width_in_texture = c_wit;
+                self.roads[nr].type_ = TCorner::Curve;
+                self.roads[nr].curve_radius = c_rad;
+                self.roads[nr].unique_id = c_uid;
+                self.num_roads += 1;
+            }
+
+            // Recalculate top & bottom.
+            let mut road_vector = self.roads[n1].pt2.loc - self.roads[n1].pt1.loc;
+            let mut road_normal = Vector2::new(-road_vector.y, road_vector.x);
+            road_normal.normalize();
+            road_normal *= self.roads[n1].scale * self.roads[n1].width_in_texture / 2.0;
+            self.roads[n1].pt1.top = self.roads[n1].pt1.loc + road_normal;
+            self.roads[n1].pt1.bottom = self.roads[n1].pt1.loc - road_normal;
+
+            road_vector = self.roads[n2].pt2.loc - self.roads[n2].pt1.loc;
+            road_normal = Vector2::new(-road_vector.y, road_vector.x);
+            road_normal.normalize();
+            road_normal *= self.roads[n2].scale * self.roads[n2].width_in_texture / 2.0;
+            self.roads[n2].pt2.top = self.roads[n2].pt2.loc + road_normal;
+            self.roads[n2].pt2.bottom = self.roads[n2].pt2.loc - road_normal;
+        }
+    }
+
+    /// `W3DRoadBuffer::rotateAbout` (W3DRoadBuffer.cpp:3056): rotates `pt_p` about center.
+    pub fn rotate_about(pt_p: &mut Vector2, center: Vector2, angle: f32) {
+        let mut offset = Vector2::default();
+        offset.x = pt_p.x - center.x;
+        offset.y = pt_p.y - center.y;
+        let org_offset = offset;
+        offset.rotate(angle);
+        offset.y -= org_offset.y;
+        offset.x -= org_offset.x;
+        *pt_p += offset;
+    }
+}
+
+impl W3DRoadBuffer {
+    /// `W3DRoadBuffer::W3DRoadBuffer` (W3DRoadBuffer.cpp:3092): constructor; `allocateRoadBuffers` reads the global data
+    /// and `TheTerrainRoads`. `get_texture` is `W3DAssetManager::Get_Texture(path, MIP_LEVELS_3)`.
+    pub fn new(
+        global_data: &rts_lockstep_engine::common::global_data::GlobalData,
+        terrain_roads: &rts_lockstep_engine::common::terrain_roads::TerrainRoadCollection,
+        get_texture: &mut impl FnMut(&[u8]) -> Option<TextureHandle>,
+    ) -> Self {
+        let mut b = W3DRoadBuffer {
+            road_types: Vec::new(),
+            roads: Vec::new(),
+            num_roads: 0,
+            initialized: false,
+            map: None,
+            cur_unique_id: 0,
+            cur_road_type: 0,
+            max_uid: 0,
+            cur_open_road: 0,
+            max_road_segments: 500,
+            max_road_vertex: 1000,
+            max_road_index: 2000,
+            max_road_types: 8,
+            cur_num_road_vertices: 0,
+            cur_num_road_indices: 0,
+            update_buffers: false,
+            warn_segments: true,
+        };
+        b.allocate_road_buffers(global_data, terrain_roads, get_texture);
+        b
+    }
+
+    /// `W3DRoadBuffer::~W3DRoadBuffer` (W3DRoadBuffer.cpp:3081).
+    pub fn destroy(&mut self) {
+        self.free_road_buffers();
+        self.map = None;
+    }
+
+    /// `W3DRoadBuffer::freeRoadBuffers` (W3DRoadBuffer.cpp:3115): frees the index and vertex buffers.
+    pub fn free_road_buffers(&mut self) {
+        self.roads = Vec::new();
+        self.road_types = Vec::new();
+    }
+
+    /// `W3DRoadBuffer::allocateRoadBuffers` (W3DRoadBuffer.cpp:3132): allocates the index and vertex buffers.
+    pub fn allocate_road_buffers(
+        &mut self,
+        global_data: &rts_lockstep_engine::common::global_data::GlobalData,
+        terrain_roads: &rts_lockstep_engine::common::terrain_roads::TerrainRoadCollection,
+        get_texture: &mut impl FnMut(&[u8]) -> Option<TextureHandle>,
+    ) {
+        // save data for max limits
+        self.max_road_segments = global_data.max_road_segments;
+        self.max_road_vertex = global_data.max_road_vertex;
+        self.max_road_index = global_data.max_road_index;
+        self.max_road_types = global_data.max_road_types;
+
+        // LOAD_TEST_ASSETS
+        self.max_road_types += 4;
+
+        self.cur_num_road_vertices = 0;
+        self.cur_num_road_indices = 0;
+        // one spare segment: insertCurveSegmentAt writes m_roads[m_numRoads] before testing the limit
+        self.roads = (0..(self.max_road_segments + 1).max(0)).map(|_| RoadSegment::new()).collect();
+        self.road_types = (0..self.max_road_types.max(0)).map(|_| RoadType::new()).collect();
+
+        // load roads from INI (TheTerrainRoads->firstRoad() is the newest: the list is kept oldest first)
+        let mut i: i32 = 0;
+        for road in terrain_roads.roads.iter().rev() {
+            // get a path to the texture file
+            if i < self.max_road_types {
+                let id = road.id as i32;
+                let tex = get_texture(&road.texture);
+                let (mv, mi) = (self.max_road_vertex, self.max_road_index);
+                self.road_types[i as usize].load_texture(&road.texture, id, tex, mv, mi);
+                i += 1;
+                if self.max_uid < id {
+                    self.max_uid = id;
+                }
+            }
+        }
+
+        while i < self.max_road_types && self.road_types[i as usize].is_auto_loaded() {
+            let tp = self.road_types[i as usize].texture_path.clone();
+            self.road_types[i as usize].load_test_texture(|_| get_texture(&tp));
+            i += 1;
+        }
+        self.cur_open_road = i;
+
+        self.initialized = true;
+    }
+
+    /// `W3DRoadBuffer::clearAllRoads` (W3DRoadBuffer.cpp:3188): removes all roads.
+    pub fn clear_all_roads(&mut self) {
+        if !self.roads.is_empty() {
+            for i in 0..self.num_roads as usize {
+                // SetIndexBuffer(NULL, 0) and SetVertexBuffer(NULL, 0): free the segment's buffers
+                self.roads[i].free_buffers();
+            }
+        }
+        self.num_roads = 0;
+        if !self.road_types.is_empty() {
+            for i in 0..self.max_road_types as usize {
+                self.road_types[i].set_stacking(0); // Reset stacking orders
+                self.road_types[i].set_num_vertices(0);
+                self.road_types[i].set_num_indices(0);
+            }
+        }
+    }
+
+    /// `W3DRoadBuffer::setMap` (W3DRoadBuffer.cpp:3210): sets the height map.
+    pub fn set_map(&mut self, p_map: Option<RoadMapInfo>) {
+        self.map = p_map;
+    }
+
+    /// `W3DRoadBuffer::loadRoads` (W3DRoadBuffer.cpp:3219): loads the roads from the map objects.
+    pub fn load_roads<H: Fn(f32, f32) -> f32, D: Fn(i32, i32) -> i32>(
+        &mut self,
+        map_objects: &[RoadMapObject],
+        terrain_roads: &rts_lockstep_engine::common::terrain_roads::TerrainRoadCollection,
+        terrain: &RoadTerrainFns<H, D>,
+    ) {
+        if !self.initialized {
+            return;
+        }
+        // Free any existing road segments.
+        self.clear_all_roads();
+        self.add_map_objects(map_objects, terrain_roads);
+        self.update_counts_and_flags();
+        self.insert_tee_intersections();
+        self.insert_curve_segments();
+        self.insert_cross_type_joins();
+        self.preload_roads_in_vertex_and_index_buffers(terrain);
+        self.update_buffers = true;
+    }
+
+    /// `W3DRoadBuffer::updateLighting` (W3DRoadBuffer.cpp:3242): updates the diffuse lighting in the buffers.
+    /// (The `if (!m_roads) return` guard is the alt-tab crash fix, 08/21/03.) The border size is `m_map`'s: upstream
+    /// asks `TheTerrainRenderObject->getMap()`.
+    pub fn update_lighting(&mut self, static_diffuse: &impl Fn(i32, i32) -> i32) {
+        if self.roads.is_empty() {
+            return;
+        }
+        let border = self.map.map(|m| m.border_size_inline).unwrap_or(0);
+        // Do road segments.
+        for cur_road in 0..self.num_roads as usize {
+            self.roads[cur_road].update_seg_lighting(border, static_diffuse);
+        }
+        self.update_buffers = true;
+    }
+
+    /// `W3DRoadBuffer::updateCenter` (W3DRoadBuffer.cpp:3282): sets the flag to reload the vertex buffer.
+    pub fn update_center(&mut self) {
+        self.update_buffers = true;
+    }
+
+    /// `W3DRoadBuffer::drawRoads` (W3DRoadBuffer.cpp:3292): draws the roads. Returns the shader upstream picks, the
+    /// device passes it is drawn with (`device_passes` is `W3DShaderManager::getShaderPasses(st)`) and each road type's
+    /// draw, in stacking order. `NO_TEST_CULL` is defined, so the `TEST_CULL` shrink of the bounds is not translated;
+    /// `LOG_STATS` is off. The `#if 0` dynamic light pass is not translated ([`W3DRoadBuffer::load_lit_roads_in_vertex_and_index_buffers`]
+    /// is, but unused).
+    pub fn draw_roads(&mut self, cloud_texture: bool, noise_texture: bool, wireframe: bool, min_x: i32, max_x: i32, min_y: i32, max_y: i32) -> (RoadShaderType, Vec<RoadTypeDraw>) {
+        let bounds = (
+            (min_x as f32 * MAP_XY_FACTOR) as i32,
+            (min_y as f32 * MAP_XY_FACTOR) as i32,
+            (max_x as f32 * MAP_XY_FACTOR) as i32,
+            (max_y as f32 * MAP_XY_FACTOR) as i32,
+        );
+
+        let mut max_stacking = 0;
+        for i in 0..self.max_road_types as usize {
+            if self.road_types[i].get_stacking() > max_stacking {
+                max_stacking = self.road_types[i].get_stacking();
+            }
+        }
+        let mut st = RoadShaderType::RoadBase; // set default shader
+        if cloud_texture {
+            st = RoadShaderType::RoadBaseNoise1;
+            if noise_texture {
+                st = RoadShaderType::RoadBaseNoise12;
+            }
+        } else if noise_texture {
+            st = RoadShaderType::RoadBaseNoise2;
+        }
+        // upstream: devicePasses = W3DShaderManager::getShaderPasses(st); setTexture(1, cloud); setTexture(2, noise)
+
+        let mut load_buffers = false;
+        if self.update_buffers {
+            if self.visibility_changed(bounds) {
+                load_buffers = true;
+            }
+        }
+        self.update_buffers = false;
+
+        let mut draws = Vec::new();
+        for stacking in 0..=max_stacking {
+            for i in 0..self.max_road_types as usize {
+                if stacking != self.road_types[i].get_stacking() {
+                    continue;
+                }
+                self.cur_unique_id = self.road_types[i].get_unique_id();
+                self.cur_road_type = i as i32;
+                if load_buffers {
+                    self.load_roads_in_vertex_and_index_buffers();
+                }
+                if self.road_types[i].get_num_indices() == 0 {
+                    continue;
+                }
+                let texture = if wireframe { None } else { self.road_types[i].apply_texture() };
+                // upstream, per device pass: if (!wireframe) W3DShaderManager::setShader(st, pass); Draw_Triangles(...)
+                // afterwards: if (!wireframe) W3DShaderManager::resetShader(st)
+                draws.push(RoadTypeDraw {
+                    road_type: i,
+                    texture,
+                    draw: super::w3d_common::DrawTriangles {
+                        start_index: 0,
+                        polygon_count: self.road_types[i].get_num_indices() / 3,
+                        min_vertex_index: 0,
+                        vertex_count: self.road_types[i].get_num_vertices(),
+                    },
+                });
+            }
+        }
+        self.cur_road_type = 0;
+        (st, draws)
     }
 }

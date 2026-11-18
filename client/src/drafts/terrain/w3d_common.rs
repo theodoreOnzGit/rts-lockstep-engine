@@ -273,3 +273,90 @@ pub struct MeshModelData {
     /// `Get_Polygon_Array`: `TriIndex` `(I, J, K)` per polygon.
     pub polygons: Vec<(u32, u32, u32)>,
 }
+
+/// `class LineSegClass` (lineseg.h, lineseg.cpp): a line segment with its precomputed direction and length. Only the
+/// members the terrain buffers use.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LineSegClass {
+    /// `P0`: start point.
+    pub p0: Vector3,
+    /// `P1`: end point.
+    pub p1: Vector3,
+    /// `DP`: difference of the two points.
+    pub dp: Vector3,
+    /// `Dir`: normalized direction.
+    pub dir: Vector3,
+    /// `Length`: length of the segment.
+    pub length: f32,
+}
+
+impl LineSegClass {
+    /// `LineSegClass(const Vector3 &p0, const Vector3 &p1)` (lineseg.h:63).
+    pub fn new(p0: Vector3, p1: Vector3) -> Self {
+        let mut l = LineSegClass { p0, p1, dp: Vector3::default(), dir: Vector3::default(), length: 0.0 };
+        l.recalculate();
+        l
+    }
+
+    /// `LineSegClass::recalculate` (lineseg.h:27).
+    fn recalculate(&mut self) {
+        self.dp = self.p1 - self.p0;
+        self.dir = self.dp;
+        self.dir.normalize();
+        self.length = self.dp.length();
+    }
+
+    /// `LineSegClass::Set(p0, p1)` (lineseg.h).
+    pub fn set(&mut self, p0: Vector3, p1: Vector3) {
+        self.p0 = p0;
+        self.p1 = p1;
+        self.recalculate();
+    }
+
+    /// `LineSegClass::Get_Dir` (lineseg.h).
+    pub fn get_dir(&self) -> Vector3 {
+        self.dir
+    }
+
+    /// `LineSegClass::Find_Point_Closest_To` (lineseg.cpp:111).
+    pub fn find_point_closest_to(&self, pos: &Vector3) -> Vector3 {
+        // Get a vector from one line endpoint to point in question.
+        let v_0_pos = *pos - self.p0;
+        let dotprod = Vector3::dot_product(&self.dir, &v_0_pos);
+
+        // Check to see if point is past either of the endpoints.
+        if dotprod <= 0.0 {
+            self.p0
+        } else if dotprod >= self.length {
+            self.p1
+        } else {
+            // Find point on line seg that is closest to pos passed in.
+            self.p0 + (dotprod * self.dir)
+        }
+    }
+
+    /// `LineSegClass::Find_Intersection` (lineseg.cpp:140): the closest points on the two (infinite) lines, and the
+    /// fractions of `Length`. `None` when the lines are parallel (the `ALLOW_TEMPORARIES` branch is not compiled).
+    pub fn find_intersection(&self, other_line: &LineSegClass) -> Option<(Vector3, f32, Vector3, f32)> {
+        let cross1 = Vector3::cross_product(&self.dir, &other_line.dir);
+        let cross2 = Vector3::cross_product(&(other_line.p0 - self.p0), &other_line.dir);
+        let top1 = Vector3::dot_product(&cross2, &cross1);
+        let bottom1 = Vector3::dot_product(&cross1, &cross1);
+        let cross3 = Vector3::cross_product(&other_line.dir, &self.dir);
+        let cross4 = Vector3::cross_product(&(self.p0 - other_line.p0), &self.dir);
+        let top2 = Vector3::dot_product(&cross4, &cross3);
+        let bottom2 = Vector3::dot_product(&cross3, &cross3);
+
+        // If either of the divisors are 0, then the lines are parallel
+        if bottom1 != 0.0 && bottom2 != 0.0 {
+            let length1 = top1 / bottom1;
+            let length2 = top2 / bottom2;
+
+            // Calculate the closest points on both lines. Note: If the points are the same, then the lines intersect.
+            let p1 = self.p0 + (self.dir * length1);
+            let p2 = other_line.p0 + (other_line.dir * length2);
+            return Some((p1, length1 / self.length, p2, length2 / self.length));
+        }
+        None
+    }
+}
