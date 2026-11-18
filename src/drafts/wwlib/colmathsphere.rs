@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_colmath.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmathsphere.cpp
@@ -8,6 +9,7 @@
 //! describes the intent); `Overlap_Test(Sphere, Line)` and `(Sphere, Tri)` are "TODO" (`WWASSERT(0)`, debug only)
 //! and return POS.
 
+use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
 use super::colmath::{OverlapType, COINCIDENCE_EPSILON};
 use super::lineseg::LineSegClass;
@@ -25,7 +27,7 @@ pub fn intersection_test_sphere_aabox(sphere: &SphereClass, box_: &AABoxClass) -
     if wwmath::fabs(dc.x) < box_.extent.x + sphere.radius {
         return false;
     }
-    if wwmath::fabs(dc.y) < box_.extent.y + sphere.radius {
+    if (if plant(10483) { wwmath::fabs(dc.y) <= box_.extent.y + sphere.radius } else { wwmath::fabs(dc.y) < box_.extent.y + sphere.radius }) {
         return false;
     }
     if wwmath::fabs(dc.z) < box_.extent.z + sphere.radius {
@@ -51,7 +53,7 @@ pub fn intersection_test_sphere_obbox(sphere: &SphereClass, box_: &OBBoxClass) -
     if box_.extent.y < wwmath::fabs(box_rel_center.y) {
         return false;
     }
-    if box_.extent.z < wwmath::fabs(box_rel_center.z) {
+    if (if plant(10484) { box_.extent.y < wwmath::fabs(box_rel_center.z) } else { box_.extent.z < wwmath::fabs(box_rel_center.z) }) {
         return false;
     }
     true
@@ -61,7 +63,7 @@ pub fn intersection_test_sphere_obbox(sphere: &SphereClass, box_: &OBBoxClass) -
 pub fn overlap_test_sphere_point(sphere: &SphereClass, point: &Vector3) -> OverlapType {
     let r2 = (*point - sphere.center).length2();
 
-    if r2 < sphere.radius * sphere.radius - COINCIDENCE_EPSILON {
+    if (if plant(10485) { r2 < sphere.radius - COINCIDENCE_EPSILON } else { r2 < sphere.radius * sphere.radius - COINCIDENCE_EPSILON }) {
         return OverlapType::Neg;
     }
     if r2 > sphere.radius * sphere.radius + COINCIDENCE_EPSILON {
@@ -84,10 +86,10 @@ pub fn overlap_test_sphere_tri(_sphere: &SphereClass, _tri: &TriClass) -> Overla
 pub fn overlap_test_sphere_sphere(sphere: &SphereClass, sphere2: &SphereClass) -> OverlapType {
     let mut retval = OverlapType::OUTSIDE;
 
-    let radius = sphere.radius + sphere2.radius;
+    let radius = (if plant(10487) { sphere.radius } else { sphere.radius + sphere2.radius });
     let dist2 = (sphere2.center - sphere.center).length2();
 
-    if dist2 == 0.0 && sphere.radius == sphere2.radius {
+    if (if plant(10486) { dist2 == 0.0 } else { dist2 == 0.0 && sphere.radius == sphere2.radius }) {
         retval = OverlapType::OVERLAPPED;
     } else if dist2 <= radius * radius - COINCIDENCE_EPSILON {
         retval = OverlapType::INSIDE;

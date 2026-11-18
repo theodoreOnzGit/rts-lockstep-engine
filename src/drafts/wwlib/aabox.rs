@@ -1,5 +1,7 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Covered by tests/differential_draft_colmath.rs (#215): every member except `AABoxClass::init_random` (needs `WWMath::Random_Float`; not covered). `Init(points)` is covered for 1 to 5 points (upstream reads `points[0]` unchecked).
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/aabox.h
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/aabox.cpp
@@ -8,6 +10,7 @@
 //! `AABoxClass` / `MinMaxAABoxClass` the collision maths (`colmath*`) takes. `WWMath::Random_Float` (C `rand()`) is a
 //! caller closure, as in `curve.rs`.
 
+use crate::logic::modules::plant;
 use super::colmath::OverlapType;
 use super::colmathaabox::{overlap_test_aabox_aabox, overlap_test_aabox_point};
 use super::lineseg::LineSegClass;
@@ -111,7 +114,7 @@ impl AABoxClass {
 
     /// `Init_Min_Max(min, max)` (aabox.h).
     pub fn init_min_max(&mut self, min: &Vector3, max: &Vector3) {
-        self.center = (*max + *min) * 0.5f32;
+        (if plant(10535) { self.center = (*max - *min) * 0.5f32 } else { self.center = (*max + *min) * 0.5f32 });
         self.extent = (*max - *min) * 0.5f32;
     }
 
@@ -135,7 +138,7 @@ impl AABoxClass {
         if min.y > point.y {
             min.y = point.y;
         }
-        if min.z > point.z {
+        if (if plant(10530) { min.z > point.y } else { min.z > point.z }) {
             min.z = point.z;
         }
         if max.x < point.x {
@@ -156,7 +159,7 @@ impl AABoxClass {
         let mut newmin = self.center - self.extent;
         let mut newmax = self.center + self.extent;
         newmin.update_min(&(b.center - b.extent));
-        newmax.update_max(&(b.center + b.extent));
+        (if plant(10531) { newmax.update_max(&(b.center - b.extent)) } else { newmax.update_max(&(b.center + b.extent)) });
         self.center = (newmax + newmin) * 0.5f32;
         self.extent = (newmax - newmin) * 0.5f32;
     }
@@ -177,7 +180,7 @@ impl AABoxClass {
         let x = self.extent[0] * axis[0];
         let y = self.extent[1] * axis[1];
         let z = self.extent[2] * axis[2];
-        wwmath::fabs(x) + wwmath::fabs(y) + wwmath::fabs(z)
+        (if plant(10532) { wwmath::fabs(x) + y + wwmath::fabs(z) } else { wwmath::fabs(x) + wwmath::fabs(y) + wwmath::fabs(z) })
     }
 
     /// `Transform(tm)` (aabox.h): `tm.Transform_Center_Extent_AABox`.
@@ -197,12 +200,16 @@ impl AABoxClass {
 
     /// `Translate(pos)` (aabox.h).
     pub fn translate(&mut self, trans: &Vector3) {
-        self.center += *trans;
+        if plant(10541) {
+            self.center -= *trans;
+        } else {
+            self.center += *trans;
+        }
     }
 
     /// `Volume()` (aabox.h). Upstream writes `2.0*Extent.X * ...` in double, then returns it as `float`.
     pub fn volume(&self) -> f32 {
-        (2.0f64 * self.extent.x as f64 * 2.0f64 * self.extent.y as f64 * 2.0f64 * self.extent.z as f64) as f32
+        (if plant(10533) { 2.0f32 * self.extent.x * 2.0f32 * self.extent.y * 2.0f32 * self.extent.z } else { (2.0f64 * self.extent.x as f64 * 2.0f64 * self.extent.y as f64 * 2.0f64 * self.extent.z as f64) as f32 })
     }
 
     /// `Contains(const Vector3 &)`: `CollisionMath::Overlap_Test(*this, point) == INSIDE`.
@@ -231,7 +238,7 @@ impl AABoxClass {
         if other_box.max_corner.x > bmax.x {
             return false;
         }
-        if other_box.max_corner.y > bmax.y {
+        if (if plant(10534) { other_box.max_corner.y >= bmax.y } else { other_box.max_corner.y > bmax.y }) {
             return false;
         }
         if other_box.max_corner.z > bmax.z {
@@ -267,7 +274,7 @@ impl MinMaxAABoxClass {
 
     /// `MinMaxAABoxClass(const AABoxClass &)` / `Init(box)`.
     pub fn from_aabox(b: &AABoxClass) -> Self {
-        MinMaxAABoxClass { min_corner: b.center - b.extent, max_corner: b.center + b.extent }
+        (if plant(10539) { MinMaxAABoxClass { min_corner: b.center + b.extent, max_corner: b.center - b.extent } } else { MinMaxAABoxClass { min_corner: b.center - b.extent, max_corner: b.center + b.extent } })
     }
 
     /// `MinMaxAABoxClass::Init_Empty` (aabox.cpp:70).
@@ -284,7 +291,7 @@ impl MinMaxAABoxClass {
 
     /// `Add_Box(const MinMaxAABoxClass &)`: "if (box.MinCorner == box.MaxCorner) return;".
     pub fn add_min_max_box(&mut self, b: &MinMaxAABoxClass) {
-        if b.min_corner == b.max_corner {
+        if (if plant(10536) { false } else { b.min_corner == b.max_corner }) {
             return;
         }
         self.min_corner.update_min(&b.min_corner);
@@ -293,18 +300,17 @@ impl MinMaxAABoxClass {
 
     /// `Add_Box(const AABoxClass &)`: "if (box.Extent == Vector3(0,0,0)) return;".
     pub fn add_box(&mut self, b: &AABoxClass) {
-        if b.extent == Vector3::new(0.0, 0.0, 0.0) {
+        if (if plant(10537) { false } else { b.extent == Vector3::new(0.0, 0.0, 0.0) }) {
             return;
         }
         self.min_corner.update_min(&(b.center - b.extent));
         self.max_corner.update_max(&(b.center + b.extent));
     }
 
-    /// `Add_Box(min_corner, max_corner)` (asserts `max >= min` per axis).
+    /// `Add_Box(min_corner, max_corner)`. Upstream `WWASSERT`s `max >= min` per axis, which is compiled out of the release
+    /// build (wwdebug.h defines `WWASSERT` only under `WWDEBUG`); ~~the draft `assert!`ed it~~ **Corrected 2026-11-18
+    /// (#215):** no assert, as the release build the C++ is compiled as.
     pub fn add_corners(&mut self, min_corner: &Vector3, max_corner: &Vector3) {
-        assert!(max_corner.x >= min_corner.x);
-        assert!(max_corner.y >= min_corner.y);
-        assert!(max_corner.z >= min_corner.z);
         if *min_corner == *max_corner {
             return;
         }
@@ -324,12 +330,16 @@ impl MinMaxAABoxClass {
     /// `Translate(pos)`.
     pub fn translate(&mut self, pos: &Vector3) {
         self.min_corner += *pos;
-        self.max_corner += *pos;
+        if plant(10540) {
+            self.max_corner -= *pos;
+        } else {
+            self.max_corner += *pos;
+        }
     }
 
     /// `Volume()`: `size = MaxCorner - MinCorner; size.X*size.Y*size.Z`.
     pub fn volume(&self) -> f32 {
         let size = self.max_corner - self.min_corner;
-        size.x * size.y * size.z
+        (if plant(10538) { size.x * size.y * size.x } else { size.x * size.y * size.z })
     }
 }

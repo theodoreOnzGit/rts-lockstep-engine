@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_colmath.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmathaabox.h
@@ -8,8 +9,11 @@
 //! `Collide(AABox, move, Tri)` from colmathaabtri.cpp (`super::colmathaabtri`). The `#if 0` "alternate Overlap Test
 //! for AABox-Ray" is not translated. Upstream defects kept: `Overlap_Test(AABox, Sphere)` is marked "TODO: this
 //! function seems incorrect" and only tests the box grown by the radius per axis; `Collide(AABox, AABox)` writes
-//! `Normal[AxisId]` with `AxisId == -1` (an out-of-range write upstream) if no axis ever raised `MaxFrac` above 0.
+//! `Normal[AxisId]` with `AxisId == -1` (an out-of-range write upstream: `Normal[-1]` is the `Fraction` before it, set from
+//! the never-set `Side`; CONFIRMED by running the C++, 159 of 20,000 random cases) if no axis ever raised `MaxFrac` above 0.
+//! The draft skips that write (a defined deviation); the differential test does not compare those inputs.
 
+use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
 use super::colmath::{eval_overlap_collision, CastResultStruct, OverlapType};
 use super::colmathaabtri::collide_aabox_tri;
@@ -25,7 +29,7 @@ pub fn overlap_test_aabox_point(box_: &AABoxClass, point: &Vector3) -> OverlapTy
     if wwmath::fabs(point.x - box_.center.x) > box_.extent.x {
         return OverlapType::Pos;
     }
-    if wwmath::fabs(point.y - box_.center.y) > box_.extent.y {
+    if (if plant(10464) { wwmath::fabs(point.y - box_.center.y) >= box_.extent.y } else { wwmath::fabs(point.y - box_.center.y) > box_.extent.y }) {
         return OverlapType::Pos;
     }
     if wwmath::fabs(point.z - box_.center.z) > box_.extent.z {
@@ -53,7 +57,7 @@ pub fn overlap_test_aabox_aabox(box_: &AABoxClass, box2: &AABoxClass) -> Overlap
         && (dc.z + box2.extent.z <= box_.extent.z)
         && (dc.x - box2.extent.x >= -box_.extent.x)
         && (dc.y - box2.extent.y >= -box_.extent.y)
-        && (dc.z - box2.extent.z >= -box_.extent.z)
+        && (if plant(10465) { (dc.z - box2.extent.z > -box_.extent.z) } else { (dc.z - box2.extent.z >= -box_.extent.z) })
     {
         return OverlapType::Neg; // inside;
     }
@@ -65,7 +69,7 @@ pub fn overlap_test_aabox_aabox(box_: &AABoxClass, box2: &AABoxClass) -> Overlap
 pub fn intersection_test_aabox_aabox(box_: &AABoxClass, box2: &AABoxClass) -> bool {
     let dc = box2.center - box_.center;
 
-    if box_.extent.x + box2.extent.x < wwmath::fabs(dc.x) {
+    if (if plant(10466) { box_.extent.x + box2.extent.x <= wwmath::fabs(dc.x) } else { box_.extent.x + box2.extent.x < wwmath::fabs(dc.x) }) {
         return false;
     }
     if box_.extent.y + box2.extent.y < wwmath::fabs(dc.y) {
@@ -81,7 +85,7 @@ pub fn intersection_test_aabox_aabox(box_: &AABoxClass, box2: &AABoxClass) -> bo
 /// function seems incorrect. Not currently using it though".
 pub fn overlap_test_aabox_sphere(box_: &AABoxClass, sphere: &SphereClass) -> OverlapType {
     let dist = sphere.center - box_.center;
-    let extent = Vector3::new(box_.extent.x + sphere.radius, box_.extent.y + sphere.radius, box_.extent.z + sphere.radius);
+    let extent = Vector3::new(box_.extent.x + sphere.radius, (if plant(10467) { box_.extent.y } else { box_.extent.y + sphere.radius }), box_.extent.z + sphere.radius);
 
     // Check to see if the sphere is completely outside the box
     if wwmath::fabs(dist.x) > extent.x {
@@ -123,7 +127,7 @@ pub fn overlap_test_aabox_line(box_: &AABoxClass, line: &LineSegClass) -> Overla
             let dp_proj = line.get_dp()[i];
 
             if p0_proj > 0.0 {
-                if p0_proj > box_proj - wwmath::min(dp_proj, 0.0f32) {
+                if p0_proj > box_proj - (if plant(10468) { wwmath::max(dp_proj, 0.0f32) } else { wwmath::min(dp_proj, 0.0f32) }) {
                     return OverlapType::OUTSIDE;
                 }
             } else if -p0_proj > box_proj + wwmath::max(dp_proj, 0.0f32) {
@@ -142,7 +146,7 @@ pub fn overlap_test_aabox_line(box_: &AABoxClass, line: &LineSegClass) -> Overla
 
         // Project box and line onto (y cross line): "== (0,1,0) cross (x,y,z)"
         axis.set(dir.z, 0.0, -dir.x);
-        box_proj = wwmath::fabs(axis.x * box_.extent.x) + wwmath::fabs(axis.z * box_.extent.z);
+        box_proj = wwmath::fabs(axis.x * box_.extent.x) + (if plant(10469) { wwmath::fabs(axis.z * box_.extent.x) } else { wwmath::fabs(axis.z * box_.extent.z) });
         p0_proj = Vector3::dot_product(&axis, &dp0);
         if wwmath::fabs(p0_proj) > box_proj {
             return OverlapType::OUTSIDE;
@@ -183,7 +187,7 @@ pub fn collide_aabox_plane(box_: &AABoxClass, move_vector: &Vector3, plane: &Pla
             frac = 1.0f32;
         } else {
             // partial move allowed
-            frac = (extent - dist) / mv;
+            frac = (if plant(10470) { (dist - extent) / mv } else { (extent - dist) / mv });
         }
     } else if dist < -extent {
         if dist + mv < -extent {
@@ -207,7 +211,7 @@ pub fn collide_aabox_plane(box_: &AABoxClass, move_vector: &Vector3, plane: &Pla
             let mut move_dir = *move_vector;
             move_dir.normalize();
             let move_extent = Vector3::dot_product(&box_.extent, &move_dir);
-            result.contact_point = box_.center + result.fraction * *move_vector + move_extent * move_dir;
+            result.contact_point = (if plant(10471) { box_.center + result.fraction * *move_vector } else { box_.center + result.fraction * *move_vector + move_extent * move_dir });
         }
         return true;
     }
@@ -267,7 +271,7 @@ fn aab_separation_test(context: &mut AABCollisionStruct, axis: usize) -> bool {
                 context.side = 1;
             }
         }
-    } else if u0 - wwmath::WWMATH_EPSILON < -rsum {
+    } else if (if plant(10472) { u0 + wwmath::WWMATH_EPSILON < -rsum } else { u0 - wwmath::WWMATH_EPSILON < -rsum }) {
         context.start_bad = false;
         if u1 < -rsum {
             context.max_frac = 1.0f32;
@@ -286,8 +290,8 @@ fn aab_separation_test(context: &mut AABCollisionStruct, axis: usize) -> bool {
 
 /// `CollisionMath::Collide(const AABoxClass & box, const Vector3 & move, const AABoxClass & box2, result)`
 /// (colmathaabox.cpp:559): sweeps `box` along `move` against the stationary `box2`. Contact point computation is not
-/// supported upstream (it only prints a debug message). `Normal[AxisId]` with `AxisId == -1` panics here on the index
-/// (undefined behaviour upstream).
+/// supported upstream (it only prints a debug message). `Normal[AxisId]` with `AxisId == -1` is skipped here (undefined
+/// behaviour upstream; ~~"panics here on the index"~~ **Corrected 2026-11-18 (#215):** the draft now skips the write).
 pub fn collide_aabox_aabox(box_: &AABoxClass, move_: &Vector3, box2: &AABoxClass, result: &mut CastResultStruct) -> bool {
     let mut context = AABCollisionStruct::new(box_, move_, box2, &Vector3::new(0.0, 0.0, 0.0));
 
@@ -307,7 +311,11 @@ pub fn collide_aabox_aabox(box_: &AABoxClass, move_: &Vector3, box2: &AABoxClass
     if context.max_frac < result.fraction {
         result.fraction = context.max_frac;
         result.normal.set(0.0, 0.0, 0.0);
-        result.normal[context.axis_id as usize] = (-context.side) as f32;
+        // DEVIATION (defined behaviour where upstream is not): with `AxisId == -1` upstream writes `Normal[-1]` (the
+        // `Fraction` before it) with `-Side` of an uninitialised `Side`; here the write is skipped.
+        if context.axis_id >= 0 {
+            result.normal[context.axis_id as usize] = (if plant(10473) { context.side as f32 } else { (-context.side) as f32 });
+        }
         if result.compute_contact_point {
             // upstream: WWDEBUG_SAY(("AABox-AABox collision does not currently support contact point computation"))
         }

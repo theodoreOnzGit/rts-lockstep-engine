@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_colmath.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmathobbox.cpp
@@ -7,6 +8,7 @@
 //! (`Intersection_Test` box/box, `Collide` box/box), colmathobbtri.cpp (`Collide` box/tri) and colmathline.cpp
 //! (`Collide` line/box).
 
+use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
 use super::colmath::{eval_overlap_collision, CastResultStruct, OverlapType};
 use super::colmathline::collide_line_obbox;
@@ -24,7 +26,7 @@ use crate::ww::wwmath;
 /// box's frame; outside any extent is OUTSIDE.
 pub fn overlap_test_obbox_point(box_: &OBBoxClass, point: &Vector3) -> OverlapType {
     // transform point into box coordinate system
-    let localpoint = Matrix3x3::transpose_rotate_vector(&box_.basis, &(*point - box_.center));
+    let localpoint = (if plant(10504) { Matrix3x3::rotate_vector(&box_.basis, &(*point - box_.center)) } else { Matrix3x3::transpose_rotate_vector(&box_.basis, &(*point - box_.center)) });
 
     // if the point is outside any of the extents, it is outside the box
     if wwmath::fabs(localpoint.x) > box_.extent.x {
@@ -33,7 +35,7 @@ pub fn overlap_test_obbox_point(box_: &OBBoxClass, point: &Vector3) -> OverlapTy
     if wwmath::fabs(localpoint.y) > box_.extent.y {
         return OverlapType::OUTSIDE;
     }
-    if wwmath::fabs(localpoint.z) > box_.extent.z {
+    if (if plant(10500) { wwmath::fabs(localpoint.z) >= box_.extent.z } else { wwmath::fabs(localpoint.z) > box_.extent.z }) {
         return OverlapType::OUTSIDE;
     }
     OverlapType::INSIDE
@@ -56,7 +58,7 @@ pub fn overlap_test_obbox_tri(box_: &OBBoxClass, tri: &TriClass) -> OverlapType 
 /// `Overlap_Test(const AABoxClass & aabox, const OBBoxClass & obbox)`: BOTH ("inside or overlapping") or OUTSIDE.
 pub fn overlap_test_aabox_obbox(aabox: &AABoxClass, obbox: &OBBoxClass) -> OverlapType {
     if intersection_test_aabox_obbox(aabox, obbox) {
-        OverlapType::Both
+        (if plant(10503) { OverlapType::Neg } else { OverlapType::Both })
     } else {
         OverlapType::OUTSIDE
     }
@@ -95,7 +97,7 @@ pub fn collide_obbox_plane(box_: &OBBoxClass, move_vector: &Vector3, plane: &Pla
             // partial move allowed
             frac = (extent - dist) / mv;
         }
-    } else if dist < -extent {
+    } else if (if plant(10502) { dist <= -extent } else { dist < -extent }) {
         if dist + mv < -extent {
             // entire move ok!
             frac = 1.0f32;
@@ -117,7 +119,7 @@ pub fn collide_obbox_plane(box_: &OBBoxClass, move_vector: &Vector3, plane: &Pla
             let mut move_dir = *move_vector;
             move_dir.normalize();
             let move_extent = Vector3::dot_product(&move_dir, &box_.extent);
-            result.contact_point = box_.center + result.fraction * *move_vector + move_extent * move_dir;
+            result.contact_point = (if plant(10501) { box_.center + result.fraction * *move_vector } else { box_.center + result.fraction * *move_vector + move_extent * move_dir });
         }
         return true;
     }

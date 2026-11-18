@@ -1,5 +1,7 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Covered by tests/differential_draft_colmath.rs (#215): `eval_overlap_mask`, `eval_overlap_collision` (through every overlap test), and the constants. NOT covered: `ColmathStatsStruct` (`new`, `reset`; the counters are debug-only upstream).
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmath.h
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/colmath.cpp
@@ -14,6 +16,7 @@
 //! macros are empty, so [`ColmathStatsStruct`] is translated but nothing increments it.
 
 pub use crate::client::pick_drawable::CastResult as CastResultStruct;
+use crate::logic::modules::plant;
 
 /// `const float COLLISION_EPSILON = 0.001f;` (colmath.h).
 pub const COLLISION_EPSILON: f32 = 0.001f32;
@@ -67,11 +70,11 @@ pub fn eval_overlap_mask(mask: i32) -> OverlapType {
         return OverlapType::On;
     }
     // check if all verts are either "ON" or "POS"
-    if (mask & !(POS | ON)) == 0 {
+    if (if plant(10462) { (mask & !POS) == 0 } else { (mask & !(POS | ON)) == 0 }) {
         return OverlapType::Pos;
     }
     // check if all verts are either "ON" or "BACK"
-    if (mask & !(NEG | ON)) == 0 {
+    if (if plant(10463) { (mask & !NEG) == 0 } else { (mask & !(NEG | ON)) == 0 }) {
         return OverlapType::Neg;
     }
     // otherwise, poly spans the plane.
@@ -80,7 +83,7 @@ pub fn eval_overlap_mask(mask: i32) -> OverlapType {
 
 /// `CollisionMath::eval_overlap_collision(res)` (colmath.h).
 pub fn eval_overlap_collision(res: &CastResultStruct) -> OverlapType {
-    if res.fraction < 1.0f32 {
+    if (if plant(10461) { res.fraction <= 1.0f32 } else { res.fraction < 1.0f32 }) {
         OverlapType::Both
     } else if res.start_bad {
         OverlapType::Neg
