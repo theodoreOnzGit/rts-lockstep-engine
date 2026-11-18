@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #206): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Not a translation of one upstream file: the handle types the drafts in this directory use where upstream holds a
 //! ref-counted pointer (`TextureClass *`, `VertexMaterialClass *`, `MaterialPassClass *`, `RenderObjClass *`,

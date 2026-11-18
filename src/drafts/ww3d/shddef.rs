@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #206): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/wwshade/shddef.cpp
@@ -53,7 +52,7 @@ impl Default for ShdVersion {
 
 /// The surface type names of the `ENUM_PARAM` in `ShdDefClass::ShdDefClass` (shddef.cpp:41), in that file's
 /// order (editor drop-down order, **not** enum order) with their `SURFACE_TYPE_*` values (w3d_file.h:1062).
-pub const SURFACE_TYPE_ENUM_PARAM: [(&str, u32); SURFACE_TYPE_MAX as usize - 1] = [
+pub const SURFACE_TYPE_ENUM_PARAM: [(&str, u32); SURFACE_TYPE_MAX as usize] = [
     ("Light Metal", 0),
     ("Heavy Metal", 1),
     ("Water", 2),

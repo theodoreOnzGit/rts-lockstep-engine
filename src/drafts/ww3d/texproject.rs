@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #206): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/texproject.cpp
@@ -20,7 +19,7 @@
 use super::coltest::ObBoxClass;
 use super::handles::{ObBoxHandle, TextureHandle};
 use super::matpass::MaterialPassClass;
-use super::matrixmapper::{matrix4x4_multiply, matrix4x4_from_matrix3d, MappingType, MatrixMapperClass};
+use super::matrixmapper::{MappingType, MatrixMapperClass};
 use super::projector::ProjectorClass;
 use crate::client::tactical_view::Matrix4x4;
 use crate::formats::w3d::mesh::shader_bits::*;
@@ -652,7 +651,7 @@ impl TexProjectClass {
     pub fn pre_render_update<H: TexProjHost>(&mut self, host: &H, camera: &Matrix3D) {
         let world_to_texture = self.projector.get_transform().get_orthogonal_inverse();
         let tmp = Matrix3D::multiply(&world_to_texture, camera);
-        let view_to_texture: Matrix4x4 = matrix4x4_multiply(&self.projector.projection, &matrix4x4_from_matrix3d(&tmp));
+        let view_to_texture: Matrix4x4 = Matrix4x4::multiply(&self.projector.projection, &Matrix4x4::from_matrix3d(&tmp));
 
         // update the current intensity by iterating it towards the desired intensity
         let frame_time = host.frame_time_ms() as f32 / 1000.0;
