@@ -5,7 +5,7 @@
 **   dab_class.inc   aabtree.h, from `struct CullNodeStruct` to the declaration of Generate_OBBox_APT_Recursive: CullNodeStruct,
 **                   OBBoxAPTContextStruct, OBBoxRayAPTContextStruct (inside the stand-in class);
 **   dab_inline.inc  aabtree.h, CullNodeStruct's accessors Is_Leaf to Get_Poly_Count;
-**   dab_funcs.inc   aabtree.cpp, from Generate_OBBox_APT_Recursive(..OBBoxAPTContextStruct..) (line 359) to
+**   dab_funcs.inc   aabtree.cpp, from Generate_APT(box, apt) (line 337) to
 **                   Update_Bounding_Boxes_Recursive: both Generate_OBBox_APT_Recursive and Generate_APT(box, viewdir),
 **                   Cast_Ray_Recursive, the three Cast_*_Recursive, Intersect_OBBox_Recursive, Cast_Ray_To_Polys, the
 **                   semi-infinite ray, AABox and OBBox leaf casts and Intersect_OBBox_With_Polys.

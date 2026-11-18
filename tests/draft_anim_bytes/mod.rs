@@ -104,7 +104,7 @@ pub fn raw_anim_chunk(name: &[u8], hier: &[u8], frames: u32, chans: &[RawChan], 
     chunk(W3D_CHUNK_ANIMATION, true, &body)
 }
 
-/// `W3D_CHUNK_COMPRESSED_ANIMATION` (time coded): header, channels `(flags 7..=10, pivot, time codes)`, bit channels.
+/// `W3D_CHUNK_COMPRESSED_ANIMATION` (time coded): header, channels `(flags 0, 1, 2 or 6, pivot, time codes)`, bit channels.
 pub fn comp_anim_chunk(name: &[u8], hier: &[u8], frames: u32, chans: &[(u8, u16, u32)], vis: &[u16], mut val: impl FnMut() -> f32) -> Vec<u8> {
     let mut h = Vec::new();
     w32(&mut h, w3d_make_version(0, 1));
@@ -115,7 +115,7 @@ pub fn comp_anim_chunk(name: &[u8], hier: &[u8], frames: u32, chans: &[(u8, u16,
     w16(&mut h, 0);
     let mut body = chunk(W3D_CHUNK_COMPRESSED_ANIMATION_HEADER, false, &h);
     for &(flags, pivot, nt) in chans {
-        let vlen: u8 = if flags == 10 { 4 } else { 1 };
+        let vlen: u8 = if flags == 6 { 4 } else { 1 };
         let mut b = Vec::new();
         w32(&mut b, nt);
         w16(&mut b, pivot);

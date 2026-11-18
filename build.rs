@@ -11416,7 +11416,7 @@ mod differential {
         inc("dab_inline.inc", cut(&ath, "aabtree.h", "inline bool AABTreeClass::CullNodeStruct::Is_Leaf(void)", Some("inline void AABTreeClass::CullNodeStruct::Set_Front_Child(uint32 index)")));
         inc(
             "dab_funcs.inc",
-            cut(&at, "aabtree.cpp", "void AABTreeClass::Generate_OBBox_APT_Recursive(CullNodeStruct * node,OBBoxAPTContextStruct & context)", Some("void AABTreeClass::Update_Bounding_Boxes_Recursive(CullNodeStruct * node)")),
+            cut(&at, "aabtree.cpp", "void AABTreeClass::Generate_APT(const OBBoxClass & box,SimpleDynVecClass<uint32> & apt)", Some("void AABTreeClass::Update_Bounding_Boxes_Recursive(CullNodeStruct * node)")),
         );
         let mut e = cc::Build::new();
         w3d_build(&mut e, false);

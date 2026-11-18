@@ -13,6 +13,8 @@
 ** so Compute_Current_Frame returns ModeAnim.Frame in SINGLE_ANIM and 0 otherwise). The hierarchy and the single
 ** animation are real, loaded by the real loaders from chunks (the hook of wrap_w3d.cpp).
 **
+** wrap_w3d.cpp's Float_To_Long mode is set to the Win32 fistp branch, the Rust animation's default, and the WWMath tables
+** are initialised, as wrap_w3d_eval.cpp does.
 ** Entry point (extern "C", tests/differential_draft_animobj.rs): ref_dao_run(in, nin, out, cap)
 **   op 0 reset   op 1 add_tree(blob) -> [index]   op 2 add_raw(blob) -> [index]
 **   op 3 setup(tree or 0xFFFFFFFF, mode, anim or 0xFFFFFFFF, frame, transform 12 floats): the object holds a COPY of the tree
@@ -40,6 +42,8 @@ int ref_w3d_ramfile_read(void *f, void *buffer, int bytes);
 int ref_w3d_ramfile_seek(void *f, int pos, int mode);
 int ref_w3d_ramfile_size(void *f);
 void ref_w3d_ramfile_close(void *f);
+void ref_wwmath_init_tables(void);
+void ref_w3d_set_float_to_long_mode(int mode);
 }
 extern HTreeClass *(*g_w3d_htree_hook)(const char *);
 
@@ -155,6 +159,8 @@ void dump_tree(HTreeClass *t)
 extern "C" int ref_dao_run(const uint32_t *in, int nin, uint32_t *out, int cap)
 {
 	g_w3d_htree_hook = lookup_tree;
+	ref_wwmath_init_tables(); /* Fast_Slerp's tables (wrap_w3d_eval.cpp does the same) */
+	ref_w3d_set_float_to_long_mode(1); /* the shipped game's fistp, which the Rust HRawAnim samples with by default (#19) */
 	g_out.clear();
 	Reader rd = { in, 0 };
 	switch (rd.u()) {

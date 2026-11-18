@@ -294,7 +294,7 @@ fn has_channel_queries_match_upstream() {
         let mut chans = Vec::new();
         let mut vis = Vec::new();
         for p in 0..n as u16 {
-            for f in 7..11u8 {
+            for f in [0u8, 1, 2, 6] {
                 if g.below(2) == 0 {
                     chans.push((f, p, 2 + g.below(3)));
                 }

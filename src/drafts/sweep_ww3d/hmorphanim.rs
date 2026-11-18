@@ -12,6 +12,7 @@
 //! W3dView / the exporters call: editor-only.
 
 use crate::formats::w3d::hmorphanim::{HMorphAnim, MorphChannel, MorphKey};
+use crate::ww::wwmath;
 
 /// `HMorphAnimClass::OK` / `LOAD_ERROR`.
 pub const OK: i32 = 0;
@@ -99,12 +100,16 @@ fn add_key(channel: &mut MorphChannel, morph_frame: u32, pose_frame: u32) {
 }
 
 /// `HMorphAnimClass::Insert_Morph_Key(channel, morph_frame, pose_frame)` (hmorphanim.cpp:726): adds the key and raises
-/// `FrameCount` to `Max(morph_frame, FrameCount)`. (`assert(channel<ChannelCount)` is a debug assertion.)
+/// `FrameCount` to `Max(morph_frame, FrameCount)`, computed as upstream computes it: `WWMath::Max(float, float)` is the only
+/// overload, so a `morph_frame` above 2^24 rounds to `float` (~~integer max~~ **Corrected 2026-11-18 (#215):** the integer max
+/// differed from upstream there). A value of 2147483520 or more is outside `int` after the `float` round trip: undefined
+/// upstream, not tested. (`assert(channel<ChannelCount)` is a debug assertion.)
 pub fn insert_morph_key(morph: &mut HMorphAnim, channel: i32, morph_frame: u32, pose_frame: u32) {
     add_key(&mut morph.channels[channel as usize], morph_frame, pose_frame);
 
     // update the framecount to reflect the newly added key
-    morph.frame_count = (morph_frame as i32).max(morph.frame_count);
+    // WWMath::Max has only a float overload: both arguments become float and the result truncates back to int
+    morph.frame_count = wwmath::max(morph_frame as f32, morph.frame_count as f32) as i32;
 }
 
 /// `HMorphAnimClass::Release_Keys()` (hmorphanim.cpp:735): `MorphKeyData[i].Free()` for every channel (`Keys.Delete_All();
