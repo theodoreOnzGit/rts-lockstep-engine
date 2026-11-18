@@ -2,7 +2,8 @@
 //! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
-//!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/WorldHeightMap.cpp
+//!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/WorldHeightMap.cpp (incl. getAlphaTerrainTexture,
+//!   getEdgeTerrainTexture, added in the second pass)
 //!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/TileData.cpp
 //!
 //! Sweep 2 (#213): only the members whose names appear nowhere in the verified port
@@ -859,4 +860,40 @@ pub fn parse_object_data<C>(
         out_flags.is_scorch = true;
     }
     Ok(Some((obj, out_flags)))
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Lazily built terrain textures
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// The three device textures `WorldHeightMap::getTerrainTexture` builds together (`m_terrainTex`, `m_alphaTerrainTex`,
+/// `m_alphaEdgeTex`), held as opaque handles because `TextureClass` is device-side.
+#[derive(Clone, Debug, Default)]
+pub struct WorldHeightMapTextures<T> {
+    /// `m_terrainTex`.
+    pub terrain_tex: Option<T>,
+    /// `m_alphaTerrainTex`.
+    pub alpha_terrain_tex: Option<T>,
+    /// `m_alphaEdgeTex`.
+    pub alpha_edge_tex: Option<T>,
+}
+
+impl<T: Clone> WorldHeightMapTextures<T> {
+    /// `WorldHeightMap::getAlphaTerrainTexture` (WorldHeightMap.cpp:2213). `build` is `getTerrainTexture()` (cut point,
+    /// see the header), which fills all three members when `m_terrainTex` is NULL.
+    pub fn get_alpha_terrain_texture(&mut self, build: impl FnOnce(&mut Self)) -> Option<T> {
+        if self.alpha_terrain_tex.is_none() {
+            build(self); // getTerrainTexture();
+        }
+        self.alpha_terrain_tex.clone()
+    }
+
+    /// `WorldHeightMap::getEdgeTerrainTexture` (WorldHeightMap.cpp:2221). Same shape as the alpha getter, on
+    /// `m_alphaEdgeTex`.
+    pub fn get_edge_terrain_texture(&mut self, build: impl FnOnce(&mut Self)) -> Option<T> {
+        if self.alpha_edge_tex.is_none() {
+            build(self); // getTerrainTexture();
+        }
+        self.alpha_edge_tex.clone()
+    }
 }
