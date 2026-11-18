@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): Save and Load are not covered; the rest matches over 20,000 sequences per class (tests/differential_draft_curves.rs). Corrected 2026-11-18: Evaluate/Evaluate_Derivative split so a derived class updates tangents after the range check, as upstream.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/hermitespline.h
@@ -7,6 +8,8 @@
 //! `virtual Update_Tangents` is a hook: the derived splines (cardinal, Catmull-Rom, TCB) own a `base` hermite spline
 //! and, before calling the base `evaluate`, run their own `update_tangents` when `base.tangents_dirty` is set (which
 //! clears it, as upstream's overrides do). The base `update_tangents` only clears the flag, as upstream's inline does.
+
+use crate::logic::modules::plant;
 
 use super::chunk_save::ChunkSaveClass;
 use super::curve::{read_f32, Curve1DClass, Curve3DClass};
@@ -57,24 +60,38 @@ impl HermiteSpline3DClass {
     pub fn set_looping(&mut self, onoff: bool) {
         if onoff != self.base.is_looping {
             self.base.set_looping(onoff);
-            self.tangents_dirty = true;
+            self.tangents_dirty = !plant(10738);
         }
     }
 
-    /// `HermiteSpline3DClass::Evaluate` (hermitespline.cpp:95).
-    pub fn evaluate(&mut self, time: f32) -> Vector3 {
+    /// The start of `HermiteSpline3DClass::Evaluate` (hermitespline.cpp:95): outside the key range the first or last point is
+    /// returned BEFORE the tangents are brought up to date (so a derived class must not update them first).
+    pub fn evaluate_out_of_range(&self, time: f32) -> Option<Vector3> {
         let keys = &self.base.keys;
         // if we're outside the range, return the start or end...
         if time < keys[0].time {
-            return keys[0].point;
+            return Some(keys[0].point);
         }
-        if time > keys[keys.len() - 1].time {
-            return keys[keys.len() - 1].point;
+        if if plant(10733) { time >= keys[keys.len() - 1].time } else { time > keys[keys.len() - 1].time } {
+            return Some(keys[keys.len() - 1].point);
+        }
+        None
+    }
+
+    /// `HermiteSpline3DClass::Evaluate`.
+    pub fn evaluate(&mut self, time: f32) -> Vector3 {
+        if let Some(v) = self.evaluate_out_of_range(time) {
+            return v;
         }
         // if the tangents are marked dirty, give derived classes a chance to recompute them
         if self.tangents_dirty {
             self.update_tangents();
         }
+        self.interpolate(time)
+    }
+
+    /// The rest of `HermiteSpline3DClass::Evaluate`: find the segment and apply the Hermite basis (tangents up to date).
+    pub fn interpolate(&self, time: f32) -> Vector3 {
         let keys = &self.base.keys;
         let (i0, i1, t) = self.base.find_interval(time);
         let (i0, i1) = (i0 as usize, i1 as usize);
@@ -82,8 +99,8 @@ impl HermiteSpline3DClass {
         let t3 = t2 * t;
         // hermite basis functions:
         let h0 = 2.0 * t3 - 3.0 * t2 + 1.0;
-        let h1 = -2.0 * t3 + 3.0 * t2;
-        let h2 = t3 - 2.0 * t2 + t;
+        let h1 = if plant(10732) { -2.0 * t3 + 2.0 * t2 } else { -2.0 * t3 + 3.0 * t2 };
+        let h2 = if plant(10731) { t3 - t2 + t } else { t3 - 2.0 * t2 + t };
         let h3 = t3 - t2;
         Vector3::new(
             h0 * keys[i0].point.x + h1 * keys[i1].point.x + h2 * self.tangents[i0].out_tangent.x + h3 * self.tangents[i1].in_tangent.x,
@@ -92,17 +109,28 @@ impl HermiteSpline3DClass {
         )
     }
 
-    /// `HermiteSpline3DClass::Evaluate_Derivative` (hermitespline.cpp:140).
-    pub fn evaluate_derivative(&mut self, time: f32) -> Vector3 {
-        // if we're outside the range, return the value for the start or end...
+    /// The start of `Evaluate_Derivative`: the time clamped into the key range.
+    pub fn clamp_time(&self, time: f32) -> f32 {
         let min_time = self.base.keys[0].time;
         let max_time = self.base.keys[self.base.keys.len() - 1].time;
         let mut time = time;
         time = if time > min_time { time } else { min_time }; // MAX(time, min_time)
         time = if time < max_time { time } else { max_time }; // MIN(time, max_time)
+        time
+    }
+
+    /// `HermiteSpline3DClass::Evaluate_Derivative` (hermitespline.cpp:140).
+    pub fn evaluate_derivative(&mut self, time: f32) -> Vector3 {
+        let time = self.clamp_time(time);
+        // if the tangents are marked dirty, give derived classes a chance to recompute them
         if self.tangents_dirty {
             self.update_tangents();
         }
+        self.derivative_at(time)
+    }
+
+    /// The rest of `Evaluate_Derivative` (tangents up to date, `time` clamped).
+    pub fn derivative_at(&self, time: f32) -> Vector3 {
         let keys = &self.base.keys;
         let (i0, i1, t) = self.base.find_interval(time);
         let (i0, i1) = (i0 as usize, i1 as usize);
@@ -110,10 +138,10 @@ impl HermiteSpline3DClass {
         // derivatives of hermite basis functions:
         let dh0 = 6.0 * t2 - 6.0 * t;
         let dh1 = -6.0 * t2 + 6.0 * t;
-        let dh2 = 3.0 * t2 - 4.0 * t + 1.0;
+        let dh2 = 3.0 * t2 - (if plant(10734) { 3.0 } else { 4.0 }) * t + 1.0;
         let dh3 = 3.0 * t2 - 2.0 * t;
         Vector3::new(
-            dh0 * keys[i0].point.x + dh1 * keys[i1].point.x + dh2 * self.tangents[i0].out_tangent.x + dh3 * self.tangents[i1].in_tangent.x,
+            dh0 * keys[i0].point.x + dh1 * keys[i1].point.x + dh2 * self.tangents[i0].out_tangent.x + dh3 * (if plant(10735) { self.tangents[i1].out_tangent.x } else { self.tangents[i1].in_tangent.x }),
             dh0 * keys[i0].point.y + dh1 * keys[i1].point.y + dh2 * self.tangents[i0].out_tangent.y + dh3 * self.tangents[i1].in_tangent.y,
             dh0 * keys[i0].point.z + dh1 * keys[i1].point.z + dh2 * self.tangents[i0].out_tangent.z + dh3 * self.tangents[i1].in_tangent.z,
         )
@@ -129,13 +157,21 @@ impl HermiteSpline3DClass {
     pub fn add_key(&mut self, point: &Vector3, t: f32) -> i32 {
         let index = self.base.add_key(point, t);
         self.tangents_dirty = true;
-        self.tangents.insert(index as usize, Tangents3D::default());
+        if plant(10736) {
+            self.tangents.push(Tangents3D::default());
+        } else {
+            self.tangents.insert(index as usize, Tangents3D::default());
+        }
         index
     }
 
     /// `HermiteSpline3DClass::Remove_Key` (hermitespline.cpp:198).
     pub fn remove_key(&mut self, i: i32) {
-        self.tangents.remove(i as usize);
+        if plant(10737) {
+            self.tangents.pop();
+        } else {
+            self.tangents.remove(i as usize);
+        }
         self.base.remove_key(i);
         self.tangents_dirty = true;
     }
@@ -159,6 +195,9 @@ impl HermiteSpline3DClass {
     pub fn get_tangents(&self, i: i32) -> (Vector3, Vector3) {
         debug_assert!(i >= 0);
         debug_assert!(i < self.base.key_count());
+        if plant(10740) {
+            return (self.tangents[i as usize].out_tangent, self.tangents[i as usize].in_tangent);
+        }
         (self.tangents[i as usize].in_tangent, self.tangents[i as usize].out_tangent)
     }
 
@@ -247,32 +286,47 @@ impl HermiteSpline1DClass {
         }
     }
 
-    /// `HermiteSpline1DClass::Evaluate` (hermitespline.cpp:327).
-    pub fn evaluate(&mut self, time: f32) -> f32 {
+    /// The start of `HermiteSpline1DClass::Evaluate` (hermitespline.cpp:327): one key, or (not looping) outside the key range,
+    /// returns a key's point BEFORE the tangents are brought up to date.
+    pub fn evaluate_early(&self, time: f32) -> Option<f32> {
         let n = self.base.keys.len();
-        if n == 1 {
-            return self.base.keys[0].point;
+        if n == 1 && !plant(10739) {
+            return Some(self.base.keys[0].point);
         }
         if !self.base.is_looping {
             // if we're outside the range, return the start or end...
             if time < self.base.keys[0].time {
-                return self.base.keys[0].point;
+                return Some(self.base.keys[0].point);
             }
             if time > self.base.keys[n - 1].time {
-                return self.base.keys[n - 1].point;
+                return Some(self.base.keys[n - 1].point);
             }
         }
+        None
+    }
+
+    /// `HermiteSpline1DClass::Evaluate`.
+    pub fn evaluate(&mut self, time: f32) -> f32 {
+        if let Some(v) = self.evaluate_early(time) {
+            return v;
+        }
+        // if the tangents are marked dirty, give derived classes a chance to recompute them
         if self.tangents_dirty {
             self.update_tangents();
         }
+        self.interpolate(time)
+    }
+
+    /// The rest of `HermiteSpline1DClass::Evaluate`.
+    pub fn interpolate(&self, time: f32) -> f32 {
         let keys = &self.base.keys;
         let (i0, i1, t) = self.base.find_interval(time);
         let (i0, i1) = (i0 as usize, i1 as usize);
         let t2 = t * t;
         let t3 = t2 * t;
         let h0 = 2.0 * t3 - 3.0 * t2 + 1.0;
-        let h1 = -2.0 * t3 + 3.0 * t2;
-        let h2 = t3 - 2.0 * t2 + t;
+        let h1 = if plant(10732) { -2.0 * t3 + 2.0 * t2 } else { -2.0 * t3 + 3.0 * t2 };
+        let h2 = if plant(10731) { t3 - t2 + t } else { t3 - 2.0 * t2 + t };
         let h3 = t3 - t2;
         h0 * keys[i0].point + h1 * keys[i1].point + h2 * self.tangents[i0].out_tangent + h3 * self.tangents[i1].in_tangent
     }

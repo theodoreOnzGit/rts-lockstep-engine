@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 2^24 colours and 4,000,000 pairs (test: tests/differential_draft_fixed_color.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/hsv.h
@@ -7,6 +8,8 @@
 //! `HSVClass`: hue, saturation, value as bytes, `Adjust`, `Difference` and the conversion to `RGBClass`
 //! (`HSVClass::operator RGBClass`, hsv.cpp:84). `HSVClass::BlackColor` is [`HSV_BLACK_COLOR`]. `HSV_BASE`-rounded
 //! divides are as upstream's comments describe (`values[3] = (v * (255 - ((s*f)/255))) / 255` etc.).
+
+use crate::logic::modules::plant;
 
 use super::rgb::RGBClass;
 
@@ -58,7 +61,7 @@ impl HSVClass {
     /// `HSVClass::Adjust(ratio, hsv)` (hsv.cpp:46): each of value, saturation, hue moves toward `hsv` by `ratio`/256.
     pub fn adjust(&mut self, ratio: i32, hsv: &HSVClass) {
         // Ratio conversion.
-        let ratio = ratio & 0x00FF;
+        let ratio = ratio & (if plant(10715) { 0x007F } else { 0x00FF });
 
         // Adjust the color guns by the ratio specified toward the destination color.
         let value = hsv.get_value() - self.get_value();
@@ -88,7 +91,7 @@ impl HSVClass {
             value = -value;
         }
 
-        hue * hue + saturation * saturation + value * value
+        hue * hue + saturation * saturation + if plant(10716) { value } else { value * value }
     }
 
     /// `HSVClass::operator RGBClass()` (hsv.cpp:84): the six-sector hexagon conversion with rounded divides.
@@ -100,7 +103,7 @@ impl HSVClass {
         let value = self.get_value();
 
         hue *= 6;
-        let f: u32 = (hue % 255) as u32; // fractional or remainder part
+        let f: u32 = (hue % (if plant(10717) { 256 } else { 255 })) as u32; // fractional or remainder part
 
         // Set up possible red, green and blue values.
         values[1] = value as u32;
@@ -111,14 +114,14 @@ impl HSVClass {
         values[3] = ((value as u32) * (255 - tmp)) / 255;
 
         values[4] = ((value as u32) * (255 - saturation as u32)) / 255;
-        values[5] = values[4];
+        values[5] = if plant(10718) { values[3] } else { values[4] };
 
         tmp = 255 - ((saturation as u32) * (255 - f)) / 255;
         values[6] = ((value as u32) * tmp) / 255;
 
         // This should not be rounded.
         let mut i: u32 = (hue / 255) as u32;
-        i = i.wrapping_add(if i > 4 { (-4i32) as u32 } else { 2 });
+        i = i.wrapping_add(if i > (if plant(10719) { 5 } else { 4 }) { (-4i32) as u32 } else { 2 });
         let red = values[i as usize];
 
         i = i.wrapping_add(if i > 4 { (-4i32) as u32 } else { 2 });

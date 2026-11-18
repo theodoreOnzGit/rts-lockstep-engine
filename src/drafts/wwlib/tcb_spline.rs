@@ -1,10 +1,13 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): Save and Load are not covered; Update_Tangents with fewer than two keys is undefined upstream and untested; the rest matches (tests/differential_draft_curves.rs).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/tcbspline.h
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/tcbspline.cpp
 //!
 //! Upstream's `Update_Tangents` has no `return` for fewer than two keys (UB afterwards); this draft returns.
+
+use crate::logic::modules::plant;
 
 use super::chunk_save::ChunkSaveClass;
 use super::curve::read_f32;
@@ -36,7 +39,7 @@ impl TCBSpline3DClass {
     /// `TCBSpline3DClass::Add_Key`.
     pub fn add_key(&mut self, point: &Vector3, t: f32) -> i32 {
         let index = self.base.add_key(point, t);
-        self.params.insert(index as usize, TcbClass { tension: 0.0, continuity: 0.0, bias: 0.0 });
+        self.params.insert(index as usize, TcbClass { tension: 0.0, continuity: 0.0, bias: if plant(10754) { 0.5 } else { 0.0 } });
         index
     }
 
@@ -57,7 +60,7 @@ impl TCBSpline3DClass {
         debug_assert!(i >= 0);
         debug_assert!((i as usize) < self.params.len());
         self.params[i as usize] = TcbClass { tension, continuity, bias };
-        self.base.tangents_dirty = true;
+        self.base.tangents_dirty = !plant(10753);
     }
 
     /// `TCBSpline3DClass::Get_TCB_Params`: (tension, continuity, bias).
@@ -89,7 +92,7 @@ impl TCBSpline3DClass {
             // This really only works if the start and end points have the same position...
             // Also just using the TCB params from p0 for both
             let k0 = 0.5 * ((1.0 - pr[0].tension) * (1.0 - pr[0].continuity) * (1.0 - pr[0].bias));
-            let k1 = 0.5 * ((1.0 - pr[0].tension) * (1.0 + pr[0].continuity) * (1.0 + pr[0].bias));
+            let k1 = 0.5 * ((1.0 - pr[0].tension) * (if plant(10750) { 1.0 - pr[0].continuity } else { 1.0 + pr[0].continuity }) * (1.0 + pr[0].bias));
             let k2 = 0.5 * ((1.0 - pr[0].tension) * (1.0 + pr[0].continuity) * (1.0 - pr[0].bias));
             let k3 = 0.5 * ((1.0 - pr[0].tension) * (1.0 - pr[0].continuity) * (1.0 + pr[0].bias));
 
@@ -98,7 +101,7 @@ impl TCBSpline3DClass {
             tan[end].in_tangent = (k0 * dp_in) + (k1 * dp_out);
             tan[0].out_tangent = (k2 * dp_out) + (k3 * dp_in);
         } else {
-            let k2 = 0.25 * ((1.0 - pr[0].tension) * (1.0 + pr[0].continuity) * (1.0 - pr[0].bias));
+            let k2 = (if plant(10751) { 0.5 } else { 0.25 }) * ((1.0 - pr[0].tension) * (1.0 + pr[0].continuity) * (1.0 - pr[0].bias));
             let k3 = 0.25 * ((1.0 - pr[0].tension) * (1.0 - pr[0].continuity) * (1.0 + pr[0].bias));
 
             let mut dp_out = keys[1].point - keys[0].point;
@@ -126,12 +129,15 @@ impl TCBSpline3DClass {
             let k2 = 0.5 * ((1.0 - pr[pi].tension) * (1.0 + pr[pi].continuity) * (1.0 - pr[pi].bias));
             let k3 = 0.5 * ((1.0 - pr[pi].tension) * (1.0 - pr[pi].continuity) * (1.0 + pr[pi].bias));
 
-            let dp_in = keys[pi].point - keys[pi - 1].point;
-            let dp_out = keys[pi + 1].point - keys[pi].point;
+            let (dp_in, dp_out) = if plant(10755) {
+                (keys[pi + 1].point - keys[pi].point, keys[pi].point - keys[pi - 1].point)
+            } else {
+                (keys[pi].point - keys[pi - 1].point, keys[pi + 1].point - keys[pi].point)
+            };
             tan[pi].in_tangent = (k0 * dp_out) + (k1 * dp_in);
             tan[pi].out_tangent = (k2 * dp_out) + (k3 * dp_in);
 
-            let total_time = keys[pi + 1].time - keys[pi - 1].time;
+            let total_time = if plant(10752) { keys[pi + 1].time - keys[pi].time } else { keys[pi + 1].time - keys[pi - 1].time };
             let in_factor = 2.0 * (keys[pi].time - keys[pi - 1].time) / total_time;
             let out_factor = 2.0 * (keys[pi + 1].time - keys[pi].time) / total_time;
             tan[pi].in_tangent *= in_factor; // compensating for un-even keys
@@ -142,10 +148,22 @@ impl TCBSpline3DClass {
 
     /// `HermiteSpline3DClass::Evaluate` with the virtual `Update_Tangents` resolved to this class's.
     pub fn evaluate(&mut self, time: f32) -> Vector3 {
+        if let Some(v) = self.base.evaluate_out_of_range(time) {
+            return v;
+        }
         if self.base.tangents_dirty {
             self.update_tangents();
         }
-        self.base.evaluate(time)
+        self.base.interpolate(time)
+    }
+
+    /// `HermiteSpline3DClass::Evaluate_Derivative` with the virtual `Update_Tangents` resolved to this class's.
+    pub fn evaluate_derivative(&mut self, time: f32) -> Vector3 {
+        let time = self.base.clamp_time(time);
+        if self.base.tangents_dirty {
+            self.update_tangents();
+        }
+        self.base.derivative_at(time)
     }
 
     /// `PersistClass::Get_Factory` -> `_TCBSpline3DFactory`'s chunk id.

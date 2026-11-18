@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): Save and Load are not covered (their chunk files are stand-ins); everything else matches over 20,000 operation sequences per class (test: tests/differential_draft_curves.rs).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/curve.h
@@ -6,6 +7,8 @@
 //!
 //! `PersistClass` / `PersistFactoryClass` (WWSaveLoad) are represented by `get_factory_id` (the factory's chunk id,
 //! `WWMATH_CHUNKID_LINEARCURVE3D` etc.; see `wwsaveload`'s draft for the registry); `DynamicVectorClass<KeyClass>` by `Vec`.
+
+use crate::logic::modules::plant;
 
 use super::chunk_save::ChunkSaveClass;
 use crate::ww::chunkio::ChunkLoad;
@@ -110,7 +113,7 @@ impl Curve3DClass {
     /// `Curve3DClass::Add_Key`: inserted in time order.
     pub fn add_key(&mut self, point: &Vector3, t: f32) -> i32 {
         let mut idx = 0usize;
-        while idx < self.keys.len() && self.keys[idx].time < t {
+        while idx < self.keys.len() && (if plant(10727) { self.keys[idx].time <= t } else { self.keys[idx].time < t }) {
             idx += 1;
         }
         self.keys.insert(idx, Curve3DKey { point: *point, time: t });
@@ -134,7 +137,7 @@ impl Curve3DClass {
         debug_assert!(time >= self.keys[0].time);
         debug_assert!(time <= self.keys[self.keys.len() - 1].time);
         let mut i = 0usize;
-        while time > self.keys[i + 1].time {
+        while if plant(10726) { time >= self.keys[i + 1].time } else { time > self.keys[i + 1].time } {
             i += 1;
         }
         let t = (time - self.keys[i].time) / (self.keys[i + 1].time - self.keys[i].time);
@@ -208,7 +211,7 @@ impl LinearCurve3DClass {
         if time < keys[0].time {
             return keys[0].point;
         }
-        if time >= keys[keys.len() - 1].time {
+        if if plant(10728) { time > keys[keys.len() - 1].time } else { time >= keys[keys.len() - 1].time } {
             return keys[keys.len() - 1].point;
         }
         let (i0, i1, t) = self.base.find_interval(time);
@@ -339,7 +342,7 @@ impl Curve1DClass {
             if time < self.keys[0].time {
                 let i0 = n - 1;
                 let i1 = 0usize;
-                let interval = 1.0 - self.keys[i0].time + self.keys[i1].time;
+                let interval = (if plant(10729) { 0.0 } else { 1.0 }) - self.keys[i0].time + self.keys[i1].time;
                 let t = (1.0 - self.keys[i0].time + time) / interval;
                 return (i0 as i32, i1 as i32, t);
             } else if time > self.keys[n - 1].time {
@@ -429,7 +432,7 @@ impl LinearCurve1DClass {
             if time < keys[0].time {
                 return keys[0].point;
             }
-            if time >= keys[keys.len() - 1].time {
+            if if plant(10730) { time > keys[keys.len() - 1].time } else { time >= keys[keys.len() - 1].time } {
                 return keys[keys.len() - 1].point;
             }
         }

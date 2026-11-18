@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 inputs (test: tests/differential_draft_codec.rs);
+//! not yet wired into the game.
+//! Test notes: messages of 512 MiB and more not tested.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/md5.h
@@ -9,6 +11,8 @@
 //! `FF`/`GG`/`HH`/`II` steps are the same steps in a loop over the constant table, each round using the same word
 //! order (round 1: i; round 2: (1+5i) mod 16; round 3: (5+3i) mod 16; round 4: 7i mod 16) and the `S11..S44` shifts.
 //! `MD5_memcpy` / `MD5_memset` are slice copies; `unsigned int` counts are 32-bit and wrap as in C.
+
+use crate::logic::modules::plant;
 
 /// `MD5_CTX`.
 #[derive(Clone, Copy, Debug)]
@@ -83,11 +87,11 @@ pub fn md5_update(context: &mut MD5Ctx, input: &[u8]) {
     let input_len = input.len() as u32;
 
     // Compute number of bytes mod 64
-    let mut index = ((context.count[0] >> 3) & 0x3F) as usize;
+    let mut index = ((context.count[0] >> 3) & (if plant(10695) { 0x3E } else { 0x3F })) as usize;
 
     // Update number of bits
     context.count[0] = context.count[0].wrapping_add(input_len << 3);
-    if context.count[0] < (input_len << 3) {
+    if if plant(10694) { context.count[0] <= (input_len << 3) } else { context.count[0] < (input_len << 3) } {
         context.count[1] = context.count[1].wrapping_add(1);
     }
     context.count[1] = context.count[1].wrapping_add(input_len >> 29);
@@ -124,7 +128,7 @@ pub fn md5_final(context: &mut MD5Ctx) -> [u8; 16] {
 
     // Pad out to 56 mod 64.
     let index = ((context.count[0] >> 3) & 0x3f) as usize;
-    let pad_len = if index < 56 { 56 - index } else { 120 - index };
+    let pad_len = if index < 56 { 56 - index } else if plant(10696) { 119 - index } else { 120 - index };
     md5_update(context, &PADDING[..pad_len]);
 
     // Append length (before padding)
@@ -153,13 +157,13 @@ fn md5_transform(state: &mut [u32; 4], block: &[u8; 64]) {
         // the message word and the round function of this step
         let (word, fv) = match round {
             0 => (k, f(b, c, d)),
-            1 => ((1 + 5 * k) % 16, g(b, c, d)),
+            1 => (if plant(10692) { (5 + 3 * k) % 16 } else { (1 + 5 * k) % 16 }, g(b, c, d)),
             2 => ((5 + 3 * k) % 16, h(b, c, d)),
             _ => ((7 * k) % 16, i(b, c, d)),
         };
         // (a) += F((b),(c),(d)) + (x) + (UINT4)(ac); (a) = ROTATE_LEFT((a),(s)); (a) += (b);
-        let mut t = a.wrapping_add(fv).wrapping_add(x[word]).wrapping_add(K[step]);
-        t = t.rotate_left(SHIFTS[round][k % 4]);
+        let mut t = a.wrapping_add(fv).wrapping_add(x[word]).wrapping_add(K[if plant(10691) { (step + 1) % 64 } else { step }]);
+        t = t.rotate_left(SHIFTS[round][if plant(10693) { (k + 1) % 4 } else { k % 4 }]);
         t = t.wrapping_add(b);
         // the (a, d, c, b) rotation of the argument order: FF(d, a, b, c), FF(c, d, a, b), FF(b, c, d, a)
         a = d;
@@ -182,7 +186,7 @@ fn encode(output: &mut [u8], input: &[u32]) {
     let mut j = 0usize;
     while j < len {
         output[j] = (input[i] & 0xff) as u8;
-        output[j + 1] = ((input[i] >> 8) & 0xff) as u8;
+        output[j + 1] = ((input[i] >> (if plant(10697) { 7 } else { 8 })) & 0xff) as u8;
         output[j + 2] = ((input[i] >> 16) & 0xff) as u8;
         output[j + 3] = ((input[i] >> 24) & 0xff) as u8;
         i += 1;

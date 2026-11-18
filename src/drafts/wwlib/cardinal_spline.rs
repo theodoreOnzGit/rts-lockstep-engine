@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): Save and Load are not covered; the rest matches over 20,000 sequences per class (tests/differential_draft_curves.rs).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/cardinalspline.h
@@ -7,6 +8,8 @@
 //! Defect carried over from upstream, not fixed: for fewer than two keys the 1D `Update_Tangents` falls through into
 //! indexing `Keys[end-1]` (undefined behaviour in C++); here it returns after zeroing, as the 3D and Catmull-Rom 1D
 //! versions do. Also, upstream's `CardinalSpline1DClass::Add_Key(float,float)` hides the base's three-argument one.
+
+use crate::logic::modules::plant;
 
 use super::chunk_save::ChunkSaveClass;
 use super::curve::read_f32;
@@ -33,7 +36,7 @@ impl CardinalSpline3DClass {
     /// `CardinalSpline3DClass::Add_Key`.
     pub fn add_key(&mut self, point: &Vector3, t: f32) -> i32 {
         let index = self.base.add_key(point, t);
-        let tightness = 0.5f32;
+        let tightness = if plant(10741) { 0.0f32 } else { 0.5f32 };
         self.tightness.insert(index as usize, tightness);
         index
     }
@@ -55,7 +58,7 @@ impl CardinalSpline3DClass {
         debug_assert!(i >= 0);
         debug_assert!((i as usize) < self.tightness.len());
         self.tightness[i as usize] = tightness;
-        self.base.tangents_dirty = true;
+        self.base.tangents_dirty = !plant(10745);
     }
 
     /// `CardinalSpline3DClass::Get_Tightness`.
@@ -84,7 +87,7 @@ impl CardinalSpline3DClass {
 
         if self.base.base.is_looping {
             // This really only works if the start and end points have the same position...
-            tan[0].out_tangent.x = (1.0 - tn[0]) * (keys[1].point.x - keys[end - 1].point.x);
+            tan[0].out_tangent.x = (1.0 - tn[0]) * (keys[1].point.x - keys[if plant(10744) { end } else { end - 1 }].point.x);
             tan[0].out_tangent.y = (1.0 - tn[0]) * (keys[1].point.y - keys[end - 1].point.y);
             tan[0].out_tangent.z = (1.0 - tn[0]) * (keys[1].point.z - keys[end - 1].point.z);
             tan[end].in_tangent = tan[0].out_tangent;
@@ -105,13 +108,16 @@ impl CardinalSpline3DClass {
 
         // inner knots
         for i in 1..n - 1 {
-            tan[i].in_tangent.x = (1.0 - tn[i]) * (keys[i + 1].point.x - keys[i - 1].point.x);
+            tan[i].in_tangent.x = (1.0 - if plant(10742) { tn[0] } else { tn[i] }) * (keys[i + 1].point.x - keys[i - 1].point.x);
             tan[i].in_tangent.y = (1.0 - tn[i]) * (keys[i + 1].point.y - keys[i - 1].point.y);
             tan[i].in_tangent.z = (1.0 - tn[i]) * (keys[i + 1].point.z - keys[i - 1].point.z);
             tan[i].out_tangent = tan[i].in_tangent;
 
-            let in_factor = 2.0 * (keys[i].time - keys[i - 1].time) / (keys[i + 1].time - keys[i - 1].time);
-            let out_factor = 2.0 * (keys[i + 1].time - keys[i].time) / (keys[i + 1].time - keys[i - 1].time);
+            let (in_factor, out_factor) = if plant(10743) {
+                (2.0 * (keys[i + 1].time - keys[i].time) / (keys[i + 1].time - keys[i - 1].time), 2.0 * (keys[i].time - keys[i - 1].time) / (keys[i + 1].time - keys[i - 1].time))
+            } else {
+                (2.0 * (keys[i].time - keys[i - 1].time) / (keys[i + 1].time - keys[i - 1].time), 2.0 * (keys[i + 1].time - keys[i].time) / (keys[i + 1].time - keys[i - 1].time))
+            };
             tan[i].in_tangent *= in_factor; // compensating for the un-even keys
             tan[i].out_tangent *= out_factor;
         }
@@ -120,10 +126,22 @@ impl CardinalSpline3DClass {
 
     /// `HermiteSpline3DClass::Evaluate` with the virtual `Update_Tangents` resolved to this class's.
     pub fn evaluate(&mut self, time: f32) -> Vector3 {
+        if let Some(v) = self.base.evaluate_out_of_range(time) {
+            return v;
+        }
         if self.base.tangents_dirty {
             self.update_tangents();
         }
-        self.base.evaluate(time)
+        self.base.interpolate(time)
+    }
+
+    /// `HermiteSpline3DClass::Evaluate_Derivative` with the virtual `Update_Tangents` resolved to this class's.
+    pub fn evaluate_derivative(&mut self, time: f32) -> Vector3 {
+        let time = self.base.clamp_time(time);
+        if self.base.tangents_dirty {
+            self.update_tangents();
+        }
+        self.base.derivative_at(time)
     }
 
     /// `PersistClass::Get_Factory` -> `_CardinalSpline3DFactory`'s chunk id.
@@ -177,7 +195,7 @@ impl CardinalSpline1DClass {
     /// `CardinalSpline1DClass::Add_Key(float point, float t)`: `extra` is the base default 0.
     pub fn add_key(&mut self, point: f32, t: f32) -> i32 {
         let index = self.base.add_key(point, t, 0);
-        let tightness = 0.5f32;
+        let tightness = if plant(10741) { 0.0f32 } else { 0.5f32 };
         self.tightness.insert(index as usize, tightness);
         index
     }
@@ -252,10 +270,13 @@ impl CardinalSpline1DClass {
 
     /// `HermiteSpline1DClass::Evaluate` with the virtual `Update_Tangents` resolved to this class's.
     pub fn evaluate(&mut self, time: f32) -> f32 {
-        if self.base.tangents_dirty && self.base.base.keys.len() != 1 {
+        if let Some(v) = self.base.evaluate_early(time) {
+            return v;
+        }
+        if self.base.tangents_dirty {
             self.update_tangents();
         }
-        self.base.evaluate(time)
+        self.base.interpolate(time)
     }
 
     /// `PersistClass::Get_Factory` -> `_CardinalSpline1DFactory`'s chunk id.

@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 sequences (test: tests/differential_draft_codec.rs);
+//! not yet wired into the game.
+//! Test notes: engine state near Length 2^31 not reachable from outside, not tested.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/sha.h
@@ -9,6 +11,8 @@
 //! 512 MiB wrap; `Result` has an `IsCached` early `memcpy` that does not `return` (it recomputes and overwrites with the
 //! same value); `Hash` takes the length as a `long`. `Reverse_LONG` is a byte swap; `_rotl` a 32-bit rotate. The digest
 //! words are byte-swapped on output so the result is the usual big-endian SHA-1.
+
+use crate::logic::modules::plant;
 
 const SA: u32 = 0x67452301;
 const SB: u32 = 0xefcdab89;
@@ -54,7 +58,7 @@ impl SHAEngine {
         if index < 20 {
             return K1;
         }
-        if index < 40 {
+        if index < (if plant(10698) { 39 } else { 40 }) {
             return K2;
         }
         if index < 60 {
@@ -72,7 +76,7 @@ impl SHAEngine {
             return x ^ y ^ z;
         }
         if index < 60 {
-            return (x & y) | (z & (x | y));
+            return if plant(10699) { (x & y) | (z & x) } else { (x & y) | (z & (x | y)) };
         }
         x ^ y ^ z
     }
@@ -85,7 +89,7 @@ impl SHAEngine {
             block[index] = u32::from_be_bytes([source[index * 4], source[index * 4 + 1], source[index * 4 + 2], source[index * 4 + 3]]);
         }
         for index in 16..80 {
-            block[index] = (block[index - 3] ^ block[index - 8] ^ block[index - 14] ^ block[index - 16]).rotate_left(1);
+            block[index] = (block[index - 3] ^ block[index - 8] ^ block[index - 14] ^ block[index - 16]).rotate_left(if plant(10700) { 0 } else { 1 });
         }
 
         let mut alt = *acc;
@@ -148,7 +152,7 @@ impl SHAEngine {
         }
 
         // Process whole blocks directly from the source
-        let blocks = length / SRC_BLOCK_SIZE as i32;
+        let blocks = (if plant(10703) { length - 1 } else { length }) / SRC_BLOCK_SIZE as i32;
         for _ in 0..blocks {
             Self::process_block(&data[..SRC_BLOCK_SIZE], &mut self.acc);
             self.length = self.length.wrapping_add(SRC_BLOCK_SIZE as i32);
@@ -171,7 +175,7 @@ impl SHAEngine {
         partial[partialcount] = 0x80;
 
         let mut acc = self.acc;
-        if (SRC_BLOCK_SIZE - partialcount) < 9 {
+        if (SRC_BLOCK_SIZE - partialcount) < (if plant(10701) { 8 } else { 9 }) {
             if partialcount + 1 < SRC_BLOCK_SIZE {
                 for b in partial[partialcount + 1..].iter_mut() {
                     *b = 0;
@@ -187,6 +191,7 @@ impl SHAEngine {
         for b in partial[partialcount..].iter_mut() {
             *b = 0;
         }
+        let length = if plant(10702) { self.length } else { length };
         partial[SRC_BLOCK_SIZE - 4..].copy_from_slice(&(length.wrapping_mul(8) as u32).to_be_bytes());
         Self::process_block(&partial, &mut acc);
 
@@ -199,7 +204,7 @@ impl SHAEngine {
         // memcpy(result, &FinalResult, 20): the words in memory order (little-endian host)
         let mut out = [0u8; 20];
         for index in 0..5 {
-            out[index * 4..index * 4 + 4].copy_from_slice(&self.final_result[index].to_le_bytes());
+            out[index * 4..index * 4 + 4].copy_from_slice(&if plant(10704) { self.final_result[index].to_be_bytes() } else { self.final_result[index].to_le_bytes() });
         }
         out
     }

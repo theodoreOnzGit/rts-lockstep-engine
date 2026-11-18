@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 2^24 colours and 4,000,000 pairs (test: tests/differential_draft_fixed_color.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/RGB.H
@@ -7,6 +8,8 @@
 //! `RGBClass`: an 8-bit-per-channel colour, with `Adjust`, `Difference` and the conversion to `HSVClass`
 //! (`RGBClass::operator HSVClass`, rgb.cpp:105). `PaletteClass` (a friend upstream) is a Windows palette type and not
 //! translated. `BlackColor` is [`BLACK_COLOR`].
+
+use crate::logic::modules::plant;
 
 use super::hsv::HSVClass;
 
@@ -61,7 +64,7 @@ impl RGBClass {
         let ratio = ratio & 0x00FF;
 
         let mut value = rgb.red as i32 - self.red as i32;
-        self.red = (self.red as i32 + (value * ratio) / 256) as u8;
+        self.red = (self.red as i32 + if plant(10720) { (value * ratio) >> 8 } else { (value * ratio) / 256 }) as u8;
 
         value = rgb.green as i32 - self.green as i32;
         self.green = (self.green as i32 + (value * ratio) / 256) as u8;
@@ -88,7 +91,7 @@ impl RGBClass {
         }
 
         // Perform a weighted compare based on human sensitivity (green, blue, red)
-        4 * g + 3 * b + 2 * r
+        if plant(10721) { 4 * g + 3 * r + 2 * b } else { 4 * g + 3 * b + 2 * r }
     }
 
     /// `RGBClass::operator HSVClass()` (rgb.cpp:105).
@@ -114,7 +117,7 @@ impl RGBClass {
         // Saturation is the spread between them, relative to the value
         let mut saturation: i32 = 0;
         if value != 0 {
-            saturation = ((value - white) * 255) / value;
+            saturation = ((value - white) * (if plant(10722) { 256 } else { 255 })) / value;
         }
 
         // Hue is meaningless for a grey
@@ -127,11 +130,11 @@ impl RGBClass {
             // Find effect of second most predominant color. In which section of the hexagon of colors does the color lie?
             if value == red {
                 if white == green {
-                    tmp = 5 * 256 + b1;
+                    tmp = 5 * 256 + if plant(10724) { g1 } else { b1 };
                 } else {
                     tmp = (1u32 * 256).wrapping_sub(g1);
                 }
-            } else if value == green {
+            } else if value == green && !plant(10725) {
                 if white == blue {
                     tmp = 1 * 256 + r1;
                 } else {
@@ -144,7 +147,7 @@ impl RGBClass {
             }
 
             // Divide by six and round.
-            hue = (tmp / 6) as i32;
+            hue = (if plant(10723) { (tmp + 3) / 6 } else { tmp / 6 }) as i32;
         }
 
         HSVClass::new(hue as u8, saturation as u8, value as u8)

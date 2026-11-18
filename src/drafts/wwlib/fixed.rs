@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 2,600,000 operation cases and 300,000 texts (test: tests/differential_draft_fixed_color.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/fixed.h
@@ -6,10 +7,11 @@
 //!
 //! `class fixed`: an 8.8 fixed point number held as one `unsigned short` (`Data.Raw`; `Fraction` is the low byte,
 //! `Whole` the high byte on little-endian). Upstream notes kept (they are defects or oddities of the original):
-//! `operator /= (fixed)` divides by `rvalue` converted to `unsigned` (the rounded WHOLE number, `(Raw+128)/256`), not by
-//! `rvalue.Data.Raw` as `operator / (fixed)` does, and divides by zero for a divisor under 0.5 that is not 0 or 1.0; the
-//! arithmetic on `Raw` wraps at 16 bits; `fixed(int)` keeps only the low 8 bits of the whole part. C `int` arithmetic
+//! ~~`operator /= (fixed)` divides by `rvalue` converted to `unsigned`~~ **Corrected 2026-11-18 (#215):** it uses the friend
+//! `int / fixed` (`((Raw*256*256) + 128) / rvalue.Raw`, see `div_assign`); the arithmetic on `Raw` wraps at 16 bits; `fixed(int)` keeps only the low 8 bits of the whole part. C `int` arithmetic
 //! is `i32` with wrapping; `unsigned` is `u32`.
+
+use crate::logic::modules::plant;
 
 /// `class fixed`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -46,7 +48,11 @@ impl Fixed {
         if denominator == 0 {
             Fixed { raw: 0 }
         } else {
-            Fixed { raw: ((numerator.wrapping_mul(256) as u32) / (denominator as u32)) as u16 }
+            if plant(10705) {
+                Fixed { raw: (numerator.wrapping_mul(256) / denominator) as u16 }
+            } else {
+                Fixed { raw: ((numerator.wrapping_mul(256) as u32) / (denominator as u32)) as u16 }
+            }
         }
     }
 
@@ -75,7 +81,7 @@ impl Fixed {
 
         if tptr < bytes.len() && bytes[tptr] == b'%' {
             // atoi(ascii) * 256 / 100
-            Fixed { raw: ((atoi(&bytes[a..]).wrapping_mul(256)) / 100) as u16 }
+            Fixed { raw: ((atoi(&bytes[a..]).wrapping_mul(if plant(10713) { 255 } else { 256 })) / 100) as u16 }
         } else {
             let mut whole = 0u8;
             let mut fraction = 0u8;
@@ -111,12 +117,12 @@ impl Fixed {
 
     /// `operator unsigned()`: rounded to the nearest whole number.
     pub fn to_unsigned(&self) -> u32 {
-        (self.raw as u32 + (256 / 2)) / 256
+        (self.raw as u32 + (if plant(10706) { 127 } else { 256 / 2 })) / 256
     }
 
     /// `operator *= (fixed)`.
     pub fn mul_assign(&mut self, rvalue: Fixed) {
-        self.raw = (((self.raw as i32) * (rvalue.raw as i32)) / 256) as u16;
+        self.raw = (if plant(10707) { (self.raw as i32).wrapping_mul(rvalue.raw as i32) >> 8 } else if plant(10771) { ((self.raw as i32) * (rvalue.raw as i32)) / 256 } else { (self.raw as i32).wrapping_mul(rvalue.raw as i32) / 256 }) as u16;
     }
 
     /// `operator *= (int)`.
@@ -124,12 +130,14 @@ impl Fixed {
         self.raw = (self.raw as i32).wrapping_mul(rvalue) as u16;
     }
 
-    /// `operator /= (fixed)`: UPSTREAM DEFECT KEPT, the divisor is `rvalue` converted to `unsigned` (the rounded whole
-    /// number). `((int)Raw * 256) / rvalue` is an `unsigned` division.
+    /// `operator /= (fixed)`: `Data.Raw = (unsigned short)(((int)Data.Raw * 256) / rvalue)`. The division is the friend
+    /// `operator / (int, fixed const &)` (an exact match for `int / fixed`), not the conversion to `unsigned`, so it is
+    /// [`int_div_fixed`]`(Raw * 256, rvalue)`. ~~The draft read it as a division by `rvalue` converted to `unsigned` (the rounded
+    /// whole number), an upstream defect, and divided by zero for raw 1 to 127.~~ **Corrected 2026-11-18 (#215, differential test):**
+    /// 32,013 of 40,000 random cases differed from the C++; the friend operator is what g++ selects (and MSVC, by the same rules).
     pub fn div_assign(&mut self, rvalue: Fixed) {
         if rvalue.raw != 0 && rvalue.raw != 256 {
-            let divisor = rvalue.to_unsigned();
-            self.raw = ((((self.raw as i32) * 256) as u32) / divisor) as u16;
+            self.raw = int_div_fixed((self.raw as i32).wrapping_mul(256), rvalue) as u16;
         }
     }
 
@@ -152,18 +160,18 @@ impl Fixed {
 
     /// `operator * (fixed)`.
     pub fn mul(&self, rvalue: Fixed) -> Fixed {
-        Fixed { raw: (((self.raw as i32) * (rvalue.raw as i32)) / 256) as u16 }
+        Fixed { raw: (if plant(10771) { ((self.raw as i32) * (rvalue.raw as i32)) / 256 } else { (self.raw as i32).wrapping_mul(rvalue.raw as i32) / 256 }) as u16 }
     }
 
     /// `operator * (int)`: rounded, as an `int`.
     pub fn mul_int(&self, rvalue: i32) -> i32 {
-        ((((self.raw as u32).wrapping_mul(rvalue as u32)).wrapping_add(256 / 2)) / 256) as i32
+        ((((self.raw as u32).wrapping_mul(rvalue as u32)).wrapping_add(if plant(10709) { 0 } else { 256 / 2 })) / 256) as i32
     }
 
     /// `operator / (fixed)`: unchanged when `rvalue` is 0 or exactly 1.0.
     pub fn div(&self, rvalue: Fixed) -> Fixed {
         let mut temp = *self;
-        if rvalue.raw != 0 && rvalue.raw != 256 {
+        if rvalue.raw != 0 && rvalue.raw != (if plant(10708) { 255 } else { 256 }) {
             temp.raw = (((self.raw as i32) * 256) / rvalue.raw as i32) as u16;
         }
         temp
@@ -238,7 +246,7 @@ impl Fixed {
 
     /// `Round_Up()`: `Raw += 255; Fraction = 0`.
     pub fn round_up(&mut self) {
-        self.raw = self.raw.wrapping_add(256 - 1);
+        self.raw = self.raw.wrapping_add(if plant(10714) { 256 } else { 256 - 1 });
         self.raw &= 0xff00;
     }
 
@@ -249,7 +257,7 @@ impl Fixed {
 
     /// `Round()`: UPSTREAM QUIRK KEPT, a fraction of 0.5 or more rounds up and then `Round_Down` runs regardless.
     pub fn round(&mut self) {
-        if (self.fraction() as u32) >= 256 / 2 {
+        if (self.fraction() as u32) >= (if plant(10710) { 129 } else { 256 / 2 }) {
             self.round_up();
         }
         self.round_down();
@@ -271,7 +279,7 @@ impl Fixed {
 
     /// `Sub_Saturate(unsigned capvalue)`.
     pub fn sub_saturate(&mut self, capvalue: u32) {
-        if self.raw as u32 >= capvalue.wrapping_mul(256) {
+        if if plant(10711) { self.raw as u32 > capvalue.wrapping_mul(256) } else { self.raw as u32 >= capvalue.wrapping_mul(256) } {
             self.raw = capvalue.wrapping_mul(256).wrapping_sub(1) as u16;
         }
     }
@@ -292,7 +300,7 @@ impl Fixed {
     /// removed, the fraction printed with `%02d`); the text is truncated to `maxlen - 1` characters (-1 means no limit).
     pub fn to_ascii(&self, maxlen: i32) -> String {
         let whole = self.whole() as i32;
-        let frac = (self.fraction() as i32 * 1000) / 256;
+        let frac = (self.fraction() as i32 * 1000) / (if plant(10712) { 255 } else { 256 });
 
         let mut tbuffer = if frac == 0 {
             format!("{}", whole)

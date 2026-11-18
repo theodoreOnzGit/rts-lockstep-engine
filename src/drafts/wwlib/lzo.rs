@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 12,000 inputs and 12,000 streams (test: tests/differential_draft_codec.rs);
+//! not yet wired into the game.
+//! Test notes: `lzo_compressor_compress` is `lzo1x_1_compress` here by design (a fresh work buffer); upstream's kept work buffer was measured (30 of 1000 outputs differ when a similar input follows another).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/lzo.h
@@ -17,6 +19,8 @@
 //! offsets into the input, `None` for a null pointer). Upstream keeps the buffer between calls, so an entry left by an
 //! earlier call is a stale pointer that `LZO_CHECK_MPOS_NON_DET` happens to accept or reject depending on where the new
 //! input lies in memory; a fresh dictionary is the deterministic reading of that code.
+
+use crate::logic::modules::plant;
 
 /// `LZO_E_OK`, `LZO_E_ERROR`.
 pub const LZO_E_OK: i32 = 0;
@@ -113,7 +117,7 @@ pub fn lzo1x_decompress(input: &[u8], out: &mut [u8]) -> (i32, usize) {
                     continue;
                 }
                 // LZO1X: m_pos = op - 1 - 0x800
-                m_pos = op - 1 - 0x800;
+                m_pos = op - 1 - (if plant(10670) { 0x7ff } else { 0x800 });
                 m_pos -= (t >> 2) as isize;
                 m_pos -= (rd(ip) << 2) as isize;
                 ip += 1;
@@ -153,7 +157,7 @@ pub fn lzo1x_decompress(input: &[u8], out: &mut [u8]) -> (i32, usize) {
                     // a M3 match
                     t &= 31;
                     if t == 0 {
-                        t = 31;
+                        t = if plant(10667) { 30 } else { 31 };
                         while input[ip] == 0 {
                             t += 255;
                             ip += 1;
@@ -169,7 +173,7 @@ pub fn lzo1x_decompress(input: &[u8], out: &mut [u8]) -> (i32, usize) {
                 } else {
                     // a M4 match
                     m_pos = op;
-                    m_pos -= ((t & 8) << 11) as isize;
+                    m_pos -= ((t & 8) << (if plant(10668) { 10 } else { 11 })) as isize;
                     t &= 7;
                     if t == 0 {
                         t = 7;
@@ -210,7 +214,7 @@ pub fn lzo1x_decompress(input: &[u8], out: &mut [u8]) -> (i32, usize) {
                 state = S::MatchDone;
             }
             S::MatchDone => {
-                t = (input[ip - 2] & 3) as usize;
+                t = (input[ip - 2] & (if plant(10669) { 1 } else { 3 })) as usize;
                 if t == 0 {
                     state = S::Outer;
                     continue;
@@ -250,7 +254,7 @@ fn dval_next(dv: usize, p: &[u8], i: usize) -> usize {
 }
 fn dindex(dv: usize) -> usize {
     // ((40799u * dv) >> 5) & 0x3fff  (32-bit unsigned arithmetic)
-    ((((40799u32).wrapping_mul(dv as u32)) >> 5) & 0x3fff) as usize
+    ((((40799u32).wrapping_mul(dv as u32)) >> (if plant(10661) { 4 } else { 5 })) & 0x3fff) as usize
 }
 
 /// `do_compress(in, in_len, out, &out_len, wrkmem)` (lzo1x_c.cpp:112): LZ77 with a 16384 entry hash dictionary of the
@@ -294,9 +298,9 @@ fn do_compress(input: &[u8], out: &mut [u8]) -> usize {
                     if input[m_pos + 2] == input[ip + 2] {
                         lit = ip - ii;
                         m_pos += 3;
-                        if m_off <= M2_MAX_OFFSET {
+                        if if plant(10662) { m_off < M2_MAX_OFFSET } else { m_off <= M2_MAX_OFFSET } {
                             matched = true;
-                        } else if lit == 3 {
+                        } else if lit == 3 && !plant(10664) {
                             // better compression, but slower
                             out[op - 2] |= 3;
                             for _ in 0..3 {
@@ -331,7 +335,7 @@ fn do_compress(input: &[u8], out: &mut [u8]) -> usize {
                 let mut t = lit;
                 if t <= 3 {
                     out[op - 2] |= t as u8;
-                } else if t <= 18 {
+                } else if if plant(10663) { t < 18 } else { t <= 18 } {
                     out[op] = (t - 3) as u8;
                     op += 1;
                 } else {
@@ -417,7 +421,7 @@ fn do_compress(input: &[u8], out: &mut [u8]) -> usize {
             let mut write_len_bytes = false;
             if m_off <= M3_MAX_OFFSET {
                 m_off -= 1;
-                if m_len <= 33 {
+                if if plant(10665) { m_len < 33 } else { m_len <= 33 } {
                     out[op] = M3_MARKER | (m_len - 2) as u8;
                     op += 1;
                 } else {
@@ -429,7 +433,7 @@ fn do_compress(input: &[u8], out: &mut [u8]) -> usize {
             } else {
                 m_off -= 0x4000;
                 if m_len <= 9 {
-                    out[op] = M4_MARKER | ((m_off & 0x4000) >> 11) as u8 | (m_len - 2) as u8;
+                    out[op] = M4_MARKER | ((m_off & 0x4000) >> (if plant(10666) { 10 } else { 11 })) as u8 | (m_len - 2) as u8;
                     op += 1;
                 } else {
                     m_len -= 9;

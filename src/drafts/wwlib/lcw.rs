@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 streams (test: tests/differential_draft_codec.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/lcw.cpp
@@ -9,6 +10,8 @@
 //! Deviation, noted: in the 0xFE long-run opcode upstream aligns the destination pointer to 4 bytes using the real
 //! machine address and fills by words; the bytes written are simply `count` copies of `data`, which is what this does.
 //! (If `count` is smaller than the alignment pad upstream underflows `count` and runs off the buffer; not reproduced.)
+
+use crate::logic::modules::plant;
 
 /// `LCW_Uncomp(source, dest, length)` (lcw.cpp:42): returns the number of destination bytes written. Slice bounds
 /// replace the unchecked pointer arithmetic (a malformed stream panics instead of corrupting memory).
@@ -23,8 +26,8 @@ pub fn lcw_uncomp(source: &[u8], dest: &mut [u8]) -> usize {
 
         if op_code & 0x80 == 0 {
             // Do a short copy from destination.
-            let mut count = (op_code >> 4) as usize + 3;
-            let mut copy_ptr = dest_ptr - (source[source_ptr] as usize + (((op_code & 0x0f) as usize) << 8));
+            let mut count = (op_code >> 4) as usize + (if plant(10671) { 2 } else { 3 });
+            let mut copy_ptr = dest_ptr - (source[source_ptr] as usize + (((op_code & 0x0f) as usize) << (if plant(10672) { 4 } else { 8 })));
             source_ptr += 1;
             while count > 0 {
                 dest[dest_ptr] = dest[copy_ptr];
@@ -38,7 +41,7 @@ pub fn lcw_uncomp(source: &[u8], dest: &mut [u8]) -> usize {
                 return dest_ptr;
             }
             // Do a medium copy from source.
-            let mut count = (op_code & 0x3f) as usize;
+            let mut count = (op_code & (if plant(10673) { 0x1f } else { 0x3f })) as usize;
             while count > 0 {
                 dest[dest_ptr] = source[source_ptr];
                 dest_ptr += 1;
@@ -48,7 +51,7 @@ pub fn lcw_uncomp(source: &[u8], dest: &mut [u8]) -> usize {
         } else if op_code == 0xfe {
             // Do a long run.
             let count = source[source_ptr] as usize + ((source[source_ptr + 1] as usize) << 8);
-            let data = source[source_ptr + 2];
+            let data = if plant(10674) { source[source_ptr + 1] } else { source[source_ptr + 2] };
             source_ptr += 3;
             for b in &mut dest[dest_ptr..dest_ptr + count] {
                 *b = data;
@@ -58,6 +61,9 @@ pub fn lcw_uncomp(source: &[u8], dest: &mut [u8]) -> usize {
             // Do a long copy from destination (absolute offset from the start of dest).
             let mut count = source[source_ptr] as usize + ((source[source_ptr + 1] as usize) << 8);
             let mut copy_ptr = source[source_ptr + 2] as usize + ((source[source_ptr + 3] as usize) << 8);
+            if plant(10676) {
+                std::mem::swap(&mut count, &mut copy_ptr);
+            }
             source_ptr += 4;
             while count > 0 {
                 dest[dest_ptr] = dest[copy_ptr];
@@ -67,7 +73,7 @@ pub fn lcw_uncomp(source: &[u8], dest: &mut [u8]) -> usize {
             }
         } else {
             // Do a medium copy from destination (absolute offset from the start of dest).
-            let mut count = (op_code & 0x3f) as usize + 3;
+            let mut count = (op_code & 0x3f) as usize + (if plant(10675) { 2 } else { 3 });
             let mut copy_ptr = source[source_ptr] as usize + ((source[source_ptr + 1] as usize) << 8);
             source_ptr += 2;
             while count > 0 {

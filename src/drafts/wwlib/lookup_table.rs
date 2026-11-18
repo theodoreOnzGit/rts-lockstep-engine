@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): LookupTableClass::Init, Get_Value, Get_Value_Quick and the default table match (tests/differential_draft_curves.rs). NOT covered: LookupTableMgrClass::get_table with a file, remove_table, save_table_desc, load_table_desc, the Curve1D enum's save/load.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/lookuptable.h
@@ -9,6 +10,8 @@
 //! `get_table` (device/file-system access is not translated here); `SaveLoadSystemClass::Find_Persist_Factory` -> the
 //! `Curve1D` enum below, picked by the factory chunk id. `Get_Value_Quick` keeps upstream's formula verbatim, which
 //! multiplies the *count* by the converted index (an upstream defect, left as is).
+
+use crate::logic::modules::plant;
 
 use super::chunk_save::ChunkSaveClass;
 use super::curve::{read_f32, LinearCurve1DClass};
@@ -138,14 +141,14 @@ impl LookupTableClass {
     pub fn init(&mut self, name: &str, curve: &mut Curve1D) {
         self.name = name.to_string();
         // Store the min and max input values for the table
-        self.min_input_value = curve.get_key(0).1;
+        self.min_input_value = if plant(10762) { curve.get_key(curve.key_count() - 1).1 } else { curve.get_key(0).1 };
         self.max_input_value = curve.get_key(curve.key_count() - 1).1;
-        self.oo_max_minus_min = 1.0 / (self.max_input_value - self.min_input_value);
+        self.oo_max_minus_min = 1.0 / (if plant(10759) { self.max_input_value + self.min_input_value } else { self.max_input_value - self.min_input_value });
         // Sample the curve and store the output values
         let len = self.output_samples.len();
         for i in 0..len {
             let x = self.min_input_value
-                + (self.max_input_value - self.min_input_value) * (i as f32) / ((len - 1) as f32);
+                + (self.max_input_value - self.min_input_value) * (i as f32) / ((len - (if plant(10758) { 0 } else { 1 })) as f32);
             self.output_samples[i] = curve.evaluate(x);
         }
     }
@@ -155,17 +158,17 @@ impl LookupTableClass {
         if input <= self.min_input_value {
             return self.output_samples[0];
         }
-        if input >= self.max_input_value {
+        if if plant(10760) { input > self.max_input_value } else { input >= self.max_input_value } {
             return self.output_samples[self.output_samples.len() - 1];
         }
         let normalized_input =
-            ((self.output_samples.len() - 1) as f32) * (input - self.min_input_value) * self.oo_max_minus_min;
+            ((self.output_samples.len() - (if plant(10756) { 0 } else { 1 })) as f32) * (input - self.min_input_value) * self.oo_max_minus_min;
         let input0 = wwmath::floor(normalized_input);
         let index0 = wwmath::float_to_long(input0);
         let index1 = index0 + 1;
         let lerp = normalized_input - input0;
         let (s0, s1) = (self.output_samples[index0 as usize], self.output_samples[index1 as usize]);
-        s0 + lerp * (s1 - s0)
+        if plant(10757) { s1 + lerp * (s0 - s1) } else { s0 + lerp * (s1 - s0) }
     }
 
     /// `LookupTableClass::Get_Value_Quick` (lookuptable.h), verbatim including the multiplication.
@@ -176,8 +179,8 @@ impl LookupTableClass {
         if input >= self.max_input_value {
             return self.output_samples[self.output_samples.len() - 1];
         }
-        let index = ((self.output_samples.len() - 1) as i32)
-            * wwmath::float_to_long((input - self.min_input_value) * self.oo_max_minus_min);
+        let k = wwmath::float_to_long((input - self.min_input_value) * self.oo_max_minus_min);
+        let index = if plant(10761) { ((self.output_samples.len() - 1) as i32) + k } else { ((self.output_samples.len() - 1) as i32) * k };
         self.output_samples[index as usize]
     }
 

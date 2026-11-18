@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 200,000 matrices x 12 outputs and 33 order cases (test: tests/differential_draft_curves.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/euler.h
@@ -9,6 +10,7 @@
 //! so their double arguments are narrowed to `f32` as in C++. `EULER_AXIS_*` macros and `_euler_axis_*` helpers
 //! (unused by upstream's functions except via `_euler_unpack_order`) are translated as functions.
 
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::wwmath;
 
@@ -148,8 +150,10 @@ impl EulerAnglesClass {
         let atan2 = |y: f64, x: f64| wwmath::atan2(y as f32, x as f32) as f64;
 
         if s == EULER_REPEAT_YES {
-            let sy = (a(i, j) * a(i, j) + a(i, k) * a(i, k)).sqrt();
-            if sy > 16.0 * FLT_EPSILON {
+            // `sqrt(M[i][j]*M[i][j] + M[i][k]*M[i][k])`: the products and their sum are `float` (M is a Matrix3D of floats); only
+            // the square root is in double
+            let sy = if plant(10770) { (a(i, j) * a(i, j) + a(i, k) * a(i, k)).sqrt() } else { ((m[i][j] * m[i][j] + m[i][k] * m[i][k]) as f64).sqrt() };
+            if sy > (if plant(10766) { 1.0 } else { 16.0 }) * FLT_EPSILON {
                 self.angle[0] = atan2(a(i, j), a(i, k));
                 self.angle[1] = atan2(sy, a(i, i));
                 self.angle[2] = atan2(a(j, i), -a(k, i));
@@ -159,9 +163,9 @@ impl EulerAnglesClass {
                 self.angle[2] = 0.0;
             }
         } else {
-            let cy = (a(i, i) * a(i, i) + a(j, i) * a(j, i)).sqrt();
+            let cy = if plant(10770) { (a(i, i) * a(i, i) + a(j, i) * a(j, i)).sqrt() } else { ((m[i][i] * m[i][i] + m[j][i] * m[j][i]) as f64).sqrt() };
             if cy > 16.0 * FLT_EPSILON {
-                self.angle[0] = atan2(a(k, j), a(k, k));
+                self.angle[0] = if plant(10767) { atan2(a(k, k), a(k, j)) } else { atan2(a(k, j), a(k, k)) };
                 self.angle[1] = atan2(-a(k, i), cy);
                 self.angle[2] = atan2(a(j, i), a(i, i));
             } else {
@@ -171,12 +175,12 @@ impl EulerAnglesClass {
             }
         }
 
-        if n == EULER_PARITY_ODD {
+        if n == EULER_PARITY_ODD && !plant(10763) {
             self.angle[0] = -self.angle[0];
             self.angle[1] = -self.angle[1];
             self.angle[2] = -self.angle[2];
         }
-        if f == EULER_FRAME_ROTATING {
+        if f == EULER_FRAME_ROTATING && !plant(10764) {
             let t = self.angle[0];
             self.angle[0] = self.angle[2];
             self.angle[2] = t;
@@ -188,7 +192,7 @@ impl EulerAnglesClass {
             let mut x2 = pi + self.angle[0];
             let mut y2 = pi - self.angle[1];
             let mut z2 = pi + self.angle[2];
-            if x2 > pi {
+            if if plant(10765) { x2 >= pi } else { x2 > pi } {
                 x2 -= 2.0 * pi;
             }
             if y2 > pi {
@@ -225,7 +229,7 @@ impl EulerAnglesClass {
             a2 = -a2;
         }
         let (ti, tj, th) = (a0, a1, a2);
-        let ci = wwmath::cos(ti as f32) as f64;
+        let ci = if plant(10768) { wwmath::sin(ti as f32) as f64 } else { wwmath::cos(ti as f32) as f64 };
         let cj = wwmath::cos(tj as f32) as f64;
         let ch = wwmath::cos(th as f32) as f64;
         let si = wwmath::sin(ti as f32) as f64;
@@ -238,7 +242,7 @@ impl EulerAnglesClass {
 
         if s == EULER_REPEAT_YES {
             m[i][i] = cj as f32;
-            m[i][j] = (sj * si) as f32;
+            m[i][j] = (if plant(10769) { sj * ci } else { sj * si }) as f32;
             m[i][k] = (sj * ci) as f32;
             m[j][i] = (sj * sh) as f32;
             m[j][j] = (-cj * ss + cc) as f32;

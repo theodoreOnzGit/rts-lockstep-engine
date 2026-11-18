@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): Save and Load are not covered; Update_Tangents with fewer than two keys is undefined upstream (3D) and untested; the rest matches (tests/differential_draft_curves.rs).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/catmullromspline.h
@@ -6,6 +7,8 @@
 //!
 //! Upstream's 3D `Update_Tangents` has no `return` for fewer than two keys (falls into out-of-range reads, UB); this
 //! draft returns after zeroing, as the 1D version does.
+
+use crate::logic::modules::plant;
 
 use super::chunk_save::ChunkSaveClass;
 use super::hermite_spline::{HermiteSpline1DClass, HermiteSpline3DClass};
@@ -50,7 +53,7 @@ impl CatmullRomSpline3DClass {
             tan[end].in_tangent = tan[0].out_tangent;
         } else {
             // TODO (upstream): second derivative = 0... what is formula?  I'm making this up...
-            tan[0].out_tangent.x = 0.25 * (keys[1].point.x - keys[0].point.x);
+            tan[0].out_tangent.x = (if plant(10746) { 0.5 } else { 0.25 }) * (keys[1].point.x - keys[0].point.x);
             tan[0].out_tangent.y = 0.25 * (keys[1].point.y - keys[0].point.y);
             tan[0].out_tangent.z = 0.25 * (keys[1].point.z - keys[0].point.z);
             tan[end].in_tangent.x = 0.25 * (keys[end].point.x - keys[end - 1].point.x);
@@ -58,7 +61,7 @@ impl CatmullRomSpline3DClass {
             tan[end].in_tangent.z = 0.25 * (keys[end].point.z - keys[end - 1].point.z);
         }
 
-        let total_time = (keys[1].time - keys[0].time) + (keys[end].time - keys[end - 1].time);
+        let total_time = (keys[1].time - keys[0].time) + if plant(10748) { 0.0 } else { keys[end].time - keys[end - 1].time };
         let in_factor = 2.0 * (keys[end].time - keys[end - 1].time) / total_time;
         let out_factor = 2.0 * (keys[1].time - keys[0].time) / total_time;
         tan[end].in_tangent *= in_factor;
@@ -66,7 +69,7 @@ impl CatmullRomSpline3DClass {
 
         // inner knots
         for i in 1..n - 1 {
-            tan[i].in_tangent.x = 0.5 * (keys[i + 1].point.x - keys[i - 1].point.x);
+            tan[i].in_tangent.x = (if plant(10747) { 0.25 } else { 0.5 }) * (keys[i + 1].point.x - keys[i - 1].point.x);
             tan[i].in_tangent.y = 0.5 * (keys[i + 1].point.y - keys[i - 1].point.y);
             tan[i].in_tangent.z = 0.5 * (keys[i + 1].point.z - keys[i - 1].point.z);
             tan[i].out_tangent = tan[i].in_tangent;
@@ -81,10 +84,22 @@ impl CatmullRomSpline3DClass {
 
     /// `HermiteSpline3DClass::Evaluate` with the virtual `Update_Tangents` resolved to this class's.
     pub fn evaluate(&mut self, time: f32) -> Vector3 {
+        if let Some(v) = self.base.evaluate_out_of_range(time) {
+            return v;
+        }
         if self.base.tangents_dirty {
             self.update_tangents();
         }
-        self.base.evaluate(time)
+        self.base.interpolate(time)
+    }
+
+    /// `HermiteSpline3DClass::Evaluate_Derivative` with the virtual `Update_Tangents` resolved to this class's.
+    pub fn evaluate_derivative(&mut self, time: f32) -> Vector3 {
+        let time = self.base.clamp_time(time);
+        if self.base.tangents_dirty {
+            self.update_tangents();
+        }
+        self.base.derivative_at(time)
     }
 
     /// `PersistClass::Get_Factory` -> `_CatmullRomSpline3DFactory`'s chunk id.
@@ -162,10 +177,13 @@ impl CatmullRomSpline1DClass {
 
     /// `HermiteSpline1DClass::Evaluate` with the virtual `Update_Tangents` resolved to this class's.
     pub fn evaluate(&mut self, time: f32) -> f32 {
-        if self.base.tangents_dirty && self.base.base.keys.len() != 1 {
+        if let Some(v) = self.base.evaluate_early(time) {
+            return v;
+        }
+        if self.base.tangents_dirty && !plant(10749) {
             self.update_tangents();
         }
-        self.base.evaluate(time)
+        self.base.interpolate(time)
     }
 
     /// `PersistClass::Get_Factory` -> `_CatmullRomSpline1DFactory`'s chunk id.
