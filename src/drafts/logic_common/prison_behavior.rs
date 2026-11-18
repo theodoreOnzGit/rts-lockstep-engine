@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #208): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameLogic/Module/PrisonBehavior.h
@@ -15,21 +14,25 @@
 
 use std::sync::Arc;
 
+#[cfg(any())]
 use crate::common::base_type::{Coord3D, Region2D, TWO_PI};
+#[cfg(any())]
 use crate::common::disabled_types::DISABLED_HELD;
-use crate::common::game_type::{ObjectId, INVALID_ID};
+use crate::common::game_type::{DrawableId, ObjectId, INVALID_DRAWABLE_ID, INVALID_ID};
 use crate::common::ini::{FieldParse, IniResult, MultiIniFieldParse, UserData};
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferVersion};
-use crate::logic::modules::open_contain::{OpenContain, OpenContainModuleData, OpenContainVirtuals};
+use crate::logic::modules::open_contain::{OpenContain, OpenContainModuleData};
+#[cfg(any())]
+use crate::logic::modules::open_contain::OpenContainVirtuals;
+#[cfg(any())]
 use crate::logic::world::game_logic::World;
+#[cfg(any())]
 use crate::logic::world::module_call::ModuleHandle;
+#[cfg(any())]
 use crate::logic::world::partition::filters::point_inside_area_2d;
+#[cfg(any())]
 use crate::logic::world::update_body::UpdateBody;
 
-/// `DrawableID` / `INVALID_DRAWABLE_ID`.
-pub type DrawableId = u32;
-/// `INVALID_DRAWABLE_ID`.
-pub const INVALID_DRAWABLE_ID: DrawableId = 0;
 /// `MAX_YARD_BONES` in `pickVisualLocation`.
 pub const MAX_YARD_BONES: usize = 16;
 
@@ -98,6 +101,10 @@ impl PrisonBehavior {
         PrisonBehavior { oc, data, visual_list: Vec::new() }
     }
 
+}
+
+#[cfg(any())] // not compiled: needs World/UpdateBody API that does not exist (the `// wire:` calls); upstream is under ALLOW_SURRENDER, undefined in the shipped build (#214)
+impl PrisonBehavior {
     /// `PrisonBehavior::pickVisualLocation(pos)`: starts at the prison's position; with at least 3 yard bones
     /// (`getMultiLogicalBonePosition(prefix, 16, ...)`), the middle of their bounding box, then up to 32 random points of the box are
     /// tried (x then y from the logic random stream) and the first inside the yard polygon (`PointInsideArea2D`) wins; z stays the
@@ -193,6 +200,7 @@ impl PrisonBehavior {
     }
 }
 
+#[cfg(any())] // not compiled: needs World/UpdateBody API that does not exist (the `// wire:` calls); upstream is under ALLOW_SURRENDER, undefined in the shipped build (#214)
 impl OpenContainVirtuals for PrisonBehavior {
     fn oc(&self) -> &OpenContain {
         &self.oc
@@ -274,7 +282,7 @@ impl Snapshot for PrisonBehavior {
             // the visual list should be empty
             if !self.visual_list.is_empty() {
                 // DEBUG_CRASH(( "PrisonBehavior::xfer - the visual list should be empty but is not\n" ));
-                return Err(crate::common::xfer::XferError::invalid_data()); // wire: throw SC_INVALID_DATA
+                return Err(crate::common::xfer::XferStatus::ListNotEmpty); // upstream throws SC_INVALID_DATA, which XferStatus lacks; ListNotEmpty is this very case
             }
             // read each item
             for _ in 0..visual_count {
@@ -315,6 +323,7 @@ impl PowTruckBehavior {
     }
 }
 
+#[cfg(any())] // not compiled: needs World/UpdateBody API that does not exist (the `// wire:` calls); upstream is under ALLOW_SURRENDER, undefined in the shipped build (#214)
 impl OpenContainVirtuals for PowTruckBehavior {
     fn oc(&self) -> &OpenContain {
         &self.oc

@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #207): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/NAT.h
@@ -496,7 +495,7 @@ impl<H: NatHost> NAT<H> {
             } else if self.now() >= self.mangler_retry_time {
                 self.mangler_retries += 1;
                 if self.mangler_retries > MAX_ALLOWED_MANGLER_RETRIES {
-                    let sp = self.get_slot_port(self.connection_nodes[local].slot_index);
+                    let sp = self.get_slot_port(self.connection_nodes[local].slot_index) as u16; // C++ narrows Int to UnsignedShort implicitly
                     self.send_mangled_port_number_to_target(sp, tsi);
                     self.source_ports[self.target_node_number as usize] = sp;
                     let l = self.local_node_number;
