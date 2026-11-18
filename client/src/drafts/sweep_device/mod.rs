@@ -3,6 +3,7 @@
 
 pub mod base_height_map;
 pub mod w3d_asset_manager;
+pub mod w3d_scene;
 pub mod w3d_terrain_visual;
 pub mod w3d_view;
 pub mod w3d_water;
