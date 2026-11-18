@@ -56,3 +56,4 @@ pub mod shd7bumpdiff;
 pub mod shd7bumpspec;
 pub mod shd8bumpdiff;
 pub mod shd8bumpspec;
+pub mod shdlegacyw3d;
