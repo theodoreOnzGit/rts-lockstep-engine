@@ -37,3 +37,6 @@ pub mod download_manager;
 pub mod main_menu_utils;
 pub mod firewall_helper;
 pub mod peer_defs;
+pub mod game_spy_overlay;
+pub mod game_spy_chat;
+pub mod game_spy_gp;
