@@ -5,6 +5,8 @@ pub mod camera;
 pub mod dazzle;
 pub mod hlod;
 pub mod meshgeometry;
+pub mod part_buf;
+pub mod pointgr;
 pub mod meshmatdesc;
 pub mod meshmdlio;
 pub mod texture;

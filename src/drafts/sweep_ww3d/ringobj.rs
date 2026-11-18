@@ -9,14 +9,12 @@
 //! cached box and `RingMeshClass::Set_Tiling`. `RingMeshClass::Generate` and the DX8 draw calls are [`RingHost`].
 //! `vis_render_ring` is `WWASSERT(0)` upstream (never called): translated as the assert.
 
-use crate::formats::w3d::part_buf::AT_MIN_LOD;
+use crate::formats::w3d::part_buf::{AT_MAX_LOD, AT_MIN_LOD};
 
 /// `RING_NUM_LOD`, `RING_LOWEST_LOD`, `RING_HIGHEST_LOD` (ringobj.h:96-98).
 pub const RING_NUM_LOD: usize = 20;
 pub const RING_LOWEST_LOD: f32 = 10.0;
 pub const RING_HIGHEST_LOD: f32 = 50.0;
-/// `RenderObjClass::AT_MAX_LOD` (`-FLT_MAX`, rendobj.cpp), the counterpart of `AT_MIN_LOD`.
-pub const AT_MAX_LOD: f32 = -f32::MAX;
 
 /// The `RingMeshClass` arrays `render_ring` reads.
 #[derive(Clone, Debug, Default)]

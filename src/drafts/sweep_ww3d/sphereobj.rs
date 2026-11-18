@@ -10,8 +10,8 @@
 //! (`Generate(1.0, size, size)` then `Set_Alpha_Vector`), in the lighting flag on the material, and in the vertex colour
 //! (the per-vertex `dcg` colour only with `USE_ALPHA_VECTOR`, else white).
 
-use crate::drafts::sweep_ww3d::ringobj::{RingMesh as SphereMesh, VertexXyzNduv2, AT_MAX_LOD};
-use crate::formats::w3d::part_buf::AT_MIN_LOD;
+use crate::drafts::sweep_ww3d::ringobj::{RingMesh as SphereMesh, VertexXyzNduv2};
+use crate::formats::w3d::part_buf::{AT_MAX_LOD, AT_MIN_LOD};
 
 /// `SPHERE_NUM_LOD`, `SPHERE_LOWEST_LOD`, `SPHERE_HIGHEST_LOD` (sphereobj.h:221-223).
 pub const SPHERE_NUM_LOD: usize = 10;
