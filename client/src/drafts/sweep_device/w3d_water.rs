@@ -4,6 +4,7 @@
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp
 //!   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DWater.h
+//!   (`setupFlatWaterShader` is called from `renderWaterMesh` (line 2391) and `drawTrapezoidWater`; those callers are in the first-pass code above.)
 //!
 //! Sweep 2 (#213). The water settings (`WaterSettings[]`, `TheWaterTransparency`) are the verified
 //! `rts_lockstep_engine::client::water` types. Drafted here: `loadSetting`, `updateMapOverrides`,
@@ -13,10 +14,12 @@
 //! `renderSkyBody`, `drawTrapezoidWater`, `renderWater`'s polygon walk) as functions that return the vertices, indices
 //! and draw counts instead of calling `DX8Wrapper`, and `initBumpMap`'s pixel transform.
 //!
-//! Not drafted (listed in the #213 comment): `setupJbaWaterShader`, `setupFlatWaterShader` (pure D3D texture-stage and
-//! pixel-shader setup), `drawSea`, `renderMirror` (reflection render targets and the sea vertex/pixel shaders),
-//! `drawRiverWater` (700 lines of river quad batching tied to those shaders) and the second `renderSkyBody` (line 3368,
-//! inside `#if 0`, excluded). `DO_WATER_SIMULATION` and `USE_MESH_NORMALS` are not defined; `SCROLL_UV` is not either
+//! Second pass (#213, remaining 5): `setupJbaWaterShader`, `setupFlatWaterShader`, `drawSea`, `renderMirror` and
+//! `drawRiverWater` are drafted at the bottom of this file. They are tied to D3D, so each takes the device state it reads
+//! (view/projection matrices, whether a shroud or a pixel shader exists) as arguments and returns a plain record of what
+//! it would have set and drew; the device calls themselves are comments (`// upstream: <call> - device-only, not
+//! translated`). The second `renderSkyBody` (line 3368, inside `#if 0`) stays excluded. `DO_WATER_SIMULATION` and
+//! `USE_MESH_NORMALS` are not defined; `SCROLL_UV` is not either
 //! (checked at W3DWater.cpp:2352..2365: the `#else` arm, plain UVs, is the one compiled - but the scrolled `v1Offset` is
 //! still computed upstream and unused; it is omitted here).
 
@@ -25,6 +28,7 @@ use crate::drafts::terrain::w3d_common::AABoxClass;
 use rts_lockstep_engine::client::water::WaterSetting;
 use rts_lockstep_engine::common::base_type::{real_to_int, ICoord3D, RGBColor};
 use rts_lockstep_engine::logic::terrain_visual::MAP_XY_FACTOR;
+use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use rts_lockstep_engine::ww::plane::PlaneClass;
 use rts_lockstep_engine::ww::vector3::Vector3;
 use rts_lockstep_engine::ww::wwmath::fast_sin;
@@ -164,6 +168,8 @@ pub struct WaterRenderObjClass {
     pub mesh_in_motion: bool,
     pub do_water_grid: bool,
     pub disable_river: bool,
+    /// `m_drawingRiver` (set by `drawRiverWater`, read by `Render`).
+    pub drawing_river: bool,
     pub river_v_origin: f32,
     pub river_texture_name: Option<Vec<u8>>,
     pub u_offset: f32,
@@ -809,4 +815,647 @@ pub fn init_bump_map_level(src: &[u8], src_pitch: usize, width: usize, height: u
         }
     }
     dst
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Second pass: the D3D-bound water functions (shader set-up, sea, mirror, river)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// `REFLECTION_FACTOR` (W3DWater.cpp:102).
+pub const REFLECTION_FACTOR: f32 = 0.1;
+/// `NOISE_REPEAT_FACTOR` (W3DWater.cpp:192).
+pub const NOISE_REPEAT_FACTOR: f32 = 1.0 / 16.0;
+/// `SEA_BUMP_SCALE` (W3DWater.cpp:100): `m_fBumpScale`.
+pub const SEA_BUMP_SCALE: f32 = 0.06;
+/// `PATCH_SCALE` (W3DWater.cpp:97).
+pub const PATCH_SCALE: f32 = 4.0 * MAP_XY_FACTOR;
+/// `HEIGHT_TO_USE` (W3DWater.cpp:2788, local `#define` of `drawRiverWater`).
+pub const HEIGHT_TO_USE: f32 = 0.5;
+/// `TIME_OF_DAY_NIGHT` (`client::drawable`).
+const TIME_OF_DAY_NIGHT: usize = 4;
+
+/// A D3D matrix as `D3DXMATRIX` lays it out: `m[row][column]`, vectors are rows (`v' = v * M`).
+pub type D3dMatrix = [[f32; 4]; 4];
+
+fn d3d_identity() -> D3dMatrix {
+    [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]
+}
+
+/// `D3DXMatrixMultiply(&out, &a, &b)`: `out = a * b`.
+fn d3d_multiply(a: &D3dMatrix, b: &D3dMatrix) -> D3dMatrix {
+    let mut out = [[0.0f32; 4]; 4];
+    for i in 0..4 {
+        for j in 0..4 {
+            out[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j] + a[i][3] * b[3][j];
+        }
+    }
+    out
+}
+
+/// `D3DXMatrixTranspose`.
+fn d3d_transpose(a: &D3dMatrix) -> D3dMatrix {
+    let mut out = [[0.0f32; 4]; 4];
+    for i in 0..4 {
+        for j in 0..4 {
+            out[i][j] = a[j][i];
+        }
+    }
+    out
+}
+
+/// `D3DXMatrixInverse(&inv, &det, &m)`: the general 4x4 inverse by cofactors, with the determinant. When the
+/// determinant is 0 D3DX returns NULL and leaves `inv` untouched; the identity stands in for that here.
+fn d3d_inverse(m: &D3dMatrix) -> (D3dMatrix, f32) {
+    let a = |r: usize, c: usize| m[r][c] as f64;
+    let mut inv = [[0.0f64; 4]; 4];
+    // 2x2 sub-determinants of rows (0,1) and (2,3)
+    let s0 = a(0, 0) * a(1, 1) - a(1, 0) * a(0, 1);
+    let s1 = a(0, 0) * a(1, 2) - a(1, 0) * a(0, 2);
+    let s2 = a(0, 0) * a(1, 3) - a(1, 0) * a(0, 3);
+    let s3 = a(0, 1) * a(1, 2) - a(1, 1) * a(0, 2);
+    let s4 = a(0, 1) * a(1, 3) - a(1, 1) * a(0, 3);
+    let s5 = a(0, 2) * a(1, 3) - a(1, 2) * a(0, 3);
+    let c5 = a(2, 2) * a(3, 3) - a(3, 2) * a(2, 3);
+    let c4 = a(2, 1) * a(3, 3) - a(3, 1) * a(2, 3);
+    let c3 = a(2, 1) * a(3, 2) - a(3, 1) * a(2, 2);
+    let c2 = a(2, 0) * a(3, 3) - a(3, 0) * a(2, 3);
+    let c1 = a(2, 0) * a(3, 2) - a(3, 0) * a(2, 2);
+    let c0 = a(2, 0) * a(3, 1) - a(3, 0) * a(2, 1);
+    let det = s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0;
+    if det == 0.0 {
+        return (d3d_identity(), 0.0);
+    }
+    let id = 1.0 / det;
+    inv[0][0] = (a(1, 1) * c5 - a(1, 2) * c4 + a(1, 3) * c3) * id;
+    inv[0][1] = (-a(0, 1) * c5 + a(0, 2) * c4 - a(0, 3) * c3) * id;
+    inv[0][2] = (a(3, 1) * s5 - a(3, 2) * s4 + a(3, 3) * s3) * id;
+    inv[0][3] = (-a(2, 1) * s5 + a(2, 2) * s4 - a(2, 3) * s3) * id;
+    inv[1][0] = (-a(1, 0) * c5 + a(1, 2) * c2 - a(1, 3) * c1) * id;
+    inv[1][1] = (a(0, 0) * c5 - a(0, 2) * c2 + a(0, 3) * c1) * id;
+    inv[1][2] = (-a(3, 0) * s5 + a(3, 2) * s2 - a(3, 3) * s1) * id;
+    inv[1][3] = (a(2, 0) * s5 - a(2, 2) * s2 + a(2, 3) * s1) * id;
+    inv[2][0] = (a(1, 0) * c4 - a(1, 1) * c2 + a(1, 3) * c0) * id;
+    inv[2][1] = (-a(0, 0) * c4 + a(0, 1) * c2 - a(0, 3) * c0) * id;
+    inv[2][2] = (a(3, 0) * s4 - a(3, 1) * s2 + a(3, 3) * s0) * id;
+    inv[2][3] = (-a(2, 0) * s4 + a(2, 1) * s2 - a(2, 3) * s0) * id;
+    inv[3][0] = (-a(1, 0) * c3 + a(1, 1) * c1 - a(1, 2) * c0) * id;
+    inv[3][1] = (a(0, 0) * c3 - a(0, 1) * c1 + a(0, 2) * c0) * id;
+    inv[3][2] = (-a(3, 0) * s3 + a(3, 1) * s1 - a(3, 2) * s0) * id;
+    inv[3][3] = (a(2, 0) * s3 - a(2, 1) * s1 + a(2, 2) * s0) * id;
+    let mut out = [[0.0f32; 4]; 4];
+    for i in 0..4 {
+        for j in 0..4 {
+            out[i][j] = inv[i][j] as f32;
+        }
+    }
+    (out, det as f32)
+}
+
+/// The texture-stage-2 transform both shader set-ups build for the sparkle/noise pass: `inverse(view) *
+/// scale(NOISE_REPEAT_FACTOR, NOISE_REPEAT_FACTOR, 1) * translate(m_riverVOrigin, m_riverVOrigin, 0)`
+/// (`D3DTS_TEXTURE2`, W3DWater.cpp:239-249 and 3029-3041).
+pub fn noise_texture_transform(view: &D3dMatrix, river_v_origin: f32) -> D3dMatrix {
+    let (inv, _det) = d3d_inverse(view); // D3DXMatrixInverse(&inv, &det, &curView)
+    let mut scale = d3d_identity(); // D3DXMatrixScaling(&scale, NOISE_REPEAT_FACTOR, NOISE_REPEAT_FACTOR, 1)
+    scale[0][0] = NOISE_REPEAT_FACTOR;
+    scale[1][1] = NOISE_REPEAT_FACTOR;
+    scale[2][2] = 1.0;
+    let mut dest = d3d_multiply(&inv, &scale);
+    let mut trans = d3d_identity(); // D3DXMatrixTranslation(&scale, m_riverVOrigin, m_riverVOrigin, 0)
+    trans[3][0] = river_v_origin;
+    trans[3][1] = river_v_origin;
+    trans[3][2] = 0.0;
+    dest = d3d_multiply(&dest, &trans);
+    dest
+}
+
+/// Which preset shader the water set-ups pick: `ShaderClass::_PresetAlphaShader` or `_PresetAdditiveShader`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WaterPresetShader {
+    Alpha,
+    Additive,
+}
+
+/// What `setupJbaWaterShader` sets, as the decisions it makes (the D3D calls are device-only).
+#[derive(Clone, Debug, PartialEq)]
+pub struct JbaWaterShaderSetup {
+    /// `Set_Shader(!m_additiveBlend ? _PresetAlphaShader : _PresetAdditiveShader)`.
+    pub preset_shader: WaterPresetShader,
+    /// `doSparkles && m_riverWaterPixelShader`: stages 1 (sparkles) and 2 (noise) are bound and wrapped.
+    pub sparkles: bool,
+    /// `D3DTS_TEXTURE2` when `sparkles`.
+    pub texture2_transform: Option<D3dMatrix>,
+    /// `SetPixelShaderConstant(0, (REFLECTION_FACTOR x3, 1))` and `SetPixelShader(m_riverWaterPixelShader)`, when the
+    /// river pixel shader exists.
+    pub pixel_shader_constant: Option<[f32; 4]>,
+}
+
+/// `WaterRenderObjClass::setupJbaWaterShader` (W3DWater.cpp:197). `additive_blend` is
+/// `TheWaterTransparency->m_additiveBlend`, `has_river_water_pixel_shader` is `m_riverWaterPixelShader != 0`, `view` is
+/// the current `D3DTS_VIEW` (read with `_Get_DX8_Transform`), `river_v_origin` is `m_riverVOrigin`.
+pub fn setup_jba_water_shader(
+    additive_blend: bool,
+    has_river_water_pixel_shader: bool,
+    view: &D3dMatrix,
+    river_v_origin: f32,
+) -> JbaWaterShaderSetup {
+    let preset_shader = if !additive_blend { WaterPresetShader::Alpha } else { WaterPresetShader::Additive };
+    // upstream: DX8Wrapper::Set_Shader / Set_Material(PRELIT_DIFFUSE) - device-only, not translated
+    // upstream: m_riverTexture Get_Filter().Set_Mag/Min_Filter/Set_Mip_Mapping(FILTER_TYPE_BEST) - device-only, not translated
+    // upstream: Apply_Render_State_Changes, stage 0 ALPHAOP = ADD - device-only, not translated
+    // upstream: m_riverAlphaEdge->Init() if needed, SetTexture(3, riverAlphaEdge), stage 3 wrap, stage 0/1 TEXCOORDINDEX 0,
+    //           stage 3 TEXCOORDINDEX 1 - device-only, not translated
+
+    let do_sparkles = true;
+    let mut sparkles = false;
+    let mut texture2_transform = None;
+    if has_river_water_pixel_shader && do_sparkles {
+        sparkles = true;
+        // upstream: sparkle texture on stage 1 and noise texture on stage 2 (Init if needed), stage 1/2 WRAP,
+        //           stage 2 TEXCOORDINDEX = CAMERASPACEPOSITION, TEXTURETRANSFORMFLAGS = COUNT2 - device-only, not translated
+        texture2_transform = Some(noise_texture_transform(view, river_v_origin));
+        // upstream: DX8Wrapper::_Set_DX8_Transform(D3DTS_TEXTURE2, destMatrix) - device-only, not translated
+    }
+    // upstream: stage 0..3 MINFILTER/MAGFILTER = LINEAR - device-only, not translated
+    let mut pixel_shader_constant = None;
+    if has_river_water_pixel_shader {
+        pixel_shader_constant = Some([REFLECTION_FACTOR, REFLECTION_FACTOR, REFLECTION_FACTOR, 1.0]);
+        // upstream: SetPixelShader(m_riverWaterPixelShader) - device-only, not translated
+    }
+    JbaWaterShaderSetup { preset_shader, sparkles, texture2_transform, pixel_shader_constant }
+}
+
+/// How `setupFlatWaterShader` handles the shroud when the trapezoid pixel shader exists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlatWaterShroudBranch {
+    /// No `m_trapezoidWaterPixelShader`: stage 3 is left alone.
+    NoPixelShader,
+    /// `TheTerrainRenderObject->getShroud()`: the shroud texture on stage 0 via `ST_SHROUD_TEXTURE` (stage 3), and the
+    /// z function switched from EQUAL to `D3DCMP_LESSEQUAL` (water does not write z).
+    Shroud,
+    /// No shroud: the white texture (initialised with a 0xffffffff pixel on first use) goes on stage 3, because the
+    /// GF4 pixel shader makes random colours with `SetTexture(3, NULL)`.
+    WhiteTexture,
+}
+
+/// What `setupFlatWaterShader` sets, as the decisions it makes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlatWaterShaderSetup {
+    pub preset_shader: WaterPresetShader,
+    pub shroud_branch: FlatWaterShroudBranch,
+    /// `doSparkles && m_trapezoidWaterPixelShader`.
+    pub sparkles: bool,
+    /// `D3DTS_TEXTURE2` when `sparkles`.
+    pub texture2_transform: Option<D3dMatrix>,
+    /// `SetPixelShaderConstant(0, ...)` + `SetPixelShader(m_trapezoidWaterPixelShader)`.
+    pub pixel_shader_constant: Option<[f32; 4]>,
+}
+
+/// `WaterRenderObjClass::setupFlatWaterShader` (W3DWater.cpp:2948). Arguments as in [`setup_jba_water_shader`], with
+/// `has_trapezoid_water_pixel_shader` for `m_trapezoidWaterPixelShader` and `has_shroud` for
+/// `TheTerrainRenderObject->getShroud() != NULL`.
+pub fn setup_flat_water_shader(
+    additive_blend: bool,
+    has_trapezoid_water_pixel_shader: bool,
+    has_shroud: bool,
+    view: &D3dMatrix,
+    river_v_origin: f32,
+) -> FlatWaterShaderSetup {
+    // upstream: DX8Wrapper::Set_Texture(0, m_riverTexture) - device-only, not translated
+    let preset_shader = if !additive_blend { WaterPresetShader::Alpha } else { WaterPresetShader::Additive };
+    // upstream: Set_Shader, Set_Material(PRELIT_DIFFUSE), m_riverTexture filters BEST, Apply_Render_State_Changes - device-only, not translated
+
+    // Setup shroud to render in same pass as water
+    let shroud_branch = if has_trapezoid_water_pixel_shader {
+        if has_shroud {
+            // upstream: W3DShaderManager::setTexture(0, shroud), setShader(ST_SHROUD_TEXTURE, 3), ZFUNC = LESSEQUAL - device-only, not translated
+            FlatWaterShroudBranch::Shroud
+        } else {
+            // upstream: m_whiteTexture Init + DrawPixel(0,0,0xffffffff), SetTexture(3, white) - device-only, not translated
+            FlatWaterShroudBranch::WhiteTexture
+        }
+    } else {
+        FlatWaterShroudBranch::NoPixelShader
+    };
+    // upstream: stage 0 ALPHAOP = ADD, stage 0/1 TEXCOORDINDEX 0 - device-only, not translated
+
+    let do_sparkles = true;
+    let mut sparkles = false;
+    let mut texture2_transform = None;
+    if has_trapezoid_water_pixel_shader && do_sparkles {
+        sparkles = true;
+        // upstream: sparkle texture on stage 1, noise on stage 2, wrap modes, stage 2 CAMERASPACEPOSITION/COUNT2 - device-only, not translated
+        texture2_transform = Some(noise_texture_transform(view, river_v_origin));
+    }
+    // upstream: stage 0..2 MINFILTER/MAGFILTER = LINEAR - device-only, not translated
+    let mut pixel_shader_constant = None;
+    if has_trapezoid_water_pixel_shader {
+        pixel_shader_constant = Some([REFLECTION_FACTOR, REFLECTION_FACTOR, REFLECTION_FACTOR, 1.0]);
+        // upstream: SetPixelShader(m_trapezoidWaterPixelShader) - device-only, not translated
+    }
+    FlatWaterShaderSetup { preset_shader, shroud_branch, sparkles, texture2_transform, pixel_shader_constant }
+}
+
+/// One patch `drawSea` draws: the matrices it loads and the indexed draw it issues.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SeaPatchDraw {
+    pub patch_x: i32,
+    pub patch_y: i32,
+    /// `matWorldViewProj`, transposed, loaded into `CV_WORLDVIEWPROJ_0` (register 2, 4 rows).
+    pub world_view_proj_transposed: D3dMatrix,
+    /// `matTemp = patchMatrix * matWW3D`, the `D3DTS_WORLD` of the shroud pass for this patch.
+    pub shroud_world: D3dMatrix,
+}
+
+/// What `drawSea` sets and draws.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SeaDraw {
+    /// Bump texture frame bound to stage 0 (`m_pBumpTexture[m_iBumpFrame]`).
+    pub bump_frame: i32,
+    /// `D3DTS_BUMPENVMAT00` / `11` (`m_fBumpScale`; `01` and `10` are 0), `BUMPENVLSCALE` 1, `BUMPENVLOFFSET` 0.
+    pub bump_scale: f32,
+    /// The `CV_TEXPROJ_0` (register 6) matrix.
+    pub tex_proj: D3dMatrix,
+    pub patches: Vec<SeaPatchDraw>,
+    /// `DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP, 0, m_numVertices, 0, m_numIndices)` per patch: `(minIndex = 0,
+    /// numVertices, startIndex = 0, primCount = m_numIndices)`. Upstream passes the index count as the primitive count
+    /// (D3D8 `primCount`); kept as written.
+    pub num_vertices: i32,
+    pub prim_count: i32,
+    /// A second pass over the same patches applies the shroud (`TheTerrainRenderObject->getShroud()`).
+    pub shroud_pass: bool,
+}
+
+/// `WaterRenderObjClass::drawSea` (W3DWater.cpp:1790). `sea_box` is the result of [`WaterRenderObjClass::get_clipped_water_plane`]
+/// (`None` returns at once, "the sea is not visible"); `view` / `proj` are `D3DTS_VIEW` / `D3DTS_PROJECTION` after
+/// `Apply_Render_State_Changes`; `bump_frame` is `m_iBumpFrame`; `has_shroud` is `TheTerrainRenderObject->getShroud()`.
+/// The patch loops run from `trunc((centre - extent) / (PATCH_WIDTH * PATCH_SCALE))` while
+/// `patch * PATCH_WIDTH * PATCH_SCALE < centre + extent`, as upstream, X inside Y.
+pub fn draw_sea(
+    water: &WaterRenderObjClass,
+    sea_box: Option<&AABoxClass>,
+    view: &D3dMatrix,
+    proj: &D3dMatrix,
+    bump_frame: i32,
+    has_shroud: bool,
+) -> Option<SeaDraw> {
+    let sea_box = sea_box?; // the sea is not visible
+
+    // create a transform which will flip the y and z coordinates to fit our system
+    let mut mat_ww3d: D3dMatrix = [[0.0; 4]; 4];
+    mat_ww3d[0][0] = 1.0; // _11
+    mat_ww3d[2][1] = 1.0; // _32
+    mat_ww3d[1][2] = 1.0; // _23
+    mat_ww3d[3][3] = 1.0; // _44
+
+    // upstream: Set_Transform(D3DTS_WORLD, Transform), Set_Texture(0/1, NULL), Apply_Render_State_Changes - device-only, not translated
+    // upstream: stage 0..3 colour/alpha ops, TEXCOORDINDEX, wrap/clamp, SetTexture(0, bump), mip filters,
+    //           BUMPENVMAT*, ZWRITEENABLE false - device-only, not translated
+
+    let mut tex_proj: D3dMatrix = [[0.0; 4]; 4];
+    tex_proj[0][0] = 0.5;
+    tex_proj[0][1] = -0.5;
+    tex_proj[0][2] = 0.5;
+    tex_proj[0][3] = 0.5;
+    tex_proj[1][0] = 0.5;
+    tex_proj[1][1] = 0.5;
+    tex_proj[1][2] = 0.0;
+    tex_proj[1][3] = 0.0;
+    tex_proj[2][0] = 0.0;
+    tex_proj[2][1] = 0.0;
+    tex_proj[2][2] = 0.0;
+    tex_proj[2][3] = 1.0;
+    tex_proj[3][0] = 0.0;
+    tex_proj[3][1] = 0.0;
+    tex_proj[3][2] = 0.0;
+    tex_proj[3][3] = 1.0;
+    // upstream: SetVertexShaderConstant(CV_TEXPROJ_0..., CV_ZERO, CV_ONE), SetVertexShader(m_dwWaveVertexShader),
+    //           SetPixelShader(m_dwWavePixelShader), SRCALPHA/INVSRCALPHA blend, ALPHABLENDENABLE, SetTexture(1, reflection),
+    //           SetStreamSource, SetIndices - device-only, not translated
+
+    let mut patch_matrix: D3dMatrix = [[0.0; 4]; 4];
+    patch_matrix[0][0] = PATCH_SCALE;
+    patch_matrix[1][1] = 1.0;
+    patch_matrix[2][2] = PATCH_SCALE;
+    patch_matrix[3][3] = 1.0;
+
+    let patch_span = PATCH_WIDTH as f32 * PATCH_SCALE; // PATCH_WIDTH*PATCH_SCALE
+    let mut patches = Vec::new();
+    let mut patch_y = ((sea_box.center.y - sea_box.extent.y) / patch_span) as i32;
+    while ((patch_y * PATCH_WIDTH) as f32 * PATCH_SCALE) < (sea_box.center.y + sea_box.extent.y) {
+        let mut patch_x = ((sea_box.center.x - sea_box.extent.x) / patch_span) as i32;
+        while ((patch_x * PATCH_WIDTH) as f32 * PATCH_SCALE) < (sea_box.center.x + sea_box.extent.x) {
+            patch_matrix[3][0] = ((patch_x * PATCH_WIDTH) as f32 * PATCH_SCALE) as f32; // _41
+            patch_matrix[3][2] = ((patch_y * PATCH_WIDTH) as f32 * PATCH_SCALE) as f32; // _43
+            // convert the default D3D coordinate system into ours
+            let mat_temp_world = d3d_multiply(&patch_matrix, &mat_ww3d);
+            let mat_temp = d3d_multiply(&mat_temp_world, view);
+            let mat_world_view_proj = d3d_multiply(&mat_temp, proj);
+            // matrices must be transposed before loading into vertex shader registers
+            let world_view_proj_transposed = d3d_transpose(&mat_world_view_proj);
+            // upstream: SetVertexShaderConstant(CV_WORLDVIEWPROJ_0, ...), DrawIndexedPrimitive - device-only, not translated
+            patches.push(SeaPatchDraw {
+                patch_x,
+                patch_y,
+                world_view_proj_transposed,
+                // the shroud pass multiplies the same patchMatrix by matWW3D (patchMatrix is unchanged by the first pass)
+                shroud_world: mat_temp_world,
+            });
+            patch_x += 1;
+        }
+        patch_y += 1;
+    }
+    // upstream: ALPHABLENDENABLE false, release textures 0-2, stage resets, ZWRITEENABLE true, WRAP0 0, ops DISABLE,
+    //           restore VIEW/PROJECTION, SetPixelShader(0), SetVertexShader(DX8_FVF_XYZDUV1),
+    //           Invalidate_Cached_Render_States - device-only, not translated
+
+    if has_shroud {
+        // do second pass to apply the shroud on water plane
+        // upstream: W3DShaderManager::setTexture(0, shroud), setShader(ST_SHROUD_TEXTURE, 0), SetStreamSource,
+        //           SetIndices, per patch _Set_DX8_Transform(D3DTS_WORLD, shroud_world) + DrawIndexedPrimitive,
+        //           resetShader - device-only, not translated
+    }
+
+    Some(SeaDraw {
+        bump_frame,
+        bump_scale: SEA_BUMP_SCALE,
+        tex_proj,
+        patches,
+        num_vertices: water.num_vertices,
+        prim_count: water.num_indices,
+        shroud_pass: has_shroud,
+    })
+}
+
+/// What `renderMirror` does to the camera for the reflected pass.
+#[derive(Clone, Debug)]
+pub struct MirrorRenderPlan {
+    /// The camera transform to restore afterwards (`OldCameraMatrix`).
+    pub old_camera_transform: Matrix3D,
+    /// `reflectedTransform`, set on the camera for the render.
+    pub reflected_transform: Matrix3D,
+    /// `cam->Set_Viewport((0,0),(1,1))`: the reflection fills the whole texture.
+    pub viewport_min: (f32, f32),
+    pub viewport_max: (f32, f32),
+    /// `renderSky()` is always called; `renderSkyBody(&reflectedTransform)` only at `TIME_OF_DAY_NIGHT`.
+    pub render_sky_body: bool,
+}
+
+/// `WaterRenderObjClass::renderMirror` (W3DWater.cpp:1435): the reflected camera. The camera's right, up and
+/// forward vectors and its position are mirrored in the plane `z = m_level` (normal `(0,0,1)`), and the new matrix is
+/// built from them. Returns the plan the caller executes (render sky, optionally the sky body, `WW3D::Render` the
+/// scene with `ShaderClass::Invert_Backface_Culling(true)`, then restore the camera and viewport).
+/// `EXTENDED_STATS` (`m_disableWater`) is not defined.
+pub fn render_mirror(water: &WaterRenderObjClass, cam_transform: &Matrix3D) -> MirrorRenderPlan {
+    let old_camera_transform = *cam_transform; // OldCameraMatrix
+    let water_normal = Vector3 { x: 0.0, y: 0.0, z: 1.0 }; // normal of plane used for reflection
+    let water_plane_w = water.level; // Vector4 WaterPlane(WaterNormal.X, .Y, .Z, m_level)
+
+    // FullMatrix = transpose of the 3x4 copied into a 4x4: [0..2] are the camera axes, [3] the position.
+    let r = &cam_transform.row;
+    let full = [
+        Vector3 { x: r[0].x, y: r[1].x, z: r[2].x },
+        Vector3 { x: r[0].y, y: r[1].y, z: r[2].y },
+        Vector3 { x: r[0].z, y: r[1].z, z: r[2].z },
+        Vector3 { x: r[0].w, y: r[1].w, z: r[2].w },
+    ];
+    let reflect = |v: &Vector3, axis_distance: f32| Vector3 {
+        x: v.x - 2.0 * axis_distance * water_normal.x,
+        y: v.y - 2.0 * axis_distance * water_normal.y,
+        z: v.z - 2.0 * axis_distance * water_normal.z,
+    };
+
+    // reflect camera right vector
+    let mut axis_distance = Vector3::dot_product(&full[0], &water_normal);
+    let r_right = reflect(&full[0], axis_distance);
+    // reflect camera up vector
+    axis_distance = Vector3::dot_product(&full[1], &water_normal);
+    let r_up = reflect(&full[1], axis_distance);
+    // reflect camera n vector
+    axis_distance = Vector3::dot_product(&full[2], &water_normal);
+    let r_n = reflect(&full[2], axis_distance);
+    // reflect camera position
+    axis_distance = Vector3::dot_product(&full[3], &water_normal); // distance cam to origin
+    axis_distance -= water_plane_w; // subtract mirror plane distance to get distance camera to plane
+    let r_pos = reflect(&full[3], axis_distance);
+
+    // generate a new camera matrix from reflected vectors
+    let reflected_transform = Matrix3D::from_axes(&r_right, &r_up, &r_n, &r_pos);
+
+    // upstream: DX8Wrapper::Set_Render_Target_With_Z(m_pReflectionTexture), WW3D::Begin_Render(false, true, black),
+    //           cam->Set_Transform / Set_Viewport / Apply, ShaderClass::Invert_Backface_Culling(true), renderSky(),
+    //           renderSkyBody if night, WW3D::Render(m_parentScene, cam), restore camera, Invert_Backface_Culling(false),
+    //           WW3D::End_Render, Set_Render_Target(NULL) - device-only, not translated
+
+    MirrorRenderPlan {
+        old_camera_transform,
+        reflected_transform,
+        viewport_min: (0.0, 0.0),
+        viewport_max: (1.0, 1.0),
+        render_sky_body: water.tod == TIME_OF_DAY_NIGHT,
+    }
+}
+
+/// `PolygonTrigger` as `drawRiverWater` reads it: its points and `getRiverStart()`.
+#[derive(Clone, Debug, Default)]
+pub struct RiverTrigger {
+    pub points: Vec<ICoord3D>,
+    pub river_start: i32,
+}
+
+/// What `drawRiverWater` draws for one river polygon.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RiverWaterDraw {
+    pub indices: Vec<u16>,
+    pub vertices: Vec<VertexFormatXYZNDUV2>,
+    /// `Draw_Triangles(0, rectangleCount*2, 0, (rectangleCount+1)*2)`.
+    pub rectangle_count: i32,
+    pub shader: JbaWaterShaderSetup,
+    /// Additive blend: SRCBLEND is `D3DBLEND_SRCALPHA` during the draw (so the river edge alpha darkens rgb) and back to
+    /// `D3DBLEND_ONE` afterwards.
+    pub additive_src_alpha: bool,
+    /// A second `Draw_Triangles` with the shroud texture (z function LESSEQUAL, cull NONE).
+    pub shroud_pass: bool,
+}
+
+/// The water diffuse colour `drawTrapezoidWater` and `drawRiverWater` compute alike (W3DWater.cpp:3109-3143 and
+/// 2757-2791): the standing-water colour, or, when it is white, the terrain ambient plus the downward light terms
+/// times the setting's water diffuse; `0,0,0` disables lighting. Alpha is copied from the setting.
+pub fn water_diffuse(water: &WaterRenderObjClass, inputs: &TrapezoidInputs) -> i32 {
+    let mut shade_r = inputs.standing_water_color.red;
+    let mut shade_g = inputs.standing_water_color.green;
+    let mut shade_b = inputs.standing_water_color.blue;
+    let setting = &water.settings[water.tod];
+    // If the water color is not overridden, use legacy lighting code.
+    if shade_r == 1.0 && shade_g == 1.0 && shade_b == 1.0 {
+        shade_r = inputs.terrain_ambient0.red;
+        shade_g = inputs.terrain_ambient0.green;
+        shade_b = inputs.terrain_ambient0.blue;
+        // Add in diffuse lighting from each terrain light
+        for light_index in 0..inputs.num_global_lights.max(0) as usize {
+            if -inputs.light_pos_z[light_index] > 0.0 {
+                shade_r += -inputs.light_pos_z[light_index] * inputs.terrain_diffuse[light_index].red;
+                shade_g += -inputs.light_pos_z[light_index] * inputs.terrain_diffuse[light_index].green;
+                shade_b += -inputs.light_pos_z[light_index] * inputs.terrain_diffuse[light_index].blue;
+            }
+        }
+        // Get water material colors
+        let water_shade_r = (setting.water_diffuse & 0xff) as f32 / 255.0;
+        let water_shade_g = ((setting.water_diffuse >> 8) & 0xff) as f32 / 255.0;
+        let water_shade_b = ((setting.water_diffuse >> 16) & 0xff) as f32 / 255.0;
+        shade_r = shade_r * water_shade_r * 255.0;
+        shade_g = shade_g * water_shade_g * 255.0;
+        shade_b = shade_b * water_shade_b * 255.0;
+    } else {
+        shade_r *= 255.0;
+        shade_g *= 255.0;
+        shade_b *= 255.0;
+        if shade_r == 0.0 && shade_g == 0.0 && shade_b == 0.0 {
+            // special case where we disable lighting
+            shade_r = 255.0;
+            shade_g = 255.0;
+            shade_b = 255.0;
+        }
+    }
+    let mut diffuse: i32 = real_to_int(shade_b) | (real_to_int(shade_g) << 8) | (real_to_int(shade_r) << 16);
+    // Keep diffuse from lighting calculations but substitute custom alpha
+    diffuse |= (setting.water_diffuse & 0xff00_0000) as i32; // copy alpha/opacity from ini setting
+    diffuse
+}
+
+/// `WaterRenderObjClass::drawRiverWater` (W3DWater.cpp:2714): a many-sided river polygon as a strip of quads. The two
+/// edges of the river are the points walking out from `getRiverStart()` in both directions (`innerNdx` down, `outerNdx`
+/// up, both wrapping); each pair gives two vertices with `u1 = HEIGHT_TO_USE / 0`, `u2 = 1 / 0` and a shared
+/// `v = -m_riverVOrigin + vScale*i + sin(2 PI vScale i - 3 m_riverVOrigin)/22`, where `vScale = repeatCount /
+/// rectangleCount` and `repeatCount = ((totalLen/2) - endLen) / endLen` (`endLen` is the length of the river-start
+/// segment). Returns `None` when `m_disableRiver` (before `m_drawingRiver` is set) or when `getRiverStart() >=
+/// numPoints-1` (after it is set, as upstream). `view` is `D3DTS_VIEW` for the shader set-up. The `bumpFactor` upstream
+/// computes (`endLen / BUMP_SIZE`) is never read and is omitted.
+pub fn draw_river_water(
+    water: &mut WaterRenderObjClass,
+    trig: &RiverTrigger,
+    inputs: &TrapezoidInputs,
+    additive_blend: bool,
+    has_river_water_pixel_shader: bool,
+    has_shroud: bool,
+    view: &D3dMatrix,
+) -> Option<RiverWaterDraw> {
+    // upstream: DX8Wrapper::Invalidate_Cached_Render_States() - device-only, not translated
+    let num_points = trig.points.len() as i32;
+    let mut rectangle_count = num_points / 2;
+    rectangle_count -= 1;
+
+    if water.disable_river {
+        return None;
+    }
+    water.drawing_river = true;
+
+    // allocate 2 triangles per side with 3 indices per triangle
+    let mut indices: Vec<u16> = Vec::with_capacity(((rectangle_count.max(0) + 1) * 2 * 3) as usize);
+    for i in 0..rectangle_count {
+        // triangle 1
+        indices.push((i * 2) as u16);
+        indices.push((i * 2 + 1) as u16);
+        indices.push((i * 2 + 3) as u16);
+        // triangle 2
+        indices.push((i * 2) as u16);
+        indices.push((i * 2 + 3) as u16);
+        indices.push((i * 2 + 2) as u16);
+    }
+
+    let diffuse = water_diffuse(water, inputs);
+
+    let mut inner_ndx = trig.river_start;
+    let mut outer_ndx = inner_ndx + 1;
+
+    let mut end_len = 0.0f32;
+    let mut total_len = 0.0f32;
+    for i in 0..(num_points - 1) {
+        let inner_pt = trig.points[i as usize];
+        let outer_pt = trig.points[(i + 1) as usize];
+        let dx = (inner_pt.x - outer_pt.x) as f32;
+        let dy = (inner_pt.y - outer_pt.y) as f32;
+        let cur_len = (dx * dx + dy * dy).sqrt();
+        total_len += cur_len;
+        if i == inner_ndx {
+            end_len = cur_len;
+        }
+    }
+    // bumpFactor = endLen / BUMP_SIZE: never read upstream afterwards.
+
+    let length_of_river = (total_len / 2.0) - end_len;
+    let repeat_count = length_of_river / end_len;
+
+    let v_scale = repeat_count / rectangle_count as f32;
+
+    if inner_ndx >= num_points - 1 {
+        return None;
+    }
+    // allocate 2 vertices per side
+    let mut vertices: Vec<VertexFormatXYZNDUV2> = Vec::with_capacity(((rectangle_count + 1) * 2).max(0) as usize);
+    let const_a = 3.0 * water.river_v_origin;
+    let pi = std::f32::consts::PI;
+    for i in 0..(num_points / 2) {
+        let inner_pt = trig.points[outer_ndx as usize];
+        let outer_pt = trig.points[inner_ndx as usize];
+        outer_ndx += 1;
+        inner_ndx -= 1;
+        if inner_ndx < 0 {
+            inner_ndx = num_points - 1;
+        }
+        if outer_ndx >= num_points {
+            outer_ndx = 0;
+        }
+        let wobble_const =
+            -water.river_v_origin + v_scale * i as f32 + fast_sin(2.0 * pi * (v_scale * i as f32) - const_a) / 22.0;
+        vertices.push(VertexFormatXYZNDUV2 {
+            x: inner_pt.x as f32,
+            y: inner_pt.y as f32,
+            z: inner_pt.z as f32,
+            diffuse: diffuse as u32,
+            v1: wobble_const,
+            u1: HEIGHT_TO_USE,
+            v2: wobble_const,
+            u2: 1.0,
+            nx: 0.0,
+            ny: 0.0,
+            nz: 1.0,
+        });
+        vertices.push(VertexFormatXYZNDUV2 {
+            x: outer_pt.x as f32,
+            y: outer_pt.y as f32,
+            z: outer_pt.z as f32,
+            diffuse: diffuse as u32,
+            v1: wobble_const,
+            u1: 0.0,
+            v2: wobble_const,
+            u2: 0.0,
+            nx: 0.0,
+            ny: 0.0,
+            nz: 1.0,
+        });
+    }
+
+    // upstream: Matrix3D tm(1); Set_Transform(D3DTS_WORLD, tm); Set_Index_Buffer; Set_Vertex_Buffer;
+    //           Set_Texture(0, m_riverTexture) - device-only, not translated
+    let shader = setup_jba_water_shader(additive_blend, has_river_water_pixel_shader, view, water.river_v_origin);
+
+    // In additive blending we need to use the alpha at the edges of river to darken rgb instead.
+    // upstream: if additive: Set_DX8_Render_State(D3DRS_SRCBLEND, SRCALPHA) - device-only, not translated
+    // upstream: SetPixelShader(m_riverWaterPixelShader), GetRenderState(CULLMODE), CULLMODE = NONE,
+    //           wireframeForDebug (static false) FILLMODE, Draw_Triangles(0, rectangleCount*2, 0, (rectangleCount+1)*2),
+    //           SetPixelShader(NULL) - device-only, not translated
+    // restore blend mode to what W3D expects: SRCBLEND = ONE (device-only, not translated)
+    // do second pass to apply the shroud on water plane
+    // upstream: if shroud: setTexture/ST_SHROUD_TEXTURE, CULLMODE NONE, ZFUNC LESSEQUAL, Draw_Triangles, ZFUNC EQUAL,
+    //           resetShader; then CULLMODE = saved - device-only, not translated
+
+    Some(RiverWaterDraw {
+        indices,
+        vertices,
+        rectangle_count,
+        shader,
+        additive_src_alpha: additive_blend,
+        shroud_pass: has_shroud,
+    })
 }
