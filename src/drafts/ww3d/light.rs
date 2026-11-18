@@ -33,7 +33,7 @@ pub const NEAR_ATTENUATION: u32 = 0;
 /// See [`NEAR_ATTENUATION`].
 pub const FAR_ATTENUATION: u32 = 1;
 
-/// `DEG_TO_RADF(45.0f)` (wwmath.h): `(x) * (WWMATH_PI / 180.0f)`... as the port's WWMath defines it.
+/// `DEG_TO_RADF(45.0f)` (wwmath.h): `((float)x)*WWMATH_PI/180.0f`, evaluated left to right.
 const DEG_TO_RADF_45: f32 = 45.0f32 * wwmath::WWMATH_PI / 180.0f32;
 
 /// `class LightClass` (light.h): a light source; as a render object it has a transform.
