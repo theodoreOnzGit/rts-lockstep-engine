@@ -43,3 +43,4 @@ pub mod bmp2d;
 pub mod textdraw;
 pub mod txt;
 pub mod txt2d;
+pub mod meshmdl;
