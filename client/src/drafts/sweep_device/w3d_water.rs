@@ -862,59 +862,13 @@ fn d3d_transpose(a: &D3dMatrix) -> D3dMatrix {
     out
 }
 
-/// `D3DXMatrixInverse(&inv, &det, &m)`: the general 4x4 inverse by cofactors, with the determinant. When the
-/// determinant is 0 D3DX returns NULL and leaves `inv` untouched; the identity stands in for that here.
-fn d3d_inverse(m: &D3dMatrix) -> (D3dMatrix, f32) {
-    let a = |r: usize, c: usize| m[r][c] as f64;
-    let mut inv = [[0.0f64; 4]; 4];
-    // 2x2 sub-determinants of rows (0,1) and (2,3)
-    let s0 = a(0, 0) * a(1, 1) - a(1, 0) * a(0, 1);
-    let s1 = a(0, 0) * a(1, 2) - a(1, 0) * a(0, 2);
-    let s2 = a(0, 0) * a(1, 3) - a(1, 0) * a(0, 3);
-    let s3 = a(0, 1) * a(1, 2) - a(1, 1) * a(0, 2);
-    let s4 = a(0, 1) * a(1, 3) - a(1, 1) * a(0, 3);
-    let s5 = a(0, 2) * a(1, 3) - a(1, 2) * a(0, 3);
-    let c5 = a(2, 2) * a(3, 3) - a(3, 2) * a(2, 3);
-    let c4 = a(2, 1) * a(3, 3) - a(3, 1) * a(2, 3);
-    let c3 = a(2, 1) * a(3, 2) - a(3, 1) * a(2, 2);
-    let c2 = a(2, 0) * a(3, 3) - a(3, 0) * a(2, 3);
-    let c1 = a(2, 0) * a(3, 2) - a(3, 0) * a(2, 2);
-    let c0 = a(2, 0) * a(3, 1) - a(3, 0) * a(2, 1);
-    let det = s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0;
-    if det == 0.0 {
-        return (d3d_identity(), 0.0);
-    }
-    let id = 1.0 / det;
-    inv[0][0] = (a(1, 1) * c5 - a(1, 2) * c4 + a(1, 3) * c3) * id;
-    inv[0][1] = (-a(0, 1) * c5 + a(0, 2) * c4 - a(0, 3) * c3) * id;
-    inv[0][2] = (a(3, 1) * s5 - a(3, 2) * s4 + a(3, 3) * s3) * id;
-    inv[0][3] = (-a(2, 1) * s5 + a(2, 2) * s4 - a(2, 3) * s3) * id;
-    inv[1][0] = (-a(1, 0) * c5 + a(1, 2) * c2 - a(1, 3) * c1) * id;
-    inv[1][1] = (a(0, 0) * c5 - a(0, 2) * c2 + a(0, 3) * c1) * id;
-    inv[1][2] = (-a(3, 0) * s5 + a(3, 2) * s2 - a(3, 3) * s1) * id;
-    inv[1][3] = (a(2, 0) * s5 - a(2, 2) * s2 + a(2, 3) * s1) * id;
-    inv[2][0] = (a(1, 0) * c4 - a(1, 1) * c2 + a(1, 3) * c0) * id;
-    inv[2][1] = (-a(0, 0) * c4 + a(0, 1) * c2 - a(0, 3) * c0) * id;
-    inv[2][2] = (a(3, 0) * s4 - a(3, 1) * s2 + a(3, 3) * s0) * id;
-    inv[2][3] = (-a(2, 0) * s4 + a(2, 1) * s2 - a(2, 3) * s0) * id;
-    inv[3][0] = (-a(1, 0) * c3 + a(1, 1) * c1 - a(1, 2) * c0) * id;
-    inv[3][1] = (a(0, 0) * c3 - a(0, 1) * c1 + a(0, 2) * c0) * id;
-    inv[3][2] = (-a(3, 0) * s3 + a(3, 1) * s1 - a(3, 2) * s0) * id;
-    inv[3][3] = (a(2, 0) * s3 - a(2, 1) * s1 + a(2, 2) * s0) * id;
-    let mut out = [[0.0f32; 4]; 4];
-    for i in 0..4 {
-        for j in 0..4 {
-            out[i][j] = inv[i][j] as f32;
-        }
-    }
-    (out, det as f32)
-}
-
 /// The texture-stage-2 transform both shader set-ups build for the sparkle/noise pass: `inverse(view) *
 /// scale(NOISE_REPEAT_FACTOR, NOISE_REPEAT_FACTOR, 1) * translate(m_riverVOrigin, m_riverVOrigin, 0)`
 /// (`D3DTS_TEXTURE2`, W3DWater.cpp:239-249 and 3029-3041).
 pub fn noise_texture_transform(view: &D3dMatrix, river_v_origin: f32) -> D3dMatrix {
-    let (inv, _det) = d3d_inverse(view); // D3DXMatrixInverse(&inv, &det, &curView)
+    // D3DXMatrixInverse(&inv, &det, &curView): the verified stand-in (#214, replaces this module's own `d3d_inverse`, an f64
+    // cofactor inverse). Singular: it answers the identity and `false`, as the draft did; the determinant is not read here.
+    let (inv, _invertible) = rts_lockstep_engine::ww::matrix3d::d3dx_matrix_inverse_stand_in(view);
     let mut scale = d3d_identity(); // D3DXMatrixScaling(&scale, NOISE_REPEAT_FACTOR, NOISE_REPEAT_FACTOR, 1)
     scale[0][0] = NOISE_REPEAT_FACTOR;
     scale[1][1] = NOISE_REPEAT_FACTOR;

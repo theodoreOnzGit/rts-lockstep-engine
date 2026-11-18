@@ -36,7 +36,7 @@
 //! drawable branch: the host returns it through [`ScriptedViewHost::locked_drawable_camera`]).
 
 use rts_lockstep_engine::client::tactical_view::{get_height_around_pos, norm_angle, TacticalView, ViewHost};
-use rts_lockstep_engine::common::base_type::{real_to_int_floor, Coord2D, Coord3D, PI};
+use rts_lockstep_engine::common::base_type::{real_to_int_floor, Coord2D, Coord3D, ICoord2D, Region3D, PI};
 use rts_lockstep_engine::common::game_common::LOGICFRAMES_PER_SECOND;
 use rts_lockstep_engine::common::game_type::{ObjectId, INVALID_ID};
 use rts_lockstep_engine::drafts::logic_common::parabolic_ease::ParabolicEase;
@@ -328,6 +328,8 @@ pub struct ScriptedCamera {
     pub camera_slave_object_bone_name: Vec<u8>,
     /// `m_useRealZoomCam`.
     pub use_real_zoom_cam: bool,
+    /// `m_nextWireFrameEnabled`.
+    pub next_wire_frame_enabled: bool,
 }
 
 /// `FM_VIEW_MB_IN_AND_OUT_ALPHA` and its siblings, `FT_VIEW_MOTION_BLUR_FILTER` (W3DShaderManager.h enums): the numbers
@@ -419,6 +421,7 @@ impl ScriptedCamera {
             camera_slave_object_name: Vec::new(),
             camera_slave_object_bone_name: Vec::new(),
             use_real_zoom_cam: false,
+            next_wire_frame_enabled: false,
         }
     }
 
@@ -1489,6 +1492,79 @@ impl ScriptedCamera {
     pub fn set_view_filter(&mut self, filter: i32) -> bool {
         self.view_filter = filter;
         true
+    }
+}
+
+
+// Merged from the former sweep_device/w3d_view.rs (#214): the W3DView members the scripted camera above did not have. Its
+// duplicates (`RotateCameraInfo`, `rotateCameraOneFrame`, `isCameraMovementAtWaypointAlongPath`, `cameraEnable/DisableRealZoomMode`)
+// were dropped in favour of the translations above.
+
+/// `DRAWABLE_OVERSCAN` (W3DView.cpp:110): 3D world coords of how much to overscan in the 3D screen region.
+pub const DRAWABLE_OVERSCAN: f32 = 75.0;
+
+impl ScriptedCamera {
+    /// `W3DView::getAxisAlignedViewRegion` (W3DView.cpp:1398): the bounding box of the four screen corners at z = 0, in
+    /// world x/y, grown by `DRAWABLE_OVERSCAN` plus the guard band (60 more toward the top, y low side), with z spanning the
+    /// map extent widened by 999999. `corners` is `getScreenCornerWorldPointsAtZ(.., 0.0)`, `map_extent` is
+    /// `TheTerrainLogic->getExtent()`.
+    pub fn get_axis_aligned_view_region(&self, corners: &[Coord3D; 4], map_extent: &Region3D) -> Region3D {
+        let mut region = Region3D { lo: corners[0], hi: corners[0] };
+        for c in corners.iter() {
+            if c.x < region.lo.x {
+                region.lo.x = c.x;
+            }
+            if c.y < region.lo.y {
+                region.lo.y = c.y;
+            }
+            if c.x > region.hi.x {
+                region.hi.x = c.x;
+            }
+            if c.y > region.hi.y {
+                region.hi.y = c.y;
+            }
+        }
+        let safe_value = 999999.0f32;
+        region.lo.z = map_extent.lo.z - safe_value;
+        region.hi.z = map_extent.hi.z + safe_value;
+        region.lo.x -= DRAWABLE_OVERSCAN + self.guard_band_bias.x;
+        region.lo.y -= DRAWABLE_OVERSCAN + self.guard_band_bias.y + 60.0;
+        region.hi.x += DRAWABLE_OVERSCAN + self.guard_band_bias.x;
+        region.hi.y += DRAWABLE_OVERSCAN + self.guard_band_bias.y;
+        region
+    }
+
+    /// `W3DView::set3DWireFrameMode` (W3DView.cpp:1450): applied at the next frame.
+    pub fn set_3d_wire_frame_mode(&mut self, enable: bool) {
+        self.next_wire_frame_enabled = enable;
+    }
+
+    /// `W3DView::calcDeltaScroll` (W3DView.cpp:1502): how many pixels the look-at point moved on screen since last frame,
+    /// for the motion blur; zero when either position is outside the frustum. `project(x, y, z)` is
+    /// `m_3DCamera->Project(..)` returning the screen position only when the result is `INSIDE_FRUSTUM`.
+    pub fn calc_delta_scroll(&self, pos: &Coord3D, ground_level: f32, project: &impl Fn(f32, f32, f32) -> Option<(f32, f32)>) -> Coord2D {
+        let mut screen_delta = Coord2D { x: 0.0, y: 0.0 };
+        let prev_screen = match project(self.previous_look_at_position.x, self.previous_look_at_position.y, ground_level) {
+            Some(p) => p,
+            None => return screen_delta,
+        };
+        let screen = match project(pos.x, pos.y, ground_level) {
+            Some(p) => p,
+            None => return screen_delta,
+        };
+        screen_delta.x = screen.0 - prev_screen.0;
+        screen_delta.y = screen.1 - prev_screen.1;
+        screen_delta
+    }
+
+    /// `W3DView::setFieldOfView` (W3DView.cpp:2005): `View::setFieldOfView(angle)`.
+    pub fn set_field_of_view(view: &mut TacticalView, angle: f32) {
+        view.fov = angle;
+    }
+
+    /// `W3DView::screenToWorld` (W3DView.cpp:2071): a release-build no-op (`DEBUG_CRASH("implement me")`).
+    pub fn screen_to_world(_s: &ICoord2D) -> Option<Coord3D> {
+        None
     }
 }
 
