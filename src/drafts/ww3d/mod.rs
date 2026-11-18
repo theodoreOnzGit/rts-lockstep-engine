@@ -71,3 +71,5 @@ pub mod metalmap;
 pub mod stripoptimizer;
 pub mod visrasterizer;
 pub mod texturethumbnail;
+pub mod texturefile;
+pub mod texfcach;
