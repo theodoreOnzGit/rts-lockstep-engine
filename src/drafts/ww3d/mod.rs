@@ -67,3 +67,4 @@ pub mod shdsubmesh;
 pub mod shdmesh;
 pub mod shdrenderer;
 pub mod texproject;
+pub mod metalmap;
