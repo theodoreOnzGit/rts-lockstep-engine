@@ -808,7 +808,7 @@ impl<H: NatHost> NAT<H> {
             return_port = return_port.wrapping_add(source_port % d);
             return_port = return_port.wrapping_add(d);
         }
-        // (upstream's  cannot hold for an UnsignedShort; kept for fidelity)
+        // (upstream's `returnPort > 65535` test cannot hold for an UnsignedShort; there is nothing to subtract)
         if return_port < 1024 {
             return_port = return_port.wrapping_add(1024);
         }
