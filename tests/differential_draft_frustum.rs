@@ -42,12 +42,30 @@ extern "C" {
 
 const CASES: usize = 60_000;
 
+/// `DRAFT_CASES=<n>` overrides the number of cases (the planted-bug runs use fewer than the gated run).
+fn cases(default: usize) -> usize {
+    std::env::var("DRAFT_CASES").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(default)
+}
+
 fn plant_id() -> u32 {
     std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0)
 }
 
 fn camera(g: &mut Gen) -> [f32; 12] {
-    match g.below(10) {
+    match g.below(12) {
+        10 => {
+            // degenerate: Z perpendicular to X cross Y (a zero or repeated column), on small integers
+            let mut m = [0.0f32; 12];
+            for x in m.iter_mut() {
+                *x = (g.below(3) as i32 - 1) as f32;
+            }
+            let col = g.below(3) as usize;
+            let src = g.below(3) as usize;
+            for r in 0..3 {
+                m[r * 4 + col] = if g.below(2) == 0 { 0.0 } else { m[r * 4 + src] };
+            }
+            m
+        }
         0 => g.vec::<12>(Gen::geom),
         1 => g.vec::<12>(Gen::mixed),
         2 | 3 => {
@@ -93,7 +111,7 @@ fn frustum_init_matches_the_cpp() {
     let mut g = Gen::new(0x215_F005);
     let mut c = Check::new("FrustumClass::Init (66 floats)");
     let mut reflected = 0u32;
-    for _ in 0..CASES {
+    for _ in 0..cases(CASES) {
         let mut p = [0.0f32; 18];
         p[0..12].copy_from_slice(&camera(&mut g));
         let (hx, hy) = (g.uniform(0.05, 2.0), g.uniform(0.05, 2.0));

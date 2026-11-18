@@ -63,6 +63,11 @@ extern "C" {
 
 const CASES: usize = 20_000;
 
+/// `DRAFT_CASES=<n>` overrides the number of cases (the planted-bug runs use fewer than the gated run).
+fn cases(default: usize) -> usize {
+    std::env::var("DRAFT_CASES").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(default)
+}
+
 fn plant_id() -> u32 {
     std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0)
 }
@@ -109,7 +114,17 @@ fn fv4(v: Vector4) -> Vec<f32> {
 /// A square matrix of `n` x `n` (3 or 4): see the module docs for the kinds.
 fn square(g: &mut Gen, n: usize) -> Vec<f32> {
     let mut m = vec![0.0f32; n * n];
-    match g.below(12) {
+    match g.below(14) {
+        12 | 13 if n == 3 => {
+            // three random unit rows: the Is_Orthogonal and Re_Orthogonalize thresholds, with negative dot products
+            for r in 0..3 {
+                let v = [g.uniform(-1.0, 1.0), g.uniform(-1.0, 1.0), g.uniform(-1.0, 1.0)];
+                let l = petir::Real::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+                for j in 0..3 {
+                    m[r * 3 + j] = if l > 0.0 { v[j] / l } else { v[j] };
+                }
+            }
+        }
         0..=2 => {
             for x in m.iter_mut() {
                 *x = g.uniform(-10.0, 10.0);
@@ -450,7 +465,7 @@ fn rust_m3(op: usize, p: &[f32; 64]) -> Vec<f32> {
 fn run_m3(name: &str, ops: &[usize], seed: u64) {
     let mut g = Gen::new(seed);
     let mut checks: Vec<Check> = (0..69).map(|i| Check::new(&format!("Matrix3x3 {}", M3_NAMES[i]))).collect();
-    for _ in 0..CASES {
+    for _ in 0..cases(CASES) {
         let p = params3(&mut g);
         for &op in ops {
             let r = rust_m3(op, &p);
@@ -651,7 +666,7 @@ fn matrix4x4_matches_the_cpp() {
     let mut g = Gen::new(0x215_4444);
     let ops: Vec<usize> = (0..41).collect();
     let mut checks: Vec<Check> = (0..41).map(|i| Check::new(&format!("Matrix4x4 {}", M4_NAMES[i]))).collect();
-    for case in 0..CASES {
+    for case in 0..cases(CASES) {
         let mut p = params4(&mut g);
         if case % 7 == 0 {
             // equal matrices (and equal but for a sign of zero) for == and !=

@@ -52,6 +52,11 @@ extern "C" {
 static CPP: Mutex<()> = Mutex::new(());
 const CASES: usize = 40_000;
 
+/// `DRAFT_CASES=<n>` overrides the number of cases (the planted-bug runs use fewer than the gated run).
+fn cases(default: usize) -> usize {
+    std::env::var("DRAFT_CASES").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(default)
+}
+
 const NAMES: [&str; 14] = [
     "OBBox(center,extent)", "OBBox(center,extent,basis)", "OBBox ==", "OBBox !=", "Init_From_Box_Points", "Init_Random",
     "Project_To_Axis", "Volume", "Compute_Point", "Compute_Axis_Aligned_Extent", "OBBox::Transform",
@@ -141,6 +146,40 @@ fn case(g: &mut Gen) -> [f32; 100] {
         }
         _ => {}
     }
+    let mut b0 = b0;
+    let mut b1 = b1;
+    // touching boxes and a triangle on a face, all on integers with the identity basis, so that the separating-axis tests
+    // meet their boundaries exactly (`cdist > rsum`, `lep >= leb`)
+    let touching = g.below(5) == 0;
+    let mut tri_on_face: Option<[f32; 9]> = None;
+    if touching {
+        let ident = [1.0f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let int = |g: &mut Gen, lo: i32, hi: i32| (lo + g.below((hi - lo + 1) as u32) as i32) as f32;
+        let e0 = [int(g, 1, 4), int(g, 1, 4), int(g, 1, 4)];
+        let e1 = [int(g, 1, 4), int(g, 1, 4), int(g, 1, 4)];
+        let c0 = [int(g, -10, 10), int(g, -10, 10), int(g, -10, 10)];
+        let axis = g.below(3) as usize;
+        let sign = if g.below(2) == 0 { 1.0 } else { -1.0 };
+        let mut c1 = [0.0f32; 3];
+        for a in 0..3 {
+            let reach = (e0[a] + e1[a]) as i32;
+            c1[a] = c0[a] + if a == axis { sign * (e0[a] + e1[a]) } else { int(g, -reach, reach) };
+        }
+        b0[0..9].copy_from_slice(&ident);
+        b0[9..12].copy_from_slice(&c0);
+        b0[12..15].copy_from_slice(&e0);
+        b1[0..9].copy_from_slice(&ident);
+        b1[9..12].copy_from_slice(&c1);
+        b1[12..15].copy_from_slice(&e1);
+        // a triangle in the plane of box 0's +axis face (x, y or z = c + e), vertices on integers
+        let mut t = [0.0f32; 9];
+        for v in 0..3 {
+            for a in 0..3 {
+                t[v * 3 + a] = if a == axis { c0[a] + sign * e0[a] } else { c0[a] + int(g, -6, 6) };
+            }
+        }
+        tri_on_face = Some(t);
+    }
     p[0..15].copy_from_slice(&b0);
     p[15..30].copy_from_slice(&b1);
     for i in 30..36 {
@@ -161,7 +200,12 @@ fn case(g: &mut Gen) -> [f32; 100] {
     p[37..40].copy_from_slice(&ax);
     // a triangle near the first box, with its true normal most of the time
     let near = |g: &mut Gen| [c0[0] + g.uniform(-8.0, 8.0), c0[1] + g.uniform(-8.0, 8.0), c0[2] + g.uniform(-8.0, 8.0)];
-    let (t0, t1, t2) = (near(g), near(g), near(g));
+    let (mut t0, mut t1, mut t2) = (near(g), near(g), near(g));
+    if let Some(t) = tri_on_face {
+        t0 = [t[0], t[1], t[2]];
+        t1 = [t[3], t[4], t[5]];
+        t2 = [t[6], t[7], t[8]];
+    }
     p[40..43].copy_from_slice(&t0);
     p[43..46].copy_from_slice(&t1);
     p[46..49].copy_from_slice(&t2);
@@ -281,7 +325,7 @@ fn obbox_matches_the_cpp() {
     let mut g = Gen::new(0x215_0BB0);
     let mut checks: Vec<Check> = NAMES.iter().map(|n| Check::new(n)).collect();
     let mut trues = [0u64; 14];
-    for _ in 0..CASES {
+    for _ in 0..cases(CASES) {
         let p = case(&mut g);
         let mut rnd = [0.0f32; 16];
         for r in rnd.iter_mut() {

@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 40,000 cases of each of its operations (test: tests/differential_draft_obbox.rs);
+//! not yet wired into the game. Not covered: `from_points` (upstream `assert(0)`, nothing to compare).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/obbox.h

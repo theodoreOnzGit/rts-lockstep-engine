@@ -47,6 +47,11 @@ extern "C" {
 
 const CASES: usize = 40_000;
 
+/// `DRAFT_CASES=<n>` overrides the number of cases (the planted-bug runs use fewer than the gated run).
+fn cases(default: usize) -> usize {
+    std::env::var("DRAFT_CASES").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(default)
+}
+
 fn plant_id() -> u32 {
     std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0)
 }
@@ -205,7 +210,7 @@ fn vehicle_curve_matches_the_cpp() {
     let mut c = Check::new("VehicleCurveClass programs (Evaluate, keys, queries)");
     let mut evals = 0u64;
     let mut cases_with_eval = 0u64;
-    for _ in 0..CASES {
+    for _ in 0..cases(CASES) {
         let prog = gen_program(&mut g);
         let r = run_rust(&prog);
         let mut out = vec![0.0f32; prog.len() * 8 + 16];

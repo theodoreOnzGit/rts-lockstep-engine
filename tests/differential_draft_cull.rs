@@ -71,6 +71,11 @@ static CPP: Mutex<()> = Mutex::new(());
 const TREE_CASES: usize = 12_000;
 const GRID_CASES: usize = 12_000;
 
+/// `DRAFT_CASES=<n>` overrides the number of cases (the planted-bug runs use fewer than the gated run).
+fn cases_n(default: usize) -> usize {
+    std::env::var("DRAFT_CASES").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(default)
+}
+
 fn plant_id() -> u32 {
     std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0)
 }
@@ -506,7 +511,10 @@ fn rand_box(g: &mut Gen, world: f32, clustered: bool, centers: &[[f32; 3]]) -> [
     } else {
         [g.uniform(-world, world), g.uniform(-world, world), g.uniform(-world, world)]
     };
-    let e = match g.below(20) {
+    let e = match g.below(24) {
+        20 => [15.0, g.uniform(0.2, 6.0), g.uniform(0.2, 6.0)], // exactly the default MaxObjExtent
+        21 => [g.uniform(0.2, 6.0), 15.0, 15.0],
+        22 | 23 => [3.0, 3.0, 3.0],
         0 => [g.uniform(10.0, 30.0), g.uniform(10.0, 30.0), g.uniform(10.0, 30.0)], // bigger than the grid's max extent
         1 => [0.0, 0.0, 0.0],
         _ => [g.uniform(0.2, 6.0), g.uniform(0.2, 6.0), g.uniform(0.2, 6.0)],
@@ -640,7 +648,7 @@ fn gen_program(g: &mut Gen, kind: i32) -> Vec<f32> {
                 } else {
                     let w = g.uniform(30.0, 220.0);
                     let c = [g.uniform(-40.0, 40.0), g.uniform(-40.0, 40.0), g.uniform(-40.0, 40.0)];
-                    pr.op(13, &[c[0] - w, c[1] - w, c[2] - w, c[0] + w, c[1] + w, c[2] + w, g.uniform(2.0, 20.0)]);
+                    pr.op(13, &[c[0] - w, c[1] - w, c[2] - w, c[0] + w, c[1] + w, c[2] + w, [3.0f32, 15.0, g.uniform(2.0, 20.0)][g.below(3) as usize]]);
                 }
             }
             68..=70 => {
@@ -734,22 +742,45 @@ fn compare(c: &mut Check, prog: &[f32], r: &[u32], x: &[u32]) {
 }
 
 fn run_cases(name: &str, kind: i32, cases: usize, seed: u64) {
+    let total = cases_n(cases);
     let mut g = Gen::new(seed);
     let mut c = Check::new(name);
     let mut words = 0usize;
-    for _ in 0..cases {
+    let mut out = vec![0u32; 4_000_000];
+    let planted = plant_id() != 0;
+    let mut panics = 0usize;
+    if planted {
+        // the draft's panics are caught below and counted; keep them (and their backtraces) off the output
+        std::panic::set_hook(Box::new(|_| {}));
+    }
+    for _ in 0..cases_n(cases) {
         let prog = gen_program(&mut g, kind);
         let _lock = CPP.lock().unwrap_or_else(|e| e.into_inner());
-        let r = run_rust(&prog);
-        let mut out = vec![0u32; 4_000_000];
+        // With a planted bug the draft may panic where the C++ goes on (an out-of-range index, a failed assertion): that
+        // is a detection too, counted as a mismatch of the program.
+        let r = if planted {
+            match std::panic::catch_unwind(|| run_rust(&prog)) {
+                Ok(r) => r,
+                Err(_) => {
+                    panics += 1;
+                    c.eq(0usize, 1usize, || "the draft panicked".to_string());
+                    continue;
+                }
+            }
+        } else {
+            run_rust(&prog)
+        };
         let n = unsafe { draft_cull_run(prog.as_ptr(), prog.len() as i32, out.as_mut_ptr()) };
         words += r.len();
         compare(&mut c, &prog, &r, &out[..n as usize]);
     }
-    println!("{name}: {cases} programs, {words} dump words compared");
+    if planted {
+        println!("{panics} of the programs made the draft panic");
+    }
+    println!("{name}: {total} programs, {words} dump words compared");
     if plant_id() != 0 {
         let bad = c.report();
-        println!("PLANTED {bad} mismatching programs of {cases}");
+        println!("PLANTED {bad} mismatching programs of {total}");
         assert!(bad > 0, "plant {} not caught", plant_id());
     } else {
         c.finish();

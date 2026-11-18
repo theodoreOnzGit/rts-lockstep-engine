@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases of each of its 69 operations (test: tests/differential_draft_matrix.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/matrix3.h
@@ -156,12 +157,12 @@ impl Matrix3x3 {
     /// products of components are `float`; the `2.0 *` and `1.0 -` make the rest `double`, narrowed when stored.
     pub fn set_quaternion(&mut self, q: &Quaternion) {
         self.row[0][0] = (1.0f64 - 2.0f64 * (q[1] * q[1] + q[2] * q[2]) as f64) as f32;
-        self.row[0][1] = (2.0f64 * (q[0] * q[1] - q[2] * q[3]) as f64) as f32;
+        self.row[0][1] = if plant(11266) { (2.0f64 * (q[0] * q[1] + q[2] * q[3]) as f64) as f32 } else { (2.0f64 * (q[0] * q[1] - q[2] * q[3]) as f64) as f32 };
         self.row[0][2] = (2.0f64 * (q[2] * q[0] + q[1] * q[3]) as f64) as f32;
 
         self.row[1][0] = (2.0f64 * (q[0] * q[1] + q[2] * q[3]) as f64) as f32;
         // upstream: `1.0 - 2.0f * (q[2]*q[2] + q[0]*q[0])`: the `2.0f *` is float, the subtraction double
-        self.row[1][1] = if plant(11266) { (1.0f64 - 2.0f64 * (q[2] * q[2] + q[0] * q[0]) as f64) as f32 } else { (1.0f64 - (2.0f32 * (q[2] * q[2] + q[0] * q[0])) as f64) as f32 };
+        self.row[1][1] = (1.0f64 - (2.0f32 * (q[2] * q[2] + q[0] * q[0])) as f64) as f32;
         self.row[1][2] = (2.0f64 * (q[1] * q[2] - q[0] * q[3]) as f64) as f32;
 
         self.row[2][0] = (2.0f64 * (q[2] * q[0] - q[1] * q[3]) as f64) as f32;

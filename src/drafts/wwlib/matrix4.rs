@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases of each of its 41 operations (test: tests/differential_draft_matrix.rs);
+//! not yet wired into the game. `init_ortho` and `init_perspective_fov` are tested on the arguments that pass upstream's
+//! (debug-only) assertions; the draft keeps them as `assert!`, which also fires in release.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/matrix4.h

@@ -17,6 +17,12 @@
 #include "vector3.h"
 #include "vector4.h"
 
+/* matrix3.cpp's `operator * (Matrix3D, Matrix3x3)` and `operator * (Matrix3x3, Matrix3D)`, VERBATIM (m3_ops.inc, cut by
+** build.rs). The friend declarations in matrix3.h say WWINLINE, which is `inline` here (and `__forceinline` on MSVC), so
+** the definitions in matrix3.cpp are never emitted for another translation unit to call: they are only reachable from
+** a translation unit that has the definition, as this one does. */
+#include "m3_ops.inc"
+
 static Matrix3x3 M3(const float *a)
 {
 	return Matrix3x3(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]);

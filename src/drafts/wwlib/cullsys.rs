@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 24,000 random programs (tests/differential_draft_cull.rs, through the tree and the grid);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/cullsys.h
@@ -20,6 +21,7 @@
 //! - the intrusive `NextCollected` list is kept as `next_collected: Option<CullableHandle>` and the head as
 //!   `collection_head`, preserving upstream's order (`Add_To_Collection` pushes on the FRONT).
 
+use crate::logic::modules::plant;
 use super::aabox::AABoxClass;
 use super::aabtreecull::AABTreeLinkClass;
 use super::gridcull::GridLinkClass;
@@ -114,7 +116,7 @@ impl CullableClass {
     /// calls `update_culling` on it.
     pub fn set_cull_box(&mut self, box_: &AABoxClass, just_loaded: bool) -> Option<CullSystemId> {
         self.cull_box = *box_;
-        if !just_loaded {
+        if just_loaded == plant(11345) {
             return self.get_culling_system();
         }
         None
@@ -182,6 +184,9 @@ impl CullSystemClass {
 
     /// `Peek_First_Collected_Object_Internal()`.
     pub fn peek_first_collected_object_internal(&self) -> Option<CullableHandle> {
+        if plant(11346) {
+            return self.collection_head.as_ref().and_then(|h| h.read().unwrap().next_collected.clone());
+        }
         self.collection_head.clone()
     }
 
@@ -197,7 +202,10 @@ impl CullSystemClass {
 
     /// `Add_To_Collection(obj)`: pushes on the front of the list.
     pub fn add_to_collection(&mut self, obj: &CullableHandle) {
-        obj.write().unwrap().next_collected = self.collection_head.take();
+        let head = self.collection_head.take();
+        if !plant(11344) {
+            obj.write().unwrap().next_collected = head;
+        }
         self.collection_head = Some(obj.clone());
     }
 }

@@ -28,6 +28,11 @@
 PersistFactoryClass::PersistFactoryClass(void) : NextFactory(NULL)
 {
 }
+/* SimplePersistFactoryClass::Copy_Pointer (persistfactory.h) calls this; the factories are never used here */
+#include "saveload.h"
+void SaveLoadSystemClass::Register_Pointer(void * old_pointer, void * new_pointer)
+{
+}
 PersistFactoryClass::~PersistFactoryClass(void)
 {
 }
