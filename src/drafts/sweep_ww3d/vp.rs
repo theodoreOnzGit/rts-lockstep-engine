@@ -9,6 +9,7 @@
 //! other compiler (and the shipped game's non-ICL build) runs. The six overloads differ only in element type, so one
 //! generic function covers them; each overload is named in its doc comment.
 
+use crate::logic::modules::plant;
 use crate::ww::vector2::Vector2;
 use crate::ww::vector3::Vector3;
 use crate::ww::vector4::Vector4;
@@ -22,11 +23,11 @@ pub fn prefetch() {
 /// `if (count<=0) return; for (i=0; i<count; i++) dst[i]=src[index[i]];` shared by all overloads. `count` is the C
 /// `int`; a non-positive count copies nothing.
 pub fn copy_indexed<T: Copy>(dst: &mut [T], src: &[T], index: &[u32], count: i32) {
-    if count <= 0 {
+    if count <= i32::from(plant(11083)) {
         return;
     }
-    for i in 0..count as usize {
-        dst[i] = src[index[i] as usize];
+    for i in 0..(count as usize - usize::from(plant(11085) && count > 1)) {
+        dst[i] = src[if plant(11084) && i > 0 { index[i - 1] } else { index[i] } as usize];
     }
 }
 

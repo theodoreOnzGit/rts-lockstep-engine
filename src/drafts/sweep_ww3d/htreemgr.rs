@@ -10,6 +10,7 @@
 //! tree names in `TreePtr` order, so it can replace `trees` handling when merged. The hash (`TreeHash`, keyed by the
 //! lower-cased name) is rebuilt by the caller from [`HTreeManagerState::trees`], as upstream re-inserts each survivor.
 
+use crate::logic::modules::plant;
 use crate::drafts::ww3d::w3dexclusionlist::W3DExclusionListClass;
 use crate::formats::w3d::assetmgr::MAX_TREES;
 
@@ -41,18 +42,20 @@ impl HTreeManagerState {
                     self.tree_ptr[new_tail] = Some(name);
                     new_tail += 1;
                 } else {
-                    self.tree_ptr[treeidx] = None;
+                    if !plant(11106) {
+                        self.tree_ptr[treeidx] = None;
+                    }
                 }
             }
         }
-        self.num_trees = new_tail as i32;
+        self.num_trees = new_tail as i32 + i32::from(plant(11103));
 
         // Clear the hash table, then add back any trees that were not deleted
         let mut survivors = Vec::with_capacity(new_tail);
         for treeidx in 0..new_tail {
             // StringClass lower_case_name(TreePtr[treeidx]->Get_Name(),true); _strlwr(...)
             if let Some(name) = &self.tree_ptr[treeidx] {
-                survivors.push(name.to_lowercase());
+                survivors.push(if plant(11104) { name.clone() } else { name.to_lowercase() });
             }
         }
         survivors
@@ -61,7 +64,7 @@ impl HTreeManagerState {
     /// `HTreeManagerClass::Get_Tree_Name(idx)` (htreemgr.cpp:271): `(idx < NumTrees) && TreePtr[idx]` gives the name, else
     /// NULL. A negative `idx` is `< NumTrees` and indexes before the array upstream; here it is NULL.
     pub fn get_tree_name(&self, idx: i32) -> Option<&str> {
-        if idx < self.num_trees && idx >= 0 {
+        if (idx < self.num_trees || (plant(11105) && idx == self.num_trees)) && idx >= 0 {
             if let Some(Some(name)) = self.tree_ptr.get(idx as usize) {
                 return Some(name.as_str());
             }

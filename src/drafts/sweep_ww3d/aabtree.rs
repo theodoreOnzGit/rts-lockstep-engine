@@ -11,12 +11,13 @@
 //! Every collision-math call (`CollisionMath::Intersection_Test`, `Collide`, the test classes' `Cull`) is the
 //! [`AabTreeTestHost`] contract, called with the same arguments and in upstream's order.
 //!
-//! `OPTIMIZE_PLANEEQ_RAM` is on upstream (`tri.N` is `Compute_Normal()`'d, not read from the plane array); the host's
-//! triangle view is built here with [`tri_view`] from the stored plane, as the `meshgeometry` draft does, and the host
-//! recomputes the normal if it wants the `OPTIMIZE_PLANEEQ_RAM` branch.
+//! `OPTIMIZE_PLANEEQ_RAM` is on upstream (`tri.N` is `Compute_Normal()`'d, not read from the plane array): [`tri_view`]
+//! computes it.
 
+use crate::logic::modules::plant;
 use crate::drafts::sweep_ww3d::meshgeometry::{MeshGeometry, TriView};
 use crate::formats::w3d::mesh::AabNode;
+use crate::ww::vector3::Vector3;
 
 /// `AABTREE_LEAF_FLAG` (aabtree.h:76).
 pub const AABTREE_LEAF_FLAG: u32 = 0x8000_0000;
@@ -53,14 +54,18 @@ pub fn node_poly_count(node: &AabNode) -> usize {
     node.back_or_poly_count as usize
 }
 
-/// The triangle of `poly_index` as the casts build it: `tri.V[i] = &loc[polys[poly_index][i]]` and the plane as `tri.N`.
+/// The triangle of `poly_index` as the casts build it: `tri.V[i] = &loc[polys[poly_index][i]]` and `tri.N`. With
+/// `OPTIMIZE_PLANEEQ_RAM` on (meshgeometry.h:80) upstream does not read the plane array for `tri.N`: it calls
+/// `tri.Compute_Normal()` (tri.h:67): `Cross_Product(V1 - V0, V2 - V0)` then `Normalize()`.
+/// ~~`tri.N` is the stored plane~~ **Corrected 2026-11-18 (#215):** the differential test (tests/differential_draft_aabtree.rs)
+/// found the stored plane passed where upstream passes the computed normal.
 pub fn tri_view(mesh: &MeshGeometry, poly_index: usize) -> TriView {
     let p = mesh.polygons[poly_index];
-    let n = mesh.planes[poly_index];
-    TriView {
-        v: [mesh.vertices[p[0] as usize], mesh.vertices[p[1] as usize], mesh.vertices[p[2] as usize]],
-        n: [n[0], n[1], n[2]],
-    }
+    let v = [mesh.vertices[p[0] as usize], mesh.vertices[p[1] as usize], mesh.vertices[p[2] as usize]];
+    let (v0, v1, v2) = (Vector3::new(v[0][0], v[0][1], v[0][2]), Vector3::new(v[1][0], v[1][1], v[1][2]), Vector3::new(v[2][0], v[2][1], v[2][2]));
+    let mut n = Vector3::cross_product(&(v1 - v0), &(v2 - v0));
+    n.normalize();
+    TriView { v, n: [n.x, n.y, n.z] }
 }
 
 /// What the recursive tests call. One method per upstream collision call; the host holds the test object
@@ -126,8 +131,9 @@ impl AabTreeView {
                 }
             }
         } else {
-            self.generate_obbox_apt_recursive(mesh, node_front_child(&n), host);
-            self.generate_obbox_apt_recursive(mesh, node_back_child(&n), host);
+            let (a, b) = if plant(11120) { (node_back_child(&n), node_front_child(&n)) } else { (node_front_child(&n), node_back_child(&n)) };
+            self.generate_obbox_apt_recursive(mesh, a, host);
+            self.generate_obbox_apt_recursive(mesh, b, host);
         }
     }
 
@@ -148,7 +154,7 @@ impl AabTreeView {
                     let tri = tri_view(mesh, poly_index);
                     // Vector3::Dot_Product(*tri.N, context.ViewVector)
                     let dot = tri.n[0] * view[0] + tri.n[1] * view[1] + tri.n[2] * view[2];
-                    if dot < 0.0 {
+                    if (if plant(11121) { dot > 0.0 } else { dot < 0.0 }) {
                         if host.box_intersects_tri(&tri) {
                             host.apt_add(poly_index as u32);
                         }
@@ -177,13 +183,13 @@ impl AabTreeView {
         flags: &mut u8,
     ) -> i32 {
         let n = self.nodes[node];
-        let bounds = [-n.min[axis_r], n.max[axis_r]];
+        let bounds = [-n.min[axis_r], if plant(11129) { n.min[axis_r] } else { n.max[axis_r] }];
         let start = [-start_point[axis_r], start_point[axis_r]];
         if start_point[axis_1] < n.min[axis_1]
             || start_point[axis_2] < n.min[axis_2]
             || start_point[axis_1] > n.max[axis_1]
             || start_point[axis_2] > n.max[axis_2]
-            || start[direction] > bounds[direction]
+            || (if plant(11126) { start[direction] >= bounds[direction] } else { start[direction] > bounds[direction] })
         {
             return 0;
         }
@@ -210,7 +216,7 @@ impl AabTreeView {
             return self.cast_aabox_to_polys(mesh, host, node);
         } else {
             res = res | self.cast_aabox_recursive(mesh, host, node_front_child(&n));
-            res = res | self.cast_aabox_recursive(mesh, host, node_back_child(&n));
+            res = if plant(11122) { res || self.cast_aabox_recursive(mesh, host, node_back_child(&n)) } else { res | self.cast_aabox_recursive(mesh, host, node_back_child(&n)) };
         }
         res
     }
@@ -272,7 +278,7 @@ impl AabTreeView {
                 let tri_plane = mesh.planes[poly_index];
                 // Since (int)true is defined as 1, and (int)false as 0:
                 if host.cast_semi_infinite_axis_aligned_ray_to_triangle(&tri, tri_plane, start_point, axis_r, axis_1, axis_2, direction, flags) {
-                    count += 1;
+                    count += if plant(11127) { 2 } else { 1 };
                 }
             }
         }
@@ -291,9 +297,11 @@ impl AabTreeView {
                 let poly_index = self.poly_indices[poly0 + poly_counter] as usize;
                 let tri = tri_view(mesh, poly_index);
                 if host.collide_aabox_tri(&tri) {
-                    polyhit = poly_index as i64;
+                    if !plant(11125) || polyhit == -1 {
+                        polyhit = poly_index as i64;
+                    }
                 }
-                if host.result_start_bad() {
+                if host.result_start_bad() && !plant(11123) {
                     return true;
                 }
             }
@@ -320,7 +328,7 @@ impl AabTreeView {
                 if host.collide_obbox_tri(&tri) {
                     polyhit = poly_index as i64;
                 }
-                if host.result_start_bad() {
+                if host.result_start_bad() && !plant(11124) {
                     return true;
                 }
             }
@@ -343,7 +351,7 @@ impl AabTreeView {
             for poly_counter in 0..polycount {
                 let poly_index = self.poly_indices[poly0 + poly_counter] as usize;
                 let tri = tri_view(mesh, poly_index);
-                if host.intersect_obbox_tri(&tri) {
+                if host.intersect_obbox_tri(&tri) && !plant(11130) {
                     return true;
                 }
             }

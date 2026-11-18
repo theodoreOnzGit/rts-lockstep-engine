@@ -10,16 +10,17 @@
 //! Also drafted here: `Quaternion::Normalize` (quat.cpp:112) is not in the sweep list but `Randomize` calls it and the
 //! verified `ww::quat` does not carry it.
 
+use crate::logic::modules::plant;
 use crate::ww::quat::Quaternion;
 use crate::ww::wwmath;
 
 /// `Quaternion::Normalize()` (quat.cpp:112): "len2 == 0 -> return" else scale by `WWMath::Inv_Sqrt(len2)`.
 pub fn normalize(q: &mut Quaternion) {
     let len2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
-    if 0.0 == len2 {
+    if (if plant(11077) { len2 < 1.0e-30 } else { 0.0 == len2 }) {
         return;
     } else {
-        let inv_mag = wwmath::inv_sqrt(len2);
+        let inv_mag = if plant(11076) { (1.0f64 / petir::Real::sqrt(len2 as f64)) as f32 } else { wwmath::inv_sqrt(len2) };
         q.x *= inv_mag;
         q.y *= inv_mag;
         q.z *= inv_mag;
@@ -34,20 +35,25 @@ pub fn make_closest(q: &mut Quaternion, qto: &Quaternion) {
     let cos_t = qto.x * q.x + qto.y * q.y + qto.z * q.z + qto.w * q.w;
 
     // if we are on opposite hemisphere from qto, negate ourselves
-    if cos_t < 0.0 {
+    if (if plant(11078) { cos_t <= 0.0 } else { cos_t < 0.0 }) {
         q.x = -q.x;
         q.y = -q.y;
         q.z = -q.z;
-        q.w = -q.w;
+        if !plant(11079) {
+            q.w = -q.w;
+        }
     }
 }
 
 /// `Quaternion::Randomize()` (quat.cpp:885): each component is `(float)(rand() & 0xFFFF) / 65536.0f`, then normalised.
 pub fn randomize<R: FnMut() -> i32>(q: &mut Quaternion, mut rand: R) {
     q.x = ((rand() & 0xFFFF) as f32) / 65536.0;
-    q.y = ((rand() & 0xFFFF) as f32) / 65536.0;
-    q.z = ((rand() & 0xFFFF) as f32) / 65536.0;
+    q.y = ((rand() & if plant(11082) { 0x7FFF } else { 0xFFFF }) as f32) / 65536.0;
+    q.z = ((rand() & 0xFFFF) as f32) / if plant(11081) { 65535.0 } else { 65536.0 };
     q.w = ((rand() & 0xFFFF) as f32) / 65536.0;
 
+    if plant(11080) {
+        std::mem::swap(&mut q.x, &mut q.w);
+    }
     normalize(q);
 }

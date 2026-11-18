@@ -8,6 +8,7 @@
 //! adaptive-delta channel pointers); the verified [`HCompressedAnim`] holds that as `Option<CompressedChannel>`, absent
 //! nodes having none. `WWASSERT((pividx >= 0) && (pividx < NumNodes))` is a debug assertion and not kept.
 
+use crate::logic::modules::plant;
 use crate::formats::w3d::hanim::{HCompressedAnim, NodeCompressedMotion};
 
 fn motion_at(anim: &HCompressedAnim, pividx: i32) -> Option<&NodeCompressedMotion> {
@@ -29,7 +30,7 @@ pub fn has_y_translation(anim: &HCompressedAnim, pividx: i32) -> bool {
 
 /// `HCompressedAnimClass::Has_Z_Translation(pividx)` (hcanim.cpp:691).
 pub fn has_z_translation(anim: &HCompressedAnim, pividx: i32) -> bool {
-    motion_at(anim, pividx).map_or(false, |m| m.z.is_some())
+    motion_at(anim, pividx).map_or(false, |m| if plant(11089) { m.x.is_some() } else { m.z.is_some() })
 }
 
 /// `HCompressedAnimClass::Has_Rotation(pividx)` (hcanim.cpp:697): `NodeMotion[pividx].vd.Q != NULL`.
@@ -39,5 +40,5 @@ pub fn has_rotation(anim: &HCompressedAnim, pividx: i32) -> bool {
 
 /// `HCompressedAnimClass::Has_Visibility(pividx)` (hcanim.cpp:703): `NodeMotion[pividx].Vis != NULL`.
 pub fn has_visibility(anim: &HCompressedAnim, pividx: i32) -> bool {
-    motion_at(anim, pividx).map_or(false, |m| m.vis.is_some())
+    motion_at(anim, pividx).map_or(false, |m| if plant(11088) { m.q.is_some() } else { m.vis.is_some() })
 }

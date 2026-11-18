@@ -306,7 +306,6 @@ fn aabtree_casts_match_upstream() {
         let m: u64 = checks.into_iter().map(|c| c.report()).sum();
         panic!("a planted run: {m} mismatches (see the MEASURED lines)");
     }
-    for c in checks {
-        c.finish();
-    }
+    let m: u64 = checks.into_iter().map(|c| c.report()).sum();
+    assert_eq!(m, 0, "{m} mismatches");
 }
