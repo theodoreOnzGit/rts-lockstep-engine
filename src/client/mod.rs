@@ -111,6 +111,7 @@ pub mod battle_honors; // #157: SkirmishBattleHonors (SkirmishStats.ini) and Pop
 pub mod extended_message_box; // #157: ExtendedMessageBox.cpp (the insert-disc prompt's ExMessageBoxOkCancel)
 pub mod lobby_utils; // #157: LobbyUtils.cpp's faction tooltips (playerTemplateComboBoxTooltip, playerTemplateListBoxTooltip)
 pub mod w3d_map_preview; // #157: W3DControlBar.cpp's W3DDrawMapPreview and drawSkinnyBorder
+pub mod w3d_command_bar; // #194: W3DControlBar.cpp's W3DCommandBarGridDraw, W3DDisplay's drawRectClock and drawRemainingRectClock, the scheme's queue and right HUD images
 pub mod user_preferences;
 pub mod options_menu;
 pub mod skirmish_map_select;

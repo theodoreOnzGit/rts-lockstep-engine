@@ -3807,6 +3807,12 @@ extern "C" {
     // setCommandBarBorder, verbatim (differential/wrap_scheme_bar.cpp, which documents the words).
     pub fn ref_scheme_bar_case(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #194: W3DControlBar.cpp's W3DCommandBarGridDraw, W3DDisplay's drawRectClock and drawRemainingRectClock,
+    // GameWindow::winSetEnabledBorderColor, GadgetButtonSetDisabledImage, ControlBar's updateBuildQueueDisabledImages and
+    // updateRightHUDImage, and ControlBarScheme::init's two lines calling them, verbatim
+    // (differential/wrap_command_bar_draw.cpp, which documents the words).
+    pub fn ref_command_bar_draw_case(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #146: the cinematic text: Display.h's setCinematicText, setCinematicFont and setCinematicTextFrames,
     // Display::Display's cinematic members and W3DDisplay::draw's cinematic text block, verbatim
     // (differential/wrap_cinematic_text.cpp, which documents the words).

@@ -9,8 +9,10 @@
 //! the layout's 800x600 space ([`UiQuad`]); `app` draws them with Bevy UI nodes. ~~Upstream's own drawing
 //! (`W3DGameWinDefaultDraw`, the gadget draw functions, `W3DPowerDraw`) is not translated~~ **Corrected 2026-11-10
 //! (#34):** `W3DGameWinDefaultDraw` and the push button, check box, radio button and static text draws are translated
-//! (`client::window_draw`, a draw list), but the bar does not draw from them yet (`W3DPowerDraw` and the command bar's
-//! own draws are not translated); here: a window with
+//! (`client::window_draw`, a draw list), but the bar does not draw from them yet (`W3DPowerDraw` and ~~the command bar's
+//! own draws~~ **Corrected 2026-11-17 (#194):** the command bar's draws other than `W3DCommandBarGridDraw` (translated,
+//! `rts_lockstep_engine::client::w3d_command_bar`, and drawn by [`GameUi::frame`]) and the scheme layers' (#136) are not
+//! translated: #195); here: a window with
 //! `WIN_STATUS_IMAGE` is drawn as its state's first image stretched over its region, any other as its first colour,
 //! text centred; the power bar as production against consumption. That part is new.
 //!
@@ -79,6 +81,13 @@
 //! [`GameUi::bar_colors`] (the border `setControlCommand` gives a button), the beacon hidden outside a LAN or internet
 //! game, the idle worker and general's buttons shown, or the observer's buttons for an inactive player.
 //!
+//! Since #194, those colours are drawn: a window whose draw callback is `W3DCommandBarGridDraw` draws through its
+//! translation in `getBorderColor` ([`GameUi::frame`]), and each command or queue button's clock is
+//! `drawRemainingRectClock`'s rectangles and triangles in the build-up clock colour ([`clock_quads`], also for the
+//! window manager's draw lists in [`draw_list_quads`]); the scheme's `QueueButtonImage` and `RightHUDImage` reach the
+//! queue buttons and the right HUD with its colours. All differential-tested
+//! (`tests/differential_command_bar_draw.rs`).
+//!
 //! The client still never changes the simulation: everything here reads the `World`.
 
 use std::collections::BTreeMap;
@@ -99,7 +108,8 @@ use rts_lockstep_engine::client::control_bar_stage::{
 };
 use rts_lockstep_engine::client::image::ImageCollection;
 use rts_lockstep_engine::client::gadget;
-use rts_lockstep_engine::client::window_manager::{data_win, ggm, gwm, key, DrawItem, GameWindowManager, GuiHost, MsgHandled, NoGuiHost, WinInputReturnCode, WindowMsgData};
+use rts_lockstep_engine::client::w3d_command_bar::{push_button_clock, update_build_queue_disabled_images, update_right_hud_image, w3d_command_bar_grid_draw, ClockPiece};
+use rts_lockstep_engine::client::window_manager::{data_win, ggm, gwm, key, DrawFunc, DrawItem, GameWindowManager, GuiHost, MsgHandled, NoGuiHost, WinInputReturnCode, WindowMsgData};
 use rts_lockstep_engine::client::window_script::{win_status, GameWindow, WinId, WindowScript, WndHost, WIN_COLOR_UNDEFINED};
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::common::game_type::ObjectId;
@@ -605,8 +615,8 @@ pub struct UiQuad {
     pub command: Option<usize>,
     /// Drawn darker (a disabled button).
     pub dim: bool,
-    /// A clock's percent over the quad.
-    pub clock: Option<i32>,
+    // ~~`clock`: a clock's percent over the quad~~ **Corrected 2026-11-17 (#194):** removed; a clock is its own quads
+    // ([`clock_quads`]), in the build-up clock colour.
     /// (#35) An image drawn over the quad (the portrait's veterancy chevron).
     pub overlay: Option<Vec<u8>>,
     /// (#78) The image's colour (`drawImage`'s `color`, as RGBA) when it is not opaque white.
@@ -675,7 +685,10 @@ fn clipped(r: [f32; 4], clip: Option<(i32, i32, i32, i32)>) -> Option<([f32; 4],
 ///   (`crate::text_metrics::em_px`) ~~in its font's face where Bevy has it~~ **(corrected 2026-11-12, #155)** in
 ///   Liberation Sans, as the lines the client's measure breaks it into (`crate::text_metrics::text_lines`), each its
 ///   font's height below the last;
-/// - `drawRectClock`: the quad's clock (the bar's darkened part), the remaining part for an inverse clock.
+/// - `drawRectClock`: ~~the quad's clock (the bar's darkened part), the remaining part for an inverse clock~~
+///   **Corrected 2026-11-17 (#194):** the rectangles and triangles of `W3DDisplay::drawRectClock` (or
+///   `drawRemainingRectClock` for an inverse clock), translated (`rts_lockstep_engine::client::w3d_command_bar`), in the
+///   clock's own colour (until #194 the colour was dropped and a fixed 55 % black drawn), filled by [`clock_quads`].
 pub fn draw_list_quads<H: GuiHost>(items: &[DrawItem], host: &H) -> Vec<UiQuad> {
     let mut out = Vec::new();
     let lw = WIN_DRAW_LINE_WIDTH;
@@ -728,9 +741,60 @@ pub fn draw_list_quads<H: GuiHost>(items: &[DrawItem], host: &H) -> Vec<UiQuad> 
                     ..Default::default()
                 });
             }
-            DrawItem::RectClock { x, y, w, h, percent, inverse, .. } => {
-                let pct = if *inverse { 100 - percent } else { *percent };
-                out.push(UiQuad { rect: [*x as f32, *y as f32, (x + w) as f32, (y + h) as f32], clock: Some(pct), ..Default::default() });
+            DrawItem::RectClock { x, y, w, h, percent, color: c, inverse } => {
+                // (#194) the pieces `drawRectClock` / `drawRemainingRectClock` give the 2D renderer, in the clock's colour
+                if let Some(p) = push_button_clock(*x, *y, *w, *h, *percent, *inverse) {
+                    out.extend(clock_quads(&p, *c));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// (#194) New glue in place of `Render2DClass::Add_Rect` and `Add_Tri` with a fill colour: a clock's pieces
+/// (`rts_lockstep_engine::client::w3d_command_bar::ClockPiece`) as quads of `c` (`GameMakeColor`'s ARGB). A rectangle is
+/// one quad; a triangle is filled by rows one layout pixel high (cut to the triangle's own top and bottom), each row the
+/// span where the row's middle line crosses the triangle, so neighbouring pieces meet without overlapping (the colour is
+/// usually translucent). Nothing for `GAME_COLOR_UNDEFINED` (white with zero alpha: invisible either way).
+pub fn clock_quads(pieces: &[ClockPiece], c: i32) -> Vec<UiQuad> {
+    let mut out = Vec::new();
+    let Some(col) = color(c) else { return out };
+    let lo = |a: f32, b: f32| if a < b { a } else { b };
+    let hi = |a: f32, b: f32| if a > b { a } else { b };
+    let quad = |out: &mut Vec<UiQuad>, rect: [f32; 4]| {
+        if rect[2] > rect[0] && rect[3] > rect[1] {
+            out.push(UiQuad { rect, color: Some(col), ..Default::default() });
+        }
+    };
+    for p in pieces {
+        match p {
+            ClockPiece::Rect([l, t, r, b]) => quad(&mut out, [lo(*l, *r), lo(*t, *b), hi(*l, *r), hi(*t, *b)]),
+            ClockPiece::Tri(v) => {
+                let pts = [(v[0], v[1]), (v[2], v[3]), (v[4], v[5])];
+                let (y0, y1) = (lo(lo(v[1], v[3]), v[5]), hi(hi(v[1], v[3]), v[5]));
+                // the first row: `y0` rounded down (by integer truncation, no float method)
+                let mut row = y0 as i32;
+                if row as f32 > y0 {
+                    row -= 1;
+                }
+                while (row as f32) < y1 {
+                    let (top, bottom) = (hi(row as f32, y0), lo((row + 1) as f32, y1));
+                    let mid = (top + bottom) / 2.0;
+                    let mut span: Option<(f32, f32)> = None;
+                    for i in 0..3 {
+                        let ((xa, ya), (xb, yb)) = (pts[i], pts[(i + 1) % 3]);
+                        if ya == yb || (ya - mid) * (yb - mid) > 0.0 {
+                            continue;
+                        }
+                        let x = xa + (mid - ya) * (xb - xa) / (yb - ya);
+                        span = Some(span.map_or((x, x), |(a, b)| (lo(a, x), hi(b, x))));
+                    }
+                    if let Some((a, b)) = span {
+                        quad(&mut out, [a, top, b, bottom]);
+                    }
+                    row += 1;
+                }
             }
         }
     }
@@ -940,13 +1004,13 @@ impl<F: Fn(&[u8]) -> Option<(usize, CommandButton)>> SchemeByPlayerBarHost for S
     fn scheme_manager_by_player(&mut self) {
         self.ui.set_communicator(self.multiplayer, &self.find);
         if let Some(c) = self.ui.schemes.set_control_bar_scheme_by_player(Some(self.side), LAYOUT) {
-            self.ui.schemes.schemes[c].init_colors(&mut self.ui.bar_colors);
+            self.ui.scheme_init_bar(c);
         }
     }
     /// (Not reached: the client calls the player version only. The template's side is the player's here.)
     fn scheme_manager_by_player_template(&mut self) {
         if let Some(c) = self.ui.schemes.set_control_bar_scheme_by_player_template(Some(self.side), false, LAYOUT) {
-            self.ui.schemes.schemes[c].init_colors(&mut self.ui.bar_colors);
+            self.ui.scheme_init_bar(c);
         }
     }
     fn win_get_window_from_id(&self, name: &[u8]) -> Option<WinId> {
@@ -1414,7 +1478,13 @@ impl GameUi {
 
     /// The quads of a frame: the scheme's background layers, the windows (parents before children; a parent's children
     /// oldest first, so the newest is on top, as the window list's head is), then the scheme's foreground.
-    pub fn frame(&self, s: &BarState) -> Vec<UiQuad> {
+    ///
+    /// (#194) `&mut self`: a shown window whose draw callback is `W3DCommandBarGridDraw` draws through its translation
+    /// (`rts_lockstep_engine::client::w3d_command_bar::w3d_command_bar_grid_draw`, in [`Self::bar_colors`]'s
+    /// `getBorderColor`), which sets the window's enabled border colour as upstream's does; and each command or queue
+    /// button with a clock gets `GadgetButtonDrawInverseClock`'s `drawRemainingRectClock` in the build-up clock colour.
+    pub fn frame(&mut self, s: &BarState) -> Vec<UiQuad> {
+        let grids = self.grid_draws(s);
         let mut out = Vec::new();
         let scheme = self.schemes.current_scheme();
         // (#136) the layers are drawn by windows inside `ControlBarParent` (`W3DCommandBarBackgroundDraw`,
@@ -1433,11 +1503,11 @@ impl GameUi {
             None => (true, Default::default()),
         };
         let draws: Vec<SchemeDraw> = if layers_shown { scheme.map(|c| c.draw_list(self.schemes.multiplier, offset, &self.images)).unwrap_or_default() } else { Vec::new() };
-        let quad = |d: &SchemeDraw| UiQuad { rect: [d.start.0, d.start.1, d.end.0, d.end.1], image: Some(d.image.clone()), color: None, text: None, command: None, dim: false, clock: None, overlay: None, ..Default::default() };
+        let quad = |d: &SchemeDraw| UiQuad { rect: [d.start.0, d.start.1, d.end.0, d.end.1], image: Some(d.image.clone()), color: None, text: None, command: None, dim: false, overlay: None, ..Default::default() };
         out.extend(draws.iter().filter(|d| d.layer >= 3).map(quad));
         let roots: Vec<WinId> = (0..self.wm.tree.windows.len()).filter(|&i| self.wm.tree.windows[i].parent.is_none()).collect();
         for r in roots {
-            self.windows_into(r, s, &mut out);
+            self.windows_into(r, s, &grids, &mut out);
         }
         out.extend(draws.iter().filter(|d| d.layer < 3).map(quad));
         out
@@ -1455,14 +1525,45 @@ impl GameUi {
         Some([x as f32, y as f32, (x + win.region.2 - win.region.0) as f32, (y + win.region.3 - win.region.1) as f32])
     }
 
-    fn windows_into(&self, w: WinId, s: &BarState, out: &mut Vec<UiQuad>) {
+    /// (#194) `W3DCommandBarGridDraw` (W3DControlBar.cpp:466) for each shown window whose draw callback it is, in the
+    /// bar's `getBorderColor`: the draw list of each.
+    fn grid_draws(&mut self, s: &BarState) -> BTreeMap<WinId, Vec<DrawItem>> {
+        let grid = DrawFunc::Host(b"W3DCommandBarGridDraw".to_vec());
+        let ws: Vec<WinId> = (0..self.wm.tree.windows.len()).filter(|&w| self.wm.ext.get(w).is_some_and(|e| e.draw == grid) && self.shown(w, s)).collect();
+        let border = self.bar_colors.get_border_color();
+        ws.into_iter()
+            .map(|w| {
+                let mut items = Vec::new();
+                w3d_command_bar_grid_draw(&mut self.wm, w, border, &mut items);
+                (w, items)
+            })
+            .collect()
+    }
+
+    /// (#194) `ControlBarScheme::init`'s lines on the bar (ControlBarScheme.cpp:430-434) for scheme `c`:
+    /// `updateBuildQueueDisabledImages(m_buttonQueueImage)`, `updateRightHUDImage(m_rightHUDImage)` and (#145) the colour
+    /// lines. The scheme's `QueueButtonImage` and `RightHUDImage` as found in the mapped images (`NULL` otherwise, as
+    /// `INI::parseMappedImage` gives). `updateSlotExitImage` is not here (#194's gaps).
+    fn scheme_init_bar(&mut self, c: usize) {
+        let scheme = &self.schemes.schemes[c];
+        let queue_image = scheme.image("QueueButtonImage", &self.images).map(|i| i.name.clone());
+        let hud_image = scheme.image("RightHUDImage", &self.images).map(|i| i.name.clone());
+        update_build_queue_disabled_images(&mut self.wm.tree, &self.queue_windows, queue_image);
+        let hud = self.wm.tree.find_by_name(b"ControlBar.wnd:RightHUD");
+        update_right_hud_image(&mut self.wm.tree, hud, hud_image);
+        self.schemes.schemes[c].init_colors(&mut self.bar_colors);
+    }
+
+    fn windows_into(&self, w: WinId, s: &BarState, grids: &BTreeMap<WinId, Vec<DrawItem>>, out: &mut Vec<UiQuad>) {
         if !self.shown(w, s) {
             return;
         }
         let win: &GameWindow = &self.wm.tree.windows[w];
         let (x, y) = self.wm.tree.screen_position(w);
         let rect = [x as f32, y as f32, (x + win.region.2 - win.region.0) as f32, (y + win.region.3 - win.region.1) as f32];
-        let mut q = UiQuad { rect, image: None, color: None, text: None, command: None, dim: false, clock: None, overlay: None, ..Default::default() };
+        let mut q = UiQuad { rect, image: None, color: None, text: None, command: None, dim: false, overlay: None, ..Default::default() };
+        // (#194) a command or queue button's `GadgetButtonDrawInverseClock` percent
+        let mut clock: Option<i32> = None;
         let enabled = win.status & win_status::ENABLED != 0;
         let dd = if enabled { &win.inst.enabled_draw_data[0] } else { &win.inst.disabled_draw_data[0] };
         if win.status & win_status::IMAGE != 0 {
@@ -1483,7 +1584,7 @@ impl GameUi {
                 q.image = c.image.clone().or(q.image);
                 q.command = Some(slot);
                 q.dim = !c.enabled;
-                q.clock = c.clock;
+                clock = c.clock;
                 if q.image.is_none() || self.images.find_image_by_name(q.image.as_deref().unwrap_or_default()).is_none() {
                     q.text = Some(String::from_utf16_lossy(&c.label));
                 }
@@ -1493,7 +1594,7 @@ impl GameUi {
             if let Some(e) = s.queue.get(i) {
                 q.image = e.image.clone().or(q.image);
                 if i == 0 {
-                    q.clock = s.queue_clock;
+                    clock = s.queue_clock;
                 }
             }
         }
@@ -1512,16 +1613,33 @@ impl GameUi {
                 q.dim = !enabled;
             }
         }
-        out.push(q);
+        match grids.get(&w) {
+            // (#194) `W3DCommandBarGridDraw`'s draws in place of the window's own quad (its text or command kept)
+            Some(items) => {
+                out.extend(draw_list_quads(items, &NoGuiHost));
+                if q.text.is_some() || q.command.is_some() {
+                    out.push(UiQuad { image: None, color: None, ..q });
+                }
+            }
+            None => out.push(q),
+        }
+        // (#194) `W3DGadgetPushButtonDraw`'s clock after the button's image and text (W3DPushButton.cpp:259):
+        // `drawRemainingRectClock(origin, size, percent, m_buildUpClockColor)`, `GadgetButtonDrawInverseClock`'s
+        if let Some(pct) = clock {
+            let (sx, sy) = win.size;
+            if let Some(p) = push_button_clock(x, y, sx, sy, pct, true) {
+                out.extend(clock_quads(&p, self.bar_colors.build_up_clock));
+            }
+        }
         if Some(w) == self.power {
             // the power bar (new drawing): consumption against production
             let (p, c) = s.power;
             let frac = if p <= 0 { 0.0 } else { (c as f32 / p as f32).min(1.0) };
             let colr = if c > p { [220, 40, 30, 255] } else { [40, 200, 60, 255] };
-            out.push(UiQuad { rect: [rect[0], rect[1], rect[0] + (rect[2] - rect[0]) * frac.max(0.05), rect[3]], image: None, color: Some(colr), text: None, command: None, dim: false, clock: None, overlay: None, ..Default::default() });
+            out.push(UiQuad { rect: [rect[0], rect[1], rect[0] + (rect[2] - rect[0]) * frac.max(0.05), rect[3]], image: None, color: Some(colr), text: None, command: None, dim: false, overlay: None, ..Default::default() });
         }
         for &c in win.children.iter().rev() {
-            self.windows_into(c, s, out);
+            self.windows_into(c, s, grids, out);
         }
     }
 }
@@ -1705,7 +1823,10 @@ mod tests {
     /// - the text "AB" at (5, 6), no font (the default host: 12 high, 6 a character): (5, 6, 17, 18) from its top left,
     ///   green, 12 high, not wrapped; (~~12 high~~ **corrected 2026-11-12, #153:** drawn at the font's em, `MulDiv(12, 96,
     ///   72)` = 16, ~~in Arial~~ (**#155:** in Liberation Sans regular, its lines 18 apart), the box still the host's measure)
-    /// - an inverse clock at 30 %: 70.
+    /// - ~~an inverse clock at 30 %: 70~~ **Corrected 2026-11-17 (#194):** an inverse clock at 30 % on (0, 0) 4x4 in
+    ///   0x80000000: `drawRemainingRectClock`'s left half (0, 0, 2, 4), its triangle (2,2)(2,4)(4,4) as two rows (2, 2,
+    ///   2.5, 3) and (2, 3, 3.5, 4), and its triangle (2,2)(4,4)(4, 2 + 2 x 5/13) as two rows, the last (3.5, 3, 4, 4):
+    ///   five quads, all black at alpha 128; in `GAME_COLOR_UNDEFINED`, none.
     /// - a placement's `to_layout` inverts `to_screen`.
     #[test]
     fn the_draw_list_becomes_quads() {
@@ -1728,8 +1849,12 @@ mod tests {
         assert_eq!((t[0].rect, t[0].text.as_deref(), t[0].text_color, t[0].font_px, t[0].text_top_left, t[0].text_wrap), ([5.0, 6.0, 17.0, 18.0], Some("AB"), Some([0, 255, 0, 255]), Some(16.0), true, false));
         // (#155: Liberation Sans regular, the lines 18 apart, Arial 12's height)
         assert_eq!((t[0].font_face, t[0].line_px), (Some(crate::fonts::Face::Regular), Some(18.0)));
-        let c = q(&[DrawItem::RectClock { x: 0, y: 0, w: 4, h: 4, percent: 30, color: 0, inverse: true }]);
-        assert_eq!(c[0].clock, Some(70));
+        // (#194) the remaining clock at 30 % in 0x80000000: its pieces' quads
+        let c = q(&[DrawItem::RectClock { x: 0, y: 0, w: 4, h: 4, percent: 30, color: 0x8000_0000_u32 as i32, inverse: true }]);
+        assert_eq!(c.len(), 5);
+        assert!(c.iter().all(|q| q.color == Some([0, 0, 0, 128])));
+        assert_eq!((c[0].rect, c[1].rect, c[2].rect, c[4].rect), ([0.0, 0.0, 2.0, 4.0], [2.0, 2.0, 2.5, 3.0], [2.0, 3.0, 3.5, 4.0], [3.5, 3.0, 4.0, 4.0]));
+        assert!(q(&[DrawItem::RectClock { x: 0, y: 0, w: 4, h: 4, percent: 30, color: WIN_COLOR_UNDEFINED, inverse: true }]).is_empty());
         let p = LayoutPlacement { left: 7.0, top: 100.0, y0: 450.0, scale: 0.5, turned: false };
         let r = p.to_screen([40.0, 470.0, 0.0, 0.0]);
         assert_eq!(p.to_layout((r[0], r[1])), (40.0, 470.0));
@@ -2103,6 +2228,70 @@ mod tests {
         assert_eq!((state(&ui, "ButtonPlaceBeacon").0, state(&ui, "ButtonIdleWorker").0, state(&ui, "ButtonGeneral"), ui.is_observer_command_bar), (true, true, (false, false), true));
     }
 
+    /// #194: the scheme's colours drawn and its bar images given. Predicted before the run: a bar with a
+    /// `ControlBar.wnd:RightHUD` user window at (600, 455)..(690, 475) (colours 40 40 60, border black; draw callback
+    /// `W3DCommandBarGridDraw`), and an `America` scheme with `CommandBarBorderColor = R:9 G:9 B:9`, `BuildUpClockColor = R:1
+    /// G:2 B:3 A:200`, `RightHUDImage = ImgPortrait`, `QueueButtonImage = ImgPortrait`:
+    /// - before the game's start, the grid in the constructor's border colour (0, 0, 0, 100): the window's outline (4
+    ///   quads) and fill (40, 40, 60), and four lines: across at y 455 + 6.6 -> 461 and 455 + 13.2 -> 468, down at x
+    ///   600 + 29.7 -> 629 and 600 + 59.4 -> 659;
+    /// - after `setControlBarSchemeByPlayer`: the same in (9, 9, 9, 255), the window's enabled border colour 0 now
+    ///   0xFF090909, its enabled image 0 `ImgPortrait` (the bar has no queue buttons: nothing else);
+    /// - a selected object whose first command button's clock is at 30 %: after the button's quad,
+    ///   `drawRemainingRectClock(260, 480, 50, 50, 30)` in (1, 2, 3, 200): the left half (260, 480, 285, 530) first, every
+    ///   piece in that colour, all inside the button.
+    #[test]
+    fn the_schemes_colours_are_drawn() {
+        use rts_lockstep_engine::client::control_bar_command::{CommandAvailability, CommandSlot};
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            let b = if p == b"Window\\ControlBar.wnd" {
+                let wnd = String::from_utf8(b).expect("text");
+                let at = wnd.find("WINDOW\n WINDOWTYPE = USER;\n SCREENRECT = UPPERLEFT: 250 470").expect("the command window");
+                let mut dd = String::from("IMAGE: NoImage, COLOR: 40 40 60 255, BORDERCOLOR: 0 0 0 255");
+                for _ in 0..8 {
+                    dd.push_str(", IMAGE: NoImage, COLOR: 0 0 0 0, BORDERCOLOR: 0 0 0 0");
+                }
+                let hud = format!("WINDOW\n WINDOWTYPE = USER;\n SCREENRECT = UPPERLEFT: 600 455, BOTTOMRIGHT: 690 475, CREATIONRESOLUTION: 800 600;\n NAME = \"ControlBar.wnd:RightHUD\";\n STATUS = ENABLED;\n DRAWCALLBACK = \"W3DCommandBarGridDraw\";\n ENABLEDDRAWDATA = {dd};\nEND\n");
+                format!("{}{}{}", &wnd[..at], hud, &wnd[at..]).into_bytes()
+            } else if p == b"Data\\INI\\ControlBarScheme.ini" {
+                let mut s = b.clone();
+                s.extend_from_slice(b"ControlBarScheme America\n  ScreenCreationRes = X:800 Y:600\n  Side = America\n  CommandBarBorderColor = R:9 G:9 B:9\n  BuildUpClockColor = R:1 G:2 B:3 A:200\n  RightHUDImage = ImgPortrait\n  QueueButtonImage = ImgPortrait\nEnd\n");
+                s
+            } else {
+                b
+            };
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        settle(&mut ui);
+        let mut ui = *ui;
+        let hud = ui.wm.tree.find_by_name(b"ControlBar.wnd:RightHUD").expect("RightHUD");
+        let grid = |ui: &mut GameUi, c: [u8; 4]| -> Vec<[f32; 4]> { ui.frame(&BarState::default()).into_iter().filter(|q| q.color == Some(c)).map(|q| q.rect).collect() };
+        let expected = |lines: bool| -> Vec<[f32; 4]> {
+            let mut v = vec![[600.0, 455.0, 690.0, 456.0], [600.0, 474.0, 690.0, 475.0], [600.0, 455.0, 601.0, 475.0], [689.0, 455.0, 690.0, 475.0]];
+            if lines {
+                v.extend([[600.0, 460.5, 690.0, 461.5], [600.0, 467.5, 690.0, 468.5], [628.5, 455.0, 629.5, 475.0], [658.5, 455.0, 659.5, 475.0]]);
+            }
+            v
+        };
+        assert_eq!(grid(&mut ui, [0, 0, 0, 100]), expected(true), "the constructor's border colour");
+        ui.set_control_bar_scheme_by_player(b"America", false, true, rts_lockstep_engine::common::recorder::game_mode::SINGLE_PLAYER, false, |_| None);
+        assert_eq!(grid(&mut ui, [9, 9, 9, 255]), expected(true), "the scheme's border colour");
+        let inst = &ui.wm.tree.windows[hud].inst;
+        assert_eq!((inst.enabled_draw_data[0].border_color, inst.enabled_draw_data[0].image.as_deref()), (0xFF09_0909u32 as i32, Some(&b"ImgPortrait"[..])));
+        let slot = CommandSlot { button: 0, image: None, label: Vec::new(), description: Vec::new(), availability: CommandAvailability::NotReady, clock: Some(30), enabled: false, not_ready: true, always_color: false, check_like: false, checked: false };
+        let st = BarState { selected: Some(1), commands: vec![Some(slot)], ..Default::default() };
+        let q = ui.frame(&st);
+        let button = q.iter().position(|q| q.command == Some(0)).expect("the button");
+        let clock: Vec<&UiQuad> = q.iter().filter(|q| q.color == Some([1, 2, 3, 200])).collect();
+        assert_eq!(clock[0].rect, [260.0, 480.0, 285.0, 530.0]);
+        assert!(clock.iter().all(|c| c.rect[0] >= 260.0 && c.rect[1] >= 480.0 && c.rect[2] <= 310.0 && c.rect[3] <= 530.0));
+        assert!(q.iter().position(|q| q.color == Some([1, 2, 3, 200])).expect("a clock") > button, "drawn over the button");
+    }
+
     /// #136: the bar hidden, shown, lowered and raised (`ToggleControlBar`, `ButtonLarge`'s `toggleControlBarStage`).
     /// Predicted before the run: loaded at the default stage (the view 480 high, `ButtonLarge` with the "down" image
     /// `ImgButton`), the scheme's layer from y 440; a tap on `ButtonLarge` lowers the bar to y 540 (the layer moves the
@@ -2119,8 +2308,8 @@ mod tests {
         let image = |ui: &GameUi| ui.wm.tree.windows[large].inst.enabled_draw_data[0].image.clone();
         assert_eq!((ui.stage.current, ui.view_height), (ControlBarStages::Default, Some(480)));
         assert_eq!(image(&ui).as_deref(), Some(&b"ImgButton"[..]));
-        let top = |ui: &GameUi| ui.frame(&BarState::default()).iter().fold(f32::MAX, |a, q| a.min(q.rect[1]));
-        assert_eq!(top(&ui), 440.0);
+        let top = |ui: &mut GameUi| ui.frame(&BarState::default()).iter().fold(f32::MAX, |a, q| a.min(q.rect[1]));
+        assert_eq!(top(&mut ui), 440.0);
         let w = PopupWorld::default();
         let tap = |ui: &mut GameUi, at: (f32, f32), _t: f64, w: &PopupWorld| {
             assert_eq!(ui.pointer(gwm::LEFT_DOWN, at, true, w), None);
@@ -2129,7 +2318,7 @@ mod tests {
         tap(&mut ui, (400.0, 460.0), 0.0, &w);
         let master = ui.stage.master.expect("ControlBarParent");
         assert_eq!((ui.stage.current, ui.wm.tree.windows[master].region.1), (ControlBarStages::Low, 540));
-        assert_eq!(top(&ui), 530.0);
+        assert_eq!(top(&mut ui), 530.0);
         assert_eq!(image(&ui).as_deref(), Some(&b"ImgBack"[..]));
         tap(&mut ui, (400.0, 550.0), 1.0, &w);
         assert_eq!((ui.stage.current, ui.wm.tree.windows[master].region.1), (ControlBarStages::Default, 450));
@@ -2539,17 +2728,17 @@ mod tests {
         ui.wm.tree.windows[w].inst.enabled_draw_data[0].image = Some(b"GlowOff".to_vec());
         ui.wm.tree.windows[w].inst.disabled_draw_data[0].image = Some(b"GlowOn".to_vec());
         ui.radar_attack_glow.init(&ui.wm);
-        let image = |ui: &GameUi| ui.frame(&BarState::default()).into_iter().find(|q| q.rect == [10.0, 10.0, 30.0, 30.0]).and_then(|q| q.image);
-        assert_eq!(image(&ui), Some(b"GlowOff".to_vec()));
+        let image = |ui: &mut GameUi| ui.frame(&BarState::default()).into_iter().find(|q| q.rect == [10.0, 10.0, 30.0, 30.0]).and_then(|q| q.image);
+        assert_eq!(image(&mut ui), Some(b"GlowOff".to_vec()));
         ui.radar_attack_glow_frame(1);
         // (the frame's update came first, then the trigger: lit, 150 left)
         assert_eq!((ui.radar_attack_glow.on, ui.radar_attack_glow.remaining_frames), (true, 150));
-        assert_eq!(image(&ui), Some(b"GlowOn".to_vec()));
+        assert_eq!(image(&mut ui), Some(b"GlowOn".to_vec()));
         let mut flips = Vec::new();
         let mut lit = true;
         for k in 1..=150 {
             ui.radar_attack_glow_frame(0);
-            let now = image(&ui) == Some(b"GlowOn".to_vec());
+            let now = image(&mut ui) == Some(b"GlowOn".to_vec());
             if now != lit {
                 flips.push(k);
                 lit = now;
@@ -2559,9 +2748,9 @@ mod tests {
         assert_eq!(flips, [15, 30, 45, 60, 75, 90, 105, 120, 135]);
         assert!(!ui.radar_attack_glow.on && !lit);
         ui.radar_attack_glow_frame(1);
-        assert_eq!(image(&ui), Some(b"GlowOn".to_vec()));
+        assert_eq!(image(&mut ui), Some(b"GlowOn".to_vec()));
         ui.reset_radar_attack_glow();
-        assert_eq!(image(&ui), Some(b"GlowOff".to_vec()));
+        assert_eq!(image(&mut ui), Some(b"GlowOff".to_vec()));
     }
 
     /// (#119) The general's star on the bar: `ControlBar.wnd:ButtonGeneral` (added by the test, as the synthetic layout has
@@ -2593,9 +2782,9 @@ mod tests {
         let image = |ui: &GameUi| ui.wm.tree.windows[w].inst.enabled_draw_data[0].image.clone();
         assert!(ui.gen_star.gen_star_flash && ui.gen_star.last_flashed_at_point_value == -1, "ControlBar::init");
         ui.gen_star_frame(1, 15);
-        assert_eq!(image(&ui), Some(b"ImgBack".to_vec()));
+        assert_eq!(image(&mut ui), Some(b"ImgBack".to_vec()));
         ui.gen_star_frame(1, 16);
-        assert_eq!(image(&ui), Some(b"ImgButton".to_vec()));
+        assert_eq!(image(&mut ui), Some(b"ImgButton".to_vec()));
         let rank = [ClientEvent::Player(PlayerClientEvent::RankChanged { player_index: 2 })];
         ui.gen_star_events(&rank, 2, 1, false);
         assert!(ui.gen_star.gen_star_flash);
@@ -2604,7 +2793,7 @@ mod tests {
         assert_eq!(ui.wm.transitions.current, None, "no ControlBarArrow group on the bar's handler");
         ui.gen_star_frame(0, 20);
         assert!(!ui.gen_star.gen_star_flash);
-        assert_eq!(image(&ui), Some(b"ImgBack".to_vec()));
+        assert_eq!(image(&mut ui), Some(b"ImgBack".to_vec()));
         ui.reset_radar_attack_glow();
         assert!(ui.gen_star.gen_star_flash && ui.gen_star.last_flashed_at_point_value == -1, "reset");
     }

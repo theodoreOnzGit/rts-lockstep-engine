@@ -291,7 +291,10 @@ impl ControlBarScheme {
     /// `updateCommanBarBorderColors(m_borderBuildColor, m_borderActionColor, m_borderUpgradeColor, m_borderSystemColor)`
     /// and `updateBorderColor(m_commandBarBorderColor)` on the control bar's colours. (The other lines of that block, the
     /// stage, the queue's disabled images, the right HUD, the slot exit, up-down and arrow images, are not here: the stage
-    /// is `crate::client::control_bar_stage`'s; the images are #145's remaining gaps.)
+    /// is `crate::client::control_bar_stage`'s; ~~the images are #145's remaining gaps~~ **Corrected 2026-11-17 (#194):**
+    /// the queue's disabled images and the right HUD's are `crate::client::w3d_command_bar`'s
+    /// `update_build_queue_disabled_images` and `update_right_hud_image` (the client calls them beside this); the slot
+    /// exit image is #195's gap.)
     pub fn init_colors(&self, bar: &mut ControlBarColors) {
         bar.update_build_up_clock_color(self.color("BuildUpClockColor"));
         bar.update_comman_bar_border_colors(self.color("ButtonBorderBuildColor"), self.color("ButtonBorderActionColor"), self.color("ButtonBorderUpgradeColor"), self.color("ButtonBorderSystemColor"));

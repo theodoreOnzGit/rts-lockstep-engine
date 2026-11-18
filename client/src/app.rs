@@ -2773,7 +2773,8 @@ fn game_ui(
             }
         }
     }
-    let ui = g.ui.as_ref().expect("checked");
+    // (#194: `frame` sets the grid windows' border colour, as `W3DCommandBarGridDraw` does)
+    let ui = g.ui.as_mut().expect("checked");
     let quads = ui.frame(&state);
     g.bar_buttons = state.commands.iter().map(|s| s.as_ref().map(|s| s.button)).collect();
     // the box: the quads' extent, the layout's full width; (#136) cut at the layout's bottom (the low stage moves the bar
@@ -2913,16 +2914,8 @@ fn spawn_quads(commands: &mut Commands, root: Entity, quads: &[crate::ui::UiQuad
                 ));
             });
         }
-        if let Some(pct_done) = q.clock {
-            let rest = (100 - pct_done.clamp(0, 100)) as f32;
-            e.with_children(|p| {
-                p.spawn((
-                    Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: Val::Percent(100.0), height: Val::Percent(rest), ..default() },
-                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
-                    pick,
-                ));
-            });
-        }
+        // ~~a quad's clock: the top `100 - percent` of it darkened, 55 % black~~ **Corrected 2026-11-17 (#194):** a clock
+        // comes as its own quads (`crate::ui::clock_quads`: upstream's rectangles and triangles in the build-up clock colour)
         if q.command.is_some() {
             // (#34) pickable, so the press is the bar's and not the world's; the manager decides what it presses
             e.insert(Button);

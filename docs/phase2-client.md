@@ -127,6 +127,58 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#194, the bar's scheme colours drawn and its queue and right HUD images (2026-11-17, GitHub #194, sections "Colours
+held but not drawn" and "The rest of `ControlBarScheme::init`'s bar updates").**
+- **What was open (read first).** #145 made `GameUi::bar_colors` hold the scheme's build-up clock colour and command bar
+  border colour, but nothing drew them. Searched first (`draw_line`, `draw_fill_rect`, `RectClock`, `InverseClock`,
+  `bar_colors`, `border_color`, `CommandBar` in `src/client/` and `client/src/`):
+  - `GadgetButtonDrawInverseClock` (GadgetPushButton.cpp:656) was already translated (`gadget::button_draw_clock`), and
+    `window_draw`'s push button draw already records `DrawItem::RectClock` with the colour. The clock's **drawing** was
+    not: `W3DDisplay::drawRectClock` / `drawRemainingRectClock` (W3DDisplay.cpp:2287, :2451) were absent. The client
+    dropped `RectClock`'s colour (`draw_list_quads`), and the bar's own buttons drew a fixed 55 % black band over the top
+    of the button (`app.rs`). That is a defect, filed as #196 and fixed here.
+  - `W3DCommandBarGridDraw` (W3DControlBar.cpp:466) was not translated; `W3DCommandBarBackgroundDraw` /
+    `ForegroundDraw` already were, in effect (#136's scheme layers). `W3DCommandBarGenExpDraw`, `HelpPopupDraw` and
+    `TopDraw` draw no scheme colour and are left (#195).
+  - `ControlBar::updateBuildQueueDisabledImages` (ControlBar.cpp:2856) and `updateRightHUDImage` (:2896) were not
+    translated; `gadget_button_set_disabled_image` (GadgetPushButton.h:100) already was (`control_bar_scheme`).
+- **Translated** (`src/client/w3d_command_bar.rs`): `W3DCommandBarGridDraw` with `GameWindow::winSetEnabledBorderColor`
+  (GameWindow.cpp:1606); `W3DDisplay::drawRectClock` and `drawRemainingRectClock`, as the rectangles and triangles they
+  hand `Render2DClass`; `updateBuildQueueDisabledImages` and `updateRightHUDImage`, with `ControlBarScheme::init`'s two
+  lines (ControlBarScheme.cpp:430-431).
+- **Upstream quirks kept.** The grid's colour stays on the window as its enabled border colour 0. Its fractions are
+  `double` products truncated to `Int`. `drawRemainingRectClock` splits its last quarter at 87 but subtracts 88, and its
+  62-74 % triangle subtracts 62.
+- **Wired** (`client/src/ui.rs`). `GameUi::frame` (now `&mut self`) draws every shown window whose draw callback is
+  `W3DCommandBarGridDraw` through the translation in `getBorderColor`. Each command button's clock, and the first queue
+  button's, is `drawRemainingRectClock` in `bar_colors.build_up_clock` after the button's quad. `draw_list_quads` draws
+  `RectClock`s the same way in their own colour. `clock_quads` (new glue: Bevy UI has no triangles) fills a triangle by
+  rows one layout pixel high. `UiQuad::clock` and the app's band are gone. At each game's start, the scheme's
+  `QueueButtonImage` and `RightHUDImage` reach the queue buttons and `ControlBar.wnd:RightHUD` with the colours
+  (`GameUi::scheme_init_bar`).
+- **Differential** (`tests/differential_command_bar_draw.rs`, `differential/wrap_command_bar_draw.cpp`, 7 verbatim cuts
+  from W3DControlBar.cpp, W3DDisplay.cpp, GameWindow.cpp, GadgetPushButton.h, ControlBar.cpp and ControlBarScheme.cpp).
+  20,000 cases: grids on random windows, sizes (some negative), statuses, states and colours; both clocks on random
+  rectangles with the percent half from the thresholds and their neighbours (-1 .. 101) and half uniform in -5..105; and
+  the two image lines. The calls are compared word for word: every line, every `Add_Rect` / `Add_Tri` float's bits, every
+  image.
+  - *Predicted:* 0 mismatches; all 15 plants caught, the fewest 10427 (the 87/88 split) and 10424 (100 accepted), about
+    110 each.
+  - *Result:* **0 mismatches** on the first run (grid 6,007, clock 5,962, remaining clock 6,034, images 1,997; 11,856
+    lines, 10,746 clocks drawn, 10,511 rectangles, 15,999 triangles).
+  - *Plants 10416-10430: 15 of 15 caught.* Mismatching cases: 10416 2,731; 10417 2,764; 10418 3,043; 10419 2,956;
+    10420 130; 10421 374; 10422 545; 10423 755; 10424 147; 10425 140; 10426 525; 10427 133; 10428 2,625; 10429 1,410;
+    10430 228.
+  - **Predictions missed.** 10421 was caught 374 times, not ~140, because the plant accepts every percent below 1, not
+    only 0. 10430 was caught 228 times, not ~700, because it matters only *without* a right HUD image; the prediction
+    counted the cases with one.
+- **Tests.** Three new lib tests (`w3d_command_bar`'s) and one new client test (`the_schemes_colours_are_drawn`). The
+  client's `the_draw_list_becomes_quads` changed for the clock's quads. All passed on the first run, as predicted in their
+  doc comments. The full runs are on #194.
+- **Left (#195).** The slot exit image (it changes the logic's command buttons). `W3DCommandBarGenExpDraw`,
+  `HelpPopupDraw` and `W3DPowerDraw`. The command windows' button borders. Which window of the game's `ControlBar.wnd`
+  names the grid draw: not seen, no game files here. The death events (#194's third section) are untouched.
+
 **#145, the bar's scheme setters and colours (2026-11-17, GitHub #145, section "The bar's init and popups").**
 - **What was open (read first).** #145 listed three items. Searched first:
   - **The communicator switch.** `client::control_bar_scheme` already had it, translated and differential-tested by
@@ -198,9 +250,12 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   (`the_scheme_by_player_sets_the_colours_and_the_bar_buttons`). Both passed on the first run, as predicted in their doc
   comments. The full runs are on #145.
 - **Left (#194).**
-  - The clock and the command bar's border colour are held but not drawn (`GadgetButtonDrawInverseClock`,
-    `W3DCommandBarGridDraw`).
-  - The rest of `init`'s bar updates (queue disabled image, right HUD image, slot exit image) are not translated.
+  - ~~The clock and the command bar's border colour are held but not drawn (`GadgetButtonDrawInverseClock`,
+    `W3DCommandBarGridDraw`).~~ **Corrected 2026-11-17 (#194):** both are drawn (`W3DCommandBarGridDraw`,
+    `drawRemainingRectClock` / `drawRectClock`, see #194's entry).
+  - ~~The rest of `init`'s bar updates (queue disabled image, right HUD image, slot exit image) are not translated.~~
+    **Corrected 2026-11-17 (#194):** the queue's disabled image and the right HUD image are; the slot exit image is not
+    (#195).
   - The death events are not consumed.
   - The colours' lifetime across games differs from upstream's.
   - The `TheGameInfo` stand-in.
