@@ -148,7 +148,7 @@ pub fn do_the_dynamic_light(vb_mirror: &TerrainVertex, normal: &Vector3, lights:
 }
 
 /// The state `updateVBForLight` uses: the draw window and the map's display heights.
-pub struct LightUpdateInput<'a> {
+pub struct LightUpdateInput<F: Fn(i32, i32) -> i32> {
     pub x: i32,
     pub y: i32,
     pub origin_x: i32,
@@ -159,10 +159,10 @@ pub struct LightUpdateInput<'a> {
     pub y_extent: i32,
     pub border_size: i32,
     /// `m_map->getDisplayHeight(x, y)`.
-    pub display_height: &'a dyn Fn(i32, i32) -> i32,
+    pub display_height: F,
 }
 
-impl<'a> LightUpdateInput<'a> {
+impl<F: Fn(i32, i32) -> i32> LightUpdateInput<F> {
     /// `HeightMapRenderObjClass::getXWithOrigin` (HeightMap.cpp:241): the data column for a mesh column, with the sliding
     /// origin applied (wraps around the `m_x - 1` columns; clamped).
     pub fn get_x_with_origin(&self, x: i32) -> i32 {
@@ -206,8 +206,8 @@ impl<'a> LightUpdateInput<'a> {
 /// `vb` is the tile's vertex array (relit in place), `data` the unlit mirror, both `VERTEX_BUFFER_TILE_LENGTH * 4` vertices per
 /// row (4 vertices per cell, one per corner: upper left, upper right, lower right, lower left). Returns 0, or -1 when there
 /// is no vertex buffer/map (`have_buffers_and_map` false).
-pub fn update_vb_for_light(
-    input: &LightUpdateInput,
+pub fn update_vb_for_light<F: Fn(i32, i32) -> i32>(
+    input: &LightUpdateInput<F>,
     have_buffers_and_map: bool,
     vb: &mut [TerrainVertex],
     data: &[TerrainVertex],

@@ -18,3 +18,4 @@ pub mod w3d_police_car_draw;
 pub mod w3d_supply_draw;
 pub mod w3d_mouse;
 pub mod height_map;
+pub mod w3d_ghost_object;
