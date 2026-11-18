@@ -560,15 +560,13 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
                     self.ack_command(r, local);
                 }
             }
-            let consumed = match cmd_list.get_mut(id) {
-                Some(r) => !self.process_net_command(r),
+            // `if (!processNetCommand(cmd)) sendRemoteCommand(cmd)`: FALSE means "relay it on"
+            let handled = match cmd_list.get_mut(id) {
+                Some(r) => self.process_net_command(r),
                 None => break,
             };
-            if !consumed {
-                // processNetCommand returned TRUE: it wants the command relayed
-            }
-            if let Some(r) = cmd_list.get(id) {
-                if !consumed {
+            if !handled {
+                if let Some(r) = cmd_list.get(id) {
                     self.send_remote_command(r);
                 }
             }
@@ -577,7 +575,8 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
     }
 
     /// `ConnectionManager::processNetCommand` (ConnectionManager.cpp:340): handles the commands that are the
-    /// connection manager's own. Returns TRUE when the command should be relayed on (`sendRemoteCommand`).
+    /// connection manager's own. Returns TRUE when the command is done with and is NOT to be relayed on; FALSE
+    /// means `doRelay` passes it to `sendRemoteCommand`.
     pub fn process_net_command(&mut self, r: &mut NetCommandRef) -> bool {
         let msg = r.get_command().clone();
         let (ty, player_id, exec_frame) = {
