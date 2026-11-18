@@ -31,3 +31,7 @@ pub mod persistent_storage_thread;
 pub mod peer_thread;
 pub mod ping_thread;
 pub mod game_results_thread;
+pub mod gs_config;
+pub mod ladder_defs;
+pub mod download_manager;
+pub mod main_menu_utils;
