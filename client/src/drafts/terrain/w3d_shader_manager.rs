@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #204): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #204, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DShaderManager.h
@@ -1459,7 +1458,7 @@ impl W3DShaderManager {
         let mut pan = false;
         if mode >= FM_VIEW_MB_PAN_ALPHA {
             // sqrt is the double function
-            let len = petir::Real::sqrt((scroll_delta.x * scroll_delta.x + scroll_delta.y * scroll_delta.y) as f64) as f32;
+            let len = super::double_math::c_sqrt(scroll_delta.x * scroll_delta.x + scroll_delta.y * scroll_delta.y);
             center.y -= 0.5; // * (scrollDelta.y/len);
             m.decrement = false;
             m.max_count = (len * 200.0 * m.pan_factor as f32 / MB_DEFAULT_PAN_FACTOR as f32) as i32;
@@ -1472,7 +1471,7 @@ impl W3DShaderManager {
             pan = true;
             m.prior_delta = *scroll_delta;
         } else if mode == FM_VIEW_MB_END_PAN_ALPHA {
-            let len = petir::Real::sqrt((m.prior_delta.x * m.prior_delta.x + m.prior_delta.y * m.prior_delta.y) as f64) as f32;
+            let len = super::double_math::c_sqrt(m.prior_delta.x * m.prior_delta.x + m.prior_delta.y * m.prior_delta.y);
             center.x += 0.5 * (m.prior_delta.x / len);
             center.y -= 0.5 * (m.prior_delta.y / len);
             m.decrement = false;
@@ -1511,7 +1510,7 @@ impl W3DShaderManager {
         if !pan {
             for i in 0..4 {
                 let mut factor: f32 = 1.0 - (m.max_count as f32 / MB_MAX_COUNT as f32) * 0.90;
-                factor = petir::Real::sqrt(factor as f64) as f32;
+                factor = super::double_math::c_sqrt(factor);
                 v[i].u = ((v[i].u - center.x) * factor) + center.x;
                 v[i].v = ((v[i].v - center.y) * factor) + center.y;
             }

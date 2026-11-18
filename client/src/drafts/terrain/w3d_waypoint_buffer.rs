@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #204): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #204, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DWaypointBuffer.h
@@ -121,6 +120,7 @@ pub enum WaypointDrawCommand {
 }
 
 /// `class W3DWaypointBuffer`.
+#[derive(Clone, Debug)]
 pub struct W3DWaypointBuffer {
     /// `m_waypointNodeRobj`: the "SCMNode" render object (the renderer's); whether it was created.
     pub waypoint_node_robj_present: bool,
@@ -362,8 +362,8 @@ impl W3DWaypointBuffer {
                                 if dot > 0.0 {
                                     let angle = obj.orientation;
                                     // (Real)cos(angle): the double function cast to float
-                                    let c = petir::Real::cos(angle as f64) as f32;
-                                    let s = petir::Real::sin(angle as f64) as f32;
+                                    let c = super::double_math::c_cos(angle);
+                                    let s = super::double_math::c_sin(angle);
 
                                     // NRPToCtrDelta (x, y, then x = 0.0f) is never used upstream
 

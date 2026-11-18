@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #213): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DView.cpp (the scripted camera: `W3DView::W3DView`'s
@@ -1085,8 +1084,8 @@ impl ScriptedCamera {
     /// The camera offset from the global data's pitch and yaw that `moveAlongWaypointPath` re-derives (two places).
     fn rederive_camera_offset(view: &mut TacticalView, h: &impl ViewHost) {
         let g = h.global();
-        view.camera_offset.y = (-(f64::from(view.camera_offset.z) / petir::Real::tan(f64::from(g.camera_pitch) * (f64::from(PI) / 180.0)))) as f32;
-        view.camera_offset.x = (-(f64::from(view.camera_offset.y) * petir::Real::tan(f64::from(g.camera_yaw) * (f64::from(PI) / 180.0)))) as f32;
+        view.camera_offset.y = (-(f64::from(view.camera_offset.z) / f64::from(crate::drafts::terrain::double_math::c_tan((f64::from(g.camera_pitch) * (f64::from(PI) / 180.0)) as f32)))) as f32;
+        view.camera_offset.x = (-(f64::from(view.camera_offset.y) * f64::from(crate::drafts::terrain::double_math::c_tan((f64::from(g.camera_yaw) * (f64::from(PI) / 180.0)) as f32)))) as f32;
     }
 
     /// Widen the camera constraint to hold `p` ("assuming that the scripter knows what he is doing").
@@ -1409,8 +1408,8 @@ impl ScriptedCamera {
     pub fn shake(&mut self, view: &TacticalView, epicenter: &Coord3D, shake_type: CameraShakeType, h: &mut impl ScriptedViewHost) {
         let angle = h.game_client_random_value_real(0.0, 2.0 * PI);
 
-        self.shake_angle_cos = petir::Real::cos(f64::from(angle)) as f32;
-        self.shake_angle_sin = petir::Real::sin(f64::from(angle)) as f32;
+        self.shake_angle_cos = crate::drafts::terrain::double_math::c_cos(angle);
+        self.shake_angle_sin = crate::drafts::terrain::double_math::c_sin(angle);
 
         let g = h.global();
         let intensity = match shake_type {
@@ -1428,7 +1427,7 @@ impl ScriptedCamera {
         let dy = epicenter.y - view_pos.y;
         // @todo upstream: make this 3D once we have the real "lookat" spot
 
-        let dist = petir::Real::sqrt(f64::from(dx * dx + dy * dy)) as f32;
+        let dist = crate::drafts::terrain::double_math::c_sqrt(dx * dx + dy * dy);
 
         if dist > g.max_shake_range {
             return;

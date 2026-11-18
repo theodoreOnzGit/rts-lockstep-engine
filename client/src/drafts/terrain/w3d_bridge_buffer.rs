@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #204): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #204, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DBridgeBuffer.h
@@ -92,6 +91,7 @@ fn prefix_matches_no_case(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// `class W3DBridge` (W3DBridgeBuffer.h): the individual data for a bridge.
+#[derive(Clone, Debug)]
 pub struct W3DBridge {
     /// `m_start`: drawing location.
     pub start: Vector3,
@@ -754,6 +754,7 @@ pub struct BridgeMapObjectPair {
 }
 
 /// `class W3DBridgeBuffer` (W3DBridgeBuffer.h): draw buffer for the bridges.
+#[derive(Clone, Debug)]
 pub struct W3DBridgeBuffer {
     /// `m_vertexBridge`: bridge vertex buffer (`MAX_BRIDGE_VERTEX + 4`); `None` where upstream's is NULL.
     pub vertex_bridge: Option<Vec<VertexFormatXYZNDUV1>>,

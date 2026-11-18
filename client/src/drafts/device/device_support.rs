@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #205): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #205, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Not a translation of one upstream file: the small stand-ins the W3DDevice drafts of this directory share, so that
 //! each draft can keep upstream's control flow without a render object, a scene or a drawable to call. Each is named

@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #204): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #204, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DBibBuffer.h
@@ -40,6 +39,7 @@ pub struct TBib {
 }
 
 /// `class W3DBibBuffer` (W3DBibBuffer.h): draw buffer for the bibs.
+#[derive(Clone, Debug)]
 pub struct W3DBibBuffer {
     /// `m_vertexBib`: bib vertex buffer (`m_vertexBibSize + 4` vertices); `None` where upstream's is NULL.
     pub vertex_bib: Option<Vec<VertexFormatXYZDUV1>>,

@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #204): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #204, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d): no file of its own. The small WW3D2 types the terrain
 //! buffers share and the port does not have yet, under upstream's names:

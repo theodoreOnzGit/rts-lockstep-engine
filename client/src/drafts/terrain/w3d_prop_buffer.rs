@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #204): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #204, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DPropBuffer.h
@@ -95,6 +94,7 @@ pub struct PropLighting {
 }
 
 /// `class W3DPropBuffer : Snapshot` (W3DPropBuffer.h).
+#[derive(Clone, Debug)]
 pub struct W3DPropBuffer {
     /// `m_props[MAX_PROPS]`: the prop buffer. All props are stored here.
     pub props: Vec<TProp>,

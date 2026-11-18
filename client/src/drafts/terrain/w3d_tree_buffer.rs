@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #204): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #204, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DTreeBuffer.h
@@ -402,6 +401,7 @@ pub struct TreeDraw {
 }
 
 /// `class W3DTreeBuffer`: draw buffer for the trees.
+#[derive(Clone, Debug)]
 pub struct W3DTreeBuffer {
     /// `m_vertexTree[MAX_BUFFERS]`: `MAX_TREE_VERTEX + 4` vertices each.
     pub vertex_tree: Vec<Option<Vec<VertexFormatXYZNDUV1>>>,
@@ -1494,9 +1494,10 @@ impl W3DTreeBuffer {
         self.trees[nt].tree_type = tree_type;
         // Translate the bounding sphere of the model.
         self.trees[nt].bounds = self.tree_types[tree_type as usize].bounds;
-        self.trees[nt].bounds.center *= self.trees[nt].scale;
-        self.trees[nt].bounds.radius *= self.trees[nt].scale;
-        self.trees[nt].bounds.center += self.trees[nt].location;
+        let (tree_scale, tree_location) = (self.trees[nt].scale, self.trees[nt].location); // copies: the borrow checker
+        self.trees[nt].bounds.center *= tree_scale;
+        self.trees[nt].bounds.radius *= tree_scale;
+        self.trees[nt].bounds.center += tree_location;
         // Initially set it invisible.  cull will update it's visiblity flag.
         self.trees[nt].visible = false;
         self.trees[nt].drawable_id = id;
@@ -1524,9 +1525,10 @@ impl W3DTreeBuffer {
                 self.trees[i].cos = wwmath::cos(angle);
                 // Translate the bounding sphere of the model.
                 self.trees[i].bounds = self.tree_types[self.trees[i].tree_type as usize].bounds;
-                self.trees[i].bounds.center *= self.trees[i].scale;
-                self.trees[i].bounds.radius *= self.trees[i].scale;
-                self.trees[i].bounds.center += self.trees[i].location;
+                let (tree_scale, tree_location) = (self.trees[i].scale, self.trees[i].location); // copies: the borrow checker
+                self.trees[i].bounds.center *= tree_scale;
+                self.trees[i].bounds.radius *= tree_scale;
+                self.trees[i].bounds.center += tree_location;
                 self.anything_changed = true;
                 return true;
             }

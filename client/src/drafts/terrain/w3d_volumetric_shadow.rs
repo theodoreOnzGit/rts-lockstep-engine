@@ -1,5 +1,4 @@
-//! UNTESTED DRAFT (#202, #204): written without compiling or testing. Not part of the verified port until it is
-//! compiled, differential-tested against the upstream C++ and moved out of `drafts`.
+//! UNTESTED DRAFT (#202, #204, #214): compiles; not yet tested against the upstream C++.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DVolumetricShadow.h
@@ -968,7 +967,7 @@ impl Default for W3DVolumetricShadow {
 
 /// `cosAngleToCare`: `cos((0.2 * PI) / 180.0)` (double, stored as `Real`).
 fn cos_angle_to_care() -> f32 {
-    petir::Real::cos((0.2f64 * PI as f64) / 180.0) as f32
+    super::double_math::c_cos(((0.2f64 * PI as f64) / 180.0) as f32)
 }
 
 impl W3DVolumetricShadow {
@@ -1713,18 +1712,18 @@ impl W3DVolumetricShadow {
                             if j == 0 {
                                 // this is the initial point so object must be right on the edge of a cliff.
                                 base_ground_height = terrain_height; // force extrusion all the way down cliff.
-                                let tan_angle = petir::Real::tan(OVERHANGING_OBJECT_CLAMP_ANGLE as f64) as f32; // clamp to about 89 degrees or close to vertical lightpos.
+                                let tan_angle = super::double_math::c_tan(OVERHANGING_OBJECT_CLAMP_ANGLE); // clamp to about 89 degrees or close to vertical lightpos.
                                 self.set_shadow_length_scale(tan_angle); // update the clamp angle to shorted shadow enough so this corner on flat ground.
                                 break;
                             }
 
                             // Find ray from last valid terrain contact point to object box corner.
                             let clamp_ray = corners[i] - last_valid_terrain_point;
-                            let mut clamp_angle = petir::Real::asin((clamp_ray.z / clamp_ray.length()) as f64) as f32;
+                            let mut clamp_angle = super::double_math::c_asin(clamp_ray.z / clamp_ray.length());
                             if clamp_angle >= (PI / 2.0) || clamp_angle <= 0.0 {
                                 clamp_angle = OVERHANGING_OBJECT_CLAMP_ANGLE; // clamp to about 89 degrees or close to vertical lightpos.
                             }
-                            let tan_angle = petir::Real::tan(clamp_angle as f64) as f32;
+                            let tan_angle = super::double_math::c_tan(clamp_angle);
                             if tan_angle > self.shadow_length_scale {
                                 self.set_shadow_length_scale(tan_angle); // update the clamp angle to shorted shadow enough so this corner on flat ground.
                             }
@@ -1923,7 +1922,7 @@ impl W3DVolumetricShadowManager {
         let size_x = shadow_info.map_or(0.0, |i| i.size_x); // upstream dereferences without a NULL check
         if size_x != 0.0 {
             // need to adjust sun elevation for this model in order to limit shadow length
-            sun_elevation_angle_tan = petir::Real::tan((size_x / 180.0 * PI) as f64) as f32;
+            sun_elevation_angle_tan = super::double_math::c_tan(size_x / 180.0 * PI);
         }
 
         shadow.set_shadow_length_scale(sun_elevation_angle_tan);
