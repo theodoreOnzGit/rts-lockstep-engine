@@ -7,6 +7,7 @@ pub mod ip_enumeration;
 pub mod lan_api;
 pub mod lan_api_handlers;
 pub mod lan_game_info;
+pub mod nat;
 pub mod net_command_msg;
 pub mod connection;
 pub mod connection_manager;
