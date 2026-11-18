@@ -12,3 +12,6 @@ pub mod misc_object_accessors;
 pub mod partition_manager;
 pub mod physics_update;
 pub mod network;
+pub mod game_message_parser;
+pub mod file_transfer;
+pub mod chat;
