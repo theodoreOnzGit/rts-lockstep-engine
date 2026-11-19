@@ -385,6 +385,18 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
         }
     }
 
+    /// Differential-test hooks (#215): set `m_localSlot` and `m_connections[slot]` without `parseUserList`.
+    #[doc(hidden)]
+    pub fn debug_set_local_slot(&mut self, slot: u32) {
+        self.local_slot = slot;
+    }
+
+    /// See [`Self::debug_set_local_slot`].
+    #[doc(hidden)]
+    pub fn debug_set_connection(&mut self, slot: usize, c: Option<Connection>) {
+        self.connections[slot] = c;
+    }
+
     /// `getLocalPlayerID`.
     pub fn get_local_player_id(&self) -> u32 {
         self.local_slot

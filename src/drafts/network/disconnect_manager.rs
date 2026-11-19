@@ -1,4 +1,13 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): the members that need no network match the upstream C++ on 6,000 operation sequences (test:
+//! tests/differential_draft_conn.rs): `new`, `init`, the ping getters, `apply_disconnect_vote`, `next_frame`, `all_commands_ready`,
+//! `allowed_to_continue`, `translated_slot_position`, `untranslated_slot_position`, `reset_player_timeouts`, `reset_player_timeout`,
+//! `reset_packet_router_timeout`, `has_player_timed_out`, `is_player_voted_out`, `is_player_in_game`, `get_max_disconnect_frame`,
+//! `player_has_advanced_a_frame`, `count_votes_for_player`, `reset_players_votes` (the surroundings, the menu, the clock and the game
+//! frame, are stand-ins on both sides). Inputs left out: out-of-range slots upstream indexes arrays with (the draft guards them), and
+//! `all_commands_ready` with the local slot unset. NOT covered (they send commands or read the connections' state): `update`,
+//! `update_disconnect_status`, `update_wait_for_packet_router`, the seven `process_*`, `send_keep_alive`, `populate_disconnect_screen`,
+//! `turn_on_screen`, `disconnect_player`, `send_disconnect_command`, `send_vote_command`, `vote_for_player_disconnect`,
+//! `recalculate_packet_router_index`, `all_on_same_frame`, `is_local_player_next_packet_router`, `send_player_destruct`.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/DisconnectManager.h
@@ -15,6 +24,7 @@
 //! `TheGameInfo` and `ThePinger` are the connection manager's [`ConnectionManagerHost`].
 
 use super::connection_manager::{ConnectionManager, ConnectionManagerHost};
+use crate::logic::modules::plant;
 use super::net_command_msg::{NetCommandMsg, NetCommandMsgPtr, NetCommandType, MAX_SLOTS, PlayerLeaveCode};
 use super::net_command_ref::NetCommandRef;
 use super::network_util::{does_command_require_a_command_id, generate_next_command_id};
@@ -85,6 +95,49 @@ impl Default for DisconnectManager {
 }
 
 impl DisconnectManager {
+    /// Differential-test accessor (#215): the members the C++ test dumps, as words, in its order.
+    #[doc(hidden)]
+    pub fn debug_words(&self) -> Vec<u32> {
+        let mut o = Vec::new();
+        let push64 = |o: &mut Vec<u32>, v: i64| {
+            o.push(v as u32);
+            o.push(((v as u64) >> 32) as u32);
+        };
+        o.push(self.last_frame);
+        push64(&mut o, self.last_frame_time);
+        o.push(match self.disconnect_state {
+            DisconnectStateType::ScreenOn => 0,
+            DisconnectStateType::ScreenOff => 1,
+        });
+        push64(&mut o, self.packet_router_timeout);
+        for t in self.player_timeouts.iter() {
+            push64(&mut o, *t);
+        }
+        for i in 0..SLOTS {
+            for j in 0..SLOTS {
+                o.push(self.player_votes[i][j].vote as u32);
+                o.push(self.player_votes[i][j].frame);
+            }
+        }
+        for i in 0..SLOTS {
+            o.push(self.disconnect_frames[i]);
+            o.push(self.disconnect_frames_received[i] as u32);
+        }
+        push64(&mut o, self.time_of_disconnect_screen_on);
+        o.push(self.pings_sent as u32);
+        o.push(self.pings_recieved as u32);
+        o.push(self.ping_frame);
+        o.push(self.current_packet_router_index);
+        push64(&mut o, self.last_keep_alive_send_time);
+        o
+    }
+
+    /// Differential-test hook (#215): `m_disconnectState = DISCONNECTSTATETYPE_SCREENON`.
+    #[doc(hidden)]
+    pub fn debug_force_screen_on(&mut self) {
+        self.disconnect_state = DisconnectStateType::ScreenOn;
+    }
+
     /// `DisconnectManager::DisconnectManager()` (DisconnectManager.cpp:40).
     pub fn new() -> DisconnectManager {
         DisconnectManager {
@@ -112,7 +165,7 @@ impl DisconnectManager {
     pub fn init<H: ConnectionManagerHost>(&mut self, host: &mut H) {
         host.disconnect_menu_hide_screen(); // make sure the screen starts out hidden
         self.last_frame = 0;
-        self.last_frame_time = -1;
+        self.last_frame_time = if plant(15105) { 0 } else { -1 };
         self.last_keep_alive_send_time = -1;
         self.disconnect_state = DisconnectStateType::ScreenOff;
         self.current_packet_router_index = 0;
@@ -427,12 +480,15 @@ impl DisconnectManager {
         if slot < 0 || slot >= MAX_SLOTS || from_slot < 0 || from_slot >= MAX_SLOTS {
             return;
         }
+        let early_votes = self.count_votes_for_player(slot, conn.host.game_frame());
         self.player_votes[slot as usize][from_slot as usize].vote = true;
-        self.player_votes[slot as usize][from_slot as usize].frame = frame;
-        let num_votes = self.count_votes_for_player(slot, conn.host.game_frame());
+        if !plant(15100) {
+            self.player_votes[slot as usize][from_slot as usize].frame = frame;
+        }
+        let num_votes = if plant(15108) { early_votes } else { self.count_votes_for_player(slot, conn.host.game_frame()) };
         let trans_slot = self.translated_slot_position(slot, conn.get_local_player_id() as i32);
         if trans_slot != -1 {
-            conn.host.disconnect_menu_update_votes(trans_slot, num_votes);
+            conn.host.disconnect_menu_update_votes(if plant(15107) { slot } else { trans_slot }, num_votes);
         }
     }
 
@@ -440,7 +496,9 @@ impl DisconnectManager {
     pub fn next_frame<H: ConnectionManagerHost>(&mut self, frame: u32, conn: &mut ConnectionManager<H>) {
         self.last_frame = frame;
         self.last_frame_time = conn.host.time_get_time() as i64;
-        self.reset_player_timeouts(conn);
+        if !plant(15103) {
+            self.reset_player_timeouts(conn);
+        }
     }
 
     /// `DisconnectManager::allCommandsReady` (DisconnectManager.cpp:435): all commands arrived, so the screen goes
@@ -460,7 +518,11 @@ impl DisconnectManager {
             let local = conn.get_local_player_id() as usize;
             for i in 0..SLOTS {
                 if local < SLOTS {
-                    self.player_votes[i][local].vote = false;
+                    if plant(15102) {
+                        self.player_votes[local][i].vote = false;
+                    } else {
+                        self.player_votes[i][local].vote = false;
+                    }
                 }
             }
             self.time_of_disconnect_screen_on = 0;
@@ -470,7 +532,7 @@ impl DisconnectManager {
     /// `DisconnectManager::allowedToContinue` (DisconnectManager.cpp:480): the next frame may go only while the
     /// screen is off.
     pub fn allowed_to_continue(&self) -> bool {
-        self.disconnect_state == DisconnectStateType::ScreenOff
+        (self.disconnect_state == DisconnectStateType::ScreenOff) != plant(15106)
     }
 
     /// `sendKeepAlive` (DisconnectManager.cpp:490): at most every 500 ms, to everyone but the local player.
@@ -506,7 +568,7 @@ impl DisconnectManager {
     /// `translatedSlotPosition` (DisconnectManager.cpp:525): the slot's position with the local player's slot
     /// taken out (-1 for the local player).
     pub fn translated_slot_position(&self, slot: i32, local_slot: i32) -> i32 {
-        if slot < local_slot {
+        if if plant(15092) { slot <= local_slot } else { slot < local_slot } {
             return slot;
         }
         if slot == local_slot {
@@ -520,7 +582,7 @@ impl DisconnectManager {
         if slot == -1 {
             return local_slot;
         }
-        if slot < local_slot {
+        if if plant(15093) { slot <= local_slot } else { slot < local_slot } {
             return slot;
         }
         slot + 1
@@ -531,7 +593,7 @@ impl DisconnectManager {
         let now = conn.host.time_get_time();
         for i in 0..MAX_SLOTS {
             let slot = self.translated_slot_position(i, conn.get_local_player_id() as i32);
-            if slot != -1 {
+            if slot != -1 && !(plant(15104) && slot == 0) {
                 self.reset_player_timeout(slot, now);
             }
         }
@@ -701,7 +763,7 @@ impl DisconnectManager {
         }
         let timeout = conn.host.global_data().network_player_timeout_time as i64;
         let new_time = timeout - (conn.host.time_get_time() as i64 - self.player_timeouts[slot as usize]);
-        new_time <= 0
+        if plant(15097) { new_time < 0 } else { new_time <= 0 }
     }
 
     /// `sendPlayerDestruct` (DisconnectManager.cpp:757): the destroy-player command runs one frame after the
@@ -728,13 +790,13 @@ impl DisconnectManager {
         }
         let trans_slot = self.untranslated_slot_position(slot, conn.get_local_player_id() as i32);
         let num_votes = self.count_votes_for_player(trans_slot, conn.host.game_frame());
-        num_votes >= conn.get_num_players() - 1
+        if plant(15098) { num_votes > conn.get_num_players() - 1 } else { num_votes >= conn.get_num_players() - 1 }
     }
 
     /// `getMaxDisconnectFrame` (DisconnectManager.cpp:791).
     pub fn get_max_disconnect_frame(&self) -> u32 {
         let mut retval = 0;
-        for i in 0..SLOTS {
+        for i in 0..if plant(15096) { SLOTS - 1 } else { SLOTS } {
             if self.disconnect_frames[i] > retval {
                 retval = self.disconnect_frames[i];
             }
@@ -748,7 +810,7 @@ impl DisconnectManager {
         if trans_slot < 0 || trans_slot >= MAX_SLOTS || !conn.is_player_connected(trans_slot) {
             return false;
         }
-        if self.is_player_voted_out(slot, conn) {
+        if !plant(15099) && self.is_player_voted_out(slot, conn) {
             return false;
         }
         if self.has_player_timed_out(slot, conn) {
@@ -764,7 +826,9 @@ impl DisconnectManager {
         }
         if frame >= self.disconnect_frames[slot as usize] {
             // in case we get a disconnect frame command after this is called
-            self.disconnect_frames[slot as usize] = frame;
+            if !plant(15095) {
+                self.disconnect_frames[slot as usize] = frame;
+            }
             self.disconnect_frames_received[slot as usize] = false;
         }
     }
@@ -778,7 +842,7 @@ impl DisconnectManager {
         let mut retval = 0;
         for i in 0..SLOTS {
             let v = &self.player_votes[slot as usize][i];
-            if v.vote && v.frame == game_frame {
+            if v.vote && (if plant(15094) { v.frame <= game_frame } else { v.frame == game_frame }) {
                 retval += 1;
             }
         }
@@ -796,7 +860,7 @@ impl DisconnectManager {
             return;
         }
         for i in 0..SLOTS {
-            if self.player_votes[i][player_id as usize].frame <= frame {
+            if if plant(15101) { self.player_votes[i][player_id as usize].frame < frame } else { self.player_votes[i][player_id as usize].frame <= frame } {
                 self.player_votes[i][player_id as usize].vote = false;
             }
         }

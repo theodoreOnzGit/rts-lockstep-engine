@@ -1,4 +1,7 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): `process_wrapper`, `get_percent_complete`, `get_ready_commands` and the node's chunk copy,
+//! completeness and percentage match the C++ through the `wrap` operation of tests/differential_draft_netpkt.rs (one wrapped command
+//! split into chunks, fed in a shuffled order with repeats, the percentage asked after each chunk, the ready commands compared).
+//! NOT covered: `init`/`reset` after chunks were stored, and several wrapped commands in one list.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/NetCommandWrapperList.h
