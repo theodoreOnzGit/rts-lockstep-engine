@@ -42,9 +42,13 @@
 mod support;
 
 use rts_lockstep_engine::common::ascii_string::AsciiString;
+use rts_lockstep_engine::common::global_data::GlobalData;
+use rts_lockstep_engine::common::unicode_string::UnicodeString;
 use rts_lockstep_engine::drafts::network::connection::Connection;
+use rts_lockstep_engine::drafts::network::connection_manager::{ChatSender, ConnectionManager, ConnectionManagerHost, PingResponse};
+use rts_lockstep_engine::drafts::network::disconnect_manager::DisconnectManager;
 use rts_lockstep_engine::drafts::network::net_command_msg::{
-    NetCommandMsg, NetCommandMsgPtr, NetCommandType, TransportMessage, MAX_MESSAGES, MAX_MESSAGE_LEN,
+    NetCommandMsg, NetCommandMsgPtr, NetCommandType, NetworkFrameLimits, TransportMessage, MAX_MESSAGES, MAX_MESSAGE_LEN, MAX_SLOTS,
     MAX_TRANSPORT_STATISTICS_SECONDS,
 };
 use rts_lockstep_engine::drafts::network::net_command_ref::NetCommandRef;
@@ -58,6 +62,7 @@ use support::{Check, Gen};
 extern "C" {
     fn cn_run(input: *const u32, nin: i32, out: *mut u32, cap: i32) -> i32;
     fn tr_run(input: *const u32, nin: i32, out: *mut u32, cap: i32) -> i32;
+    fn di_run(input: *const u32, nin: i32, out: *mut u32, cap: i32) -> i32;
 }
 
 static CPP: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -67,6 +72,8 @@ fn cpp_run(which: u32, input: &[u32]) -> Vec<u32> {
     let n = unsafe {
         if which == 0 {
             cn_run(input.as_ptr(), input.len() as i32, out.as_mut_ptr(), out.len() as i32)
+        } else if which == 2 {
+            di_run(input.as_ptr(), input.len() as i32, out.as_mut_ptr(), out.len() as i32)
         } else {
             tr_run(input.as_ptr(), input.len() as i32, out.as_mut_ptr(), out.len() as i32)
         }
@@ -903,6 +910,313 @@ fn the_transport_matches_upstream() {
         chk.eq(r, c, || format!("transport case {i}"));
     }
     println!("{n} transport programs");
+    if planted() {
+        chk.finish_planted();
+    } else {
+        chk.finish();
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// disconnect manager
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The services of the disconnect manager's surroundings: what the C++ wrapper's stand-ins do (log the menu and network calls,
+/// a settable clock, game frame and time-out time). Everything else the trait names is not reached by the functions tested.
+struct LogHost {
+    now: u32,
+    frame: u32,
+    global: GlobalData,
+    log: Vec<u32>,
+}
+
+impl ConnectionManagerHost for LogHost {
+    fn time_get_time(&self) -> u32 {
+        self.now
+    }
+    fn game_frame(&self) -> u32 {
+        self.frame
+    }
+    fn game_logic_process_progress(&mut self, _player_id: u32, _percentage: u8) {}
+    fn game_logic_process_progress_complete(&mut self, _player_id: u32) {}
+    fn game_logic_time_out_game_start(&mut self) {}
+    fn global_data(&self) -> &GlobalData {
+        &self.global
+    }
+    fn network_execution_frame(&self) -> u32 {
+        0
+    }
+    fn notify_others_of_current_frame(&mut self) {}
+    fn notify_others_of_new_frame(&mut self, frame: u32) {
+        self.log.push(102);
+        self.log.push(frame);
+    }
+    fn disconnect_menu_hide_screen(&mut self) {
+        self.log.push(100);
+    }
+    fn disconnect_menu_show_screen(&mut self) {}
+    fn disconnect_menu_set_player_name(&mut self, _slot: i32, _name: &UnicodeString) {}
+    fn disconnect_menu_update_votes(&mut self, slot: i32, votes: i32) {
+        self.log.push(101);
+        self.log.push(slot as u32);
+        self.log.push(votes as u32);
+    }
+    fn disconnect_menu_remove_player(&mut self, _slot: i32, _name: &UnicodeString) {}
+    fn disconnect_menu_set_player_timeout_time(&mut self, _slot: i32, _time: i32) {}
+    fn disconnect_menu_hide_packet_router_timeout(&mut self) {}
+    fn disconnect_menu_show_chat(&mut self, _text: &UnicodeString) {}
+    fn in_game_ui_message(&mut self, _text: &UnicodeString) {}
+    fn in_game_ui_message_color(&mut self, _color: i32, _text: &UnicodeString) {}
+    fn in_game_ui_player_left_game(&mut self, _name: &UnicodeString) {}
+    fn audio_add_event(&mut self, _name: &[u8]) {}
+    fn chat_sender(&mut self, _player_id: u32) -> ChatSender {
+        ChatSender::NotFound
+    }
+    fn local_player_is_observer(&mut self) -> bool {
+        false
+    }
+    fn game_info_slot_is_muted(&mut self, _slot: u32) -> bool {
+        false
+    }
+    fn game_info_slot_last_frame_in_game(&mut self, _slot: i32) -> Option<u32> {
+        None
+    }
+    fn game_info_slot_set_last_frame_in_game(&mut self, _slot: i32, _frame: u32) {}
+    fn game_info_mark_slot_as_disconnected(&mut self, _slot: i32) {}
+    fn recorder_log_player_disconnect(&mut self, _name: &UnicodeString, _slot: i32) {}
+    fn populate_in_game_diplomacy_popup(&mut self) {}
+    fn file_exists(&mut self, _path: &[u8]) -> bool {
+        false
+    }
+    fn file_write(&mut self, _path: &[u8], _data: &[u8]) -> bool {
+        false
+    }
+    fn local_file_read_nonempty(&mut self, _path: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+    fn lan_on_chat_system(&mut self, _text: &UnicodeString) {}
+    fn portable_map_path_to_real(&self, path: &[u8]) -> Vec<u8> {
+        path.to_vec()
+    }
+    fn real_map_path_to_portable(&self, path: &[u8]) -> Vec<u8> {
+        path.to_vec()
+    }
+    fn pinger_available(&self) -> bool {
+        false
+    }
+    fn ping_server_count(&self) -> usize {
+        0
+    }
+    fn ping_server_hostname(&self, _index: usize) -> String {
+        String::new()
+    }
+    fn ping_add_request(&mut self, _hostname: &str, _repetitions: i32, _timeout: i32) {}
+    fn ping_get_response(&mut self) -> Option<PingResponse> {
+        None
+    }
+}
+
+fn rust_disconnect(input: &[u32]) -> Vec<u32> {
+    let mut r = Rd { w: input, i: 1 };
+    let mut o = Vec::new();
+    let host = LogHost { now: 0, frame: 0, global: GlobalData::default(), log: Vec::new() };
+    let mut conn = ConnectionManager::new(host, NetworkFrameLimits::defaults());
+    conn.host.log.clear();
+    conn.debug_set_local_slot(0);
+    conn.host.global.network_player_timeout_time = 0;
+    let mut d = DisconnectManager::new();
+    let nops = r.next();
+    for _ in 0..nops {
+        let op = r.next();
+        match op {
+            0 => d.init(&mut conn.host),
+            1 => conn.host.now = r.next(),
+            2 => conn.host.frame = r.next(),
+            3 => conn.debug_set_local_slot(r.next()),
+            4 => {
+                let (slot, mode) = (r.next() as usize, r.next());
+                let c = match mode {
+                    0 => None,
+                    1 => Some(Connection::new()),
+                    _ => {
+                        let mut c = Connection::new();
+                        c.set_quitting(conn.host.now);
+                        Some(c)
+                    }
+                };
+                conn.debug_set_connection(slot, c);
+            }
+            5 => conn.host.global.network_player_timeout_time = r.next(),
+            6 => d.next_frame(r.next(), &mut conn),
+            7 => d.all_commands_ready(r.next(), &mut conn, true),
+            8 => o.push(d.allowed_to_continue() as u32),
+            9 => {
+                let s = r.next() as i32;
+                d.player_has_advanced_a_frame(s, r.next());
+            }
+            10 => {
+                let (s, f, from) = (r.next() as i32, r.next(), r.next() as i32);
+                d.apply_disconnect_vote(s, f, from, &mut conn);
+            }
+            11 => {
+                let (p, f) = (r.next() as i32, r.next());
+                d.reset_players_votes(p, f, &mut conn);
+            }
+            12 => {
+                let s = r.next() as i32;
+                o.push(d.count_votes_for_player(s, conn.host.frame) as u32);
+            }
+            13 => o.push(d.get_max_disconnect_frame()),
+            14 => {
+                let (s, l) = (r.next() as i32, r.next() as i32);
+                o.push(d.translated_slot_position(s, l) as u32);
+                o.push(d.untranslated_slot_position(s, l) as u32);
+            }
+            15 => {
+                let s = r.next() as i32;
+                d.reset_player_timeout(s, conn.host.now);
+            }
+            16 => d.reset_packet_router_timeout(conn.host.now),
+            17 => {
+                let s = r.next() as i32;
+                o.push(d.has_player_timed_out(s, &mut conn) as u32);
+            }
+            18 => {
+                let s = r.next() as i32;
+                o.push(d.is_player_voted_out(s, &mut conn) as u32);
+            }
+            19 => {
+                let s = r.next() as i32;
+                o.push(d.is_player_in_game(s, &mut conn) as u32);
+            }
+            20 => d.reset_player_timeouts(&mut conn),
+            21 => d.debug_force_screen_on(),
+            22 => {
+                o.push(d.get_ping_frame());
+                o.push(d.get_pings_sent() as u32);
+                o.push(d.get_pings_recieved() as u32);
+            }
+            23 => {
+                let s = r.next() as i32;
+                o.push(conn.get_num_players() as u32);
+                o.push(conn.get_local_player_id());
+                o.push(conn.is_player_connected(s) as u32);
+            }
+            _ => {}
+        }
+        o.extend(conn.host.log.drain(..));
+        o.push(0xA5A5A5A5);
+        o.extend(d.debug_words());
+    }
+    o
+}
+
+fn gen_disconnect(g: &mut Gen) -> Vec<u32> {
+    let slots = MAX_SLOTS as u32;
+    let mut ops: Vec<u32> = vec![0]; // init first: the constructor leaves the disconnect state and frames to init
+    let mut n = 1u32;
+    let mut now = g.below(100);
+    let mut local = 0u32;
+    let mut timeout = 0u32;
+    ops.extend([1, now]);
+    n += 1;
+    let nops = 10 + g.below(80);
+    while n < nops {
+        let c = g.below(100);
+        // times only move forward; deltas aim at the time-out boundary
+        let mut tick = |ops: &mut Vec<u32>, n: &mut u32, now: &mut u32, g: &mut Gen, timeout: u32| {
+            if g.below(2) == 0 {
+                let ds = [0u32, 1, 2, timeout.saturating_sub(1), timeout, timeout + 1, 1000, 60000];
+                *now += ds[g.below(8) as usize];
+                ops.extend([1, *now]);
+                *n += 1;
+            }
+        };
+        let slot = |g: &mut Gen| g.below(slots);
+        match c {
+            0..=3 => ops.push(0),
+            4..=7 => {
+                tick(&mut ops, &mut n, &mut now, g, timeout);
+            }
+            8..=11 => {
+                ops.extend([2, g.below(6)]);
+            }
+            12..=15 => {
+                local = if g.below(12) == 0 { u32::MAX } else { slot(g) };
+                ops.extend([3, local]);
+            }
+            16..=22 => {
+                let s = slot(g);
+                ops.extend([4, s, g.below(3)]);
+            }
+            23..=25 => {
+                timeout = [0u32, 1, 5, 100, 60000][g.below(5) as usize];
+                ops.extend([5, timeout]);
+            }
+            26..=30 => {
+                tick(&mut ops, &mut n, &mut now, g, timeout);
+                ops.extend([6, g.below(8)]);
+            }
+            31..=36 => {
+                if local < slots {
+                    ops.extend([7, g.below(8)]);
+                } else {
+                    ops.extend([21]);
+                }
+            }
+            37..=39 => ops.push(21),
+            40..=42 => ops.push(8),
+            43..=48 => ops.extend([9, slot(g), g.below(8)]),
+            49..=58 => ops.extend([10, slot(g), g.below(6), slot(g)]),
+            59..=63 => ops.extend([11, slot(g), g.below(8)]),
+            64..=67 => ops.extend([12, g.below(slots + 4).wrapping_sub(2)]),
+            68..=69 => ops.push(13),
+            70..=73 => ops.extend([14, g.below(slots + 2).wrapping_sub(1), g.below(slots + 2).wrapping_sub(1)]),
+            74..=76 => ops.extend([15, g.below(slots - 1)]),
+            77..=78 => {
+                tick(&mut ops, &mut n, &mut now, g, timeout);
+                ops.push(16);
+            }
+            79..=85 => {
+                tick(&mut ops, &mut n, &mut now, g, timeout);
+                ops.extend([17, if g.below(8) == 0 { u32::MAX } else { g.below(slots - 1) }]);
+            }
+            86..=90 => ops.extend([18, g.below(slots + 1).wrapping_sub(1)]),
+            91..=95 => {
+                tick(&mut ops, &mut n, &mut now, g, timeout);
+                ops.extend([19, if g.below(8) == 0 { u32::MAX } else { g.below(slots - 1) }]);
+            }
+            96 => {
+                tick(&mut ops, &mut n, &mut now, g, timeout);
+                ops.push(20);
+            }
+            97 => ops.push(22),
+            _ => ops.extend([23, slot(g)]),
+        }
+        n += 1;
+    }
+    let mut v = vec![2, n];
+    v.extend(ops);
+    v
+}
+
+#[test]
+fn the_disconnect_manager_matches_upstream() {
+    let n = cases("DISCONNECT_CASES", 6000);
+    let mut g = Gen::new(0x215_2003);
+    let mut chk = Check::new("DisconnectManager operations");
+    for i in 0..n {
+        let v = gen_disconnect(&mut g);
+        let _one = CPP.lock().unwrap_or_else(|e| e.into_inner());
+        let c = cpp_run(2, &v);
+        let r = rust_disconnect(&v);
+        drop(_one);
+        if r != c {
+            show("disconnect case", i, &r, &c);
+        }
+        chk.eq(r, c, || format!("disconnect case {i}"));
+    }
+    println!("{n} disconnect programs");
     if planted() {
         chk.finish_planted();
     } else {

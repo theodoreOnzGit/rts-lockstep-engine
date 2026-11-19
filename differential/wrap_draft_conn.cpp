@@ -14,8 +14,15 @@
 ** zeroing and a null socket), `WSACleanup` (a no-op: `m_winsockInit` is never set), and User (User.h's inline members only; User.cpp's
 ** operators are not used by Connection).
 **
-** Entry points (extern "C", tests/differential_draft_conn.rs): cn_run (a Connection against a Transport) and tr_run (the Transport
-** against the socket stand-in); the op in in[0]. The encodings are at the two functions. */
+** and for the disconnect manager (di_run): DisconnectManager.cpp's members that need no network, cut verbatim by build.rs (the constructor,
+** init, the ping getters, applyDisconnectVote, nextFrame, allCommandsReady, allowedToContinue, the slot translations, the timeout
+** resets, hasPlayerTimedOut, isPlayerVotedOut, getMaxDisconnectFrame, isPlayerInGame, playerHasAdvancedAFrame, countVotesForPlayer,
+** resetPlayersVotes) on ConnectionManager.h with ConnectionManager.cpp's isPlayerConnected, getLocalPlayerID and getNumPlayers (cut
+** verbatim); stand-ins: the disconnect menu (hideScreen, updateVotes), `TheNetwork->notifyOthersOfNewFrame`, `TheGameLogic->getFrame()`
+** and `TheGlobalData->m_networkPlayerTimeoutTime`, each logging into the output or settable by the test.
+**
+** Entry points (extern "C", tests/differential_draft_conn.rs): cn_run (a Connection against a Transport), tr_run (the Transport
+** against the socket stand-in) and di_run (the disconnect manager); the op in in[0]. The encodings are at the three functions. */
 #define GameMessage MsTestGameMessage
 #define GameMessageArgument MsTestGameMessageArgument
 #define GameMessageList MsTestGameMessageList
@@ -66,6 +73,8 @@ static void WSACleanup() {}
 #include "GameNetwork/NetCommandRef.h"
 #include "GameNetwork/Transport.h"
 #include "GameNetwork/Connection.h"
+#include "GameNetwork/ConnectionManager.h"
+#include "GameNetwork/DisconnectManager.h"
 /* crc.h's release CRC is an MSVC `_asm` block that g++ cannot compile; _DEBUG (for these two lines only) selects its C++ class, the same
 ** loop (tests/differential_crc.rs checks the Rust against both) */
 #define _DEBUG 1
@@ -91,6 +100,25 @@ struct InitTransport : public Transport
 #include "transport_init_tail.inc"
 	}
 };
+/* the disconnect manager's surroundings: stand-ins that log what they are asked into g_hostLog */
+static std::vector<unsigned> g_hostLog;
+static unsigned g_gameFrame = 0;
+struct StDisconnectMenu
+{
+	void hideScreen() { g_hostLog.push_back(100); }
+	void updateVotes(Int slot, Int votes) { g_hostLog.push_back(101); g_hostLog.push_back((unsigned)slot); g_hostLog.push_back((unsigned)votes); }
+};
+/* NetworkDefs.h declares `extern NetworkInterface *TheNetwork`; the class is the stand-in */
+class NetworkInterface { public: void notifyOthersOfNewFrame(UnsignedInt frame) { g_hostLog.push_back(102); g_hostLog.push_back(frame); } };
+struct StGameLogic { UnsignedInt getFrame() { return g_gameFrame; } };
+struct StGlobalData { Int m_networkPlayerTimeoutTime; };
+static StDisconnectMenu g_menu; static NetworkInterface g_network; static StGameLogic g_logic; static StGlobalData g_global;
+static StDisconnectMenu *TheDisconnectMenu = &g_menu;
+NetworkInterface *TheNetwork = &g_network;
+static StGameLogic *TheGameLogic = &g_logic;
+static StGlobalData *TheGlobalData = &g_global;
+#include "connection_manager_cuts.inc"   /* build.rs's cut (OUT_DIR/network2_gen) */
+#include "disconnect_cuts.inc"           /* build.rs's cut (OUT_DIR/network2_gen) */
 Transport::Transport(void) { m_winsockInit = false; m_udpsock = NULL; }
 Transport::~Transport(void) {}
 #undef protected
@@ -359,6 +387,79 @@ extern "C" int tr_run(const unsigned *in, int nin, unsigned *out, int cap)
 	}
 	delete t->m_udpsock;
 	t->m_udpsock = NULL;
+	if ((int)o.size() > cap) return (int)o.size();
+	memcpy(out, o.data(), o.size() * sizeof(unsigned));
+	return (int)o.size();
+}
+
+namespace {
+void dumpDisconnect(Words &o, DisconnectManager *d)
+{
+	emit(o, d->m_lastFrame); emit64(o, d->m_lastFrameTime); emit(o, (unsigned)d->m_disconnectState); emit64(o, d->m_packetRouterTimeout);
+	for (int i = 0; i < MAX_SLOTS - 1; ++i) emit64(o, d->m_playerTimeouts[i]);
+	for (int i = 0; i < MAX_SLOTS; ++i) for (int j = 0; j < MAX_SLOTS; ++j) { emit(o, d->m_playerVotes[i][j].vote); emit(o, d->m_playerVotes[i][j].frame); }
+	for (int i = 0; i < MAX_SLOTS; ++i) { emit(o, d->m_disconnectFrames[i]); emit(o, d->m_disconnectFramesReceived[i]); }
+	emit64(o, d->m_timeOfDisconnectScreenOn); emit(o, (unsigned)d->m_pingsSent); emit(o, (unsigned)d->m_pingsRecieved); emit(o, d->m_pingFrame);
+	emit(o, d->m_currentPacketRouterIndex); emit64(o, d->m_lastKeepAliveSendTime);
+}
+}
+
+/* in: [2, nops, ops]; each op: [code, args...]; the state and what the stand-ins were asked are logged after every op.
+**   0 init   1 setTime(t)   2 setGameFrame(f)   3 setLocalSlot(slot, 32 bits)   4 setConnection(slot, 0 none / 1 present / 2 quitting)
+**   5 setTimeoutTime(t)   6 nextFrame(frame)   7 allCommandsReady(frame)   8 allowedToContinue   9 playerHasAdvancedAFrame(slot, frame)
+**   10 applyDisconnectVote(slot, frame, from)   11 resetPlayersVotes(player, frame)   12 countVotesForPlayer(slot)
+**   13 getMaxDisconnectFrame   14 translated and untranslatedSlotPosition(slot, local)   15 resetPlayerTimeout(slot)
+**   16 resetPacketRouterTimeout   17 hasPlayerTimedOut(slot)   18 isPlayerVotedOut(slot)   19 isPlayerInGame(slot)
+**   20 resetPlayerTimeouts   21 the screen state forced on   22 the ping getters   23 getNumPlayers, isPlayerConnected(slot) */
+extern "C" int di_run(const unsigned *in, int nin, unsigned *out, int cap)
+{
+	Rd r = {in, nin, 1};
+	Words o;
+	g_hostLog.clear(); g_now = 0; g_gameFrame = 0; g_global.m_networkPlayerTimeoutTime = 0;
+	void *mem = calloc(1, sizeof(DisconnectManager));
+	DisconnectManager *d = new (mem) DisconnectManager;
+	ConnectionManager *cm = (ConnectionManager *)calloc(1, sizeof(ConnectionManager));
+	cm->m_localSlot = 0;
+	unsigned nops = r.next();
+	for (unsigned k = 0; k < nops; ++k) {
+		unsigned op = r.next();
+		switch (op) {
+		case 0: d->init(); break;
+		case 1: g_now = r.next(); break;
+		case 2: g_gameFrame = r.next(); break;
+		case 3: cm->m_localSlot = r.next(); break;
+		case 4: {
+			unsigned slot = r.next(), mode = r.next();
+			if (cm->m_connections[slot]) { delete cm->m_connections[slot]; cm->m_connections[slot] = NULL; }
+			if (mode != 0) { Connection *c = new Connection; if (mode == 2) c->setQuitting(); cm->m_connections[slot] = c; }
+			break;
+		}
+		case 5: g_global.m_networkPlayerTimeoutTime = (Int)r.next(); break;
+		case 6: d->nextFrame(r.next(), cm); break;
+		case 7: d->allCommandsReady(r.next(), cm); break;
+		case 8: emit(o, d->allowedToContinue()); break;
+		case 9: { unsigned s = r.next(); d->playerHasAdvancedAFrame((Int)s, r.next()); break; }
+		case 10: { unsigned s = r.next(), f = r.next(), from = r.next(); d->applyDisconnectVote((Int)s, f, (Int)from, cm); break; }
+		case 11: { unsigned p = r.next(), f = r.next(); d->resetPlayersVotes((Int)p, f, cm); break; }
+		case 12: emit(o, (unsigned)d->countVotesForPlayer((Int)r.next())); break;
+		case 13: emit(o, d->getMaxDisconnectFrame()); break;
+		case 14: { Int s = (Int)r.next(), l = (Int)r.next(); emit(o, (unsigned)d->translatedSlotPosition(s, l)); emit(o, (unsigned)d->untranslatedSlotPosition(s, l)); break; }
+		case 15: d->resetPlayerTimeout((Int)r.next()); break;
+		case 16: d->resetPacketRouterTimeout(); break;
+		case 17: emit(o, d->hasPlayerTimedOut((Int)r.next())); break;
+		case 18: emit(o, d->isPlayerVotedOut((Int)r.next(), cm)); break;
+		case 19: emit(o, d->isPlayerInGame((Int)r.next(), cm)); break;
+		case 20: d->resetPlayerTimeouts(cm); break;
+		case 21: d->m_disconnectState = DISCONNECTSTATETYPE_SCREENON; break;
+		case 22: emit(o, d->getPingFrame()); emit(o, (unsigned)d->getPingsSent()); emit(o, (unsigned)d->getPingsRecieved()); break;
+		case 23: { emit(o, (unsigned)cm->getNumPlayers()); emit(o, cm->getLocalPlayerID()); emit(o, cm->isPlayerConnected((Int)r.next())); break; }
+		default: break;
+		}
+		for (size_t i = 0; i < g_hostLog.size(); ++i) emit(o, g_hostLog[i]);
+		g_hostLog.clear();
+		emit(o, 0xA5A5A5A5u);
+		dumpDisconnect(o, d);
+	}
 	if ((int)o.size() > cap) return (int)o.size();
 	memcpy(out, o.data(), o.size() * sizeof(unsigned));
 	return (int)o.size();
