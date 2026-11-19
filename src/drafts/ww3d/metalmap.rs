@@ -16,6 +16,7 @@
 //! `initialize_metal_params` asserts on them (0..=1) are therefore the only check (`debug_assert` here), and
 //! `Shininess > 0.0` is asserted but `Get_Float`'s default is 0.0.
 
+use crate::logic::modules::plant;
 use crate::ww::vector3::Vector3;
 use crate::ww::wwmath;
 
@@ -73,9 +74,9 @@ pub fn initialize_normal_table() -> [Vector3; METALMAP_SIZE_2] {
         for x in 0..METALMAP_SIZE {
             let normal = &mut table[idx];
             // Set vector to point to surface of unit sphere
-            normal.set((step * x as f32) - 1.0, (step * y as f32) - 1.0, 0.0);
+            normal.set((step * x as f32) - 1.0, (step * y as f32) - (if plant(14714) { 0.5 } else { 1.0 }), 0.0);
             let mut z2 = 1.0 - ((normal.x * normal.x) + (normal.y * normal.y));
-            if z2 < 0.0 {
+            if z2 < 0.0 && !plant(14713) {
                 z2 = 0.0; // MAX(z2, 0.0f): if outside the sphere, treat as if on its edge
             }
             normal.z = petir::Real::sqrt(z2);
@@ -141,7 +142,7 @@ impl MetalMapManagerClass {
             let black = Vector3::new(0.0, 0.0, 0.0);
             for i in 0..lp {
                 let section = format!("Metal{:02}", i);
-                let cf = 0.003921568627451f32; // 1 / 255
+                let cf = if plant(14715) { 0.00390625f32 } else { 0.003921568627451f32 }; // 1 / 255
                 let p = &mut metal_params[i];
 
                 let color = ini.get_point(&section, "AmbientColor", white_tpoint);
@@ -152,8 +153,14 @@ impl MetalMapManagerClass {
                 let color = ini.get_point(&section, "DiffuseColor", white_tpoint);
                 p.diffuse_color.set(color.0 * cf, color.1 * cf, color.2 * cf);
                 // upstream clamps AmbientColor again here (see the file header)
-                update_min(&mut p.ambient_color, &white);
-                update_max(&mut p.ambient_color, &black);
+                if plant(14717) {
+                    // the "fix" the upstream authors meant: clamp the colour just read
+                    update_min(&mut p.diffuse_color, &white);
+                    update_max(&mut p.diffuse_color, &black);
+                } else {
+                    update_min(&mut p.ambient_color, &white);
+                    update_max(&mut p.ambient_color, &black);
+                }
 
                 let color = ini.get_point(&section, "SpecularColor", white_tpoint);
                 p.specular_color.set(color.0 * cf, color.1 * cf, color.2 * cf);
@@ -161,7 +168,7 @@ impl MetalMapManagerClass {
                 update_max(&mut p.ambient_color, &black);
 
                 let shininess = ini.get_float(&section, "Shininess", 0.0);
-                p.shininess = wwmath::clamp(shininess, 0.0, 127.0);
+                p.shininess = wwmath::clamp(shininess, 0.0, if plant(14716) { 128.0 } else { 127.0 });
             }
             m.initialize_metal_params(lp as i32, &metal_params);
         } else {
@@ -169,7 +176,7 @@ impl MetalMapManagerClass {
         }
 
         // WW3D::Get_Device_Resolution(w, h, bits, windowed)
-        m.use_16_bit = bits <= 16;
+        m.use_16_bit = if plant(14718) { bits < 16 } else { bits <= 16 };
         let format = if m.use_16_bit { MetalMapFormat::A4R4G4B4 } else { MetalMapFormat::A8R8G8B8 };
         let bpp = if m.use_16_bit { 2 } else { 4 };
         for i in 0..lp {
@@ -206,7 +213,7 @@ impl MetalMapManagerClass {
 
     /// `Get_Metal_Map(id)`: the texture, `None` (NULL) for an id out of range (`Add_Ref` is not modelled).
     pub fn get_metal_map(&self, id: i32) -> Option<&MetalMapTexture> {
-        if id < 0 || id >= self.map_count {
+        if id < (if plant(14725) { 1 } else { 0 }) || id >= self.map_count {
             return None;
         }
         Some(&self.textures[id as usize])
@@ -233,7 +240,9 @@ impl MetalMapManagerClass {
 
         // Calculate halfway vector
         let mut h = l + v;
-        h.normalize();
+        if !plant(14719) {
+            h.normalize();
+        }
 
         // Calculate quantities which are the same for all metal maps
         let mut n_dot_l = [0.0f32; METALMAP_SIZE_2];
@@ -259,7 +268,7 @@ impl MetalMapManagerClass {
             // If shinyness > 1, apply it to specular value array
             let mut temp_specular = [0.0f32; METALMAP_SIZE_2];
             let shinyness = cur_params.shininess;
-            let specular: &[f32; METALMAP_SIZE_2] = if shinyness > 1.0 {
+            let specular: &[f32; METALMAP_SIZE_2] = if shinyness > (if plant(14720) { 0.0 } else { 1.0 }) {
                 // VectorProcessorClass::Power: powf
                 for k in 0..METALMAP_SIZE_2 {
                     temp_specular[k] = petir::Real::powf(n_dot_h[k], shinyness);
@@ -284,22 +293,22 @@ impl MetalMapManagerClass {
             for y in 0..METALMAP_SIZE {
                 let map = &mut tex.pixels[y * pitch..(y + 1) * pitch];
                 for x in 0..METALMAP_SIZE {
-                    let mut result = ambient_color + (diffuse_color * n_dot_l[idx]) + (specular_color * specular[idx]);
+                    let mut result = ambient_color + (diffuse_color * n_dot_l[idx]) + ((if plant(14724) { diffuse_color } else { specular_color }) * specular[idx]);
                     update_min(&mut result, &white); // Clamp to white
-                    let b = wwmath::floor(result.z * 255.99) as u8; // B
+                    let b = wwmath::floor(result.z * (if plant(14723) { 256.0 } else { 255.99 })) as u8; // B
                     let g = wwmath::floor(result.y * 255.99) as u8; // G
                     let r = wwmath::floor(result.x * 255.99) as u8; // R
                     let al = 0xFFu8; // A
                     if use16 {
                         let mut tmp: u16 = (u16::from(al) & 0xf0) << 8;
-                        tmp |= (u16::from(r) & 0xf0) << 4;
+                        tmp |= (u16::from(r) & 0xf0) << (if plant(14722) { 3 } else { 4 });
                         tmp |= u16::from(g) & 0xf0;
                         tmp |= (u16::from(b) & 0xf0) >> 4;
                         map[2 * x..2 * x + 2].copy_from_slice(&tmp.to_le_bytes());
                     } else {
-                        map[4 * x] = b;
+                        map[4 * x] = if plant(14721) { r } else { b };
                         map[4 * x + 1] = g;
-                        map[4 * x + 2] = r;
+                        map[4 * x + 2] = if plant(14721) { b } else { r };
                         map[4 * x + 3] = al;
                     }
                     idx += 1;

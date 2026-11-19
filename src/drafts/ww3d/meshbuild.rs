@@ -15,6 +15,7 @@
 //!   not in the verified port; `world_info` is a placeholder trait-free closure-less flag. See [`WorldInfoStub`].
 //! - `Compute_Tangent_Basis` is declared in meshbuild.h but defined nowhere in the upstream tree: not translated.
 
+use crate::logic::modules::plant;
 use crate::ww::vector2::Vector2;
 use crate::ww::vector3::Vector3;
 
@@ -210,7 +211,8 @@ impl FaceClass {
                 if self.vert_idx[v0] == self.vert_idx[v1] {
                     return true;
                 }
-                if self.verts[v0].position.x == self.verts[v1].position.x
+                if !plant(14707)
+                    && self.verts[v0].position.x == self.verts[v1].position.x
                     && self.verts[v0].position.y == self.verts[v1].position.y
                     && self.verts[v0].position.z == self.verts[v1].position.z
                 {
@@ -320,6 +322,9 @@ fn unique_faces(faces: &[FaceClass]) -> Vec<FaceClass> {
         while let Some(i) = idx {
             if face_items_match(&items[i].0, f) {
                 found = true;
+                if plant(14700) {
+                    items[i].0 = f.clone(); // the last duplicate wins instead of the first
+                }
                 break;
             }
             idx = items[i].1;
@@ -404,7 +409,11 @@ impl VertexArrayClass {
                         if self.verts_shading_match(vert, &self.verts[tv]) && shadeindex == 0xFFFF_FFFF {
                             shadeindex = self.verts[tv].unique_index as u32;
                             // mask the "master" smoothed vertex's smoothing group with our face's smoothing group.
-                            self.verts[shadeindex as usize].shared_sm_group &= vert.sm_group;
+                            if plant(14710) {
+                                self.verts[shadeindex as usize].shared_sm_group |= vert.sm_group;
+                            } else {
+                                self.verts[shadeindex as usize].shared_sm_group &= vert.sm_group;
+                            }
                         }
                         if verts_match(&mut self.uv_splits, self.match_normals, vert, &self.verts[tv]) {
                             return self.verts[tv].unique_index;
@@ -452,11 +461,11 @@ fn verts_match(uv_splits: &mut i32, match_normals: i32, v0: &VertClass, v1: &Ver
             return false;
         }
         let dp = (v0.position - v1.position).length();
-        if dp > EPSILON {
+        if if plant(14692) { dp >= EPSILON } else { dp > EPSILON } {
             return false;
         }
         if match_normals == 0 {
-            let smgroup_match = (v0.sm_group & v1.sm_group) != 0 || v0.sm_group == v1.sm_group;
+            let smgroup_match = ((v0.sm_group & v1.sm_group) != 0 && !plant(14693)) || v0.sm_group == v1.sm_group;
             if !smgroup_match {
                 return false;
             }
@@ -476,7 +485,7 @@ fn verts_match(uv_splits: &mut i32, match_normals: i32, v0: &VertClass, v1: &Ver
             if v0.diffuse_illumination[pass] != v1.diffuse_illumination[pass] {
                 return false;
             }
-            if v0.alpha[pass] != v1.alpha[pass] {
+            if v0.alpha[pass] != v1.alpha[pass] && !plant(14694) {
                 return false;
             }
             if v0.vertex_material_index[pass] != v1.vertex_material_index[pass] {
@@ -486,7 +495,9 @@ fn verts_match(uv_splits: &mut i32, match_normals: i32, v0: &VertClass, v1: &Ver
         for pass in 0..MAX_PASSES {
             for stage in 0..MAX_STAGES {
                 if v0.tex_coord[pass][stage] != v1.tex_coord[pass][stage] {
-                    *uv_splits += 1;
+                    if !plant(14695) {
+                        *uv_splits += 1;
+                    }
                     return false;
                 }
             }
@@ -500,13 +511,13 @@ impl VertexArrayClass {
     fn verts_shading_match(&self, v0: &VertClass, v1: &VertClass) -> bool {
         let dv = (v0.position - v1.position).length();
         let smgroup_match = (v0.sm_group & v1.sm_group) != 0 || v0.sm_group == v1.sm_group;
-        dv < EPSILON && smgroup_match && v0.id == v1.id
+        dv < EPSILON && smgroup_match && (v0.id == v1.id || plant(14696))
     }
 
     /// `VertexArrayClass::Propogate_Shared_Smooth_Groups` (meshbuild.cpp:326).
     fn propogate_shared_smooth_groups(&mut self) {
         for i in 0..self.vert_count as usize {
-            if self.verts[i].shade_index != i as i32 {
+            if self.verts[i].shade_index != i as i32 && !plant(14697) {
                 let s = self.verts[i].shade_index as usize;
                 self.verts[i].shared_sm_group = self.verts[s].shared_sm_group;
             }
@@ -522,6 +533,9 @@ fn tex_compare(f0: &FaceClass, f1: &FaceClass, pass: usize, stage: usize) -> std
     }
     if f0.texture_index[pass][stage] > f1.texture_index[pass][stage] {
         return Ordering::Greater;
+    }
+    if plant(14705) {
+        return Ordering::Equal;
     }
     if f0.verts[0].vertex_material_index[pass] < f1.verts[0].vertex_material_index[pass] {
         return Ordering::Less;
@@ -541,6 +555,10 @@ pub fn face_material_compare(f0: &FaceClass, f1: &FaceClass) -> std::cmp::Orderi
 /// `vertex_compare` (meshbuild.cpp:1760): bone index, then vertex material of pass 0.
 fn vertex_compare(v0: &VertClass, v1: &VertClass) -> std::cmp::Ordering {
     use std::cmp::Ordering;
+    if plant(14704) {
+        // vertex material before bone
+        return (v0.vertex_material_index[0], v0.bone_index).cmp(&(v1.vertex_material_index[0], v1.bone_index));
+    }
     if v0.bone_index < v1.bone_index {
         return Ordering::Less;
     }
@@ -694,7 +712,9 @@ impl MeshBuilderClass {
         self.faces[cf].compute_plane();
         self.faces[cf].add_index = self.cur_face;
         for i in 0..3 {
-            self.faces[cf].verts[i].sm_group = self.faces[cf].sm_group;
+            if !plant(14706) {
+                self.faces[cf].verts[i].sm_group = self.faces[cf].sm_group;
+            }
         }
         self.cur_face += 1;
         self.cur_face - 1
@@ -740,14 +760,14 @@ impl MeshBuilderClass {
         for faceidx in 0..self.face_count as usize {
             for facevertidx in 0..3 {
                 let vertindex = self.faces[faceidx].vert_idx[facevertidx] as usize;
-                let shadeindex = self.verts[vertindex].shade_index as usize;
+                let shadeindex = if plant(14699) { vertindex } else { self.verts[vertindex].shade_index as usize };
                 let n = self.faces[faceidx].normal;
                 self.verts[shadeindex].normal += n;
             }
         }
         // Smooth this mesh with neighboring meshes!
         if let Some(wi) = &self.world_info {
-            if wi.meshes_smoothed {
+            if wi.meshes_smoothed || plant(14698) {
                 for vertidx in 0..self.vert_count as usize {
                     if self.verts[vertidx].shade_index == vertidx as i32 {
                         if let Some(f) = wi.shared_vertex_normal {
@@ -861,7 +881,7 @@ impl MeshBuilderClass {
                 }
             }
             for vert_index in 0..vc {
-                if self.verts[vert_index].vertex_material_index[pass] != -1 {
+                if self.verts[vert_index].vertex_material_index[pass] != (if plant(14708) { 0 } else { -1 }) {
                     self.stats.has_vertex_material[pass] = true;
                     break;
                 }
@@ -890,7 +910,7 @@ impl MeshBuilderClass {
             if p.y > set_max.y {
                 set_max.y = p.y;
             }
-            if p.z > set_max.z {
+            if p.z > (if plant(14711) { set_max.x } else { set_max.z }) {
                 set_max.z = p.z;
             }
         }
@@ -972,7 +992,7 @@ impl MeshBuilderClass {
             let testrad2 = dx * dx + dy * dy + dz * dz;
             if testrad2 > radsqr {
                 let testrad = testrad2.sqrt();
-                radius = (radius + testrad) / 2.0;
+                radius = if plant(14709) { testrad } else { (radius + testrad) / 2.0 };
                 radsqr = radius * radius;
                 let oldtonew = testrad - radius;
                 // center.X is float: the double expression is narrowed on assignment.
@@ -1121,7 +1141,7 @@ impl MeshBuilderClass {
                         let mut c: i32 = 0;
                         for j in 0..3 {
                             if edgetab[pedges[i].edge[j]].poly[1] >= 0 {
-                                c += vcount + 1;
+                                c += vcount + if plant(14701) { 0 } else { 1 };
                             }
                         }
                         for j in 0..3 {
@@ -1253,14 +1273,14 @@ impl MeshBuilderClass {
                 newpolys[polysinserted].vert_idx[2] = new_vindex;
 
                 // if we are on an even triangle, swap the vertex ordering
-                if scnt & 1 == 0 {
+                if (scnt & 1 == 0) != plant(14702) {
                     newpolys[polysinserted].vert_idx.swap(0, 1);
                 }
 
                 v_fifo[0] = v_fifo[1];
                 v_fifo[1] = new_vindex;
 
-                if vtimestamp[new_vindex as usize] == -1 {
+                if vtimestamp[new_vindex as usize] == -1 && !plant(14712) {
                     vtimestamp[new_vindex as usize] = vcount;
                     vcount += 1;
                 }
@@ -1302,7 +1322,9 @@ impl MeshBuilderClass {
         self.alloc_face_count = self.face_count;
 
         // finish the computation of the average strip length
-        self.stats.avg_strip_length /= self.stats.strip_count as f32;
+        if !plant(14703) {
+            self.stats.avg_strip_length /= self.stats.strip_count as f32;
+        }
     }
 
     /// `MeshBuilderClass::Grow_Face_Array` (meshbuild.cpp:1590).

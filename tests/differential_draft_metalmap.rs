@@ -221,11 +221,11 @@ fn metalmap_matches_upstream() {
             ctor_r.push(u32::from(t.clamp));
             ctor_c.extend_from_slice(&cpp[at..at + 10 + 16 + 3]);
             at += 10 + 16 + 3;
-            let bpp = if t.format == MetalMapFormat::A4R4G4B4 { 2 } else { 4 };
+            // the C++ side's own format decides how many pixel words follow
+            let bpp = if cpp[1] != 0 { 2 } else { 4 };
             pix_r.extend(t.pixels.iter().map(|&b| u32::from(b)));
             pix_c.extend_from_slice(&cpp[at..at + 256 * bpp]);
             at += 256 * bpp;
-            assert_eq!(t.pixels.len(), 256 * bpp);
         }
         assert_eq!(at, n, "case {case}: the C++ output length");
         c_ctor.compared += ctor_r.len() as u64;
@@ -239,6 +239,12 @@ fn metalmap_matches_upstream() {
         }
         assert_eq!(ctor_r.len(), ctor_c.len(), "case {case}: constructor output length");
         c_upd.compared += pix_r.len() as u64;
+        if pix_r.len() != pix_c.len() {
+            c_upd.mismatches += 1;
+            if c_upd.examples.len() < 8 {
+                c_upd.examples.push(format!("case {case}: {} pixel bytes, c++ {}", pix_r.len(), pix_c.len()));
+            }
+        }
         for (k, (a, b)) in pix_r.iter().zip(pix_c.iter()).enumerate() {
             if a != b {
                 c_upd.mismatches += 1;

@@ -16,6 +16,7 @@
 //! guard and no NUL termination guarantee (names longer than 259 bytes overflow; here they are cut at the buffer).
 
 use crate::formats::w3d::w3d_file::*;
+use crate::logic::modules::plant;
 use crate::ww::chunkio::{ChunkLoad, GameFile};
 
 /// `W3D_NAME_LEN` (w3d_file.h): 16.
@@ -27,7 +28,7 @@ const MAX_PATH: usize = 260;
 /// extension (the last dot), cut to `W3D_NAME_LEN - 1` characters, upper-cased.
 pub fn get_w3d_name(filename: &str) -> String {
     let bytes = filename.as_bytes();
-    let start = match bytes.iter().rposition(|&c| c == b'\\') {
+    let start = match (if plant(14728) { bytes.iter().position(|&c| c == b'\\') } else { bytes.iter().rposition(|&c| c == b'\\') }) {
         Some(p) => p + 1,
         None => 0,
     };
@@ -36,8 +37,8 @@ pub fn get_w3d_name(filename: &str) -> String {
         None => bytes.len(),
     };
     let num_chars = end - start;
-    let n = if num_chars < W3D_NAME_LEN { num_chars } else { W3D_NAME_LEN - 1 };
-    bytes[start..start + n].iter().map(|c| c.to_ascii_uppercase() as char).collect()
+    let n = if num_chars < (if plant(14726) { W3D_NAME_LEN + 1 } else { W3D_NAME_LEN }) { num_chars } else { W3D_NAME_LEN - 1 };
+    bytes[start..start + n].iter().map(|c| if plant(14727) { *c as char } else { c.to_ascii_uppercase() as char }).collect()
 }
 
 /// `Make_W3D_Filename(w3d_name)` (w3d_dep.cpp:362): empty stays empty; otherwise cut at the first dot, lower-cased,
@@ -47,11 +48,11 @@ pub fn make_w3d_filename(w3d_name: &str) -> String {
         return String::new();
     }
     debug_assert!(w3d_name.len() < W3D_NAME_LEN);
-    let base = match w3d_name.find('.') {
+    let base = match (if plant(14729) { w3d_name.rfind('.') } else { w3d_name.find('.') }) {
         Some(d) => &w3d_name[..d],
         None => w3d_name,
     };
-    let mut s = base.to_ascii_lowercase();
+    let mut s = if plant(14730) { base.to_string() } else { base.to_ascii_lowercase() };
     s.push_str(".w3d");
     s
 }
@@ -70,7 +71,7 @@ fn read_chunk_body(cload: &mut ChunkLoad<'_>, len: usize) -> Vec<u8> {
 
 /// Pushes `Make_W3D_Filename(name)` unless `name == w3d_name` or the filename is empty.
 fn push_dependency(files: &mut Vec<String>, name: &str, w3d_name: &str) {
-    if name != w3d_name {
+    if name != w3d_name || plant(14731) {
         let filename = make_w3d_filename(name);
         if !filename.is_empty() {
             files.push(filename);
@@ -87,7 +88,7 @@ fn scan_mesh_textures(cload: &mut ChunkLoad<'_>, files: &mut Vec<String>) {
                     let len = (cload.cur_chunk_length().unwrap_or(0) as usize).min(MAX_PATH);
                     let buf = read_chunk_body(cload, len);
                     let texture = cstr(&buf);
-                    if !texture.is_empty() {
+                    if !texture.is_empty() || plant(14735) {
                         files.push(texture);
                     }
                 }
@@ -131,7 +132,7 @@ fn scan_emitter(cload: &mut ChunkLoad<'_>, files: &mut Vec<String>) {
     while cload.open_chunk().unwrap_or(false) {
         if cload.cur_chunk_id().unwrap_or(0) == W3D_CHUNK_EMITTER_INFO {
             let buf = read_chunk_body(cload, 332);
-            if buf[0] != 0 {
+            if buf[0] != 0 || plant(14736) {
                 files.push(cstr(&buf[..MAX_PATH]));
             }
         }
@@ -155,7 +156,7 @@ fn scan_aggregate(cload: &mut ChunkLoad<'_>, files: &mut Vec<String>, w3d_name: 
             for _ in 0..count {
                 let sub = read_chunk_body(cload, 64);
                 let subobject = cstr(&sub[..32]);
-                if subobject != w3d_name {
+                if subobject != w3d_name || plant(14732) {
                     let f = make_w3d_filename(&subobject);
                     if !f.is_empty() {
                         files.push(f);
@@ -188,12 +189,16 @@ pub fn get_w3d_dependencies(w3d_filename: &str, data: &[u8]) -> Option<Vec<Strin
             W3D_CHUNK_HMODEL => scan_hierarchy(&mut cload, &mut files, &w3d_name, W3D_CHUNK_HMODEL_HEADER, 40, 20),
             W3D_CHUNK_EMITTER => scan_emitter(&mut cload, &mut files),
             W3D_CHUNK_AGGREGATE => scan_aggregate(&mut cload, &mut files, &w3d_name),
-            W3D_CHUNK_HLOD => scan_hierarchy(&mut cload, &mut files, &w3d_name, W3D_CHUNK_HLOD_HEADER, 40, 24),
+            W3D_CHUNK_HLOD => scan_hierarchy(&mut cload, &mut files, &w3d_name, W3D_CHUNK_HLOD_HEADER, 40, if plant(14737) { 20 } else { 24 }),
             _ => {}
         }
         let _ = cload.close_chunk();
     }
-    files.sort();
-    files.dedup();
+    if !plant(14733) {
+        files.sort();
+    }
+    if !plant(14734) {
+        files.dedup();
+    }
     Some(files)
 }
