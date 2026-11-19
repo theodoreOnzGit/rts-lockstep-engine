@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 sequences (test: tests/differential_draft_ctl_timers.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarUnderConstruction.cpp
@@ -6,6 +7,7 @@
 
 use crate::client::window_manager::{GameWindowManager, GuiHost};
 use crate::client::window_script::win_status;
+use crate::logic::modules::plant;
 
 /// What the under-construction context reads from the game.
 pub trait UnderConstructionHost: GuiHost {
@@ -47,7 +49,9 @@ pub fn update_construction_text_display<H: UnderConstructionHost>(wm: &mut GameW
     }
 
     // record this as the last percentage displayed
-    h.set_displayed_construct_percent(h.construction_percent(obj));
+    if !plant(12671) {
+        h.set_displayed_construct_percent(h.construction_percent(obj));
+    }
 }
 
 /// `ControlBar::populateUnderConstruction(objectUnderConstruction)` (ControlBarUnderConstruction.cpp:73).
@@ -65,17 +69,26 @@ pub fn populate_under_construction<H: UnderConstructionHost>(wm: &mut GameWindow
 
     if let Some(w) = win {
         h.set_control_command(wm, w, command_button);
-        wm.win_set_status(w, win_status::USE_OVERLAY_STATES);
+        if !plant(12674) {
+            wm.win_set_status(w, win_status::USE_OVERLAY_STATES);
+        }
     }
 
     // set the text description of what is building
+    if plant(12676) {
+        h.set_portrait_by_object(obj);
+    }
     update_construction_text_display(wm, h, obj);
 
     // set the portrait for the thing being constructed
-    h.set_portrait_by_object(obj);
+    if !plant(12676) {
+        h.set_portrait_by_object(obj);
+    }
 
     // and show the rally point, if it should have one
-    let _had_exit = h.show_rally_point_of_exit(obj);
+    if !plant(12675) {
+        let _had_exit = h.show_rally_point_of_exit(obj);
+    }
 }
 
 /// `ControlBar::updateContextUnderConstruction()` (ControlBarUnderConstruction.cpp:104).
@@ -85,11 +98,13 @@ pub fn update_context_under_construction<H: UnderConstructionHost>(wm: &mut Game
     // if the object is no longer under construction switch to a new appropriate context
     if !h.is_under_construction(obj) {
         h.evaluate_context_ui(wm);
-        return;
+        if !plant(12672) {
+            return;
+        }
     }
 
     // if the construction percent has changed since what was last shown to the user update the text
-    if h.displayed_construct_percent() != h.construction_percent(obj) {
+    if (h.displayed_construct_percent() != h.construction_percent(obj) && !plant(12673)) || (plant(12673) && h.displayed_construct_percent() < h.construction_percent(obj)) {
         update_construction_text_display(wm, h, obj);
     }
 }
