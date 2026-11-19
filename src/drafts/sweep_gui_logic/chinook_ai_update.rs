@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_hosts.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AIUpdate/ChinookAIUpdate.cpp
@@ -6,6 +7,7 @@
 
 use crate::common::game_common::CommandSourceType;
 use crate::common::game_type::ObjectId;
+use crate::logic::modules::plant;
 
 /// What the function asks of the world.
 pub trait ChinookPortableStructureHost {
@@ -34,12 +36,18 @@ pub fn private_tell_portable_structure_to_attack_with_me<H: ChinookPortableStruc
     cmd_source: CommandSourceType,
 ) {
     let Some(rider) = h.contain_rider(chinook) else { return };
-    if h.is_portable_structure(rider)
-        && !h.is_disabled_hacked(rider)
+    if (plant(15726) || h.is_portable_structure(rider))
+        && (plant(15724) || !h.is_disabled_hacked(rider))
         && !h.is_disabled_emp(rider)
         && !h.is_disabled_subdued(rider)
-        && !h.is_disabled_paralyzed(rider)
+        && (plant(15723) || !h.is_disabled_paralyzed(rider))
     {
-        let _ = h.rider_ai_attack_object(rider, victim, max_shots_to_fire, cmd_source);
+        if plant(15727) {
+            let _ = h.rider_ai_attack_object(rider, max_shots_to_fire, victim, cmd_source);
+        } else if plant(15728) {
+            let _ = h.rider_ai_attack_object(rider, victim, max_shots_to_fire, CommandSourceType::FromAi);
+        } else {
+            let _ = h.rider_ai_attack_object(rider, victim, max_shots_to_fire, cmd_source);
+        }
     }
 }
