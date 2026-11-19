@@ -28,6 +28,16 @@
 //! Mismatches expected from reading the draft against the cut: (1) the name: the constructor's is `<no file>` (File::File) and `File::close`
 //! sets it back; the draft starts empty and never resets it; (2) a second `openFromArchive` on an open file is refused by `File::open`; the draft
 //! reopens. Everything else: 0.
+//!
+//! # Results
+//!
+//! 2026-11-19: both predicted causes were fixed in the draft before the first run (so no "before" count was taken): `new` starts with the name
+//! `<no file>` and `close` restores it; `open_from_archive` refuses an open file. **0 mismatches over 20,000 sequences** (16,870 opened with an
+//! archive), max ULP 0. Planted bugs, 10 of 10 caught (of 20,000): 15271 the re-open refusal omitted 8,927; 15272 `close` keeps the name (the
+//! original draft) 6,270; 15273 the first window seek unchecked 5,135; 15274 the second seek compared with `size` instead of `offset + size`
+//! 6,782; 15275 `read` does not clamp to the window 8,220; 15276 an END seek uses `size - pos` 4,259; 15277 the upper clamp of `seek` omitted
+//! 12,923; 15278 `read` does not reposition the archive 10,543; 15279 `m_curPos` advanced by the request, not the bytes read 3,945; 15280 the
+//! final seek back to `offset` omitted 8,487.
 
 mod support;
 

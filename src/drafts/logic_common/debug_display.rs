@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_debug_display.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameClient/DebugDisplay.h

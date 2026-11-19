@@ -24,6 +24,13 @@
 //! # Prediction (written before the first run, 2026-11-19)
 //!
 //! 0 mismatches (the draft reads as the same statements as the cut).
+//!
+//! # Results
+//!
+//! 2026-11-19: **0 mismatches over 20,000 sequences** (the prediction held, no draft change). Planted bugs, 6 of 6 caught (of 20,000): 15291 the
+//! old head's `prev` not set 17,689; 15292 the new string's `next` not set 17,689; 15293 `unLink` does not fix the next string's `prev` 11,083;
+//! 15294 `unLink` does not fix the previous string's `next` 11,363; 15295 `unLink` does not advance the head 17,185; 15296 `link` does not
+//! make the string the head 19,550.
 
 mod support;
 

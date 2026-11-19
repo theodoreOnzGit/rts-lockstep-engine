@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! Differential-tested in part (#215, tests/differential_draft_display_string_manager.rs): new, link and un_link match the upstream C++ on 20,000 sequences (every string's links compared). Not covered: is_clean and game_client_message_dispatcher (one-line comparisons, not cut).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameClient/DisplayStringManager.h

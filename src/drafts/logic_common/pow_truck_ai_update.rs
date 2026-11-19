@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! Differential-tested in part (#215, tests/differential_draft_pow_truck.rs): new, on_delete, ai_do_command, update, set_task, set_ai_mode, private_pick_up_prisoner, private_return_prisoners, update_waiting, update_find_target, update_collecting_target, update_return_prisoners, validate_target, do_return_prisoners, do_return_to_prison, find_best_prison, find_best_target, unload_prisoners_to_prison, load_prisoner and prison_dock_update_action match the upstream C++ on 20,000 scenarios (compiled as if ALLOW_SURRENDER were defined). Not covered: the module data's Default and INI keys, the Snapshot impl (crc, xfer, load_post_process), and the world's own calls (the bounty product, the money and floating text, `canPickUpPrisoner`).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameLogic/Module/POWTruckAIUpdate.h
@@ -13,13 +14,14 @@
 
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::modules::plant;
 
 /// `LOGICFRAMES_PER_SECOND`.
 const LOGICFRAMES_PER_SECOND: u32 = 30;
 /// `FIND_DELAY`: `LOGICFRAMES_PER_SECOND * 1`.
 pub const FIND_DELAY: u32 = LOGICFRAMES_PER_SECOND * 1;
-/// `HUGE_DIST`.
-pub const HUGE_DIST: f32 = 1.0e10;
+/// `HUGE_DIST` (PartitionManager.h line 77: `1000000.0f`). ~~1.0e10~~ **Corrected 2026-11-19 (#215):** the draft had 1.0e10; the value is not observable (`find_best_target` accepts the first target on `closest_target.is_none()` before comparing distances), so the differential test could not catch it; read from the header.
+pub const HUGE_DIST: f32 = 1_000_000.0;
 
 /// `enum POWTruckTask` ("Stored in save file, do not renumber").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -199,7 +201,9 @@ impl PowTruckAiUpdate {
             // stop
             w.ai_idle(truck);
             // set our task to waiting
-            self.set_task(w, PowTruckTask::Waiting, None);
+            if !plant(15309) {
+                self.set_task(w, PowTruckTask::Waiting, None);
+            }
         }
         match cmd {
             PowTruckCommand::PickUpPrisoner => self.private_pick_up_prisoner(w, truck, obj, cmd_source),
@@ -236,7 +240,7 @@ impl PowTruckAiUpdate {
             return;
         }
         // when leaving the collecting target state, we need to do some bookeeping
-        if old_task == PowTruckTask::CollectingTarget {
+        if old_task == PowTruckTask::CollectingTarget && !plant(15302) {
             // target cleanup
             self.target_id = INVALID_ID;
         }
@@ -253,7 +257,9 @@ impl PowTruckAiUpdate {
             self.prison_id = task_object.unwrap_or(INVALID_ID);
         } else if task == PowTruckTask::Waiting {
             // mark the frame and always go idle
-            self.entered_waiting_frame = w.get_frame();
+            if !plant(15303) {
+                self.entered_waiting_frame = w.get_frame();
+            }
         }
         // store the new current task
         self.current_task = task;
@@ -294,7 +300,7 @@ impl PowTruckAiUpdate {
     /// `findBestPrison()`, still none means nothing to do; sets the returning task, ultra accurate and `aiDock(prison, cmdSource)`.
     pub fn private_return_prisoners<W: PowTruckWorld>(&mut self, w: &mut W, truck: ObjectId, prison: Option<ObjectId>, cmd_source: CommandSource) {
         // when receiving this command from the player, we will always enter AUTOMATIC ai mode
-        if cmd_source == CommandSource::FromPlayer {
+        if cmd_source == CommandSource::FromPlayer || plant(15304) {
             self.set_ai_mode(PowTruckAiMode::Automatic);
         }
         // if no prison is provided, find one if possible
@@ -326,7 +332,8 @@ impl PowTruckAiUpdate {
             self.entered_waiting_frame = w.get_frame();
         }
         // if enough time has passed we're bored of waiting, try to find another target
-        if w.get_frame().wrapping_sub(self.entered_waiting_frame) > self.data.bored_time_in_frames {
+        let waited = w.get_frame().wrapping_sub(self.entered_waiting_frame);
+        if if plant(15297) { waited >= self.data.bored_time_in_frames } else { waited > self.data.bored_time_in_frames } {
             self.set_task(w, PowTruckTask::FindTarget, None);
         }
     }
@@ -341,11 +348,14 @@ impl PowTruckAiUpdate {
             return;
         }
         // don't do this too often
-        if w.get_frame().wrapping_sub(self.last_find_frame) < FIND_DELAY {
+        let since = w.get_frame().wrapping_sub(self.last_find_frame);
+        if if plant(15298) { since <= FIND_DELAY } else { since < FIND_DELAY } {
             return;
         }
         // we've now done a find
-        self.last_find_frame = w.get_frame();
+        if !plant(15299) {
+            self.last_find_frame = w.get_frame();
+        }
         // if we're full we should return to prison
         let contain = w.contain_count_and_max(truck);
         if let Some((count, max)) = contain {
@@ -386,7 +396,7 @@ impl PowTruckAiUpdate {
         }
         // we should never become idle while collecting a target, if we do, find a target
         if w.is_idle(truck) {
-            if self.ai_mode == PowTruckAiMode::Automatic {
+            if self.ai_mode == PowTruckAiMode::Automatic || plant(15310) {
                 self.set_task(w, PowTruckTask::FindTarget, None);
             } else {
                 self.set_task(w, PowTruckTask::Waiting, None);
@@ -450,7 +460,7 @@ impl PowTruckAiUpdate {
         };
         // if we're close enough to it then just stay here
         let dist_sq = w.get_distance_squared_center_2d(truck, prison);
-        if dist_sq <= self.data.hang_around_prison_distance * self.data.hang_around_prison_distance {
+        if dist_sq <= (if plant(15305) { self.data.hang_around_prison_distance } else { self.data.hang_around_prison_distance * self.data.hang_around_prison_distance }) {
             return;
         }
         // dock us with the prison
@@ -488,9 +498,9 @@ impl PowTruckAiUpdate {
             }
             // is this target closer than the one we've found so far
             let dist_sq = w.get_distance_squared_center_2d(truck, other);
-            if closest_target.is_none() || dist_sq < closest_target_dist_sq {
+            if closest_target.is_none() || (if plant(15300) { dist_sq <= closest_target_dist_sq } else { dist_sq < closest_target_dist_sq }) {
                 // we must be able to pathfind to this target
-                if w.quick_does_path_exist(truck, other) {
+                if plant(15301) || w.quick_does_path_exist(truck, other) {
                     // this is our new closest target
                     closest_target = Some(other);
                     closest_target_dist_sq = dist_sq;
@@ -523,10 +533,10 @@ impl PowTruckAiUpdate {
             // put 'obj' into 'prison'
             w.add_to_contain(prison, obj);
             // add up bounty for this prisoner (UnsignedInt += float: the sum is computed in float and truncated back)
-            bounty = (bounty as f32 + w.prisoner_bounty(obj)) as u32;
+            bounty = if plant(15306) { w.prisoner_bounty(obj) as u32 } else { (bounty as f32 + w.prisoner_bounty(obj)) as u32 };
         }
         // if the destination prison collects a bounty, award that to the player
-        if w.collects_prison_bounty(prison) && bounty > 0 && w.has_controlling_player(truck) {
+        if w.collects_prison_bounty(prison) && (bounty > 0 || plant(15307)) && w.has_controlling_player(truck) {
             w.award_bounty(truck, prison, bounty);
         }
         // set our state to waiting and become idle
@@ -548,7 +558,7 @@ impl PowTruckAiUpdate {
         }
         // sanity check ... make sure we have room
         if let Some((count, max)) = w.contain_count_and_max(truck) {
-            if count == max {
+            if count == max && !plant(15308) {
                 // we're full ... return to prison
                 self.do_return_prisoners(w, truck);
                 return;

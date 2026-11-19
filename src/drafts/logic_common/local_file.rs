@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! Differential-tested in part (#215, tests/differential_draft_local_file.rs): open_file, close_file, drop_file, read, write, seek, scan_int, scan_real, scan_string, next_line and read_entire_and_close match the upstream C++ (`File::open`/`close` included) on 20,000 sequences. Not covered: convert_to_ram_file (a stub: RAMFile is not drafted), `Default`, and the `USE_BUFFERED_IO` branch (not compiled in the shipped game); `scan_int` is tested only for digit runs of at most 9 (`atoi` overflow is undefined in C).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/Common/LocalFile.h
@@ -123,7 +124,7 @@ impl LocalFile {
     /// `LocalFile::open(filename, access)`: "opens a file using the standard C open() call. Access flags are mapped to the
     /// appropriate open flags." `File::open` first (records `m_access` and `m_open`); then CREATE/TRUNCATE/APPEND/TEXT/BINARY map to
     /// their `_O_*`, READWRITE is `_O_RDWR`, WRITE alone is `_O_WRONLY | _O_CREAT`, else `_O_RDONLY`. A failed `_open` or a failed
-    /// seek to the end for APPEND closes and returns FALSE.
+    /// seek to the end for APPEND calls `close()` (`File::close` only: the handle, if one was opened, stays until the destructor) and returns FALSE.
     pub fn open_file<D: LocalFileDevice>(&mut self, dev: &mut D, totals: &mut LocalFileTotals, filename: &[u8], access: i32) -> bool {
         // File::open(filename, access), File.cpp: refuses a file that is already open, STREAMING with WRITE, and TEXT with BINARY; then
         // normalises the mask: READ when neither READ nor WRITE, TRUNCATE when neither READ nor APPEND, BINARY when neither TEXT nor BINARY.

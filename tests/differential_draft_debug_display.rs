@@ -26,7 +26,13 @@
 //! 0 mismatches on the printf and the accessors; one failure to compile, not a mismatch: the draft's colour enum has only `White`, so the
 //! colour ops cannot be expressed. The enum gets the header's six variants (`BLACK`, `YELLOW`, `RED`, `GREEN`, `BLUE`, `NUM_COLORS`).
 //!
-//! # Planted bugs and results: see the end of this comment, filled after the runs.
+//! # Results
+//!
+//! 2026-11-19: **0 mismatches over 20,000 sequences** (17,359 drew text), max ULP 0; the prediction held (the enum was the only change to the
+//! draft). Planted bugs, 8 of 8 caught (of 20,000): 15281 empty lines drawn too 16,278; 15282 the trailing line does not advance `m_xPos`
+//! 15,331; 15283 `m_xPos` not reset by a newline 11,759; 15284 `m_yPos` not advanced by a newline 17,031; 15285 the cursor's x left out of the
+//! draw position 8,569; 15287 `reset` does not set the left margin 19,924; 15289 `setCursorPos` swaps x and y 8,789; 15290 the line length not
+//! reset after a drawn line 16,469. (Ids 15286 and 15288 were reserved and not used.)
 
 mod support;
 

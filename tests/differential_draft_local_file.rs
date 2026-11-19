@@ -32,6 +32,23 @@
 //! rejects a second open, STREAMING with WRITE, TEXT with BINARY, and normalises the mask (READ added, TRUNCATE added, BINARY added);
 //! (2) the draft's `close_file` closes the handle, upstream's `close()` only clears `m_open` (the handle closes in the destructor);
 //! (3) `scan_string` keeps a NUL byte that upstream's `AsciiString::concat(char)` drops. Everything else: 0.
+//!
+//! # Results
+//!
+//! 2026-11-19, first run (the draft as drafted): 20,000 sequences, **18,408 mismatches**, the first at the access word of an `open`
+//! (the draft recorded 32 where upstream's `File::open` records 33: READ added). The prediction held: the three causes were fixed in the draft
+//! (`open_file` now does `File::open`'s refusals and its three defaults, with a new `FILE_STREAMING`; `close_file` is `File::close` only, the
+//! handle closing in `drop_file` as in the destructor; `scan_string` drops a NUL as `concat(char)` does). Second run: **28 mismatches**, all
+//! `scanInt` of a digit run longer than 9 (two digit pieces of the generator joined; `atoi` overflow, undefined in C, wraps in the draft and
+//! saturates in glibc): a miss of the *generator*, not the draft; the generator now keeps `scanInt` out of files with such a run (the
+//! excluded input above). Third run: **0 mismatches over 20,000 sequences** (19,093 opened a file; about 16,700 scans), max ULP 0.
+//!
+//! Planted bugs, 10 of 10 caught (of 20,000 sequences): 15261 TRUNCATE default omitted 1,814; 15262 READ default omitted 8,488; 15263 BINARY
+//! default omitted 13,029; 15264 the STREAMING|WRITE refusal omitted 671; 15265 the TEXT|BINARY refusal omitted 1,676; 15266 a second open
+//! allowed 7,980; 15267 `close` also closes the handle (the original draft) 10,215; 15268 `scan_string` keeps a NUL (the original draft)
+//! 1,047; 15269 `scan_int` does not put the char back 291; 15270 `scan_real` accepts a second `.` 653.
+//!
+//! Not covered: `convert_to_ram_file` (a stub: RAMFile is not drafted), the `USE_BUFFERED_IO` branch (not compiled in the shipped game).
 
 mod support;
 
