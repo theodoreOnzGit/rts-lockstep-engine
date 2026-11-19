@@ -8,6 +8,10 @@
 //! not copied into memory. The archive's `File` is the host's: [`ArchiveHandle`].
 
 use super::local_file::SeekMode;
+use crate::logic::modules::plant;
+
+/// `File::File()`'s name for a file that is not open (`setName("<no file>")`, also `File::close`'s).
+pub const NO_FILE_NAME: &[u8] = b"<no file>";
 
 /// The calls `StreamingArchiveFile` makes on the archive's `File*`.
 pub trait ArchiveHandle {
@@ -37,7 +41,7 @@ pub struct StreamingArchiveFile {
 impl StreamingArchiveFile {
     /// `StreamingArchiveFile::StreamingArchiveFile()`: `m_file(NULL), m_startingPos(0), m_size(0), m_curPos(0)`.
     pub fn new() -> StreamingArchiveFile {
-        StreamingArchiveFile { open: false, name: Vec::new(), has_file: false, starting_pos: 0, size: 0, cur_pos: 0 }
+        StreamingArchiveFile { open: false, name: NO_FILE_NAME.to_vec(), has_file: false, starting_pos: 0, size: 0, cur_pos: 0 }
     }
 
     /// `StreamingArchiveFile::open(File *file)`: always TRUE (the body is `return TRUE`).
@@ -53,27 +57,42 @@ impl StreamingArchiveFile {
             Some(a) => a,
             None => return false,
         };
-        // File::open(filename.str(), File::READ | File::BINARY | File::STREAMING): base-class bookkeeping.
+        // File::open(filename.str(), File::READ | File::BINARY | File::STREAMING): FALSE for a file that is already open (the access
+        // mask is valid); otherwise the name is set and the file is open.
+        if self.open && !plant(15271) {
+            return false;
+        }
         self.open = true;
         self.name = filename.to_vec();
         self.has_file = true;
         self.starting_pos = offset;
         self.size = size;
         self.cur_pos = 0;
-        if archive.seek(offset, SeekMode::Start) != offset {
+        if archive.seek(offset, SeekMode::Start) != offset && !plant(15273) {
             return false;
         }
-        if archive.seek(size, SeekMode::Current) != self.starting_pos + size {
+        let expected = if plant(15274) { size } else { self.starting_pos + size };
+        if archive.seek(size, SeekMode::Current) != expected {
             return false;
         }
         // We know this will succeed.
-        archive.seek(offset, SeekMode::Start);
+        if !plant(15280) {
+            archive.seek(offset, SeekMode::Start);
+        }
+        // m_nameStr = filename
+        self.name = filename.to_vec();
         true
     }
 
-    /// `StreamingArchiveFile::close()`: `File::close()`.
+    /// `StreamingArchiveFile::close()`: `File::close()`: for an open file, the name goes back to `<no file>` and `m_open` to FALSE (a
+    /// file marked `deleteOnClose` would delete itself: not modelled).
     pub fn close(&mut self) {
-        self.open = false;
+        if self.open {
+            if !plant(15272) {
+                self.name = NO_FILE_NAME.to_vec();
+            }
+            self.open = false;
+        }
     }
 
     /// `StreamingArchiveFile::read(buffer, bytes)`: "if buffer is null, just advance the current position by 'bytes'". 0 without an
@@ -83,12 +102,14 @@ impl StreamingArchiveFile {
             return 0;
         }
         // There shouldn't be a way that this can fail, because we've already verified that the file contains at least this many bits.
-        archive.seek(self.starting_pos + self.cur_pos, SeekMode::Start);
-        if bytes + self.cur_pos > self.size {
+        if !plant(15278) {
+            archive.seek(self.starting_pos + self.cur_pos, SeekMode::Start);
+        }
+        if bytes + self.cur_pos > self.size && !plant(15275) {
             bytes = self.size - self.cur_pos;
         }
         let bytes_read = archive.read(buffer, bytes);
-        self.cur_pos += bytes_read;
+        self.cur_pos += if plant(15279) { bytes } else { bytes_read };
         bytes_read
     }
 
@@ -102,11 +123,11 @@ impl StreamingArchiveFile {
         let mut new_pos = match mode {
             SeekMode::Start => pos,
             SeekMode::Current => self.cur_pos + pos,
-            SeekMode::End => self.size + pos, // DEBUG_ASSERTCRASH(pos <= 0, ...)
+            SeekMode::End => if plant(15276) { self.size - pos } else { self.size + pos }, // DEBUG_ASSERTCRASH(pos <= 0, ...)
         };
         if new_pos < 0 {
             new_pos = 0;
-        } else if new_pos > self.size {
+        } else if new_pos > self.size && !plant(15277) {
             new_pos = self.size;
         }
         self.cur_pos = new_pos;

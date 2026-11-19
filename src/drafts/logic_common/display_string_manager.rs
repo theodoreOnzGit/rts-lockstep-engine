@@ -14,6 +14,7 @@
 //! string's index in the host's arena (`Option<usize>`), and the string's two link fields are [`DisplayStringLinks`].
 
 use crate::common::message_stream::{Disposition, MessageType};
+use crate::logic::modules::plant;
 use crate::common::message_types::{MSG_BEGIN_NETWORK_MESSAGES, MSG_CLEAR_GAME_DATA, MSG_END_NETWORK_MESSAGES, MSG_FRAME_TICK, MSG_NEW_GAME};
 
 /// `DisplayString::m_next` / `m_prev`.
@@ -49,22 +50,32 @@ impl DisplayStringManager {
     /// `DisplayStringManager::link(string)`: "Link a display string to the master list" at its head. The string must be unlinked
     /// (`assert(string->m_next == NULL)`, `assert(string->m_prev == NULL)`).
     pub fn link(&mut self, links: &mut [DisplayStringLinks], string: usize) {
-        links[string].next = self.string_list;
-        if let Some(head) = self.string_list {
-            links[head].prev = Some(string);
+        if !plant(15292) {
+            links[string].next = self.string_list;
         }
-        self.string_list = Some(string);
+        if let Some(head) = self.string_list {
+            if !plant(15291) {
+                links[head].prev = Some(string);
+            }
+        }
+        if !plant(15296) {
+            self.string_list = Some(string);
+        }
     }
 
     /// `DisplayStringManager::unLink(string)`: "Unlink a display string from the master list"; the head moves on when the string was it
     /// (`assert(string == m_stringList)`).
     pub fn un_link(&mut self, links: &mut [DisplayStringLinks], string: usize) {
         if let Some(n) = links[string].next {
-            links[n].prev = links[string].prev;
+            if !plant(15293) {
+                links[n].prev = links[string].prev;
+            }
         }
         if let Some(p) = links[string].prev {
-            links[p].next = links[string].next;
-        } else {
+            if !plant(15294) {
+                links[p].next = links[string].next;
+            }
+        } else if !plant(15295) {
             // assert( string == m_stringList );
             self.string_list = links[string].next;
         }

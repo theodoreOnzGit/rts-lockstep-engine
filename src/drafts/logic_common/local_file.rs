@@ -12,6 +12,8 @@
 //! the open flag) is reduced here to the three fields `LocalFile` reads. `convertToRAMFile` is not translated (`RAMFile` is
 //! not drafted in this area): `// upstream: RAMFile::open(this) - not translated`.
 
+use crate::logic::modules::plant;
+
 /// `File::FileAccess` bits (File.h).
 pub const FILE_READ: i32 = 0x0000_0001;
 /// `WRITE`.
@@ -28,6 +30,8 @@ pub const FILE_TEXT: i32 = 0x0000_0020;
 pub const FILE_BINARY: i32 = 0x0000_0040;
 /// `READWRITE` (`READ | WRITE`).
 pub const FILE_READWRITE: i32 = FILE_READ | FILE_WRITE;
+/// `STREAMING`: "Do not read this file into a ram file, read it as requested." (`File::open` refuses it with `WRITE`).
+pub const FILE_STREAMING: i32 = 0x0000_0100;
 
 /// `File::seekMode`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,7 +125,27 @@ impl LocalFile {
     /// their `_O_*`, READWRITE is `_O_RDWR`, WRITE alone is `_O_WRONLY | _O_CREAT`, else `_O_RDONLY`. A failed `_open` or a failed
     /// seek to the end for APPEND closes and returns FALSE.
     pub fn open_file<D: LocalFileDevice>(&mut self, dev: &mut D, totals: &mut LocalFileTotals, filename: &[u8], access: i32) -> bool {
-        // File::open(filename, access): upstream: File::open — base-class bookkeeping only.
+        // File::open(filename, access), File.cpp: refuses a file that is already open, STREAMING with WRITE, and TEXT with BINARY; then
+        // normalises the mask: READ when neither READ nor WRITE, TRUNCATE when neither READ nor APPEND, BINARY when neither TEXT nor BINARY.
+        let mut access = access;
+        if self.open && !plant(15266) {
+            return false;
+        }
+        if (access & (FILE_STREAMING | FILE_WRITE)) == (FILE_STREAMING | FILE_WRITE) && !plant(15264) {
+            return false;
+        }
+        if (access & (FILE_TEXT | FILE_BINARY)) == (FILE_TEXT | FILE_BINARY) && !plant(15265) {
+            return false;
+        }
+        if (access & (FILE_READ | FILE_WRITE)) == 0 && !plant(15262) {
+            access |= FILE_READ;
+        }
+        if (access & (FILE_READ | FILE_APPEND)) == 0 && !plant(15261) {
+            access |= FILE_TRUNCATE;
+        }
+        if (access & (FILE_TEXT | FILE_BINARY)) == 0 && !plant(15263) {
+            access |= FILE_BINARY;
+        }
         self.access = access;
         self.open = true;
         let mut flags = OpenFlags::default();
@@ -161,10 +185,15 @@ impl LocalFile {
         true
     }
 
-    /// `LocalFile::close()`: "Closes the current file if it is open" -- upstream's body is `File::close()`; the handle is closed by the
-    /// destructor (`~LocalFile`). Modelled as both, since the instance is dropped after `close`.
+    /// `LocalFile::close()`: "Closes the current file if it is open" -- upstream's body is `File::close()`: `m_open` goes false (and a
+    /// file marked `deleteOnClose` deletes itself, not modelled). The handle is closed by the destructor ([`LocalFile::drop_file`]),
+    /// so after `close` the handle and `s_totalOpen` are as they were.
     pub fn close_file<D: LocalFileDevice>(&mut self, dev: &mut D, totals: &mut LocalFileTotals) {
-        self.drop_file(dev, totals);
+        if plant(15267) {
+            self.drop_file(dev, totals);
+            return;
+        }
+        self.open = false; // File::close()
     }
 
     /// `LocalFile::read(buffer, bytes)`: -1 when not open; a NULL buffer skips `bytes` forward (`_lseek(CUR)`) and returns `bytes`.
@@ -232,7 +261,7 @@ impl LocalFile {
             }
         }
         // put the last read char back, since we didn't use it.
-        if val != 0 {
+        if val != 0 && !plant(15269) {
             self.put_back(dev);
         }
         *new_int = super::command_line::atoi(&tempstr);
@@ -258,7 +287,7 @@ impl LocalFile {
         }
         loop {
             tempstr.push(c);
-            if c == b'.' {
+            if c == b'.' && !plant(15270) {
                 saw_dec = true;
             }
             val = self.read_char(dev, &mut c);
@@ -295,7 +324,10 @@ impl LocalFile {
             return false;
         }
         loop {
-            new_string.push(c);
+            // AsciiString::concat(char) goes through concat(const char*) on a 2-character buffer, so a NUL character appends nothing
+            if c != 0 || plant(15268) {
+                new_string.push(c);
+            }
             val = self.read_char(dev, &mut c);
             if !((val != 0) && !is_space(c)) {
                 break;
