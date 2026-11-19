@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_function_lexicon.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/Common/System/FunctionLexicon.cpp
@@ -10,6 +11,8 @@
 //! engine: `loadTable`, `keyToFunc`, `findFunction`, `validate` and the two typed lookups with the `TABLE_ANY` fallback.
 //!
 //! Excluded (#213): `FunctionLexicon::funcToName` is inside `#ifdef NOT_IN_USE`; `functionToName` is commented out.
+
+use crate::logic::modules::plant;
 
 /// `NAMEKEY_INVALID`.
 pub const NAMEKEY_INVALID: i32 = 0;
@@ -81,15 +84,20 @@ impl<F: Copy + PartialEq> FunctionLexicon<F> {
         if key == NAMEKEY_INVALID {
             return None;
         }
+        let mut found = None;
         for entry in table.iter() {
-            if entry.key == NAMEKEY_INVALID {
+            if entry.key == NAMEKEY_INVALID && !plant(15466) {
                 break;
             }
             if entry.key == key {
+                if plant(15469) {
+                    found = entry.func; // the LAST match, not the first
+                    continue;
+                }
                 return entry.func;
             }
         }
-        None
+        found
     }
 
     /// `FunctionLexicon::findFunction(key, index)` (FunctionLexicon.cpp:440): `TABLE_ANY` searches every table in order.
@@ -98,7 +106,8 @@ impl<F: Copy + PartialEq> FunctionLexicon<F> {
             return None;
         }
         if index == TableIndex::Any {
-            for i in 0..MAX_FUNCTION_TABLES {
+            for i0 in 0..(if plant(15467) { MAX_FUNCTION_TABLES - 1 } else { MAX_FUNCTION_TABLES }) {
+                let i = if plant(15468) { MAX_FUNCTION_TABLES - 1 - i0 } else { i0 };
                 let func = Self::key_to_func(key, &self.tables[i]);
                 if func.is_some() {
                     return func;
@@ -119,13 +128,13 @@ impl<F: Copy + PartialEq> FunctionLexicon<F> {
                 if source.key == NAMEKEY_INVALID {
                     break;
                 }
-                if source.func.is_some() {
+                if source.func.is_some() || plant(15471) {
                     for j in 0..MAX_FUNCTION_TABLES {
                         for (li, look) in self.tables[j].iter().enumerate() {
                             if look.key == NAMEKEY_INVALID {
                                 break;
                             }
-                            if !(i == j && si == li) && source.func == look.func {
+                            if !(if plant(15470) { si == li } else { i == j && si == li }) && source.func == look.func {
                                 // upstream: DEBUG_LOG("WARNING! Function lexicon entries match same address! '%s' and '%s'")
                                 valid = false;
                             }
@@ -141,6 +150,13 @@ impl<F: Copy + PartialEq> FunctionLexicon<F> {
     /// first, then the plain draw table.
     pub fn game_win_draw_func(&self, key: i32, index: TableIndex) -> Option<F> {
         if index == TableIndex::Any {
+            if plant(15472) {
+                let func = self.find_function(key, TableIndex::GameWinDraw);
+                if func.is_none() {
+                    return self.find_function(key, TableIndex::GameWinDeviceDraw);
+                }
+                return func;
+            }
             let func = self.find_function(key, TableIndex::GameWinDeviceDraw);
             if func.is_none() {
                 return self.find_function(key, TableIndex::GameWinDraw);
@@ -154,7 +170,7 @@ impl<F: Copy + PartialEq> FunctionLexicon<F> {
     pub fn win_layout_init_func(&self, key: i32, index: TableIndex) -> Option<F> {
         if index == TableIndex::Any {
             let func = self.find_function(key, TableIndex::WinLayoutDeviceInit);
-            if func.is_none() {
+            if func.is_none() && !plant(15473) {
                 return self.find_function(key, TableIndex::WinLayoutInit);
             }
             return func;
