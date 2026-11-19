@@ -13200,11 +13200,13 @@ mod differential {
             ("cbs_set.inc", "Source/GameClient/GUI/ControlBar/ControlBarScheme.cpp", "void ControlBarSchemeManager::setControlBarScheme(AsciiString schemeName)", Some("// Update calls all the animation update calls for the")),
             ("sms_color.inc", "Include/GameClient/Color.h", "enum { GAME_COLOR_UNDEFINED = 0x00FFFFFF };", Some("// INLINING ///")),
             ("sms_line.inc", "Include/GameClient/ShellMenuScheme.h", "class ShellMenuSchemeLine\n{", Some("class ShellMenuSchemeImage")),
-            ("sms_ctor.inc", "Source/GameClient/GUI/Shell/ShellMenuScheme.cpp", "ShellMenuSchemeLine::ShellMenuSchemeLine( void )", Some("ShellMenuSchemeLine::~ShellMenuSchemeLine( void )")),
+            ("sms_ctor.inc", "Source/GameClient/GUI/Shell/ShellMenuScheme.cpp", "ShellMenuSchemeLine::ShellMenuSchemeLine( void )", Some("ShellMenuSchemeImage::ShellMenuSchemeImage( void )")),
             ("sms_new.inc", "Source/GameClient/GUI/Shell/ShellMenuScheme.cpp", "ShellMenuScheme *ShellMenuSchemeManager::newShellMenuScheme(AsciiString name)", Some("void ShellMenuSchemeManager::init( void )")),
             ("sms_set.inc", "Source/GameClient/GUI/Shell/ShellMenuScheme.cpp", "void ShellMenuSchemeManager::setShellMenuScheme( AsciiString name )", Some("void ShellMenuSchemeManager::draw( void )")),
             ("cbt_ctx.inc", "Include/GameClient/ControlBar.h", "enum ControlBarContext\n{", Some("/** Context parents, are parent windows")),
             ("cbt_fn.inc", "Source/GameClient/GUI/ControlBar/ControlBarCommandProcessing.cpp", "CBCommandStatus ControlBar::processCommandTransitionUI( GameWindow *control, GadgetGameMessage gadgetMessage )", Some("CBCommandStatus ControlBar::processCommandUI( GameWindow *control, ")),
+            ("w3dwin_size.inc", "../GameEngineDevice/Source/W3DDevice/GameClient/GUI/W3DGameWindow.cpp", "void W3DGameWindow::getTextSize( Int *width, Int *height )", Some("// W3DGameWindow::getTextLoc ====")),
+            ("w3dwin_loc.inc", "../GameEngineDevice/Source/W3DDevice/GameClient/GUI/W3DGameWindow.cpp", "void W3DGameWindow::setTextLoc( Int x, Int y )", Some("// W3DGameWindow::drawText ====")),
         ];
         for (name, path, from, to) in cuts {
             let text = read_upstream(ge.join(path));
@@ -13256,7 +13258,7 @@ mod differential {
                 .file(sys.join("AsciiString.cpp"));
             b.compile("draft_guilogic3_chat");
         }
-        let wrappers: &[(&str, &str)] = &[("wrap_draft_phys.cpp", "draft_guilogic3_phys"), ("wrap_draft_partition.cpp", "draft_guilogic3_partition"), ("wrap_draft_cbtrans.cpp", "draft_guilogic3_cbtrans")];
+        let wrappers: &[(&str, &str)] = &[("wrap_draft_phys.cpp", "draft_guilogic3_phys"), ("wrap_draft_partition.cpp", "draft_guilogic3_partition"), ("wrap_draft_cbtrans.cpp", "draft_guilogic3_cbtrans"), ("wrap_draft_w3dwin.cpp", "draft_guilogic3_w3dwin")];
         for (wrapper, lib) in wrappers {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();

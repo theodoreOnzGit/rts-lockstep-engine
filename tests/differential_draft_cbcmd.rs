@@ -35,7 +35,11 @@
 //!
 //! # Results
 //!
-//! (filled in after the run)
+//! 2026-11-19: 20,000 cases per function, **0 mismatches** in all three, first run (prediction met). Planted bugs, 15 of 15 caught (mismatches of 20,000):
+//! populateInvDataCallback 15683 8,532 (`>=` for `>`); 15684 16,348 (index not advanced); 15685 16,348 (no overlay); 15686 16,348 (disabled); 15687 16,348 (object id
+//! not stored); 15688 15,827 (overlay as the enabled image); resetBuildQueueData 15689 20,000 (upgrade kept); 15690 20,000 (production id kept); 15691 19,999 (type kept);
+//! calculateVeterancyOverlayForThing 15692 2,700 (science ignored); 15693 2,597 (last match, not highest); 15694 2,820 (elite shows the heroic icon); 15695 1,130 (no
+//! local player not checked); 15696 1,643 (stops at the first match); 15697 3,665 (no science required counts as not met).
 
 mod support;
 

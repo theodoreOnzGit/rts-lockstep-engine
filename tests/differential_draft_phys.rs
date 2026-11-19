@@ -25,7 +25,9 @@
 //!
 //! # Results
 //!
-//! (see below, filled after the run)
+//! 2026-11-19: 40,000 cases per function, **0 mismatches** in all three, first run (prediction met). Planted bugs, 8 of 8 caught (mismatches of 40,000):
+//! 15661 21,501 (`z - extra`); 15662 16,899 (extra friction ignored); 15663 9,372 (no lower clamp); 15664 9,372 (clamps to 0, not 0.01); 15665 15,366 (no upper
+//! clamp); 15666 15,366 (clamps to 1.0, not 0.99); 15667 9,825 (the wrong overlap id compared); 15668 8,022 (`NULL` counts as overlapped).
 
 mod support;
 

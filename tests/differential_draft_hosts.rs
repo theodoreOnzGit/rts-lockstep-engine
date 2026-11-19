@@ -37,7 +37,12 @@
 //!
 //! # Results
 //!
-//! (filled in after the run)
+//! 2026-11-19: 20,000 cases per function, **0 mismatches** in all four, first run (prediction met, including the order of the position and range calls). Planted bugs,
+//! 18 of 18 caught (mismatches of 20,000; the ids 15718 and 15725 are unused): createVisionObject 15717 20,000 (the id test inverted); 15719 4,881 (range doubled); 15720 4,887
+//! (id not recorded); 15721 4,887 (range before position); 15722 1,474 (no neutral player taken as team 0); Chinook 15723 4,336 (no paralyzed test); 15724 10,472 (no hacked test);
+//! 15726 13,951 (no portable test); 15727 2,683 (victim and shots swapped); 15728 2,170 (source forced to AI); AIGroup 15729 16,940 (reversed); 15730 18,465 (last member skipped);
+//! 15731 12,457 (waypoint dropped); 15732 14,712 (source forced to player); AIStateMachine 15733 10,540 (cache dropped on copy); 15734 4,623 (goal squad always remade); 15735 1,304
+//! (no squad made for no group); 15736 8,765 (an existing goal squad is not replaced).
 
 mod support;
 
