@@ -107,6 +107,8 @@ pub struct UDP {
     my_port: u16,
     /// `m_lastError` (a `sockStat` value).
     last_error: i32,
+    /// Differential tests only (#215): the status the socket fails with, standing for the OS failing; never set in the game.
+    failure: Option<i32>,
     /// Which backend `Bind` creates.
     want_queued: bool,
 }
@@ -125,6 +127,7 @@ impl UDP {
             my_ip: 0,
             my_port: 0,
             last_error: 0,
+            failure: None,
             want_queued: cfg!(target_arch = "wasm32"),
         }
     }
@@ -216,6 +219,10 @@ impl UDP {
             return SockStat::AddrNotAvail as i32;
         }
         self.clear_status();
+        if let Some(code) = self.failure {
+            self.last_error = code;
+            return -1;
+        }
         match &mut self.backend {
             UdpBackend::None => {
                 self.last_error = SockStat::BadF as i32;
@@ -242,6 +249,10 @@ impl UDP {
     /// `UDP::Read` (udp.cpp): one datagram into `msg` (at most `msg.len()` bytes). Returns the byte count (0
     /// when nothing is waiting, i.e. `WSAEWOULDBLOCK`; -1 on a real error) and the sender's address and port.
     pub fn read(&mut self, msg: &mut [u8]) -> (i32, u32, u16) {
+        if let Some(code) = self.failure {
+            self.last_error = code;
+            return (-1, 0, 0);
+        }
         match &mut self.backend {
             UdpBackend::None => (-1, 0, 0),
             #[cfg(not(target_arch = "wasm32"))]
@@ -293,6 +304,12 @@ impl UDP {
             -15 => SockStat::TimedOut,
             _ => SockStat::Unknown,
         }
+    }
+
+    /// Differential tests only (#215): make every `write` and `read` fail with this status code (`None`: work again).
+    #[doc(hidden)]
+    pub fn set_failure_for_test(&mut self, code: Option<i32>) {
+        self.failure = code;
     }
 
     /// `UDP::ClearStatus` (udp.cpp).

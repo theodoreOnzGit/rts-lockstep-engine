@@ -1,4 +1,11 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 6,000 operation sequences (test: tests/differential_draft_conn.rs);
+//! not yet wired into the game.
+//!
+//! The test found one defect, fixed (2026-11-19, #215): `clearCommandsExceptFrom` read `tmp->getNext()` AFTER
+//! `removeMessage(tmp)`, which clears the ref's next pointer, so upstream's loop ends after the first command it removes. The draft
+//! had captured the next pointer first and removed every command not from the player; it now keeps upstream's (defective) behaviour.
+//! Inputs left out of the test (upstream dereferences null): `doSend` with no user or no transport, and `processAck`,
+//! `clearCommandsExceptFrom`, `isQueueEmpty`, `doSend` before `init`. Not covered: `debug_print_commands` (not translated).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/Connection.h
@@ -10,6 +17,8 @@
 //! `processAck`'s latency uses `timeGetTime() - temp->getTimeLastSent()`, an unsigned 32-bit subtraction upstream
 //! (a `DWORD` minus a 32-bit `time_t`): reproduced with wrapping `u32` arithmetic, so a command never sent
 //! (`m_timeLastSent == -1`) contributes `now + 1`.
+
+use crate::logic::modules::plant;
 
 use super::net_command_list::NetCommandList;
 use super::net_command_msg::{NetCommandMsg, NetCommandMsgPtr, NetCommandType};
@@ -24,6 +33,20 @@ pub const CONNECTION_LATENCY_HISTORY_LENGTH: usize = 200;
 
 /// `MaxQuitFlushTime`: wait this many milliseconds at most to retry things before quitting.
 pub const MAX_QUIT_FLUSH_TIME: i64 = 30000;
+
+/// The members [`Connection::debug_state`] returns (differential tests only).
+#[doc(hidden)]
+#[derive(Clone, Debug)]
+pub struct ConnectionDebugState {
+    pub quit_time: u32,
+    pub retry_time: i64,
+    pub average_latency: f32,
+    pub latencies: [f32; CONNECTION_LATENCY_HISTORY_LENGTH],
+    pub frame_grouping: i64,
+    pub last_time_sent: i64,
+    pub num_retries: i32,
+    pub retry_metrics_time: i64,
+}
 
 /// `class Connection`.
 #[derive(Debug)]
@@ -144,7 +167,9 @@ impl Connection {
     /// `Connection::setQuitting` (Connection.cpp:157).
     pub fn set_quitting(&mut self, now: u32) {
         self.is_quitting = true;
-        self.quit_time = now;
+        if !plant(15070) {
+            self.quit_time = now;
+        }
     }
 
     /// `Connection::isQueueEmpty` (Connection.cpp:150).
@@ -188,7 +213,9 @@ impl Connection {
                             let ref2 = l.add_message(cmd);
                             if let Some(id2) = ref2 {
                                 if let Some(r2) = l.get_mut(id2) {
-                                    r2.set_relay(relay);
+                                    if !plant(15067) {
+                                        r2.set_relay(relay);
+                                    }
                                 }
                             }
                         }
@@ -221,12 +248,16 @@ impl Connection {
                 Some(r) => (r.get_command().read().get_player_id(), r.get_next()),
                 None => break,
             };
-            if pid != player_index as u32 {
+            if if plant(15066) { pid == player_index as u32 } else { pid != player_index as u32 } {
                 // DEBUG_LOG("Connection::clearCommandsExceptFrom(%d) - clearing a command from %d for frame %d")
+                // Upstream (defect, kept): `removeMessage(tmp)` clears `tmp`'s next pointer, and `tmp = tmp->getNext()` is read
+                // AFTER it, so the loop ends after the first command removed; the commands behind it stay queued.
                 let removed = l.remove_message(id);
+                tmp = removed.as_ref().and_then(|r| r.get_next());
                 drop(removed); // toDelete->deleteInstance()
+            } else {
+                tmp = next;
             }
-            tmp = next;
         }
     }
 
@@ -240,7 +271,7 @@ impl Connection {
         let curtime = now as i64;
         let mut could_queue = true;
 
-        if self.is_quitting && curtime > self.quit_time as i64 + MAX_QUIT_FLUSH_TIME {
+        if self.is_quitting && (if plant(15064) { curtime >= self.quit_time as i64 + MAX_QUIT_FLUSH_TIME } else { curtime > self.quit_time as i64 + MAX_QUIT_FLUSH_TIME }) {
             // DEBUG_LOG("Timed out a quitting connection.  Deleting all %d messages")
             if let Some(l) = self.net_command_list.as_mut() {
                 l.reset();
@@ -248,7 +279,7 @@ impl Connection {
             return 0;
         }
 
-        if (curtime - self.last_time_sent) < self.frame_grouping {
+        if (if plant(15063) { (curtime - self.last_time_sent) <= self.frame_grouping } else { (curtime - self.last_time_sent) < self.frame_grouping }) {
             return 0;
         }
 
@@ -268,7 +299,7 @@ impl Connection {
                     Some(r) => (r.get_next(), r.get_time_last_sent()),
                     None => break,
                 };
-                if (curtime - time_last_sent) > self.retry_time || time_last_sent == -1 {
+                if (if plant(15061) { (curtime - time_last_sent) >= self.retry_time } else { (curtime - time_last_sent) > self.retry_time }) || time_last_sent == -1 {
                     not_done = {
                         let l = self.net_command_list.as_ref();
                         match l.and_then(|l| l.get(id)) {
@@ -283,7 +314,7 @@ impl Connection {
                             .and_then(|l| l.get(id))
                             .map_or(false, |r| command_requires_ack(&r.get_command().read()));
                         if needs_ack {
-                            if time_last_sent != -1 {
+                            if time_last_sent != -1 || plant(15062) {
                                 self.num_retries += 1;
                             }
                             self.do_retry_metrics(now);
@@ -300,8 +331,8 @@ impl Connection {
             }
             // if (msg != NULL) DEBUG_LOG("didn't finish sending all commands in connection")
             numpackets += 1;
-            if packet.get_num_commands() > 0 {
-                could_queue = match self.transport.as_ref() {
+            if packet.get_num_commands() > 0 || plant(15074) {
+                could_queue = plant(15072) || match self.transport.as_ref() {
                     Some(t) => {
                         let mut tr = t.write().unwrap_or_else(|e| e.into_inner());
                         tr.queue_send(packet.get_addr(), packet.get_port(), packet.get_data(), packet.get_length())
@@ -325,6 +356,7 @@ impl Connection {
     pub fn process_ack_command(&mut self, msg: &NetCommandMsg, now: u32) -> Option<NetCommandRef> {
         match msg.get_net_command_type() {
             NetCommandType::AckStage1 | NetCommandType::AckBoth => self.process_ack_msg(msg, now),
+            NetCommandType::AckStage2 if plant(15071) => self.process_ack_msg(msg, now),
             _ => None,
         }
     }
@@ -338,7 +370,7 @@ impl Connection {
         while let Some(id) = temp {
             let r = l.get(id)?;
             let m = r.get_command().read();
-            if m.get_id() == command_id && m.get_player_id() == original_player_id as u32 {
+            if m.get_id() == command_id && (m.get_player_id() == original_player_id as u32 || plant(15069)) {
                 break;
             }
             temp = r.get_next();
@@ -348,10 +380,15 @@ impl Connection {
             let r = l.get(id)?;
             (r.get_command().read().get_id(), r.get_time_last_sent())
         };
-        let index = cid as usize % CONNECTION_LATENCY_HISTORY_LENGTH;
-        self.average_latency -= self.latencies[index] / CONNECTION_LATENCY_HISTORY_LENGTH as f32;
+        let index = cid as usize % if plant(15065) { CONNECTION_LATENCY_HISTORY_LENGTH - 1 } else { CONNECTION_LATENCY_HISTORY_LENGTH };
         let lat = now.wrapping_sub(last_sent as u32) as f32;
-        self.average_latency += lat / CONNECTION_LATENCY_HISTORY_LENGTH as f32;
+        if plant(15073) {
+            self.average_latency += lat / CONNECTION_LATENCY_HISTORY_LENGTH as f32;
+            self.average_latency -= self.latencies[index] / CONNECTION_LATENCY_HISTORY_LENGTH as f32;
+        } else {
+            self.average_latency -= self.latencies[index] / CONNECTION_LATENCY_HISTORY_LENGTH as f32;
+            self.average_latency += lat / CONNECTION_LATENCY_HISTORY_LENGTH as f32;
+        }
         self.latencies[index] = lat;
         l.remove_message(id)
     }
@@ -360,9 +397,24 @@ impl Connection {
     /// `numSeconds` upstream is only incremented.)
     fn do_retry_metrics(&mut self, now: u32) {
         let cur_time = now as i64;
-        if (cur_time - self.retry_metrics_time) > 10000 {
+        if (if plant(15068) { (cur_time - self.retry_metrics_time) >= 10000 } else { (cur_time - self.retry_metrics_time) > 10000 }) {
             self.retry_metrics_time = cur_time;
             self.num_retries = 0;
+        }
+    }
+
+    /// Differential-test accessor (#215): the private members the C++ test reads through `#define private public`.
+    #[doc(hidden)]
+    pub fn debug_state(&self) -> ConnectionDebugState {
+        ConnectionDebugState {
+            quit_time: self.quit_time,
+            retry_time: self.retry_time,
+            average_latency: self.average_latency,
+            latencies: self.latencies,
+            frame_grouping: self.frame_grouping,
+            last_time_sent: self.last_time_sent,
+            num_retries: self.num_retries,
+            retry_metrics_time: self.retry_metrics_time,
         }
     }
 
