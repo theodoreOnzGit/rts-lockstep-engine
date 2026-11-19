@@ -12669,7 +12669,6 @@ mod differential {
         write("up2_enum.inc", piece(&gih, "GameInfo.h", "enum\n{\n\tPLAYERTEMPLATE_RANDOM", Some("/**\n  * GameSlot class")));
         {
             println!("cargo:rerun-if-changed=differential/wrap_draft_userprefs2.cpp");
-            println!("cargo:rerun-if-changed={}", out_dir.join("user_prefs_gen/user_prefs_cut.inc").display());
             let mut b = cc::Build::new();
             base(&mut b);
             b.define("AsciiString", Some("G2Up2AsciiString"))
