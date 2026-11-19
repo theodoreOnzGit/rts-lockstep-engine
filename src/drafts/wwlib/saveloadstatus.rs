@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 40,000 programs (test: tests/differential_draft_chunksave.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWSaveLoad/saveloadstatus.h
@@ -8,6 +9,7 @@
 //! counter. `MAX_STATUS_TEXT_ID` is `#define`d as 2 in saveloadstatus.cpp (ids 0 and 1: setting id 0 clears id 1; `INIT_STATUS(t)` is id 0 and `INIT_SUB_STATUS(t)` id 1). The counter is not
 //! locked upstream (a plain `int`); here it is an atomic with relaxed ordering.
 
+use crate::logic::modules::plant;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Mutex;
 
@@ -22,7 +24,7 @@ pub fn set_status_text(text: &str, id: usize) {
     let mut t = STATUS_TEXT.lock().unwrap();
     assert!(id < MAX_STATUS_TEXT_ID);
     t[id] = text.to_string();
-    if id == 0 {
+    if id == 0 && !plant(14907) {
         t[1] = String::new();
     }
 }
@@ -36,7 +38,9 @@ pub fn get_status_text(id: usize) -> String {
 
 /// `SaveLoadStatus::Reset_Status_Count()`.
 pub fn reset_status_count() {
-    STATUS_COUNT.store(0, Ordering::Relaxed);
+    if !plant(14908) {
+        STATUS_COUNT.store(0, Ordering::Relaxed);
+    }
 }
 
 /// `SaveLoadStatus::Inc_Status_Count()`.

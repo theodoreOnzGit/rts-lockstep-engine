@@ -1,4 +1,7 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): ChunkSaveClass matches the upstream C++ on 40,000 programs, 12.9 MB written (tests/differential_draft_chunksave.rs).
+//! NOT covered: the helper functions `write_micro_chunk_string` and `write_wwstring_chunk` (the WRITE_* macros' other forms). Corrected
+//! 2026-11-19: `add_size` masks the sum to 31 bits as `Set_Size(Get_Size() + add)` (found by reading; no test reaches 2 GB).
+//! Not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/chunkio.cpp (the `ChunkSaveClass` half and the
@@ -6,6 +9,8 @@
 //!
 //! The file is an in-memory `Vec<u8>` standing in for `FileClass *File`; the stack depth limit is
 //! `MAX_CHUNK_DEPTH` (256) as upstream.
+
+use crate::logic::modules::plant;
 
 const MAX_CHUNK_DEPTH: usize = 256;
 
@@ -28,7 +33,10 @@ impl SaveChunkHeader {
         self.chunk_size & 0x8000_0000
     }
     fn add_size(&mut self, add: u32) {
-        self.chunk_size = self.chunk_size.wrapping_add(add);
+        // `Set_Size(Get_Size() + add)`: the sum is masked to 31 bits and the sub-chunk flag kept (corrected 2026-11-19, #215:
+        // the draft added into the whole word, carrying into the flag bit at 2 GB; not reachable by a test, found by reading)
+        let sum = self.get_size().wrapping_add(add);
+        self.chunk_size = (self.chunk_size & 0x8000_0000) | (sum & 0x7FFF_FFFF);
     }
     fn get_size(&self) -> u32 {
         self.chunk_size & 0x7FFF_FFFF
@@ -103,12 +111,12 @@ impl ChunkSaveClass {
     /// `ChunkSaveClass::Begin_Chunk` (chunkio.cpp:108).
     pub fn begin_chunk(&mut self, id: u32) -> bool {
         // If we have a parent chunk, set its 'Contains_Chunks' flag
-        if self.stack_index > 0 {
+        if self.stack_index > 0 && !plant(14894) {
             self.header_stack[self.stack_index - 1].set_sub_chunk_flag(true);
         }
         let chunkh = SaveChunkHeader { chunk_type: id, chunk_size: 0 };
         let filepos = self.file_tell();
-        self.position_stack[self.stack_index] = filepos;
+        self.position_stack[self.stack_index] = if plant(14900) { filepos + 8 } else { filepos };
         self.header_stack[self.stack_index] = chunkh;
         self.stack_index += 1;
         // write a temporary chunk header (size = 0)
@@ -130,9 +138,11 @@ impl ChunkSaveClass {
         }
         // Add the total bytes written to any encompasing chunk
         if self.stack_index != 0 {
-            self.header_stack[self.stack_index - 1].add_size(chunkh.get_size() + 8);
+            self.header_stack[self.stack_index - 1].add_size(chunkh.get_size() + if plant(14895) { 0 } else { 8 });
         }
-        self.file_seek_set(curpos);
+        if !plant(14896) {
+            self.file_seek_set(curpos);
+        }
         true
     }
 
@@ -145,7 +155,11 @@ impl ChunkSaveClass {
         self.micro_chunk_position = self.file_tell();
         // upstream calls Write() so the header bytes are tracked in the wrapping chunk
         let hdr = [self.mc_type, self.mc_size];
-        if self.write(&hdr) != 2 {
+        if plant(14897) {
+            if self.file_write(&hdr) != 2 {
+                return false;
+            }
+        } else if self.write(&hdr) != 2 {
             return false;
         }
         self.in_micro_chunk = true;
@@ -157,7 +171,7 @@ impl ChunkSaveClass {
         debug_assert!(self.in_micro_chunk);
         let curpos = self.file_tell();
         self.file_seek_set(self.micro_chunk_position);
-        let hdr = [self.mc_type, self.mc_size];
+        let hdr = if plant(14899) { [self.mc_size, self.mc_type] } else { [self.mc_type, self.mc_size] };
         if self.file_write(&hdr) != 2 {
             return false;
         }
@@ -178,7 +192,9 @@ impl ChunkSaveClass {
         self.header_stack[self.stack_index - 1].add_size(nbytes);
         if self.in_micro_chunk {
             debug_assert!((self.mc_size as u32) < 255 - nbytes);
-            self.mc_size = self.mc_size.wrapping_add(nbytes as u8);
+            if !plant(14898) {
+                self.mc_size = self.mc_size.wrapping_add(nbytes as u8);
+            }
         }
         nbytes
     }
@@ -187,6 +203,7 @@ impl ChunkSaveClass {
     /// `Write(const IOQuaternionStruct &)`: the whole struct (`sizeof(v)`), written as little-endian floats.
     pub fn write_floats(&mut self, v: &[f32]) -> u32 {
         let mut bytes = Vec::with_capacity(v.len() * 4);
+        let v = if plant(14901) && v.len() == 4 { &v[..3] } else { v };
         for f in v {
             bytes.extend_from_slice(&f.to_le_bytes());
         }

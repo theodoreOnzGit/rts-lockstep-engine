@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 40,000 programs, 1.17 million words (test: tests/differential_draft_ptrremap.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWSaveLoad/pointerremap.h
@@ -9,6 +10,8 @@
 //! `process` returns, per request in sorted order, `(slot, Some(new))` or `(slot, None)` (upstream's `NULL`) for the
 //! caller to write back. For the ref-counted table the caller performs the `Add_Ref()` for each `Some`. `File`/`Line`
 //! (`WWDEBUG` only) are kept as the optional debug fields.
+
+use crate::logic::modules::plant;
 
 /// `PointerRemapClass::PtrPairStruct`.
 #[derive(Clone, Copy, PartialEq)]
@@ -47,7 +50,9 @@ impl PointerRemapClass {
     pub fn reset(&mut self) {
         self.pointer_pair_table.clear();
         self.pointer_request_table.clear();
-        self.ref_count_request_table.clear();
+        if !plant(14892) {
+            self.ref_count_request_table.clear();
+        }
     }
 
     /// `PointerRemapClass::Process` (pointerremap.cpp:79): (plain results, ref-counted results).
@@ -56,12 +61,18 @@ impl PointerRemapClass {
         let mut counted = Vec::new();
 
         if !self.pointer_pair_table.is_empty() {
-            self.pointer_pair_table.sort_by(|a, b| a.old_pointer.cmp(&b.old_pointer)); // ptr_pair_compare_function
+            if plant(14891) {
+                self.pointer_pair_table.sort_by(|a, b| a.new_pointer.cmp(&b.new_pointer));
+            } else {
+                self.pointer_pair_table.sort_by(|a, b| a.old_pointer.cmp(&b.old_pointer)); // ptr_pair_compare_function
+            }
         }
 
         if !self.pointer_request_table.is_empty() {
             debug_assert!(!self.pointer_pair_table.is_empty());
-            self.pointer_request_table.sort_by(|a, b| a.old_value.cmp(&b.old_value)); // ptr_request_compare_function
+            if !plant(14889) {
+                self.pointer_request_table.sort_by(|a, b| a.old_value.cmp(&b.old_value)); // ptr_request_compare_function
+            }
             plain = self.process_request_table(&self.pointer_request_table);
         }
 
@@ -69,7 +80,7 @@ impl PointerRemapClass {
         if !self.ref_count_request_table.is_empty() {
             debug_assert!(!self.pointer_pair_table.is_empty());
             self.ref_count_request_table.sort_by(|a, b| a.old_value.cmp(&b.old_value));
-            counted = self.process_request_table(&self.ref_count_request_table);
+            counted = if plant(14890) { self.process_request_table(&self.pointer_request_table) } else { self.process_request_table(&self.ref_count_request_table) };
         }
         (plain, counted)
     }
@@ -85,7 +96,7 @@ impl PointerRemapClass {
             let pre_search_index = pair_index;
 
             // Find the pair which contains the pointer we are looking for as its "old" pointer
-            while pair_index < table.len() && table[pair_index].old_pointer < pointer_to_remap {
+            while pair_index < table.len() && (table[pair_index].old_pointer < pointer_to_remap || (plant(14888) && table[pair_index].old_pointer == pointer_to_remap)) {
                 pair_index += 1;
             }
 
@@ -96,8 +107,8 @@ impl PointerRemapClass {
                 // Failed to re-map the pointer: warn, set to NULL, reset index to the pre_search_index.
                 // WWDEBUG_SAY("Warning! Failed to re-map pointer! old_ptr = 0x%X  file = %s  line = %d")
                 let _ = (req.file, req.line);
-                pair_index = pre_search_index;
-                out.push((req.slot, None));
+                pair_index = if plant(14887) { (pre_search_index + 1).min(table.len()) } else { pre_search_index };
+                out.push((req.slot, if plant(14893) { Some(pointer_to_remap) } else { None }));
             }
         }
         out
