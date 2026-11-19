@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 HLods, about 7,000 to 9,000 evaluations of each of its seventeen accessors (test: tests/differential_draft_hlod.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/hlod.cpp
@@ -12,6 +13,7 @@
 //! Excluded: `HLodDefClass::Save_Lod_Array` and `::Save_Aggregate_Array` (hlod.cpp:525, :555), reached only through
 //! `HLodDefClass::Save_W3D`, which only the 3ds Max exporter (`Tools/WW3D/max2w3d`) calls: editor-only.
 
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::wwmath::WWMATH_FLOAT_MAX;
 
@@ -84,7 +86,7 @@ impl HLodState {
         let mut size = NO_MAX_SCREEN_SIZE;
         debug_assert!(lod_index >= 0);
         debug_assert!(lod_index < self.lod_count);
-        if lod_index >= 0 && lod_index < self.lod_count {
+        if (if plant(13896) { lod_index > 0 } else { lod_index >= 0 }) && lod_index < self.lod_count {
             size = self.lod[lod_index as usize].max_screen_size;
         }
         size
@@ -95,7 +97,7 @@ impl HLodState {
         let mut count = 0;
         debug_assert!(lod_index >= 0);
         debug_assert!(lod_index < self.lod_count);
-        if lod_index >= 0 && lod_index < self.lod_count {
+        if lod_index >= 0 && lod_index < (if plant(13897) { self.lod_count - 1 } else { self.lod_count }) {
             count = self.lod[lod_index as usize].count();
         }
         count
@@ -106,7 +108,7 @@ impl HLodState {
     pub fn get_lod_model(&self, lod_index: i32, model_index: i32) -> Option<usize> {
         debug_assert!(lod_index >= 0);
         debug_assert!(lod_index < self.lod_count);
-        if lod_index >= 0 && lod_index < self.lod_count && model_index < self.lod[lod_index as usize].count() {
+        if lod_index >= 0 && lod_index < self.lod_count && model_index < self.lod[lod_index as usize].count() - i32::from(plant(13898)) {
             return self.lod[lod_index as usize].models[model_index as usize].model;
         }
         None
@@ -114,7 +116,7 @@ impl HLodState {
 
     /// `HLodClass::Get_Lod_Model_Bone` (hlod.cpp:1784): 0 when out of range.
     pub fn get_lod_model_bone(&self, lod_index: i32, model_index: i32) -> i32 {
-        let mut bone_index = 0;
+        let mut bone_index = if plant(13899) { -1 } else { 0 };
         debug_assert!(lod_index >= 0);
         debug_assert!(lod_index < self.lod_count);
         if lod_index >= 0 && lod_index < self.lod_count && model_index < self.lod[lod_index as usize].count() {
@@ -125,6 +127,9 @@ impl HLodState {
 
     /// `HLodClass::Get_Additional_Model_Count` (hlod.cpp:1816).
     pub fn get_additional_model_count(&self) -> i32 {
+        if plant(13900) {
+            return (self.additional_models.len() as i32 - 1).max(0);
+        }
         self.additional_models.len() as i32
     }
 
@@ -132,7 +137,7 @@ impl HLodState {
     pub fn peek_additional_model(&self, model_index: i32) -> Option<usize> {
         debug_assert!(model_index >= 0);
         debug_assert!(model_index < self.get_additional_model_count());
-        if model_index >= 0 && model_index < self.get_additional_model_count() {
+        if (if plant(13901) { model_index > 0 } else { model_index >= 0 }) && model_index < self.get_additional_model_count() {
             return self.additional_models[model_index as usize].model;
         }
         None
@@ -145,7 +150,7 @@ impl HLodState {
 
     /// `HLodClass::Get_Additional_Model_Bone` (hlod.cpp:1899): 0 when out of range.
     pub fn get_additional_model_bone(&self, model_index: i32) -> i32 {
-        let mut bone_index = 0;
+        let mut bone_index = if plant(13902) { 1 } else { 0 };
         debug_assert!(model_index >= 0);
         debug_assert!(model_index < self.get_additional_model_count());
         if model_index >= 0 && model_index < self.get_additional_model_count() {
@@ -158,7 +163,8 @@ impl HLodState {
     /// `is_null_class` is `Model->Class_ID() == CLASSID_NULL`.
     pub fn is_null_lod_included(&self, is_null_class: impl Fn(usize) -> bool) -> bool {
         if self.lod_count > 0 {
-            if let Some(Some(m)) = self.lod.get(0).and_then(|a| a.models.get(0)).map(|n| n.model) {
+            let first = if plant(13903) { self.lod.last() } else { self.lod.get(0) };
+            if let Some(Some(m)) = first.and_then(|a| a.models.get(0)).map(|n| n.model) {
                 return is_null_class(m);
             }
         }
@@ -168,7 +174,7 @@ impl HLodState {
     /// `HLodClass::Get_Proxy_Count` (hlod.cpp:2049).
     pub fn get_proxy_count(&self) -> i32 {
         match &self.proxy_array {
-            Some(a) => a.len() as i32,
+            Some(a) => a.len() as i32 + i32::from(plant(13904)),
             None => 0,
         }
     }
@@ -180,16 +186,16 @@ impl HLodState {
         match &self.proxy_array {
             Some(a) => {
                 let rec = &a[index as usize];
-                let transform = bone_transform(rec.bone_index);
+                let transform = bone_transform(if plant(13905) { index } else { rec.bone_index });
                 (true, ProxyClass { name: rec.name.clone(), transform })
             }
-            None => (false, ProxyClass { name: String::new(), transform: identity }),
+            None => (plant(13906), ProxyClass { name: String::new(), transform: identity }),
         }
     }
 
     /// `HLodClass::Add_Sub_Object` (hlod.cpp:2367): `Add_Sub_Object_To_Bone(subobj, 0)`, supplied as `add_to_bone`.
     pub fn add_sub_object(&mut self, subobj: usize, mut add_to_bone: impl FnMut(&mut Self, usize, i32) -> i32) -> i32 {
-        add_to_bone(self, subobj, 0)
+        add_to_bone(self, subobj, i32::from(plant(13912)))
     }
 
     /// `HLodClass::Get_Num_Sub_Objects_On_Bone` (hlod.cpp:2460): every LOD's models, then the additional models.
@@ -203,7 +209,7 @@ impl HLodState {
             }
         }
         for model in 0..self.additional_models.len() {
-            if self.additional_models[model].bone_index == boneindex {
+            if (self.additional_models[model].bone_index == boneindex) != plant(13908) && !plant(13907) {
                 count += 1;
             }
         }
@@ -216,13 +222,13 @@ impl HLodState {
         if count == 0 {
             return None;
         }
-        self.get_lod_model(self.cur_lod, 0)
+        self.get_lod_model(if plant(13909) { 0 } else { self.cur_lod }, 0)
     }
 
     /// `HLodClass::Get_Num_Snap_Points` (hlod.cpp:3306).
     pub fn get_num_snap_points(&self) -> i32 {
         match &self.snap_points {
-            Some(p) => p.len() as i32,
+            Some(p) => p.len() as i32 - i32::from(plant(13910) && !p.is_empty()),
             None => 0,
         }
     }
@@ -231,12 +237,14 @@ impl HLodState {
     pub fn get_snap_point(&self, index: i32) -> [f32; 3] {
         match &self.snap_points {
             Some(p) => p[index as usize],
-            None => [0.0, 0.0, 0.0],
+            None => [0.0, 0.0, if plant(13911) { 1.0 } else { 0.0 }],
         }
     }
 
     /// `HLodClass::Set_HTree` (hlod.cpp:3612): forwards to `Animatable3DObjClass::Set_HTree`, supplied as `base`.
     pub fn set_htree<T>(&mut self, htree: T, base: impl FnOnce(&mut Self, T)) {
-        base(self, htree);
+        if !plant(13913) {
+            base(self, htree);
+        }
     }
 }

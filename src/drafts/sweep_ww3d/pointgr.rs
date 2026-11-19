@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! NOT differential-tested (#215, group sweepww3d, 2026-11-19): `PointGroupClass::Update_Arrays` is ~580 lines of twelve pointer-walking loops fed by the D3DX/DX8 device (`WW3D::Get_Render_Target_Resolution`, `DX8Wrapper::Get_Transform`, `D3DXMatrixRotationZ`), and `_Init` allocates the DX8 index buffers in the same function as the tables; a verbatim cut needs stand-ins for most of it. The default setters/getters are one-line field copies. Left for a later pass.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/pointgr.cpp

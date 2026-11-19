@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215, tests/differential_draft_dazzle.rs): `get_vector2/3/4`, `lensflare_generate_vertex_buffers` and `calculate_intensities` match the upstream C++ (20,000 cases each); NOT tested (device, host calls or statics): `render_dazzle`, `vis_render_dazzle`, `dazzle_index_buffer` (the index fill inside `Render_Dazzle`), the texture getters, shader setters, `DazzleTables`, the visible lists.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/dazzle.cpp
@@ -12,6 +13,9 @@
 //!
 //! Not on the list because already translated or not a definition: the constructors, `Render`, `Init_Shaders`,
 //! `Deinit`, `Set_Transform`, `Get_Type_ID` (names appear elsewhere in the port).
+
+use crate::logic::modules::plant;
+use petir::Real;
 
 /// `VertexFormatXYZNDUV2` as the dazzle code fills it: position, first texture coordinate, diffuse.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -65,7 +69,8 @@ const WWMATH_EPSILON: f32 = 0.0001;
 /// `value` is the entry's text (`None` when the section / entry is missing or has no value).
 pub fn get_vector2(value: Option<&str>, defvalue: [f32; 2]) -> [f32; 2] {
     match scan_floats(value, 2) {
-        Some(v) => [v[0], v[1]],
+        Some(v) if !(plant(13946) && value.map_or(false, |t| t.split(',').count() > 2)) => [v[0], v[1]],
+        Some(_) => defvalue,
         None => defvalue,
     }
 }
@@ -73,7 +78,7 @@ pub fn get_vector2(value: Option<&str>, defvalue: [f32; 2]) -> [f32; 2] {
 /// `DazzleINIClass::Get_Vector3` (dazzle.cpp:316): `sscanf("%f,%f,%f") == 3`.
 pub fn get_vector3(value: Option<&str>, defvalue: [f32; 3]) -> [f32; 3] {
     match scan_floats(value, 3) {
-        Some(v) => [v[0], v[1], v[2]],
+        Some(v) => if plant(13947) { [v[0], v[2], v[1]] } else { [v[0], v[1], v[2]] },
         None => defvalue,
     }
 }
@@ -81,14 +86,44 @@ pub fn get_vector3(value: Option<&str>, defvalue: [f32; 3]) -> [f32; 3] {
 /// `DazzleINIClass::Get_Vector4` (dazzle.cpp:330): `sscanf("%f,%f,%f,%f") == 4`.
 pub fn get_vector4(value: Option<&str>, defvalue: [f32; 4]) -> [f32; 4] {
     match scan_floats(value, 4) {
-        Some(v) => [v[0], v[1], v[2], v[3]],
+        Some(v) => [v[0], v[1], v[2], if plant(13948) { defvalue[3] } else { v[3] }],
         None => defvalue,
     }
 }
 
-/// `sscanf` of `n` comma-separated floats: succeeds only when all `n` convert (upstream compares the count to `n`).
+/// `sscanf(text, "%f,%f,...")` with `n` conversions: succeeds only when all `n` convert (upstream compares the count to `n`).
+/// glibc's rules, which the first draft (split on `,`, `trim`, `str::parse`) did not follow (found by the differential test,
+/// #215): leading blanks are skipped before each number only, the `,` must follow the number IMMEDIATELY (no blank before it),
+/// text after the last number is ignored (`"1,2x"` reads 2), a number is the longest prefix that fits `%f` (so `"1.5f"` reads
+/// 1.5 and then the `f` is not a `,`), and `inf`, `infinity`, `nan` and hexadecimal floats are accepted. [`plant`] 13966 is the
+/// first draft.
 fn scan_floats(value: Option<&str>, n: usize) -> Option<Vec<f32>> {
     let text = value?;
+    if plant(13966) {
+        return scan_floats_first_draft(text, n);
+    }
+    let b = text.as_bytes();
+    let mut pos = 0usize;
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        if i > 0 {
+            if b.get(pos) != Some(&b',') {
+                return None;
+            }
+            pos += 1;
+        }
+        while pos < b.len() && matches!(b[pos], b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
+            pos += 1;
+        }
+        let (v, used) = scan_float(&b[pos..])?;
+        out.push(v);
+        pos += used;
+    }
+    Some(out)
+}
+
+/// The first draft of [`scan_floats`] (kept only as planted defect 13966).
+fn scan_floats_first_draft(text: &str, n: usize) -> Option<Vec<f32>> {
     let mut out = Vec::with_capacity(n);
     let mut parts = text.split(',');
     for _ in 0..n {
@@ -96,6 +131,126 @@ fn scan_floats(value: Option<&str>, n: usize) -> Option<Vec<f32>> {
         out.push(p.trim().parse::<f32>().ok()?);
     }
     Some(out)
+}
+
+/// One `%f` conversion at the start of `b` (blanks already skipped): the value and the bytes used, `None` for a matching failure.
+fn scan_float(b: &[u8]) -> Option<(f32, usize)> {
+    let mut i = 0usize;
+    let mut neg = false;
+    if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+        neg = b[i] == b'-';
+        i += 1;
+    }
+    let rest = &b[i..];
+    let low = |k: usize| rest.get(k).map(|c| c.to_ascii_lowercase());
+    if low(0) == Some(b'i') {
+        if low(1) == Some(b'n') && low(2) == Some(b'f') {
+            // glibc: after `inf`, an `i` must continue to a full `inity` (`infinit` is a matching failure, `infx` is `inf`)
+            let used = if low(3) == Some(b'i') {
+                if rest.len() >= 8 && rest[3..8].eq_ignore_ascii_case(b"inity") {
+                    i + 8
+                } else {
+                    return None;
+                }
+            } else {
+                i + 3
+            };
+            return Some((if neg { f32::NEG_INFINITY } else { f32::INFINITY }, used));
+        }
+        return None;
+    }
+    if low(0) == Some(b'n') {
+        if low(1) == Some(b'a') && low(2) == Some(b'n') {
+            return Some((if neg { -f32::NAN } else { f32::NAN }, i + 3));
+        }
+        return None;
+    }
+    if rest.len() >= 2 && rest[0] == b'0' && (rest[1] == b'x' || rest[1] == b'X') {
+        // hexadecimal: digits [. digits] [p [+-] digits]
+        let mut k = 2usize;
+        let mut mant: u64 = 0;
+        let mut ndig = 0usize;
+        let mut frac = 0i32;
+        let mut seen_dot = false;
+        while k < rest.len() {
+            let c = rest[k];
+            if let Some(d) = (c as char).to_digit(16) {
+                mant = mant.wrapping_mul(16).wrapping_add(u64::from(d));
+                ndig += 1;
+                if seen_dot {
+                    frac += 1;
+                }
+            } else if c == b'.' && !seen_dot {
+                seen_dot = true;
+            } else {
+                break;
+            }
+            k += 1;
+        }
+        if ndig > 0 {
+            let mut exp2 = 0i32;
+            if k < rest.len() && (rest[k] == b'p' || rest[k] == b'P') {
+                let mut m = k + 1;
+                let mut eneg = false;
+                if m < rest.len() && (rest[m] == b'+' || rest[m] == b'-') {
+                    eneg = rest[m] == b'-';
+                    m += 1;
+                }
+                let start = m;
+                let mut e: i32 = 0;
+                while m < rest.len() && rest[m].is_ascii_digit() {
+                    e = e.saturating_mul(10).saturating_add(i32::from(rest[m] - b'0'));
+                    m += 1;
+                }
+                // glibc consumes the `p`, the sign and the digits even when there are no digits (the value then ignores them)
+                if m > start {
+                    exp2 = if eneg { -e } else { e };
+                }
+                k = m;
+            }
+            let v = (mant as f64) * 2f64.powi(exp2 - 4 * frac);
+            return Some((if neg { -(v as f32) } else { v as f32 }, i + k));
+        }
+        // "0x" without a hex digit: glibc consumes it and the conversion fails
+        return None;
+    }
+    // decimal: digits [. digits] [e [+-] digits]
+    let mut k = 0usize;
+    let mut ndig = 0usize;
+    while k < rest.len() && rest[k].is_ascii_digit() {
+        k += 1;
+        ndig += 1;
+    }
+    if k < rest.len() && rest[k] == b'.' {
+        k += 1;
+        while k < rest.len() && rest[k].is_ascii_digit() {
+            k += 1;
+            ndig += 1;
+        }
+    }
+    if ndig == 0 {
+        return None;
+    }
+    let mut value_end = k;
+    let mut used = k;
+    if k < rest.len() && (rest[k] == b'e' || rest[k] == b'E') {
+        let mut m = k + 1;
+        if m < rest.len() && (rest[m] == b'+' || rest[m] == b'-') {
+            m += 1;
+        }
+        let start = m;
+        while m < rest.len() && rest[m].is_ascii_digit() {
+            m += 1;
+        }
+        // glibc consumes the `e`, the sign and the digits even when there are no digits (`1e,` reads 1 and then the `,`)
+        used = m;
+        if m > start {
+            value_end = m;
+        }
+    }
+    let text = std::str::from_utf8(&rest[..value_end]).ok()?;
+    let v: f32 = text.parse().ok()?;
+    Some((if neg { -v } else { v }, i + used))
 }
 
 /// `DX8Wrapper::Convert_Color(Vector3, alpha)`: the host's packed colour.
@@ -113,26 +268,34 @@ pub fn lensflare_generate_vertex_buffers(
     convert_color: ConvertColor,
 ) -> i32 {
     let z = transformed_location[2];
-    let distance_multiplier = (transformed_location[0] * transformed_location[0] + transformed_location[1] * transformed_location[1]).sqrt() + 1.0;
+    // `sqrt` of the float sum is the C double `sqrt`; `+ 1.0f` is then added in double and the sum narrowed on assignment
+    let sqrt_sum = Real::sqrt(f64::from(transformed_location[0] * transformed_location[0] + transformed_location[1] * transformed_location[1]));
+    let distance_multiplier = (sqrt_sum + if plant(13952) { 0.0 } else { 1.0 }) as f32;
     let start = vertex.len();
     for a in 0..lic.flare_count {
         let x = lic.flare_locations[a] * transformed_location[0];
         let y = lic.flare_locations[a] * transformed_location[1];
-        let size = lic.flare_sizes[a] * distance_multiplier;
+        let size = (if plant(13954) { lic.flare_locations[a] } else { lic.flare_sizes[a] }) * distance_multiplier;
         let ix = size * screen_x_scale;
         let iy = size * screen_y_scale;
         let mut col = [lic.flare_colors[a][0] * dazzle_intensity, lic.flare_colors[a][1] * dazzle_intensity, lic.flare_colors[a][2] * dazzle_intensity];
-        for c in col.iter_mut() {
-            if *c > 1.0 {
+        for (ci, c) in col.iter_mut().enumerate() {
+            if *c > 1.0 && !(plant(13951) && ci == 2) {
                 *c = 1.0;
             }
         }
         let color = convert_color(col, 1.0);
         let uv = lic.flare_uv[a];
-        vertex.push(VertexXyzNduv2 { x: x + ix, y: y - iy, z, u1: uv[0], v1: uv[1], diffuse: color });
+        vertex.push(VertexXyzNduv2 { x: x + ix, y: if plant(13949) { y + iy } else { y - iy }, z, u1: uv[0], v1: uv[1], diffuse: color });
         vertex.push(VertexXyzNduv2 { x: x + ix, y: y + iy, z, u1: uv[2], v1: uv[1], diffuse: color });
-        vertex.push(VertexXyzNduv2 { x: x - ix, y: y + iy, z, u1: uv[2], v1: uv[3], diffuse: color });
-        vertex.push(VertexXyzNduv2 { x: x - ix, y: y - iy, z, u1: uv[0], v1: uv[3], diffuse: color });
+        vertex.push(VertexXyzNduv2 { x: x - ix, y: y + iy, z, u1: if plant(13950) { uv[0] } else { uv[2] }, v1: uv[3], diffuse: color });
+        if plant(13953) {
+            let n = vertex.len();
+            vertex.push(VertexXyzNduv2 { x: x - ix, y: y - iy, z, u1: uv[0], v1: uv[3], diffuse: color });
+            vertex.swap(n - 1, n);
+        } else {
+            vertex.push(VertexXyzNduv2 { x: x - ix, y: y - iy, z, u1: uv[0], v1: uv[3], diffuse: color });
+        }
     }
     (vertex.len() - start) as i32
 }
@@ -189,15 +352,15 @@ impl DazzleTypeClass {
     pub fn calculate_intensities(&self, mut halo_intensity: f32, camera_dir: [f32; 3], dazzle_dir: [f32; 3], dir_to_dazzle: [f32; 3], mut distance: f32) -> (f32, f32, f32) {
         let ic = &self.ic;
         let mut dazzle_size = 0.0f32;
-        let dot = -dot3(dir_to_dazzle, camera_dir);
+        let dot = if plant(13955) { dot3(dir_to_dazzle, camera_dir) } else { -dot3(dir_to_dazzle, camera_dir) };
         let mut dazzle_intensity = dot;
-        if ic.use_camera_translation && distance > self.fadeout_end_sqr {
+        if ic.use_camera_translation && distance > (if plant(13956) { self.fadeout_start_sqr } else { self.fadeout_end_sqr }) {
             return (0.0, dazzle_size, halo_intensity);
         }
-        dazzle_intensity -= 1.0 - ic.dazzle_area;
+        dazzle_intensity -= if plant(13957) { ic.dazzle_area - 1.0 } else { 1.0 - ic.dazzle_area };
         dazzle_intensity /= ic.dazzle_area;
         dazzle_intensity = clamp01(dazzle_intensity);
-        if ic.dazzle_direction_area > 0.0 {
+        if (if plant(13958) { ic.dazzle_direction_area >= 0.0 } else { ic.dazzle_direction_area > 0.0 }) {
             let mut angle = -dot3(camera_dir, dazzle_dir);
             angle -= 1.0 - ic.dazzle_direction_area;
             angle /= ic.dazzle_direction_area;
@@ -205,28 +368,37 @@ impl DazzleTypeClass {
             dazzle_intensity *= angle;
         }
         if dazzle_intensity > 0.0 {
-            dazzle_size = dazzle_intensity.powf(ic.dazzle_size_pow);
-            dazzle_intensity = dazzle_intensity.powf(ic.dazzle_intensity_pow);
+            // `pow(float, float)` is the C double `pow`, narrowed on assignment (the first draft used `f32::powf`: plant 13965)
+            let size_pow = if plant(13959) { ic.dazzle_intensity_pow } else { ic.dazzle_size_pow };
+            if plant(13965) {
+                dazzle_size = dazzle_intensity.powf(size_pow);
+                dazzle_intensity = dazzle_intensity.powf(ic.dazzle_intensity_pow);
+            } else {
+                dazzle_size = Real::powf(f64::from(dazzle_intensity), f64::from(size_pow)) as f32;
+                dazzle_intensity = Real::powf(f64::from(dazzle_intensity), f64::from(ic.dazzle_intensity_pow)) as f32;
+            }
         } else {
             dazzle_intensity = 0.0;
         }
         if ic.halo_intensity_pow > WWMATH_EPSILON {
-            if dot > 0.0 {
-                let scale = dot.powf(ic.halo_intensity_pow);
+            if (if plant(13960) { dot >= 0.0 } else { dot > 0.0 }) {
+                let scale = Real::powf(dot, ic.halo_intensity_pow);
                 halo_intensity *= scale;
             } else {
                 halo_intensity = 0.0;
             }
         }
         dazzle_intensity *= ic.dazzle_intensity;
-        halo_intensity *= ic.halo_intensity;
+        halo_intensity *= if plant(13961) { ic.dazzle_intensity } else { ic.halo_intensity };
         // Flare fadeout distance - fade it out...
         if ic.use_camera_translation && distance > self.fadeout_start_sqr {
-            distance = distance.sqrt();
-            distance -= ic.fadeout_start;
+            distance = Real::sqrt(f64::from(distance)) as f32;
+            distance -= if plant(13962) { ic.fadeout_end } else { ic.fadeout_start };
             distance /= ic.fadeout_end - ic.fadeout_start;
             dazzle_intensity *= 1.0 - distance;
-            halo_intensity *= 1.0 - distance;
+            if !plant(13963) {
+                halo_intensity *= 1.0 - distance;
+            }
         }
         (dazzle_intensity, dazzle_size, halo_intensity)
     }
@@ -240,7 +412,7 @@ fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
 fn clamp01(v: f32) -> f32 {
     if v < 0.0 {
         0.0
-    } else if v > 1.0 {
+    } else if v > 1.0 && !plant(13964) {
         1.0
     } else {
         v
