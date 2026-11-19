@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per operation (test: tests/differential_draft_coltest.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/coltest.cpp
@@ -16,6 +17,7 @@ use crate::client::pick_drawable::CastResult;
 use crate::formats::w3d::segline::AABox;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
+use crate::logic::modules::plant;
 use std::sync::{Arc, RwLock};
 
 /// `COLL_TYPE_0` (coltype.h), the default `collision_type` argument.
@@ -63,7 +65,7 @@ impl AABoxCollisionTestClass {
         let mut sweep_min = aabox.center - aabox.extent;
         let mut sweep_max = aabox.center + aabox.extent;
 
-        let endmin = aabox.center + *move_ - aabox.extent;
+        let endmin = if plant(14679) { aabox.center - *move_ - aabox.extent } else { aabox.center + *move_ - aabox.extent };
         let endmax = aabox.center + *move_ + aabox.extent;
 
         if endmax.x > sweep_max.x { sweep_max.x = endmax.x; }
@@ -87,10 +89,10 @@ impl AABoxCollisionTestClass {
 
     /// `AABoxCollisionTestClass::Cull(min, max)` (coltest.h): true when the sweep box misses the given box.
     pub fn cull_min_max(&self, min: &Vector3, max: &Vector3) -> bool {
-        if (self.sweep_min.x > max.x) || (self.sweep_max.x < min.x) {
+        if (if plant(14680) { self.sweep_min.x >= max.x } else { self.sweep_min.x > max.x }) || (self.sweep_max.x < min.x) {
             return true;
         }
-        if (self.sweep_min.y > max.y) || (self.sweep_max.y < min.y) {
+        if (self.sweep_min.y > max.y) || (if plant(14681) { self.sweep_max.y <= min.y } else { self.sweep_max.y < min.y }) {
             return true;
         }
         if (self.sweep_min.z > max.z) || (self.sweep_max.z < min.z) {
@@ -103,7 +105,7 @@ impl AABoxCollisionTestClass {
     /// moves is dead code upstream.)
     pub fn cull(&self, box_: &AABox) -> bool {
         let min_corner = box_.center - box_.extent;
-        let max_corner = box_.center + box_.extent;
+        let max_corner = if plant(14691) { box_.center } else { box_.center + box_.extent };
         self.cull_min_max(&min_corner, &max_corner)
     }
 
@@ -114,7 +116,9 @@ impl AABoxCollisionTestClass {
     pub fn translate(&mut self, translation: &Vector3) {
         self.box_.center += *translation;
         self.sweep_min += *translation;
-        self.sweep_max += *translation;
+        if !plant(14682) {
+            self.sweep_max += *translation;
+        }
     }
 
     /// `AABoxCollisionTestClass::Rotate` (coltest.cpp:97): rotates the test about Z by a multiple of 90 degrees
@@ -140,7 +144,7 @@ impl AABoxCollisionTestClass {
 
                 // update sweep bounding box
                 let (minx, miny, maxx, maxy) = (self.sweep_min.x, self.sweep_min.y, self.sweep_max.x, self.sweep_max.y);
-                self.sweep_min.x = -maxy;
+                self.sweep_min.x = if plant(14683) { -maxx } else { -maxy };
                 self.sweep_min.y = minx;
                 self.sweep_max.x = -miny;
                 self.sweep_max.y = maxx;
@@ -148,7 +152,7 @@ impl AABoxCollisionTestClass {
             RotationType::RotateZ180 => {
                 // rotate center and move vector
                 self.box_.center.x = -self.box_.center.x;
-                self.box_.center.y = -self.box_.center.y;
+                self.box_.center.y = if plant(14685) { self.box_.center.y } else { -self.box_.center.y };
                 self.move_.x = -self.move_.x;
                 self.move_.y = -self.move_.y;
 
@@ -167,7 +171,7 @@ impl AABoxCollisionTestClass {
 
                 let tmp = self.move_.x;
                 self.move_.x = self.move_.y;
-                self.move_.y = -tmp;
+                self.move_.y = if plant(14684) { tmp } else { -tmp };
 
                 // update extent (x and y axis swap)
                 let tmp = self.box_.extent.x;
@@ -193,7 +197,9 @@ impl AABoxCollisionTestClass {
         let (c, e) = tm.transform_center_extent_aabox(&tmpcenter, &tmpextent);
         self.box_.center = c;
         self.box_.extent = e;
-        self.move_ = tm.rotate_vector(&self.move_);
+        if !plant(14686) {
+            self.move_ = tm.rotate_vector(&self.move_);
+        }
 
         let min = self.sweep_min;
         let max = self.sweep_max;
@@ -241,7 +247,7 @@ impl ObBoxClass {
         let mut basis = [[0.0f32; 3]; 3];
         for i in 0..3 {
             for j in 0..3 {
-                basis[i][j] = tm.row[i][0] * in_.basis[0][j] + tm.row[i][1] * in_.basis[1][j] + tm.row[i][2] * in_.basis[2][j];
+                basis[i][j] = if plant(14690) { in_.basis[i][0] * tm.row[0][j] + in_.basis[i][1] * tm.row[1][j] + in_.basis[i][2] * tm.row[2][j] } else { tm.row[i][0] * in_.basis[0][j] + tm.row[i][1] * in_.basis[1][j] + tm.row[i][2] * in_.basis[2][j] };
             }
         }
         ObBoxClass { extent: in_.extent, center: Matrix3D::transform_vector(tm, &in_.center), basis }
@@ -267,7 +273,7 @@ impl OBBoxCollisionTestClass {
         let max_extent = Vector3::new(
             (b[0][0] * e.x).abs() + (b[0][1] * e.y).abs() + (b[0][2] * e.z).abs() + 0.01f32,
             (b[1][0] * e.x).abs() + (b[1][1] * e.y).abs() + (b[1][2] * e.z).abs() + 0.01f32,
-            (b[2][0] * e.x).abs() + (b[2][1] * e.y).abs() + (b[2][2] * e.z).abs() + 0.01f32,
+            (b[2][0] * e.x).abs() + (b[2][1] * e.y).abs() + (b[2][2] * e.z).abs() + if plant(14687) { 0.0 } else { 0.01f32 },
         );
 
         let mut sweep_min = obbox.center - max_extent;
@@ -298,7 +304,7 @@ impl OBBoxCollisionTestClass {
         let (sweep_min, sweep_max) = tm.transform_min_max_aabox(&that.sweep_min, &that.sweep_max);
         OBBoxCollisionTestClass {
             base: that.base.clone(),
-            box_: ObBoxClass::transform(tm, &that.box_),
+            box_: if plant(14689) { ObBoxClass { center: Matrix3D::rotate_vector_by(tm, &that.box_.center), ..ObBoxClass::transform(tm, &that.box_) } } else { ObBoxClass::transform(tm, &that.box_) },
             move_: Matrix3D::rotate_vector_by(tm, &that.move_),
             sweep_min,
             sweep_max,
@@ -312,7 +318,7 @@ impl OBBoxCollisionTestClass {
         let mut basis = [[0.0f32; 3]; 3];
         for i in 0..3 {
             for j in 0..3 {
-                basis[i][j] = tm.row[i][j];
+                basis[i][j] = if plant(14688) { tm.row[j][i] } else { tm.row[i][j] };
             }
         }
         OBBoxCollisionTestClass {

@@ -12731,6 +12731,10 @@ mod differential {
             ],
         );
 
+        // meshbuild.h / .cpp (see differential/wrap_draft_meshbuild.cpp): one edit, the loop that reads `pass` declared by an earlier `for`
+        copy("meshbuild.h", &[]);
+        copy("meshbuild.cpp", &[("for (pass=0; pass<MeshBuilderClass::MAX_PASSES; pass++) {", "for (int pass=0; pass<MeshBuilderClass::MAX_PASSES; pass++) {", 1)]);
+
         let mut b = cc::Build::new();
         base(&mut b);
         b.compiler("clang++")
@@ -12752,7 +12756,8 @@ mod differential {
             .flag(wm_gen.join("simplevec_this.h").to_str().expect("UTF-8 path"));
         // coltest.cpp compiled unchanged (see differential/wrap_draft_coltest.cpp)
         b.file(ww3d.join("coltest.cpp"));
-        for w in ["stripopt", "coltest"] {
+        b.file(gen.join("meshbuild.cpp"));
+        for w in ["stripopt", "coltest", "meshbuild"] {
             println!("cargo:rerun-if-changed=differential/wrap_draft_{w}.cpp");
             b.file(dif.join(format!("wrap_draft_{w}.cpp")));
         }
