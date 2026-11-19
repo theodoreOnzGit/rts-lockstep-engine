@@ -1,4 +1,7 @@
 //! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! Checked for differential testing (#215) and left untested: upstream `GameSpyGameInfo.h` is `#error this file is obsolete`, so the C++ class
+//! cannot be built as shipped, and its results packet is the older sibling of `GameSpyStagingRoom::generate*ResultsPacket`, which are tested
+//! (`staging_room_game_info.rs`). The same `disconnected()` fix (`isHuman() && m_disconnected`, found there) was applied here by reading, not by a test.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/GameSpyGameInfo.h  (marked `#error this file is obsolete`
@@ -217,7 +220,7 @@ impl GameSpyGameInfo {
             if p.has_achieved_victory {
                 winning_team = slot.team_number;
             }
-            if !slot.disconnected {
+            if !slot.is_disconnected() {
                 if slot.team_number != last_team_at_game_end || num_teams_at_game_end == 0 {
                     last_team_at_game_end = slot.team_number;
                     num_teams_at_game_end += 1;
@@ -242,7 +245,7 @@ impl GameSpyGameInfo {
             let player_name = String::from_utf8_lossy(slot.get_login_name().str()).into_owned();
             let gs_player_id = slot.get_profile_id();
             let locale = String::from_utf8_lossy(slot.get_locale().str()).into_owned();
-            let disconnected = self.info.slots[p.slot].disconnected;
+            let disconnected = self.info.slots[p.slot].is_disconnected();
             results.push_str(&format!(
                 ",player{}={},playerID{}={},locale{}={}",
                 player_id, player_name, player_id, gs_player_id, player_id, locale

@@ -1,4 +1,8 @@
 //! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): the constructors of every command type, the setters/getters the pack/parse/raw/wrap
+//! cases use and the types' sizes match the C++ through tests/differential_draft_netpkt.rs. NOT covered: `new_ack_both_for`,
+//! `new_ack_stage1_for`, `new_ack_stage2_for`, `new_game_command_from_message`, `construct_game_message` (needs the game message
+//! stream), `get_timestamp`/`set_timestamp`, `get_real_filename`/`set_real_filename`, `NetCommandMsgPtr::attach`/`ptr_eq`.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/NetworkDefs.h
