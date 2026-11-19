@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): matches the upstream C++ on 40,000 programs, 2.1 million floats (tests/differential_draft_vehiclecurve.rs).
+//! NOT covered: `save`, `load`, `load_variables`, `get_factory` (chunk I/O). Not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/vehiclecurve.h
