@@ -1,4 +1,10 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 managers (test: tests/differential_draft_metalmap.rs);
+//! not yet wired into the game.
+//!
+//! Differential-test notes (#215): the constructor (against a scripted `INIClass` and texture stand-in), `Get_Metal_Map`,
+//! `Metal_Map_Count`, `Update_Lighting`, `Update_Textures` and `initialize_normal_table` are compared with the upstream text, cut
+//! verbatim, 0 mismatches. Not covered: the destructor (reference releases only). DiffuseColor/SpecularColor below 0 in the INI are
+//! excluded (upstream does not clamp them, and the byte conversion of a negative channel is undefined).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/metalmap.cpp

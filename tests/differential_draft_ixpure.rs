@@ -34,9 +34,22 @@
 //! 0 mismatches. The riskiest member is `Intersect_Object_Array`: the draft's `nearest_index` for the convex branch stays set from
 //! the loop while upstream sets `counter = 0` to leave the loop; the call logs will show a difference if the loops differ.
 //!
-//! # Results
+//! # Results (2026-11-19)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **First run: 15,766 mismatches of 620,000 words in `Intersect_Box`**, none elsewhere (the prediction of 0 missed): on a miss
+//! upstream writes the components of `Intersection` one at a time (`(*intersection)[counter] = ...`) and returns at the first
+//! one outside the box, leaving the later components as the caller had them; the draft built a fresh vector with zeros. **Fixed in the
+//! draft** (components written in place), **0 mismatches after**: 20,000 cases of each of the 9 operations. The first plants for
+//! 14738 (`Beta <= 0`) and 14740 (`Range >= MaxDistance`) were MISSED, because random floats never hit those ties exactly; the
+//! generator now adds axis-aligned rays at whole-number spheres, and both are caught.
+//!
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching output words, all operations it affects)
+//!   14738: 21,564; 14739: 205,994; 14740: 18,173; 14741: 21,227
+//!   14742: 25,279; 14743: 90,894; 14744: 4,152; 14745: 1,701
+//!   14746: 4,716; 14747: 8,320; 14748: 35,545; 14749: 46,525
+//!   14750: 2,245,250
+//!
+//! **13 of 13 caught.**
 
 mod support;
 
@@ -245,6 +258,26 @@ fn ixpure_matches_upstream() {
                 l
             } else {
                 loc
+            };
+            // exact ties for the sphere members: an axis-aligned unit ray from an integer point at a sphere on whole numbers, so that
+            // Beta == 0 (tangent) and Range == MaxDistance happen exactly
+            let (loc, dir, maxd, center, radius) = if (op == 0 || op == 1) && g.below(3) == 0 {
+                let k = g.below(3) as usize;
+                let sign = if g.below(2) == 0 { 1.0f32 } else { -1.0 };
+                let mut d = [0.0f32; 3];
+                d[k] = sign;
+                let l = [(g.below(7) as f32) - 3.0, (g.below(7) as f32) - 3.0, (g.below(7) as f32) - 3.0];
+                let a = 1 + g.below(8);
+                let (p, r) = [(0u32, 1u32), (0, 3), (3, 5), (4, 5), (5, 5), (2, 2)][g.below(6) as usize];
+                let j = (k + 1 + g.below(2) as usize) % 3;
+                let mut c = l;
+                c[k] += sign * a as f32;
+                c[j] += p as f32;
+                let dd = ((r * r - p * p) as f32).sqrt();
+                let m = if g.below(2) == 0 { a as f32 - dd } else { maxd };
+                (l, d, m, c, r as f32)
+            } else {
+                (loc, dir, maxd, center, radius)
             };
             let tbs = g.below(2) == 0;
             let convex = g.below(2) == 0;

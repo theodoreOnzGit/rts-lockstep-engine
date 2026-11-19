@@ -33,9 +33,19 @@
 //! port), upstream `powf` is glibc's, which is the same algorithm in the same release series, so I expect bit equality; if it
 //! is not, that is a ULP difference to record, not a draft defect (the AGENTS rule routes the logic's maths through petir).
 //!
-//! # Results
+//! # Results (2026-11-19)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **0 mismatches on the first run**: 307,200 normal-table words, 1,475,007 constructor words, 38,174,208 pixel bytes, 100,000
+//! map-lookup comparisons. **Prediction held**, including `Power`: the draft's `petir::Real::powf` (libm) and glibc's `powf` agree to
+//! the bit on every exponent and base the test reaches.
+//!
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching output words, all operations it affects)
+//!   14713: 1,859,886; 14714: 8,779,023; 14715: 5,245,925; 14716: 7,068
+//!   14717: 583,499; 14718: 5,339,102; 14719: 3,056,788; 14720: 232,934
+//!   14721: 10,735,908; 14722: 6,296,224; 14723: 23,893; 14724: 3,432,468
+//!   14725: 19,898
+//!
+//! **13 of 13 caught.**
 
 mod support;
 

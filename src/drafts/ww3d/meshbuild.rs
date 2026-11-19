@@ -1,4 +1,12 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 meshes per operation (test: tests/differential_draft_meshbuild.rs);
+//! not yet wired into the game.
+//!
+//! Differential-test notes (#215): every function of the file is reached through `Build_Mesh`, `Add_Face`, `Verify_Face_Normals`,
+//! `Compute_Face_Normals`, `Compute_Plane`, `Is_Degenerate`, `Reset` and the bounding volumes, 0 mismatches (205 million words
+//! compared). Not covered: `face_material_compare` (static, never called upstream), `Free`/`Reset` of an already-built builder, and the
+//! `qsort` tie order on a libc whose `qsort` is not stable (the test fails loudly there; glibc 2.39 is stable). Excluded inputs: a mesh
+//! whose every face is degenerate (upstream's `Compute_Mesh_Stats` then reads `Faces[0]` of a zero-length array), and the
+//! `SharedSmGroup` of a face's own vertices (`VertClass::Reset` never sets it, so upstream holds heap garbage there).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/meshbuild.cpp

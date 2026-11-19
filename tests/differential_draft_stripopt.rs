@@ -32,9 +32,23 @@
 //! purpose, so I do not expect a difference there either; a hash-order difference is impossible because the hash is only
 //! queried, never iterated. The riskiest place is non-manifold input.
 //!
-//! # Results
+//! # Results (2026-11-19)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **0 mismatches on the first run**: 20,000 cases of each of the 9 checks (`Stripify`, `Combine_Strips`, `Optimize_Strip_Order`,
+//! `Get_Strip_Index_Count`, `Optimize_Triangle_Order`, `Insertion_Sort` and `Quick_Sort` on `int` and on `Tri`), no difference.
+//! **Prediction held.** One thing the test taught: because of the `weight[0]` quirk the node weights are +2 or -2 for every
+//! neighbour alike, so they never change a decision and the per-vertex connectivity count is dead state upstream. A first plant that
+//! skipped its decrement (14673) was therefore NOT caught (an equivalent mutant) and was replaced by one that skips a neighbour's
+//! reinsertion; the weight quirk itself is caught by 14661 (`weight[i]` for `weight[0]`).
+//!
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching cases of 20,000, summed over the checks it affects)
+//!   14661: 2,863; 14662: 12,063; 14663: 12,486; 14664: 17,506
+//!   14665: 20,000; 14666: 556; 14667: 6,800; 14668: 1,020
+//!   14669: 1,838; 14670: 19,600; 14671: 18,475; 14672: 2,258
+//!   14673: 2,608; 14674: 5,323; 14675: 28,526; 14676: 8,349
+//!   14677: 1,900; 14678: 29,199
+//!
+//! **18 of 18 caught.**
 
 mod support;
 

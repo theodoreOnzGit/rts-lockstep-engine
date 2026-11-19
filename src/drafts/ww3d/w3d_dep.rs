@@ -1,4 +1,10 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per operation (test: tests/differential_draft_w3ddep.rs);
+//! not yet wired into the game.
+//!
+//! Differential-test notes (#215): `Get_W3D_Name`, `Make_W3D_Filename` and `Get_W3D_Dependencies` (so every `Scan_*`) are compared
+//! with upstream's `w3d_dep.cpp` compiled whole over random well-formed chunk streams, 0 mismatches. Excluded: names that fill their
+//! whole field (upstream's `strcmp` over-reads), a texture-name chunk of length 0 or without a NUL, truncated chunk streams, and
+//! non-ASCII bytes (this draft builds a Rust `String`, which would encode a Windows-1252 byte as two bytes; W3D names are ASCII).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/w3d_dep.cpp

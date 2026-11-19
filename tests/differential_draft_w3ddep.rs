@@ -31,9 +31,18 @@
 //! 0 mismatches. The place to watch: an empty file, where the draft returns `None` for "bytes that do not form a chunk stream" and
 //! upstream returns `true` with an empty list (the file opens; there is just nothing in it).
 //!
-//! # Results
+//! # Results (2026-11-19)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **0 mismatches on the first run**, 20,000 cases of each of the 3 operations. **Prediction wrong in one respect:** an empty file
+//! (no chunks) is among the cases and the draft returns `Some([])`, as upstream returns `true` with an empty list; I had expected
+//! `None`.
+//!
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching cases of 20,000, all operations it affects)
+//!   14726: 934; 14727: 21,838; 14728: 8,264; 14729: 7,320
+//!   14730: 18,289; 14731: 3,788; 14732: 783; 14733: 6,846
+//!   14734: 2,187; 14735: 638; 14736: 1,835; 14737: 3,908
+//!
+//! **12 of 12 caught.**
 
 mod support;
 

@@ -41,9 +41,21 @@
 //! expect one or two misses there (an index or a missing branch); everything else is straight code. One thing I will check:
 //! `Strip_Optimize_Mesh` leaves every non-first polygon of a strip with default `Verts`, a fact the draft must reproduce.
 //!
-//! # Results
+//! # Results (2026-11-19)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **0 mismatches on the first run** (205,650,469 words in `Build_Mesh` alone), 20,000 meshes per operation. **Prediction missed
+//! (in the good direction):** I expected one or two misses in `Compute_Mesh_Stats` or `Strip_Optimize_Mesh`; there were none, the
+//! draft is a faithful line-for-line translation, including the default `Verts` of every non-first polygon of a strip.
+//!
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching output words, all operations it affects)
+//!   14692: 203,109; 14693: 262,423; 14694: 454,317; 14695: 14,357
+//!   14696: 318,715; 14697: 129,005; 14698: 373,471; 14699: 443,228
+//!   14700: 173,867; 14701: 957,062; 14702: 12,124; 14703: 3,538
+//!   14704: 20,916,674; 14705: 16,875,779; 14706: 1,375,380; 14707: 10,801
+//!   14708: 621; 14709: 53,287; 14710: 287,180; 14711: 13,777
+//!   14712: 787,594
+//!
+//! **21 of 21 caught.**
 
 mod support;
 

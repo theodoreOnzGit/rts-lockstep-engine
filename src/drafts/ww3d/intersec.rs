@@ -1,4 +1,13 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per operation (test: tests/differential_draft_ixpure.rs);
+//! not yet wired into the game.
+//!
+//! Differential-test notes (#215): `Set`, `Copy_Partial_Results`, `Copy_Results`, `Intersect_Sphere_Quick`, `Intersect_Sphere`,
+//! `Append_Object_Array`, `Intersect_Box`, `Intersect_Object_Array` (both overloads, as the closure form) and
+//! `Append_Hierarchy_Objects` are compared with the real `intersec.h` and the verbatim `intersec.cpp` cuts, 0 mismatches after one
+//! draft fix (`Intersect_Box` on a miss: upstream writes the components of `Intersection` one at a time and leaves the rest as the caller
+//! had them; the first draft overwrote all three, 15,766 of 620,000 words differed). Not covered: the constructors that take
+//! pointers (the draft owns its vectors). Excluded: `Intersect_Object_Array` ranges that are NaN or at least 2^29 (upstream then copies
+//! `TemporaryResults[-1]`).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/intersec.cpp
@@ -205,7 +214,6 @@ impl IntersectionClass {
         let dir = [self.ray_direction.x, self.ray_direction.y, self.ray_direction.z];
         let bmin = [box_min.x, box_min.y, box_min.z];
         let bmax = [box_max.x, box_max.y, box_max.z];
-        let mut isect = [0.0f32; PLANE_COUNT];
 
         // Find candidate planes
         for counter in 0..PLANE_COUNT {
@@ -251,19 +259,21 @@ impl IntersectionClass {
             final_result.intersects = false;
             return false;
         }
+        // Upstream writes the components of `FinalResult->Intersection` one by one (`(*intersection)[counter] = ...`) and returns
+        // at the first one outside the box, so the components after it keep the caller's values (found by the differential
+        // test, #215: the first draft built a fresh vector with zeros there).
         for counter in 0..PLANE_COUNT {
-            if nearest_plane != counter {
-                isect[counter] = loc[counter] + distance[nearest_plane] * dir[counter];
-                if isect[counter] < bmin[counter] || isect[counter] > bmax[counter] {
-                    final_result.intersects = false;
-                    final_result.intersection = Vector3::new(isect[0], isect[1], isect[2]);
-                    return false;
-                }
-            } else {
-                isect[counter] = candidate_plane[counter];
+            let v = if nearest_plane != counter { loc[counter] + distance[nearest_plane] * dir[counter] } else { candidate_plane[counter] };
+            match counter {
+                0 => final_result.intersection.x = v,
+                1 => final_result.intersection.y = v,
+                _ => final_result.intersection.z = v,
+            }
+            if nearest_plane != counter && (v < bmin[counter] || v > bmax[counter]) {
+                final_result.intersects = false;
+                return false;
             }
         }
-        final_result.intersection = Vector3::new(isect[0], isect[1], isect[2]);
         final_result.intersects = true; // ray hits box
         true
     }

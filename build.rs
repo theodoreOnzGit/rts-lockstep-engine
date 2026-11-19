@@ -12803,6 +12803,7 @@ mod differential {
         b.compiler("clang++")
             .flag("-fms-extensions")
             .flag("-fdelayed-template-parsing")
+            .flag("-Wno-register") // intersec.cpp's Intersect_Box declares `register` variables (removed from C++17; the shipped compiler accepted it)
             .include(&gen)
             .include(&wm_gen)
             .include(&shim_w3d)

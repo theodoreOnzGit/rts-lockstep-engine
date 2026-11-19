@@ -26,9 +26,18 @@
 //! `Cast_To_Triangle` of both classes (CollisionMath, not in the draft) and `RayCollisionTestClass` (reused from the port).
 //! `CastResultStruct *Result` is a pointer shared by the tests; the draft shares an `Arc`, which has no C++ output to compare.
 //!
-//! # Results
+//! # Results (2026-11-19)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **0 mismatches on the first run**: 20,000 cases of each of the 11 operations (320,000 to 500,000 words each for the state
+//! outputs), max ULP 0, 18 NaN-payload-only words in `OBBoxCollisionTestClass(OBB test, tm)`. **Prediction held.**
+//!
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching output words, all operations it affects)
+//!   14679: 294,105; 14680: 1,116; 14681: 1,104; 14682: 57,825
+//!   14683: 5,006; 14684: 5,054; 14685: 4,993; 14686: 43,799
+//!   14687: 115,739; 14688: 70,354; 14689: 29,439; 14690: 95,011
+//!   14691: 1,402
+//!
+//! **13 of 13 caught.**
 
 mod support;
 
