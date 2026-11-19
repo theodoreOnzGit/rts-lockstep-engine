@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 10,000 + 10,000 cases (test: tests/differential_draft_file_system.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/Common/System/FileSystem.cpp   (`FileSystem::loadMusicFilesFromCD`)
@@ -13,6 +14,8 @@
 //! / `makeLowerCase` are the narrow string class of the Windows file layer (the port uses `AsciiString` / `String`).
 //! Also excluded: `AsciiString::freeBytes`, `UnicodeString::releaseBuffer` and `Dict::ensureUnique` / `releaseData` are
 //! memory-pool and reference-count plumbing that Rust ownership replaces (see the module notes of `crate::common::dict`).
+
+use crate::logic::modules::plant;
 
 /// What `loadMusicFilesFromCD` reaches.
 pub trait CdHost {
@@ -35,12 +38,17 @@ pub fn load_music_files_from_cd<H: CdHost + ?Sized>(h: &mut H) {
         return;
     }
     let dc = h.drive_count();
-    for i in 0..dc {
+    for i in 0..(if plant(15487) { dc - 1 } else { dc }) {
         let cd_root = match h.drive_path(i) {
             Some(p) => p,
-            None => continue,
+            None => {
+                if plant(15488) {
+                    break;
+                }
+                continue;
+            }
         };
-        if h.load_big_files_from_directory(&cd_root, MUSIC_BIG) {
+        if h.load_big_files_from_directory(&cd_root, MUSIC_BIG) && !plant(15489) {
             break;
         }
     }
@@ -51,7 +59,13 @@ pub fn load_music_files_from_cd<H: CdHost + ?Sized>(h: &mut H) {
 pub fn copy_data_to_file(data: &[u8], local_file: Option<&mut dyn FnMut(&[u8]) -> usize>) -> bool {
     let f = match local_file {
         Some(f) => f,
-        None => return false,
+        None => return plant(15492),
     };
+    if plant(15490) {
+        return f(data) >= data.len();
+    }
+    if plant(15491) {
+        return f(data) != 0;
+    }
     f(data) == data.len()
 }
