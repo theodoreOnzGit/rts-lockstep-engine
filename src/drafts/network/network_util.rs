@@ -1,4 +1,8 @@
 //! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): `generate_next_command_id`, `does_command_require_a_command_id`, `command_requires_ack`,
+//! `is_command_synchronized`, `command_requires_direct_send` and `get_ascii_net_command_type` match the C++ over every command
+//! type (tests/differential_draft_netpkt.rs). NOT covered: `resolve_ip` (and its helpers `inet_addr_host_order`,
+//! `resolve_host_name`): DNS/OS calls.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/networkutil.h

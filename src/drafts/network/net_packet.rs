@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 6,000 pack sequences, their packets read back, every fill read raw, and 600 wrapped commands (default case counts; test: tests/differential_draft_netpkt.rs);
+//! not yet wired into the game. Not covered: `dump_packet_to_log` (an empty function; upstream is DEBUG_LOG output only). Acks are
+//! compared by their add functions only: upstream `FillBufferWithAckCommand` reads garbage (see the test's header).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/NetPacket.h

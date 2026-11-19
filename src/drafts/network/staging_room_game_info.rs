@@ -1,4 +1,12 @@
 //! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): matches the upstream C++ on 6,000 programs (309,872 operations; test:
+//! tests/differential_draft_gameinfo.rs, 17 of 17 planted bugs caught): `GameSpyStagingSlot::set_ping_string`, `GameSpyStagingRoom::{new,
+//! init, reset, am_i_host, reset_accepted, get_local_slot_num, start_game, launch_game, generate_game_spy_game_results_packet,
+//! generate_ladder_game_results_packet, set_ping_string, get_game_spy_slot}` and the id/name/ladder/QM accessors. Two defects fixed by the
+//! test: the results packets read the raw `disconnected` field where upstream's `disconnected()` is `isHuman() && m_disconnected`, and
+//! `launchGame` skipped `TheMapCache->updateCache()` when the transfers failed (upstream calls it before the `||`). NOT covered:
+//! `set_has_password`/`set_allow_observers`/`set_version`/`set_exe_crc`/`set_ini_crc`/`set_reported_*` (and getters), `clean_up_slot_pointers`
+//! (empty), `set_map` in a game (the #222 deviation below).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/GameSpy/StagingRoomGameInfo.h
@@ -7,6 +15,12 @@
 //! The live GameSpy staging room: a `GameInfo` whose eight slots are `GameSpyGameSlot`s (login, profile id, locale,
 //! ping, wins/losses, rank points, favourite side). `game_spy_game_info.rs` drafted the obsolete class of
 //! `GameSpyGameInfo.h`; this is the one the game links (`TheGameSpyGame`).
+//!
+//! # Known deviation (#222)
+//!
+//! `GameInfo::setMap` and the options-string parse call the virtual `amIHost()`/`getLocalSlotNum()`, which this class overrides; the
+//! verified base (`common::game_info`) calls its own. In a game, `self.info.set_map(..)` therefore decides the host by the base's rule
+//! (slot 0 at `local_ip`), not by this room's (slot 0 named `m_localName`). Not fixed here: the base is verified code.
 //!
 //! # Not translated
 //!
@@ -20,6 +34,7 @@ use crate::common::ascii_string::AsciiString;
 use crate::common::game_info::{GameInfo, GameInfoHost};
 use crate::common::unicode_string::UnicodeString;
 
+use crate::logic::modules::plant;
 use super::net_command_msg::MAX_SLOTS;
 
 const SLOTS: usize = MAX_SLOTS as usize;
@@ -159,7 +174,9 @@ pub trait StagingRoomHost {
     fn game_logic_clear_game_data(&mut self);
     /// `DoAnyMapTransfers(this)`.
     fn do_any_map_transfers(&mut self) -> bool;
-    /// `TheMapCache->updateCache(); TheMapCache->findMap(map) == NULL`.
+    /// `TheMapCache->updateCache()`: upstream calls it before the `!filesOk ||` test, so on every launch that gets this far.
+    fn map_cache_update_cache(&mut self);
+    /// `TheMapCache->findMap(map) == NULL` (only reached when the transfers succeeded: `||` short-circuits).
     fn map_cache_lacks_map(&mut self, map: &[u8]) -> bool;
     /// `GSMessageBoxOk(fetch("GUI:Error"), fetch("GUI:CouldNotTransferMap")); PopBackToLobby()`.
     fn message_box_and_pop_back_to_lobby(&mut self);
@@ -392,7 +409,7 @@ impl GameSpyStagingRoom {
         if !self.info.in_game {
             return false;
         }
-        self.info.slots[0].is_player_named_ascii(self.local_name.str())
+        self.info.slots[if plant(13074) { 1 } else { 0 }].is_player_named_ascii(self.local_name.str())
     }
 
     /// `GameSpyStagingRoom::resetAccepted` (StagingRoomGameInfo.cpp): `GameInfo::resetAccepted()`; the body that
@@ -411,7 +428,7 @@ impl GameSpyStagingRoom {
             return -1;
         }
         let local_name = host.local_name();
-        for i in 0..SLOTS {
+        for i in (if plant(13073) { 1 } else { 0 })..SLOTS {
             if self.info.slots[i].is_player_named_ascii(local_name.str()) {
                 return i as i32;
             }
@@ -441,7 +458,7 @@ impl GameSpyStagingRoom {
                 self.gs_slots[i].login_name = gs_name.clone();
 
                 if self.is_qm {
-                    if self.get_local_slot_num(host) == i as i32 {
+                    if self.get_local_slot_num(host) == i as i32 || plant(13072) {
                         self.gs_slots[i].profile_id = host.local_profile_id();
                     }
                 } else if let Some(pi) = host.find_player_info(&gs_name) {
@@ -454,7 +471,7 @@ impl GameSpyStagingRoom {
             }
         }
 
-        if num_humans < 2 {
+        if num_humans < if plant(13069) { 3 } else { 2 } {
             self.launch_game(host);
             host.leave_staging_room();
         } else {
@@ -486,7 +503,7 @@ impl GameSpyStagingRoom {
                     _winning_team = self.info.slots[i].team_number;
                 }
                 let slot = &self.info.slots[i];
-                if !slot.disconnected {
+                if !slot.is_disconnected() {
                     if slot.team_number != last_team_at_game_end || num_teams_at_game_end == 0 {
                         last_team_at_game_end = slot.team_number;
                         num_teams_at_game_end += 1;
@@ -496,18 +513,18 @@ impl GameSpyStagingRoom {
                 num_ais += 1;
             }
         }
-        let num_players = num_humans + num_ais;
+        let num_players = if plant(13062) { num_humans } else { num_humans + num_ais };
 
         let mut map_name: Vec<u8> = Vec::new();
         for &c in self.info.map_name.iter() {
-            map_name.push(if c == b'\\' { b'/' } else { c });
+            map_name.push(if c == b'\\' && !plant(13061) { b'/' } else { c });
         }
         let lossy = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
 
         let mut results = format!(
             "\\seed\\{}\\hostname\\{}\\mapname\\{}\\numplayers\\{}\\duration\\{}\\gamemode\\exiting\\localplayer\\{}",
             self.info.seed,
-            lossy(self.gs_slots[0].login_name.str()),
+            lossy(self.gs_slots[if plant(13076) { 1 } else { 0 }].login_name.str()),
             lossy(&map_name),
             num_players,
             end_frame,
@@ -518,15 +535,15 @@ impl GameSpyStagingRoom {
         for i in 0..SLOTS {
             if let Some(p) = &input.players[i] {
                 let slot = &self.gs_slots[i];
-                let player_name = if self.info.slots[i].is_human() {
+                let player_name = if self.info.slots[i].is_human() != plant(13063) {
                     lossy(slot.login_name.str())
                 } else {
                     "AIPlayer".to_string()
                 };
                 let gs_player_id = slot.profile_id;
-                let disconnected = self.info.slots[i].disconnected;
+                let disconnected = self.info.slots[i].is_disconnected();
                 let mut result = "loss";
-                if disconnected {
+                if disconnected && !(plant(13064) && input.saw_crc_mismatch) {
                     result = "discon";
                 } else if input.saw_crc_mismatch {
                     result = "desync";
@@ -534,7 +551,7 @@ impl GameSpyStagingRoom {
                     result = "win";
                 }
                 let mut side = lossy(p.side.str());
-                if side == "America" {
+                if side == "America" && !plant(13065) {
                     side = "USA".to_string(); // conform to GameSpy
                 }
                 results.push_str(&format!(
@@ -566,7 +583,7 @@ impl GameSpyStagingRoom {
     ) -> AsciiString {
         let end_frame = input.end_frame;
         let local_slot_num = self.get_local_slot_num(host);
-        let saw_game_end = end_frame > 0;
+        let saw_game_end = if plant(13068) { end_frame >= 0 } else { end_frame > 0 };
         let mut winning_team: i32 = -1;
         let mut num_players = 0;
         let mut num_teams_at_game_end = 0;
@@ -575,10 +592,10 @@ impl GameSpyStagingRoom {
             if let Some(p) = &input.players[i] {
                 num_players += 1;
                 if p.has_achieved_victory {
-                    winning_team = self.info.slots[i].team_number;
+                    winning_team = if plant(13077) { i as i32 } else { self.info.slots[i].team_number };
                 }
                 let slot = &self.info.slots[i];
-                if !slot.disconnected {
+                if !slot.is_disconnected() {
                     if slot.team_number != last_team_at_game_end || num_teams_at_game_end == 0 {
                         last_team_at_game_end = slot.team_number;
                         num_teams_at_game_end += 1;
@@ -594,7 +611,7 @@ impl GameSpyStagingRoom {
             input.saw_crc_mismatch as i32,
             saw_game_end as i32,
             winning_team,
-            (num_teams_at_game_end < 2) as i32,
+            if plant(13066) { (num_teams_at_game_end != 0) as i32 } else { (num_teams_at_game_end < 2) as i32 },
             end_frame,
             num_players,
             self.is_qm as i32,
@@ -612,7 +629,7 @@ impl GameSpyStagingRoom {
                 let slot = &self.gs_slots[i];
                 let player_name = lossy(slot.login_name.str());
                 let gs_player_id = slot.profile_id;
-                let disconnected = self.info.slots[i].disconnected;
+                let disconnected = self.info.slots[i].is_disconnected();
                 results.push_str(&format!(
                     ",player{}={},playerID{}={},locale{}={}",
                     player_id, player_name, player_id, gs_player_id, player_id, p.stats_locale
@@ -644,7 +661,7 @@ impl GameSpyStagingRoom {
 
         // Add a trailing size value (so the server can ensure it got the entire packet)
         results.push_str(",size=");
-        let results_len = results.len() as i32 + 10;
+        let results_len = results.len() as i32 + 10 - if plant(13067) { 6 } else { 0 };
         results.push_str(&format!("{:010}", results_len));
         AsciiString::try_from_bytes(results.as_bytes()).unwrap_or_default()
     }
@@ -659,7 +676,7 @@ impl GameSpyStagingRoom {
 
         for i in 0..SLOTS {
             if self.info.slots[i].is_human() {
-                if host.did_player_preorder(self.gs_slots[i].profile_id) {
+                if host.did_player_preorder(if plant(13071) { i as i32 } else { self.gs_slots[i].profile_id }) {
                     self.info.mark_player_as_preorder(i as i32);
                 }
             }
@@ -671,7 +688,7 @@ impl GameSpyStagingRoom {
         host.network_create();
 
         let local_slot = self.get_local_slot_num(host);
-        let port = host.nat_slot_port(local_slot).unwrap_or(8888);
+        let port = host.nat_slot_port(local_slot).unwrap_or(if plant(13070) { 8088 } else { 8888 });
         host.network_set_local_address(self.info.local_ip, port);
         let use_nat = host.nat_exists();
         host.network_attach_transport(use_nat);
@@ -683,6 +700,7 @@ impl GameSpyStagingRoom {
 
         let files_ok = host.do_any_map_transfers();
 
+        host.map_cache_update_cache();
         if !files_ok || host.map_cache_lacks_map(&self.info.map_name) {
             if host.network_exists() {
                 host.network_delete();
@@ -702,7 +720,7 @@ impl GameSpyStagingRoom {
         }
         host.buddy_set_status_loading(&location);
 
-        if host.nat_exists() {
+        if host.nat_exists() && !plant(13075) {
             host.nat_delete();
         }
     }

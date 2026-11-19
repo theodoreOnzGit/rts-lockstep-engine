@@ -1,4 +1,11 @@
 //! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): matches the upstream C++ on 6,000 programs (309,872 operations; test:
+//! tests/differential_draft_gameinfo.rs, 14 of 14 planted bugs caught): `LANSlotExtra::{get_user, is_user_player, is_user_name,
+//! is_local_player, set_login, set_host, set_serial, set_last_heard}`, `LANGameInfo::{new, set_slot, get_lan_slot, get_local_slot_num,
+//! get_slot_num, am_i_host, set_map, set_seed, reset_accepted, the name/last-heard/IP/player accessors, get_host_ip}`,
+//! `generate_game_options_string` and `parse_game_options_string`. NOT covered: `LANPlayer`'s own accessors except through the slot,
+//! `set_login_ascii`/`set_host_ascii` (both types), `get_is_direct_connect` apart from the dump. Local-IP functions are untested with
+//! `TheLAN` NULL (see below).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/LANPlayer.h
@@ -12,6 +19,9 @@
 //! (`crate::common::game_info`) holds its eight `GameSlot`s by value, so [`LANGameInfo`] holds a `GameInfo` and
 //! the per-slot LAN extras ([`LANSlotExtra`]) side by side, index for index. The base-class functions are
 //! `self.info`'s.
+//!
+//! `isLocalPlayer`, `getLocalSlotNum` and `amIHost` take the local IP (`TheLAN->GetLocalIP()`); upstream's `isLocalPlayer` is also false when
+//! `TheLAN` is NULL, which the callers (members of `TheLAN` itself) never see; the differential test leaves that case out.
 //!
 //! # Not translated
 //!
@@ -27,6 +37,7 @@ use crate::common::game_info::{
 use crate::common::unicode_string::UnicodeString;
 use crate::common::ascii_string::AsciiString;
 
+use crate::logic::modules::plant;
 use super::net_command_msg::MAX_SLOTS;
 
 const SLOTS: usize = MAX_SLOTS as usize;
@@ -121,7 +132,7 @@ impl LANSlotExtra {
     /// `LANGameSlot::getUser` (LANGameInfo.cpp:55): the slot's user for a human slot (its IP, last heard and name
     /// copied in), else None.
     pub fn get_user(&mut self, slot: &GameSlot) -> Option<&LANPlayer> {
-        if slot.is_human() {
+        if slot.is_human() || (plant(13080) && slot.is_occupied()) {
             self.user.set_ip(slot.ip);
             self.user.set_last_heard(self.last_heard);
             let name = UnicodeString::try_from_chars(&slot.name).unwrap_or_default();
@@ -138,11 +149,11 @@ impl LANSlotExtra {
     /// case.
     pub fn is_user_name(&self, slot: &GameSlot, user_name: &UnicodeString) -> bool {
         let name = UnicodeString::try_from_chars(&slot.name).unwrap_or_default();
-        slot.state == slot_state::PLAYER && user_name.compare_no_case_unicode(&name) == std::cmp::Ordering::Equal
+        slot.state == slot_state::PLAYER && (if plant(13081) { user_name.str() == name.str() } else { user_name.compare_no_case_unicode(&name) == std::cmp::Ordering::Equal })
     }
     /// `isLocalPlayer` (LANGameInfo.cpp:81): a human slot whose IP is `TheLAN->GetLocalIP()`.
     pub fn is_local_player(slot: &GameSlot, local_ip: u32) -> bool {
-        slot.is_human() && local_ip == slot.ip
+        (slot.is_human() || plant(13082)) && local_ip == slot.ip
     }
     /// `setLogin(UnicodeString)`.
     pub fn set_login(&mut self, name: UnicodeString) {
@@ -246,7 +257,7 @@ impl LANGameInfo {
         }
         self.info.slots[slot_num as usize] = slot_info;
         self.extras[slot_num as usize] = extra;
-        if slot_num == 0 {
+        if slot_num == if plant(13083) { 1 } else { 0 } {
             self.info.slots[0].set_accept();
             self.info.slots[0].set_map_availability(true);
         }
@@ -263,7 +274,7 @@ impl LANGameInfo {
 
     /// `LANGameInfo::getLocalSlotNum` (LANGameInfo.cpp:134): the first local-player slot, -1 when not in a game.
     pub fn get_local_slot_num(&self, local_ip: u32) -> i32 {
-        if !self.info.in_game {
+        if !self.info.in_game && !plant(13084) {
             return -1;
         }
         for i in 0..SLOTS {
@@ -292,7 +303,7 @@ impl LANGameInfo {
         if !self.info.in_game {
             return false;
         }
-        LANSlotExtra::is_local_player(&self.info.slots[0], local_ip)
+        LANSlotExtra::is_local_player(&self.info.slots[if plant(13093) { 1 } else { 0 }], local_ip)
     }
 
     /// `LANGameInfo::setMap` (LANGameInfo.cpp:175): `GameInfo::setMap`.
@@ -310,11 +321,11 @@ impl LANGameInfo {
     pub fn reset_accepted<H: LanGameInfoHost>(&mut self, host: &mut H) {
         if host.has_lan() {
             host.lan_reset_game_start_timer();
-            if host.lan_my_game_is_this() && host.lan_am_i_host() {
+            if (host.lan_my_game_is_this() || plant(13086)) && host.lan_am_i_host() {
                 host.lan_enable_start_button(true);
             }
         }
-        for i in 0..SLOTS {
+        for i in 0..(if plant(13085) { SLOTS - 1 } else { SLOTS }) {
             self.info.slots[i].un_accept();
         }
     }
@@ -361,20 +372,20 @@ impl LANGameInfo {
     }
     /// `getPlayerLastHeard(who)`: 0 for a non-human slot.
     pub fn get_player_last_heard(&self, who: usize) -> u32 {
-        if self.info.slots[who].is_human() {
+        if self.info.slots[who].is_human() || plant(13090) {
             return self.extras[who].get_last_heard();
         }
         0
     }
     /// `setPlayerLastHeard(who, lastHeard)`: ignored for a non-human slot.
     pub fn set_player_last_heard(&mut self, who: usize, last_heard: u32) {
-        if self.info.slots[who].is_human() {
+        if self.info.slots[who].is_human() || plant(13094) {
             self.extras[who].set_last_heard(last_heard);
         }
     }
     /// `getHostIP`: the host slot's IP, 0 if it is not human.
     pub fn get_host_ip(&self) -> u32 {
-        if self.info.slots[0].is_human() {
+        if self.info.slots[0].is_human() || plant(13092) {
             return self.info.slots[0].ip;
         }
         0
@@ -384,7 +395,7 @@ impl LANGameInfo {
 /// `GenerateGameOptionsString` (LANGameInfo.cpp): the options string of my game, only if I am its host.
 pub fn generate_game_options_string<H: LanGameInfoHost>(my_game: Option<&LANGameInfo>, host: &H) -> Vec<u8> {
     match my_game {
-        Some(g) if g.am_i_host(host.lan_local_ip()) => game_info_to_ascii_string(Some(&g.info), host).unwrap_or_default(),
+        Some(g) if g.am_i_host(host.lan_local_ip()) || plant(13091) => game_info_to_ascii_string(Some(&g.info), host).unwrap_or_default(),
         _ => Vec::new(),
     }
 }
@@ -419,7 +430,7 @@ pub fn parse_game_options_string<H: LanGameInfoHost>(
         let is_in_game = new_local_slot_num >= 0;
         if !host.lan_am_i_host() && is_in_game {
             let new_map_crc = game.info.map_crc;
-            if (old_map_crc ^ new_map_crc) != 0 || (!was_in_game && is_in_game) {
+            if (if plant(13088) { (old_map_crc ^ new_map_crc) != 0 && (!was_in_game && is_in_game) } else { (old_map_crc ^ new_map_crc) != 0 || (!was_in_game && is_in_game) }) {
                 host.lan_request_has_map();
                 host.lan_update_slot_list();
                 host.lan_update_game_options();
@@ -427,13 +438,13 @@ pub fn parse_game_options_string<H: LanGameInfoHost>(
         }
         let now = host.time_get_time();
         for i in 0..SLOTS {
-            if game.info.slots[i].is_human() {
+            if game.info.slots[i].is_human() || (plant(13089) && game.info.slots[i].is_ai()) {
                 game.extras[i].set_last_heard(now);
                 let key = game.info.slots[i].name.clone();
                 if let Some(l) = old_logins.get(&key) {
                     game.extras[i].set_login(l.clone());
                 }
-                if let Some(m) = old_machines.get(&key) {
+                if let Some(m) = (if plant(13087) { old_logins.get(&key) } else { old_machines.get(&key) }) {
                     game.extras[i].set_host(m.clone());
                 }
             }

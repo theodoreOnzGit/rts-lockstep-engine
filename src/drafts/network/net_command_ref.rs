@@ -1,4 +1,7 @@
 //! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): `new`, `get_command`, `get_relay`/`set_relay` and (through `NetCommandList`) `get_next`/
+//! `set_next`/`set_prev` match the C++ via tests/differential_draft_netpkt.rs. NOT covered: `get_prev`, `get_time_last_sent`,
+//! `set_time_last_sent` (the retry clock; no test reads them).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/NetCommandRef.h

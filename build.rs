@@ -11249,6 +11249,7 @@ mod differential {
 
         drafts_netpkt(&up, &shim, &dif, &ww); // #215: the network drafts (group netpkt), see the function at the end of this module
         drafts_netlogic(&up, &shim, &dif, &ww); // #215 (group netlogic): the network bookkeeping drafts, see the function at the end of this module
+        drafts_gameinfo(&up, &shim, &dif, &ww); // #215 (group gameinfo): the LAN and GameSpy staging-room game-info drafts, see the function at the end of this module
 
         for p in [
             "differential",
@@ -12337,5 +12338,71 @@ mod differential {
         println!("cargo:rerun-if-changed=differential/shim_draft_ww3dl");
         println!("cargo:rerun-if-changed=differential/shim_draft_ww3dl_tf");
         m.compile("upstream_draft_ww3dlogic");
+    }
+
+    /// (#215, group gameinfo) The LAN and GameSpy staging-room game-info drafts' reference: LANGameInfo.cpp (the LANGameSlot and
+    /// LANGameInfo members, then GenerateGameOptionsString and ParseGameOptionsString) and StagingRoomGameInfo.cpp
+    /// (GameSpyGameSlot's constructor, then setPingString to the end of the file), cut verbatim into OUT_DIR/dgi_gen. One
+    /// mechanical edit, in the copy: GenerateGameOptionsString returns `AsciiString.TheEmptyString` (a `.` where C++ needs
+    /// `::`; MSVC 6 accepted it); the copy writes `::`. Each anchor must occur once. differential/wrap_draft_gameinfo.cpp
+    /// #includes differential/wrap_game_info.cpp whole, so it builds on the same GameInfo.cpp copy (ginfo_gen) and shims.
+    fn drafts_gameinfo(up: &Path, shim: &Path, dif: &Path, ww: &Path) {
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let gen = out_dir.join("dgi_gen");
+        std::fs::create_dir_all(&gen).expect("create dgi_gen");
+        let cut = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+            assert_eq!(text.matches(from).count(), 1, "{file}: anchor {from:?} must occur once");
+            let i = text.find(from).expect("from");
+            match to {
+                Some(t) => {
+                    assert_eq!(text.matches(t).count(), 1, "{file}: anchor {t:?} must occur once");
+                    let j = text.find(t).expect("to");
+                    assert!(j > i, "{file}: anchors out of order");
+                    text[i..j].to_string()
+                }
+                None => text[i..].to_string(),
+            }
+        };
+        let lan = read_upstream(up.join("GameEngine/Source/GameNetwork/LANGameInfo.cpp"));
+        std::fs::write(
+            gen.join("dgi_lan_slots.inc"),
+            cut(&lan, "LANGameInfo.cpp", "// LANGameSlot ----------------------------------------\n", Some("// Misc game-related functionality --------------------\n")),
+        )
+        .expect("write dgi_lan_slots.inc");
+        let opts = cut(&lan, "LANGameInfo.cpp", "AsciiString GenerateGameOptionsString( void )", None);
+        assert_eq!(opts.matches("AsciiString.TheEmptyString").count(), 1, "LANGameInfo.cpp: the TheEmptyString typo must occur once");
+        std::fs::write(gen.join("dgi_lan_options.inc"), opts.replacen("AsciiString.TheEmptyString", "AsciiString::TheEmptyString", 1)).expect("write dgi_lan_options.inc");
+        let st = read_upstream(up.join("GameEngine/Source/GameNetwork/GameSpy/StagingRoomGameInfo.cpp"));
+        let ctor_end = "\tm_pingStr.clear();\n}\n";
+        let ctor_start = "GameSpyGameSlot::GameSpyGameSlot()\n{";
+        assert_eq!((st.matches(ctor_start).count(), st.matches(ctor_end).count()), (1, 1), "StagingRoomGameInfo.cpp: the constructor's anchors must occur once");
+        let ci = st.find(ctor_start).expect("ctor");
+        let cj = st.find(ctor_end).expect("ctor end") + ctor_end.len();
+        let rest = cut(&st, "StagingRoomGameInfo.cpp", "void GameSpyGameSlot::setPingString( AsciiString pingStr )", None);
+        std::fs::write(gen.join("dgi_staging.inc"), format!("{}\n{}", &st[ci..cj], rest)).expect("write dgi_staging.inc");
+        let mut b = cc::Build::new();
+        base(&mut b);
+        b.include(dif.join("shim_dgi"))
+            .include(&gen)
+            .include(dif.join("shim_ginfo"))
+            .include(out_dir.join("ginfo_gen"))
+            .include(shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(ww.join("WWMath"))
+            .include(ww.join("WWLib"))
+            .file(dif.join("wrap_draft_gameinfo.cpp"));
+        b.compile("upstream_draft_gameinfo");
+        for p in [
+            "differential/wrap_draft_gameinfo.cpp",
+            "differential/wrap_game_info.cpp",
+            "differential/shim_dgi",
+            "differential/shim_ginfo",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameNetwork/LANGameInfo.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameNetwork/GameSpy/StagingRoomGameInfo.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Include/GameNetwork",
+        ] {
+            println!("cargo:rerun-if-changed={p}");
+        }
     }
 }
