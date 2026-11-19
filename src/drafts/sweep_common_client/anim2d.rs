@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 programs (test: tests/differential_draft_anim2d.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/System/Anim2D.cpp
@@ -15,6 +16,7 @@
 //! The `parseAnim2DDefinition` field table's parse functions are the `parse_*` fns below.
 
 use crate::common::ini::IniErrorKind;
+use crate::logic::modules::plant;
 
 /// `Anim2DMode` (`ANIM_2D_INVALID` = 0 ...).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +80,14 @@ pub fn game_make_color(r: u32, g: u32, b: u32, a: u32) -> u32 {
     (a << 24) | (r << 16) | (g << 8) | b
 }
 
+/// `GameMakeColor( 255, 255, 255, 255 * m_alpha )`: the product is a `Real`, converted to the `UnsignedByte` the function
+/// takes (truncated toward zero; defined for `0 <= 255 * alpha < 256`).
+fn alpha_color(alpha: f32) -> u32 {
+    let a = 255.0 * alpha;
+    let a = if plant(14272) { (a + 0.5) as u32 } else { a as u32 };
+    game_make_color(255, 255, 255, a)
+}
+
 /// `class Anim2DTemplate`.
 #[derive(Clone, Debug)]
 pub struct Anim2DTemplate {
@@ -111,7 +121,7 @@ impl Anim2DTemplate {
     /// `Anim2DTemplate::parseNumImages` (Anim2D.cpp:99): the count, which must be at least 1 (`minimumFrames`), then
     /// `allocateImages`. `num_frames` is the already parsed unsigned integer.
     pub fn parse_num_images(&mut self, num_frames: u32) -> Result<(), IniErrorKind> {
-        let minimum_frames = 1;
+        let minimum_frames = if plant(14270) { 0 } else { 1 };
         if num_frames < minimum_frames {
             // upstream: DEBUG_CRASH("Invalid animation '%s', animations must have '%d' or more frames defined")
             return Err(IniErrorKind::InvalidData);
@@ -237,7 +247,11 @@ impl Anim2DCollection {
 
     /// `Anim2DCollection::findTemplate(name)`: head to tail, so the newest definition of a name wins.
     pub fn find_template(&self, name: &[u8]) -> Option<usize> {
-        (0..self.templates.len()).rev().find(|&i| self.templates[i].name == name)
+        if plant(14269) {
+            (0..self.templates.len()).find(|&i| self.templates[i].name == name)
+        } else {
+            (0..self.templates.len()).rev().find(|&i| self.templates[i].name == name)
+        }
     }
 
     /// `Anim2DCollection::getNextTemplate(animTemplate)` (Anim2D.cpp:808): `friend_getNextTemplate()`, the next one
@@ -333,7 +347,7 @@ impl Anim2DCollection {
             Some(a) => self.templates[a.template].num_frames as i32,
             None => return,
         };
-        let f = host.game_client_random_value(0, n - 1);
+        let f = host.game_client_random_value(0, if plant(14268) { n } else { n - 1 });
         self.set_current_frame(id, f as u16, host);
     }
 
@@ -345,7 +359,7 @@ impl Anim2DCollection {
         };
         match mode {
             Anim2DMode::Once | Anim2DMode::Loop | Anim2DMode::PingPong => self.set_current_frame(id, min, host),
-            Anim2DMode::OnceBackwards | Anim2DMode::LoopBackwards | Anim2DMode::PingPongBackwards => self.set_current_frame(id, max, host),
+            Anim2DMode::OnceBackwards | Anim2DMode::LoopBackwards | Anim2DMode::PingPongBackwards => self.set_current_frame(id, if plant(14266) { min } else { max }, host),
             Anim2DMode::Invalid => {} // upstream: DEBUG_CRASH("Unknown animation mode")
         }
     }
@@ -356,51 +370,51 @@ impl Anim2DCollection {
             Some(a) => (self.templates[a.template].anim_mode, a.current_frame, a.min_frame, a.max_frame, a.frames_between_updates, a.last_update_frame, a.status),
             None => return,
         };
-        if host.logic_frame().wrapping_sub(last) < between {
+        if if plant(14264) { host.logic_frame().wrapping_sub(last) <= between } else { host.logic_frame().wrapping_sub(last) < between } {
             return;
         }
         match mode {
             Anim2DMode::Once => {
-                if cur < max {
-                    self.set_current_frame(id, cur + 1, host);
+                if if plant(14261) { cur <= max } else { cur < max } {
+                    self.set_current_frame(id, cur.wrapping_add(1), host);
                 } else {
                     self.set_status(id, ANIM_2D_STATUS_COMPLETE);
                 }
             }
             Anim2DMode::OnceBackwards => {
                 if cur > min {
-                    self.set_current_frame(id, cur - 1, host);
+                    self.set_current_frame(id, cur.wrapping_sub(1), host);
                 } else {
                     self.set_status(id, ANIM_2D_STATUS_COMPLETE);
                 }
             }
             Anim2DMode::Loop => {
                 if cur == max {
-                    self.set_current_frame(id, min, host);
+                    self.set_current_frame(id, if plant(14265) { 0 } else { min }, host);
                 } else {
-                    self.set_current_frame(id, cur + 1, host);
+                    self.set_current_frame(id, cur.wrapping_add(1), host);
                 }
             }
             Anim2DMode::LoopBackwards => {
-                if cur > min {
-                    self.set_current_frame(id, cur - 1, host);
+                if if plant(14262) { cur >= min } else { cur > min } {
+                    self.set_current_frame(id, cur.wrapping_sub(1), host);
                 } else {
                     self.set_current_frame(id, max, host);
                 }
             }
             Anim2DMode::PingPong | Anim2DMode::PingPongBackwards => {
                 if status & ANIM_2D_STATUS_REVERSED != 0 {
-                    if cur == min {
-                        self.set_current_frame(id, cur + 1, host);
+                    if if plant(14263) { cur <= min } else { cur == min } {
+                        self.set_current_frame(id, cur.wrapping_add(1), host);
                         self.clear_status(id, ANIM_2D_STATUS_REVERSED);
                     } else {
-                        self.set_current_frame(id, cur - 1, host);
+                        self.set_current_frame(id, cur.wrapping_sub(1), host);
                     }
                 } else if cur == max {
-                    self.set_current_frame(id, cur - 1, host);
+                    self.set_current_frame(id, cur.wrapping_sub(1), host);
                     self.set_status(id, ANIM_2D_STATUS_REVERSED);
                 } else {
-                    self.set_current_frame(id, cur + 1, host);
+                    self.set_current_frame(id, cur.wrapping_add(1), host);
                 }
             }
             Anim2DMode::Invalid => {} // upstream: DEBUG_CRASH("Unknown animation mode")
@@ -444,8 +458,8 @@ impl Anim2DCollection {
             None => return,
         };
         if let Some(image) = image {
-            let color = game_make_color(255, 255, 255, (255.0 * alpha) as u32);
-            host.draw_image(&image, x, y, x + image.width, y + image.height, color);
+            let color = alpha_color(alpha);
+            host.draw_image(&image, x, y, x.wrapping_add(image.width), y.wrapping_add(image.height), color);
         }
         self.after_draw(id, host);
     }
@@ -457,8 +471,8 @@ impl Anim2DCollection {
             None => return,
         };
         if let Some(image) = image {
-            let color = game_make_color(255, 255, 255, (255.0 * alpha) as u32);
-            host.draw_image(&image, x, y, x + width, y + height, color);
+            let color = alpha_color(alpha);
+            host.draw_image(&image, x, y, x.wrapping_add(width), y.wrapping_add(if plant(14267) { width } else { height }), color);
         }
         self.after_draw(id, host);
     }
@@ -469,7 +483,7 @@ impl Anim2DCollection {
             Some(a) => (a.registered, a.status & ANIM_2D_STATUS_FROZEN != 0),
             None => return,
         };
-        if !registered && !frozen {
+        if (!registered || plant(14271)) && !frozen {
             self.try_next_frame(id, host);
         }
     }

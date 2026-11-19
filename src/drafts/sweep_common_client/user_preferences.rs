@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 30,000 programs (test: tests/differential_draft_userprefs2.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/Common/UserPreferences.cpp
@@ -12,6 +13,7 @@
 //! case-insensitive on bytes.
 
 use crate::client::user_preferences::UserPreferences;
+use crate::logic::modules::plant;
 use crate::common::map_cache::{ascii_string_to_quoted_printable, quoted_printable_to_ascii_string};
 
 /// `PLAYERTEMPLATE_RANDOM`, `PLAYERTEMPLATE_OBSERVER`, `PLAYERTEMPLATE_MIN` (PlayerTemplate.h).
@@ -51,6 +53,11 @@ fn stricmp_eq(a: &[u8], b: &[u8]) -> bool {
     a.eq_ignore_ascii_case(b)
 }
 
+/// C `isspace` in the "C" locale: space, `\t`, `\n`, `\v`, `\f`, `\r` (`u8::is_ascii_whitespace` leaves out `\v`).
+fn c_isspace(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r')
+}
+
 /// `atoi` of a stored value (the verified `get_int` path handles the empty string with a default; upstream's `atoi` of
 /// the found value is on the raw text, which `get_int` with a default of 0 reproduces for non-empty values, and an empty
 /// stored value is 0 under `atoi` as well).
@@ -68,7 +75,7 @@ pub struct QuickMatchPreferences {
 impl QuickMatchPreferences {
     /// `QuickMatchPreferences::QuickMatchPreferences()`: file name `GeneralsOnline\QMPref%d.ini`; the caller `load`s it.
     pub fn filename(local_profile: i32) -> Vec<u8> {
-        format!("GeneralsOnline\\QMPref{}.ini", local_profile).into_bytes()
+        format!("GeneralsOnline\\{}{}.ini", if plant(14336) { "CustomPref" } else { "QMPref" }, local_profile).into_bytes()
     }
 
     /// `setMapSelected(mapName, selected)`: key `AsciiStringToQuotedPrintable(mapName)`, "1" / "0".
@@ -80,7 +87,7 @@ impl QuickMatchPreferences {
     pub fn is_map_selected(&mut self, map_name: &[u8]) -> bool {
         let key = ascii_string_to_quoted_printable(map_name);
         if self.prefs.find(&key).is_none() {
-            return true;
+            return !plant(14321);
         }
         atoi_found(&mut self.prefs, &key) != 0
     }
@@ -101,7 +108,7 @@ impl QuickMatchPreferences {
         if self.prefs.find(b"LastLadderPort").is_none() {
             return 0;
         }
-        atoi_found(&mut self.prefs, b"LastLadderPort") as u16
+        if plant(14322) { atoi_found(&mut self.prefs, b"LastLadderPort") as u8 as u16 } else { atoi_found(&mut self.prefs, b"LastLadderPort") as u16 }
     }
 
     fn set_int_key(&mut self, key: &[u8], val: i32) {
@@ -129,7 +136,7 @@ impl QuickMatchPreferences {
     }
     /// `getMaxPoints()`: 1000 when not found.
     pub fn get_max_points(&mut self) -> i32 {
-        self.get_int_key_or(b"MaxPoints", 1000)
+        self.get_int_key_or(b"MaxPoints", if plant(14323) { 100 } else { 1000 })
     }
     /// `setMinPoints(val)`.
     pub fn set_min_points(&mut self, val: i32) {
@@ -239,7 +246,7 @@ impl CustomMatchPreferences {
             return -1;
         }
         let ret = self.prefs.get_int(b"Color", 0);
-        if ret < -1 || ret >= host.num_colors() {
+        if ret < -1 || if plant(14324) { ret > host.num_colors() } else { ret >= host.num_colors() } {
             return -1;
         }
         ret
@@ -256,7 +263,7 @@ impl CustomMatchPreferences {
             return 45;
         }
         let ret = self.prefs.get_int(b"ChatSlider", 0);
-        if ret < 0 || ret > 100 {
+        if ret < 0 || ret > if plant(14325) { 101 } else { 100 } {
             return 45;
         }
         ret
@@ -273,7 +280,7 @@ impl CustomMatchPreferences {
             return PLAYERTEMPLATE_RANDOM;
         }
         let mut ret = self.prefs.get_int(b"PlayerTemplate", 0);
-        if ret == PLAYERTEMPLATE_OBSERVER || ret < PLAYERTEMPLATE_MIN || ret >= host.player_template_count() {
+        if (ret == PLAYERTEMPLATE_OBSERVER && !plant(14326)) || ret < PLAYERTEMPLATE_MIN || ret >= host.player_template_count() {
             ret = PLAYERTEMPLATE_RANDOM;
         }
         if ret >= 0 {
@@ -282,12 +289,12 @@ impl CustomMatchPreferences {
                 Some((starting_building_empty, is_old_faction, name)) => {
                     if starting_building_empty {
                         ret = PLAYERTEMPLATE_RANDOM;
-                    } else if host.old_factions_only() && !is_old_faction {
+                    } else if host.old_factions_only() && !is_old_faction && !plant(14327) {
                         ret = PLAYERTEMPLATE_RANDOM;
                     } else {
                         // "Prevent from loading the disabled Generals" (disallowLockedGenerals is TRUE upstream).
                         let starts_locked = match host.general_starting_enabled(&name) {
-                            Some(enabled) => !enabled,
+                            Some(enabled) => if plant(14328) { enabled } else { !enabled },
                             None => false,
                         };
                         if starts_locked {
@@ -316,6 +323,9 @@ impl CustomMatchPreferences {
 
     /// `usesLongGameList()`: upstream `return TRUE;` first, the lookup after it is unreachable and kept out.
     pub fn uses_long_game_list(&self) -> bool {
+        if plant(14329) {
+            return self.flag_or(b"UseLongGameList", false);
+        }
         true
     }
     /// `setUsesLongGameList(val)`.
@@ -337,7 +347,7 @@ impl CustomMatchPreferences {
         match self.prefs.find(b"DisallowAsianText") {
             None => {
                 let lang = host.registry_language();
-                !(stricmp_eq(&lang, b"chinese") || stricmp_eq(&lang, b"korean"))
+                if plant(14330) { stricmp_eq(&lang, b"chinese") || stricmp_eq(&lang, b"korean") } else { !(stricmp_eq(&lang, b"chinese") || stricmp_eq(&lang, b"korean")) }
             }
             Some(v) => stricmp_eq(v, b"1"),
         }
@@ -363,16 +373,18 @@ impl CustomMatchPreferences {
         };
         let mut ret = quoted_printable_to_ascii_string(&stored);
         // `ret.trim()`: leading and trailing whitespace.
-        while ret.last().map_or(false, |b| b.is_ascii_whitespace()) {
-            ret.pop();
+        if !plant(14331) {
+            while ret.last().map_or(false, |&b| c_isspace(b)) {
+                ret.pop();
+            }
+            let lead = ret.iter().take_while(|&&b| c_isspace(b)).count();
+            ret.drain(..lead);
         }
-        let lead = ret.iter().take_while(|b| b.is_ascii_whitespace()).count();
-        ret.drain(..lead);
         if ret.is_empty() || !host.is_valid_map(&ret) {
             return host.default_official_map();
         }
         // "can only use official maps if recording stats"
-        if self.get_use_stats() && !host.is_official_map(&ret) {
+        if self.get_use_stats() && !host.is_official_map(&ret) && !plant(14332) {
             ret = host.default_official_map();
         }
         ret
@@ -384,6 +396,9 @@ impl CustomMatchPreferences {
 
     /// `getSuperweaponRestricted()`: key `SuperweaponRestrict`, "yes", FALSE when not found.
     pub fn get_superweapon_restricted(&self) -> bool {
+        if plant(14334) {
+            return self.prefs.find(b"SuperweaponRestrict").map_or(false, |v| v == b"yes");
+        }
         self.yes_or(b"SuperweaponRestrict", false)
     }
     /// `setSuperweaponRestricted(v)`: "Yes" / "No".
@@ -392,27 +407,37 @@ impl CustomMatchPreferences {
     }
 
     /// `getStartingCash()`: the `Money`'s amount; default is the multiplayer settings' default starting money.
-    /// `strtoul(.., NULL, 10)` of the stored text (leading digits, wraps at 32 bits on the platform's `unsigned long`).
+    /// `strtoul(.., NULL, 10)` of the stored text (~~leading digits, wraps at 32 bits~~ **Corrected 2026-11-19 (#215):** `isspace`,
+    /// an optional sign, digits, saturating at 32 bits; the earlier text ignored a sign and `\\v`).
     pub fn get_starting_cash<H: MatchPrefsHost + ?Sized>(&self, host: &H) -> u32 {
         match self.prefs.find(b"StartingCash") {
             None => host.default_starting_money(),
             Some(v) => {
+                // `strtoul(.., NULL, 10)`: leading `isspace`, an optional sign (a minus negates, modulo 2^32), then digits; no
+                // digits is 0. A value above `ULONG_MAX` gives `ULONG_MAX` on the shipped 32-bit `unsigned long`; this
+                // saturates at 32 bits (the 64-bit hosts' `unsigned long` differs there, so a test keeps to 32 bits).
                 let mut i = 0;
-                while i < v.len() && v[i].is_ascii_whitespace() {
+                while i < v.len() && c_isspace(v[i]) {
                     i += 1;
                 }
-                let mut n: u32 = 0;
+                let mut neg = false;
+                if i < v.len() && (v[i] == b'-' || v[i] == b'+') {
+                    neg = v[i] == b'-' && !plant(14337);
+                    i += 1;
+                }
+                let mut n: u64 = 0;
                 while i < v.len() && v[i].is_ascii_digit() {
-                    n = n.wrapping_mul(10).wrapping_add((v[i] - b'0') as u32);
+                    n = (n * 10 + (v[i] - b'0') as u64).min(u32::MAX as u64);
                     i += 1;
                 }
-                n
+                let n = n as u32;
+                if neg { n.wrapping_neg() } else { n }
             }
         }
     }
     /// `setStartingCash(startingCash)`: `%d` of `countMoney()`.
     pub fn set_starting_cash(&mut self, count_money: u32) {
-        self.prefs.set_ascii_string(b"StartingCash", (count_money as i32).to_string().as_bytes());
+        self.prefs.set_ascii_string(b"StartingCash", if plant(14333) { count_money.to_string() } else { (count_money as i32).to_string() }.as_bytes());
     }
 
     /// `getFactionsLimited()`: key `LimitArmies`, FALSE when not found.
@@ -468,6 +493,6 @@ impl GameSpyMiscPreferences {
     }
     /// `getMaxMessagesPerUpdate()`.
     pub fn get_max_messages_per_update(&mut self) -> i32 {
-        self.prefs.get_int(b"MaxMessagesPerUpdate", 100)
+        self.prefs.get_int(b"MaxMessagesPerUpdate", if plant(14335) { 10 } else { 100 })
     }
 }
