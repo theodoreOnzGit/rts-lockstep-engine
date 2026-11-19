@@ -709,14 +709,14 @@ impl MeshBuilderClass {
     }
 
     /// `MeshBuilderClass::Compute_Face_Normals` (meshbuild.cpp:670).
-    fn compute_face_normals(&mut self) {
+    pub fn compute_face_normals(&mut self) {
         for faceidx in 0..self.face_count as usize {
             self.faces[faceidx].compute_plane();
         }
     }
 
     /// `MeshBuilderClass::Verify_Face_Normals` (meshbuild.cpp:688).
-    fn verify_face_normals(&self) -> bool {
+    pub fn verify_face_normals(&self) -> bool {
         let mut ok = true;
         for faceidx in 0..self.face_count as usize {
             let f = &self.faces[faceidx];
