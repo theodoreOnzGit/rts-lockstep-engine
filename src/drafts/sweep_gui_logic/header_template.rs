@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 6,000 programs (test: tests/differential_draft_fonts.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/HeaderTemplate.cpp (HeaderTemplateManager::findHeaderTemplate,
@@ -8,6 +9,7 @@
 //! (`push_front`). The verified port asks the manager for a font through `WndHost::font_from_template`.
 
 use crate::client::window_script::GameFont;
+use crate::logic::modules::plant;
 
 /// `class HeaderTemplate`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -43,12 +45,22 @@ impl HeaderTemplateManager {
     /// `findHeaderTemplate(name)` (HeaderTemplate.cpp:163): the first with that name (a case-sensitive `compare`), by
     /// its place in the list.
     pub fn find_header_template(&self, name: &[u8]) -> Option<usize> {
-        self.header_template_list.iter().position(|h| h.name.as_slice() == name)
+        if plant(15676) {
+            self.header_template_list.iter().rposition(|h| h.name.as_slice() == name)
+        } else if plant(15677) {
+            self.header_template_list.iter().position(|h| h.name.eq_ignore_ascii_case(name))
+        } else {
+            self.header_template_list.iter().position(|h| h.name.as_slice() == name)
+        }
     }
 
     /// `newHeaderTemplate(name)` (:176): a new template at the front of the list; its place (0).
     pub fn new_header_template(&mut self, name: &[u8]) -> usize {
         let new_h = HeaderTemplate { name: name.to_vec(), ..HeaderTemplate::default() };
+        if plant(15675) {
+            self.header_template_list.push(new_h);
+            return self.header_template_list.len() - 1;
+        }
         self.header_template_list.insert(0, new_h);
         0
     }
@@ -57,6 +69,8 @@ impl HeaderTemplateManager {
     pub fn get_first_header(&self) -> Option<usize> {
         if self.header_template_list.is_empty() {
             None
+        } else if plant(15679) {
+            Some(self.header_template_list.len() - 1)
         } else {
             Some(0)
         }
@@ -64,7 +78,9 @@ impl HeaderTemplateManager {
 
     /// `getNextHeader(ht)` (:210): the template after `ht`; none for the last, or for one not in the list.
     pub fn get_next_header(&self, ht: usize) -> Option<usize> {
-        if ht < self.header_template_list.len() && ht + 1 < self.header_template_list.len() {
+        if plant(15678) && ht < self.header_template_list.len() {
+            Some((ht + 1) % self.header_template_list.len())
+        } else if ht < self.header_template_list.len() && ht + 1 < self.header_template_list.len() {
             Some(ht + 1)
         } else {
             None
@@ -76,9 +92,13 @@ impl HeaderTemplateManager {
     pub fn populate_game_fonts<H: HeaderTemplateFontHost>(&mut self, h: &H) {
         for t in self.header_template_list.iter_mut() {
             // Real pointSize = TheGlobalLanguageData->adjustFontSize(hTemplate->m_point);
-            let point_size = h.adjust_font_size(t.point);
+            let point_size = if plant(15680) { t.point as f32 } else { h.adjust_font_size(t.point) };
             // getFont(name, Real pointSize, bold): the Real converts to the library's Int
-            t.font = h.get_font(&t.font_name, point_size as i32, t.bold);
+            let font = h.get_font(&t.font_name, point_size as i32, if plant(15681) { !t.bold } else { t.bold });
+            if plant(15682) && font.is_none() {
+                continue;
+            }
+            t.font = font;
         }
     }
 }
