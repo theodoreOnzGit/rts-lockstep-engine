@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): matches the upstream C++ (tests/differential_draft_cull.rs, 24,000 random programs, with the structure dumped after every operation).
+//! NOT covered: `save`, `load`, `load_object_linkage`, `save_object_linkage` (chunk I/O) and the typed `get_*_collected_object` wrappers (the same as `peek_*`). Not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/aabtreecull.h

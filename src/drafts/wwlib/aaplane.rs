@@ -1,4 +1,4 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): the functions listed below match the upstream C++ (test: tests/differential_draft_colmath.rs, 20,000 cases per function; the covered functions are listed below); the others are NOT covered. Not yet wired into the game.
 //!
 //! Covered by tests/differential_draft_colmath.rs (#215): `get_normal`, and `new` through every AAPlane overlap test. NOT covered: `set`.
 //!

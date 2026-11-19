@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): `save_variables` and `load_variables` match the upstream C++ on 40,000 cases each (tests/differential_draft_chunksave.rs).
+//! NOT covered: `twiddle` (random from TIMEGETTIME, and DefinitionMgr), `create`, `save`, `load`, the factories (definition and persist classes, untested).
+//! Not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWSaveLoad/twiddler.h
@@ -13,6 +15,7 @@
 //! `RandomClass` from `TIMEGETTIME()` on every call; the caller's `random_int(lo, hi)` replaces it.
 
 use super::chunk_save::ChunkSaveClass;
+use crate::logic::modules::plant;
 use super::definition::{DefinitionClass, DefinitionHandle, DefinitionKind, CLASSID_TWIDDLERS};
 use super::definitionfactory::DefinitionFactoryClass;
 use super::definitionmgr::DefinitionMgrClass;
@@ -71,18 +74,29 @@ impl TwiddlerClass {
 
     /// `Save_Variables(csave)`: the indirect class id, then one micro chunk per definition id.
     pub fn save_variables(&self, csave: &mut ChunkSaveClass) -> bool {
-        csave.write_micro_chunk(VARID_INDIRECT_CLASSID, &self.indirect_class_id.to_le_bytes());
+        if !plant(14902) {
+            csave.write_micro_chunk(VARID_INDIRECT_CLASSID, &self.indirect_class_id.to_le_bytes());
+        }
 
         for def_id in self.definition_list.iter() {
             // Save this definition ID to the chunk
-            csave.write_micro_chunk(VARID_DEFINTION_ID, &def_id.to_le_bytes());
+            if plant(14905) {
+                csave.write_micro_chunk(VARID_DEFINTION_ID, &def_id.to_le_bytes()[..2]);
+            } else {
+                csave.write_micro_chunk(VARID_DEFINTION_ID, &def_id.to_le_bytes());
+            }
+        }
+        if plant(14902) {
+            csave.write_micro_chunk(VARID_INDIRECT_CLASSID, &self.indirect_class_id.to_le_bytes());
         }
         true
     }
 
     /// `Load_Variables(cload)`: "Start fresh" (the list is cleared), then each micro chunk.
     pub fn load_variables(&mut self, cload: &mut ChunkLoad<'_>) -> bool {
-        self.definition_list.clear();
+        if !plant(14903) {
+            self.definition_list.clear();
+        }
 
         while cload.open_micro_chunk().unwrap_or(false) {
             match cload.cur_micro_chunk_id() {
@@ -97,7 +111,11 @@ impl TwiddlerClass {
                     let _ = cload.read_into(&mut b);
                     self.definition_list.push(i32::from_le_bytes(b));
                 }
-                _ => {}
+                _ => {
+                    if plant(14904) {
+                        return true;
+                    }
+                }
             }
             let _ = cload.close_micro_chunk();
         }

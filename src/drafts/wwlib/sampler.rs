@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 40,000 sampler programs, 4.4 million floats (test: tests/differential_draft_sampler.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/sampler.h
@@ -10,6 +11,7 @@
 //! `RadInv` and the samplers do their float arithmetic in `float` (the `int` residue converts to float). The QMC
 //! constructor `assert(Dimensions<100)` (the prime table has 100 entries).
 
+use crate::logic::modules::plant;
 use crate::ww::random::Random4;
 
 /// "first 100 primes".
@@ -24,6 +26,17 @@ const PRIMES: [i32; 100] = [
 fn rad_inv(mut i: i32, base: i32) -> f32 {
     let mut sum = 0.0f32;
     let mut power = 1.0f32 / base as f32;
+    if plant(14880) {
+        let mut dsum = 0.0f64;
+        let mut dpower = 1.0f64 / base as f64;
+        while i != 0 {
+            let residue = i % base;
+            i /= base;
+            dsum += residue as f64 * dpower;
+            dpower /= base as f64;
+        }
+        return dsum as f32;
+    }
     while i != 0 {
         let residue = i % base;
         i /= base;
@@ -37,7 +50,7 @@ fn rad_inv(mut i: i32, base: i32) -> f32 {
 fn advance_index(index: &mut [u8], divisions: u8) {
     for i in 0..index.len() {
         index[i] = index[i].wrapping_add(1);
-        if index[i] < divisions {
+        if index[i] < divisions || (plant(14883) && index[i] == divisions) {
             break;
         }
         index[i] = 0;
@@ -84,11 +97,17 @@ impl SamplingClass {
         match self {
             SamplingClass::Random { .. } => {}
             SamplingClass::Regular { index, .. } | SamplingClass::Stratified { index, .. } => {
-                for b in index.iter_mut() {
-                    *b = 0;
+                if !plant(14886) {
+                    for b in index.iter_mut() {
+                        *b = 0;
+                    }
                 }
             }
-            SamplingClass::Qmc { index, .. } => *index = 0,
+            SamplingClass::Qmc { index, .. } => {
+                if !plant(14885) {
+                    *index = 0;
+                }
+            }
         }
     }
 
@@ -111,13 +130,13 @@ impl SamplingClass {
             SamplingClass::Regular { dimensions, divisions, index } => {
                 for i in 0..*dimensions as usize {
                     // minus one because we want to get 1.0f also
-                    target[i] = index[i] as f32 / (*divisions as f32 - 1.0f32);
+                    target[i] = index[i] as f32 / (*divisions as f32 - if plant(14881) { 0.0f32 } else { 1.0f32 });
                 }
                 advance_index(index, *divisions);
             }
             SamplingClass::Stratified { dimensions, divisions, index } => {
                 for i in 0..*dimensions as usize {
-                    target[i] = (index[i] as f32 + random.get_float()) / *divisions as f32;
+                    target[i] = if plant(14882) { index[i] as f32 / *divisions as f32 + random.get_float() / *divisions as f32 } else { (index[i] as f32 + random.get_float()) / *divisions as f32 };
                 }
                 advance_index(index, *divisions);
             }
@@ -125,7 +144,9 @@ impl SamplingClass {
                 for i in 0..*dimensions as usize {
                     target[i] = rad_inv(*index as i32, PRIMES[i]);
                 }
-                *index = index.wrapping_add(1);
+                if !plant(14884) {
+                    *index = index.wrapping_add(1);
+                }
             }
         }
     }
