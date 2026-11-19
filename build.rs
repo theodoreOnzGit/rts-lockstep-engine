@@ -349,6 +349,7 @@ mod differential {
         drafts_wwmath(root, &up, &dif, &shim, &ww);
         drafts_ww3dgeo(&dif, &ww); // #215: the geometry and maths WW3D drafts (group ww3dgeo), see the function at the end of this module
         drafts_sweepww3d(&dif, &ww); // #215 (group sweepww3d): the camera, mapper, part_buf, hlod, layer, scene, vertmaterial, w3d_util drafts (fn drafts_sweepww3d, the end of this module)
+        drafts_ww3dpure(&dif, &ww); // #215 (group ww3dpure): the pure-computation WW3D2 drafts (fn drafts_ww3dpure, the end of this module)
         // #215 (group logicx): the logic_common drafts' wrappers (fn drafts_logicx, the end of this module).
         drafts_logicx(root);
         // #215 (group guilogic): the gui_logic and common_client drafts' wrappers (fn drafts_guilogic, the end of this module).
@@ -12697,5 +12698,53 @@ mod differential {
                 .file(ge.join("Source/Common/System/AsciiString.cpp"));
             b.compile("draft_guilogic2_userprefs2");
         }
+    }
+    /// #215 (group ww3dpure): the pure-computation WW3D2 drafts' references. Each upstream file is copied into
+    /// OUT_DIR/draft_ww3dpure_gen with mechanical edits only (every edit asserted to apply the stated number of times), and the
+    /// wrapper (differential/wrap_draft_<name>.cpp) #includes the copy.
+    fn drafts_ww3dpure(dif: &Path, ww: &Path) {
+        let wwlib = ww.join("WWLib");
+        let shim_w3d = dif.join("shim_w3d");
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let gen = out_dir.join("draft_ww3dpure_gen");
+        std::fs::create_dir_all(&gen).expect("create draft_ww3dpure_gen");
+        let ww3d = ww.join("WW3D2");
+        // a copy of an upstream file with `edits` (from, to, expected count) applied
+        let copy = |file: &str, edits: &[(&str, &str, usize)]| {
+            let mut text = read_upstream(ww3d.join(file));
+            for (from, to, n) in edits {
+                assert_eq!(text.matches(from).count(), *n, "{file}: edit {from:?} must apply {n} time(s)");
+                text = text.replace(from, to);
+            }
+            std::fs::write(gen.join(file), text).unwrap_or_else(|e| panic!("write {file}: {e}"));
+        };
+
+        // stripoptimizer.cpp (see differential/wrap_draft_stripopt.cpp)
+        copy("stripoptimizer.h", &[]);
+        copy(
+            "stripoptimizer.cpp",
+            &[
+                ("for (i = 0; i < outSize; i++)", "for (int i = 0; i < outSize; i++)", 1),
+                ("for (i = 0; i < triangle_count; i++)", "for (int i = 0; i < triangle_count; i++)", 1),
+                ("for (i = 0; i < 3; i++) {", "for (int i = 0; i < 3; i++) {", 1),
+            ],
+        );
+
+        let mut b = cc::Build::new();
+        base(&mut b);
+        b.compiler("clang++")
+            .flag("-fms-extensions")
+            .flag("-fdelayed-template-parsing")
+            .include(&gen)
+            .include(&shim_w3d)
+            .include(&wwlib)
+            .include(ww.join("WWDebug"))
+            .flag("-include")
+            .flag(shim_w3d.join("w3d_prelude.h").to_str().expect("UTF-8 path"));
+        for w in ["stripopt"] {
+            println!("cargo:rerun-if-changed=differential/wrap_draft_{w}.cpp");
+            b.file(dif.join(format!("wrap_draft_{w}.cpp")));
+        }
+        b.compile("upstream_draft_ww3dpure");
     }
 }

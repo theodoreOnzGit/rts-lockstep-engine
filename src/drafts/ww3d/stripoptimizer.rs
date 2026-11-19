@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_stripopt.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/stripoptimizer.cpp
@@ -14,10 +15,15 @@
 //! - In `stripify` the search for the next triangle does not leave the neighbour loop when it finds one, so the *last*
 //!   matching neighbour wins.
 //! - `Combine_Strips` writes `*o++ = o[-1]`, which reads and increments `o` in one unsequenced expression (undefined in C++ before
-//!   C++17); the intended value (a copy of the last index written) is what is implemented.
+//!   C++17); the intended value (a copy of the last index written) is what is implemented. Checked 2026-11-19 (#215): the upstream
+//!   file compiled as C++17 (right operand sequenced first) gives exactly that value on 20,000 cases.
+//! - Found by the differential test (#215): because of the `weight[0]` quirk the node weights are +2 or -2 for every neighbour
+//!   alike, so they never change a decision and the per-vertex connectivity count is dead state upstream (a plant that skipped
+//!   its decrement was NOT caught, and is replaced by one that is).
 //! - The `Insertion_Sort` / `Quick_Sort` templates and `HashTemplateKeyClass<Edge>::Get_Hash_Value` are not used by any
 //!   function in the file (the hash is a `HashMap` keyed by the edge here).
 
+use crate::logic::modules::plant;
 use std::collections::HashMap;
 
 /// `Insertion_Sort(a, N)` (stripoptimizer.cpp): "class T must have operators =, > and <".
@@ -27,7 +33,7 @@ pub fn insertion_sort<T: Copy + PartialOrd>(a: &mut [T], n: usize) {
         if a[i - 1] > a[i] {
             let v = a[i];
             let mut j = i;
-            while a[j - 1] > v {
+            while a[j - 1] > v || (plant(14678) && !(a[j - 1] < v)) {
                 a[j] = a[j - 1]; // copy data
                 j -= 1;
                 if j == 0 {
@@ -42,7 +48,7 @@ pub fn insertion_sort<T: Copy + PartialOrd>(a: &mut [T], n: usize) {
 
 /// `Quick_Sort(a, l, r)`: insertion sort for ranges of at most 17 elements, else a Hoare-style partition around `a[r]`.
 pub fn quick_sort_range<T: Copy + PartialOrd>(a: &mut [T], l: i32, r: i32) {
-    if r - l <= 16 {
+    if r - l <= (if plant(14677) { 15 } else { 16 }) {
         insertion_sort(&mut a[l as usize..], (r - l + 1) as usize);
         return;
     }
@@ -88,7 +94,7 @@ pub fn quick_sort<T: Copy + PartialOrd>(a: &mut [T], n: i32) {
 pub fn get_strip_index_count(strips: &[i32], strip_count: i32) -> i32 {
     let mut cnt = 0;
     let mut p = 0usize;
-    for _ in 0..strip_count {
+    for _ in 0..(strip_count - i32::from(plant(14675))) {
         let len = strips[p]; // read len
         p += 1;
         cnt += len;
@@ -109,7 +115,9 @@ fn get_strip_similarity(a: &[i32], b: &[i32]) -> i32 {
             if b[1 + j] == index {
                 // match
                 cnt += 1;
-                break;
+                if !plant(14676) {
+                    break;
+                }
             }
         }
     }
@@ -151,7 +159,7 @@ pub fn optimize_strip_order(strips: &mut [i32], strip_count: i32) {
         for j in 0..strip_count as usize {
             if let Some(sj) = ss[j] {
                 let sim = get_strip_similarity(&strips[prev..], &strips[sj..]); // get similarity
-                if sim > best_similarity {
+                if if plant(14662) { sim >= best_similarity } else { sim > best_similarity } {
                     best_similarity = sim;
                     best_index = j as i32;
                 }
@@ -219,7 +227,7 @@ pub fn optimize_triangle_order(tris: &mut [i32], triangle_count: i32) {
                 if sim > best_sim {
                     best_sim = sim;
                     best_index = j as i32;
-                    if sim >= 2 {
+                    if sim >= (if plant(14663) { 3 } else { 2 }) {
                         // that's the best we could get
                         break;
                     }
@@ -257,7 +265,7 @@ pub fn combine_strips(strips: &[i32], strip_count: i32) -> Vec<i32> {
         s += 1;
         if i != 0 {
             out.push(strips[s]); // duplicate first
-            if !prev_even {
+            if prev_even == plant(14664) {
                 out.push(strips[s]);
             }
         }
@@ -271,7 +279,7 @@ pub fn combine_strips(strips: &[i32], strip_count: i32) -> Vec<i32> {
         }
         prev_even = len & 1 == 0;
     }
-    out[0] = (out.len() - 1) as i32; // set length
+    out[0] = (out.len() - 1 - usize::from(plant(14665))) as i32; // set length
     out
 }
 
@@ -283,7 +291,7 @@ pub fn stripify(tris: &[i32], tri_count: i32) -> Option<Vec<i32>> {
 
 /// `namespace Strip`.
 mod strip {
-    use super::HashMap;
+    use super::{plant, HashMap};
 
     /// `Strip::Edge`.
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -456,7 +464,7 @@ mod strip {
                 debug_assert!(self.m_node_connectivity[v] >= 0); // WASS?
             }
 
-            for i in 0..3 {
+            for i in 0..(if plant(14673) { 2 } else { 3 }) {
                 // perform reinsertions now...
                 if let Some(u) = update[i] {
                     self.reinsert(tris, u);
@@ -486,7 +494,7 @@ mod strip {
         }
         let mut v = [-1, -1, -1];
         for i in 0..3 {
-            if weight[0] == highest_val {
+            if weight[if plant(14661) { i } else { 0 }] == highest_val {
                 v[i] = 1;
             }
         }
@@ -523,7 +531,7 @@ mod strip {
                             if tris[nb].m_neighbors[k].is_none() {
                                 // this neighbor not located yet
                                 let ek = tris[nb].get_edge(k); // get edge
-                                if ek.v[0] == edge.v[1] && ek.v[1] == edge.v[0] {
+                                if ek.v[0] == edge.v[if plant(14671) { 0 } else { 1 }] && ek.v[1] == edge.v[if plant(14671) { 1 } else { 0 }] {
                                     // if matching edge (note that order must be different)
                                     break; // .. we found the edge
                                 }
@@ -534,7 +542,7 @@ mod strip {
                             // (k==3) -> no match
                             tris[i].m_neighbors[j] = Some(nb); // set neighbor
                             tris[nb].m_neighbors[k] = Some(i); // set neighbor
-                            hash.remove(&e); // remove from hash (this speeds up the hash queries considerably)
+                            if !plant(14672) { hash.remove(&e); } // remove from hash (this speeds up the hash queries considerably)
                         }
                     } else {
                         hash.insert(e, i); // insert triangle into hash
@@ -583,14 +591,14 @@ mod strip {
                     weight += node_weights[i]; // add node weights
                     weight += node_weights[get_mod3(i as i32 + 1)];
                     // DEBUG DEBUG ADD SWAP COST HERE?
-                    if weight <= best_weight {
+                    if if plant(14669) { weight < best_weight } else { weight <= best_weight } {
                         best_weight = weight;
                         best = i as i32;
                     }
                 }
             }
             out.push(len); // output the first three vertices
-            out.push(tris[t].m_vertices[get_mod3(best + 2)]);
+            out.push(tris[t].m_vertices[get_mod3(best + if plant(14670) { 1 } else { 2 })]);
             out.push(tris[t].m_vertices[get_mod3(best)]);
             out.push(tris[t].m_vertices[get_mod3(best + 1)]);
 
@@ -610,6 +618,9 @@ mod strip {
                                 break;
                             }
                         }
+                        if plant(14666) && next.is_some() {
+                            break;
+                        }
                     }
                 }
                 queue.remove_triangle(&mut tris, t); // get rid of the old triangle
@@ -628,12 +639,12 @@ mod strip {
                         // is there a neighbor?
                         let e = tris[next].get_edge(i); // a swap happens if it contains the prevprev
                         let o2 = out[out.len() - 2];
-                        let swap = e.v[0] == o2 || e.v[1] == o2;
+                        let swap = e.v[0] == o2 || e.v[if plant(14674) { 0 } else { 1 }] == o2;
                         let mut w = tris[nb].get_connectivity();
                         w += node_weights[i]; // add vertex weight
                         w += node_weights[get_mod3(i as i32 + 1)]; // add vertex weight
-                        w += if swap { 1 } else { -1 }; // add swap penalty
-                        if w <= best_weight {
+                        w += if swap != plant(14667) { 1 } else { -1 }; // add swap penalty
+                        if if plant(14668) { w < best_weight } else { w <= best_weight } {
                             best_weight = w;
                             best_edge = i as i32;
                             best_swap = swap;
