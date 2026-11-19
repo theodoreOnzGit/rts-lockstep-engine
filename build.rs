@@ -343,6 +343,9 @@ mod differential {
         // #215: the wwmath draft differential wrappers (fn drafts_wwmath, the end of this module). Early, so that its
         // libraries are linked BEFORE the ones they call (chunkio.cpp and quat.cpp in the W3D readers' library, matrix3d.cpp
         // in upstream_wwmath).
+        // #215 (group ww3dlogic): the WW3D logic drafts (fn drafts_ww3dlogic, the end of this module). Before drafts_wwmath, whose
+        // matrix4.cpp it calls, so that this library links first.
+        drafts_ww3dlogic(&dif, &shim, &ww);
         drafts_wwmath(root, &up, &dif, &shim, &ww);
         drafts_ww3dgeo(&dif, &ww); // #215: the geometry and maths WW3D drafts (group ww3dgeo), see the function at the end of this module
         // #215 (group logicx): the logic_common drafts' wrappers (fn drafts_logicx, the end of this module).
@@ -12284,5 +12287,37 @@ mod differential {
                 .file(dif.join(wrapper));
             b.compile(lib);
         }
+    }
+
+    /// #215 (group ww3dlogic): the references for the WW3D logic drafts of src/drafts/ww3d (matrixmapper.rs, and the others added
+    /// below). Each wrapper is differential/wrap_draft_<name>.cpp; the upstream text is either compiled whole (matrixmapper.cpp,
+    /// #included by its wrapper) or cut VERBATIM into OUT_DIR/draft_ww3dlogic_gen (every anchor asserted once). Every entry point is
+    /// named ref_dww3dl_<unit>_… (issue #219: two archives defining one symbol resolve silently to the first).
+    fn drafts_ww3dlogic(dif: &Path, shim: &Path, ww: &Path) {
+        let wwmath = ww.join("WWMath");
+        let wwlib = ww.join("WWLib");
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let gen = out_dir.join("draft_ww3dlogic_gen");
+        std::fs::create_dir_all(&gen).expect("create draft_ww3dlogic_gen");
+        // matrixmapper.h and .cpp are copied byte for byte into gen: a quoted #include searches the including file's own
+        // directory first, which would find the real mapper.h and dx8wrapper.h beside them instead of the stand-ins of
+        // differential/shim_draft_ww3dl (see the wrapper)
+        for f in ["matrixmapper.h", "matrixmapper.cpp"] {
+            let text = std::fs::read(ww.join("WW3D2").join(f)).unwrap_or_else(|e| panic!("read {f}: {e}"));
+            std::fs::write(gen.join(f), text).unwrap_or_else(|e| panic!("write {f}: {e}"));
+        }
+        let mut m = cc::Build::new();
+        base(&mut m);
+        m.include(dif.join("shim_draft_ww3dl"))
+            .include(shim)
+            .include(&gen)
+            .include(&wwmath)
+            .include(&wwlib);
+        for w in ["matrixmapper", "rect"] {
+            println!("cargo:rerun-if-changed=differential/wrap_draft_{w}.cpp");
+            m.file(dif.join(format!("wrap_draft_{w}.cpp")));
+        }
+        println!("cargo:rerun-if-changed=differential/shim_draft_ww3dl");
+        m.compile("upstream_draft_ww3dlogic");
     }
 }

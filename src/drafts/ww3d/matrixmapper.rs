@@ -1,5 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
-//!
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 sequences (test: tests/differential_draft_matrixmapper.rs);
+//! not yet wired into the game. `Apply` is compared except the device matrix rows upstream leaves uninitialised.
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.h
@@ -10,6 +10,7 @@
 //! [`MatrixMapperClass::apply_state`] and the device calls are comments.
 
 use crate::client::tactical_view::Matrix4x4;
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 
@@ -70,13 +71,15 @@ impl MatrixMapperClass {
         if onoff {
             self.flags |= flag;
         } else {
-            self.flags &= !flag;
+            if !plant(13475) {
+                self.flags &= !flag;
+            }
         }
     }
 
     /// `Get_Flag` (matrixmapper.h): all the bits of `flag` set.
     pub fn get_flag(&self, flag: u32) -> bool {
-        (self.flags & flag) == flag
+        if plant(13474) { (self.flags & flag) != 0 } else { (self.flags & flag) == flag }
     }
 
     /// `Set_Type` (matrixmapper.h).
@@ -122,7 +125,7 @@ impl MatrixMapperClass {
     /// `INVERT_DEPTH_GRADIENT`, row 3 is ViewToTexture's row 3), and stores the view space negative z vector, normalised.
     /// `0.5 * (tex_size - 2.0f) / tex_size` is evaluated in double (`0.5` is a double literal) and narrowed.
     pub fn update_view_to_pixel_transform(&mut self, tex_size: f32) {
-        let k: f32 = (0.5f64 * f64::from(tex_size - 2.0f32) / f64::from(tex_size)) as f32;
+        let k: f32 = if plant(13461) { ((tex_size - 2.0f32) / tex_size) } else { (0.5f64 * f64::from(tex_size - 2.0f32) / f64::from(tex_size)) as f32 };
         let v = self.view_to_texture;
         let p = &mut self.view_to_pixel;
 
@@ -131,12 +134,12 @@ impl MatrixMapperClass {
         p.row[0][2] = k * v.row[0][2] + k * v.row[3][2];
         p.row[0][3] = k * v.row[0][3] + k * v.row[3][3];
 
-        p.row[1][0] = -k * v.row[1][0] + k * v.row[3][0];
+        p.row[1][0] = (if plant(13462) { k } else { -k }) * v.row[1][0] + k * v.row[3][0];
         p.row[1][1] = -k * v.row[1][1] + k * v.row[3][1];
         p.row[1][2] = -k * v.row[1][2] + k * v.row[3][2];
         p.row[1][3] = -k * v.row[1][3] + k * v.row[3][3];
 
-        if (self.flags & INVERT_DEPTH_GRADIENT) == INVERT_DEPTH_GRADIENT {
+        if if plant(13463) { (self.flags & INVERT_DEPTH_GRADIENT) != INVERT_DEPTH_GRADIENT } else { (self.flags & INVERT_DEPTH_GRADIENT) == INVERT_DEPTH_GRADIENT } {
             p.row[2][0] = -0.5f32 * v.row[2][0] + 0.5f32 * v.row[3][0];
             p.row[2][1] = -0.5f32 * v.row[2][1] + 0.5f32 * v.row[3][1];
             p.row[2][2] = -0.5f32 * v.row[2][2] + 0.5f32 * v.row[3][2];
@@ -145,16 +148,20 @@ impl MatrixMapperClass {
             p.row[2][0] = 0.5f32 * v.row[2][0] + 0.5f32 * v.row[3][0];
             p.row[2][1] = 0.5f32 * v.row[2][1] + 0.5f32 * v.row[3][1];
             p.row[2][2] = 0.5f32 * v.row[2][2] + 0.5f32 * v.row[3][2];
-            p.row[2][3] = 0.5f32 * v.row[2][3] + 0.5f32 * v.row[3][3];
+            p.row[2][3] = 0.5f32 * v.row[2][3] + if plant(13464) { -0.5f32 } else { 0.5f32 } * v.row[3][3];
         }
 
-        p.row[3] = v.row[3];
+        if !plant(13465) {
+            p.row[3] = v.row[3];
+        }
 
         // Store the view space negative z vector for lighting effects
         self.view_space_projection_normal.x = -v.row[2][0];
-        self.view_space_projection_normal.y = -v.row[2][1];
+        self.view_space_projection_normal.y = if plant(13466) { v.row[2][1] } else { -v.row[2][1] };
         self.view_space_projection_normal.z = -v.row[2][2];
-        self.view_space_projection_normal.normalize();
+        if !plant(13467) {
+            self.view_space_projection_normal.normalize();
+        }
     }
 
     /// `MatrixMapperClass::Compute_Texture_Coordinate` (matrixmapper.cpp:121): (s, t, q) of a point; q comes from
@@ -164,7 +171,7 @@ impl MatrixMapperClass {
         Vector3::new(
             m.row[0][0] * point.x + m.row[0][1] * point.y + m.row[0][2] * point.z + m.row[0][3],
             m.row[1][0] * point.x + m.row[1][1] * point.y + m.row[1][2] * point.z + m.row[1][3],
-            m.row[3][0] * point.x + m.row[3][1] * point.y + m.row[3][2] * point.z + m.row[3][3],
+            if plant(13468) { m.row[3][0] * point.x + m.row[3][1] * point.y + m.row[3][2] * point.z } else { m.row[3][0] * point.x + m.row[3][1] * point.y + m.row[3][2] * point.z + m.row[3][3] },
         )
     }
 
@@ -183,7 +190,7 @@ impl MatrixMapperClass {
                 let mut m = Matrix4x4::identity();
                 m.row[0] = vp.row[0];
                 m.row[1] = vp.row[1];
-                m.row[2] = vp.row[3];
+                m.row[2] = if plant(13469) { vp.row[2] } else { vp.row[3] };
                 MapperDeviceState {
                     texture_transform: m,
                     tex_coord_index: "D3DTSS_TCI_CAMERASPACEPOSITION",
@@ -194,7 +201,7 @@ impl MatrixMapperClass {
                 // Second stage coordinates apply a depth gradient; depth varies 0..1 (Update_View_To_Pixel_Transform)
                 let mut m = Matrix4x4::identity();
                 m.row[0].set(0.0, 0.0, 0.0, self.gradient_u_coord);
-                m.row[1] = vp.row[2];
+                m.row[1] = if plant(13470) { vp.row[3] } else { vp.row[2] };
                 MapperDeviceState {
                     texture_transform: m,
                     tex_coord_index: "D3DTSS_TCI_CAMERASPACEPOSITION",
@@ -206,7 +213,7 @@ impl MatrixMapperClass {
                 let mut m = Matrix4x4::identity();
                 m.row[0].set(0.0, 0.0, 0.0, self.gradient_u_coord);
                 let n = self.view_space_projection_normal;
-                m.row[1].set(n.x, n.y, n.z, 0.0);
+                if plant(13471) { m.row[1].set(n.x, n.z, n.y, 0.0) } else { m.row[1].set(n.x, n.y, n.z, 0.0) };
                 MapperDeviceState {
                     texture_transform: m,
                     tex_coord_index: "D3DTSS_TCI_CAMERASPACENORMAL",
@@ -249,7 +256,7 @@ impl<M: TextureMatrixSource> CompositeMatrixMapperClass<M> {
         let mut tmp = Matrix4x4::identity();
         tmp.row[0] = self.base.view_to_pixel.row[0];
         tmp.row[1] = self.base.view_to_pixel.row[1];
-        tmp.row[2] = self.base.view_to_pixel.row[3];
+        tmp.row[2] = if plant(13472) { self.base.view_to_pixel.row[2] } else { self.base.view_to_pixel.row[3] };
         tmp.row[3] = self.base.view_to_pixel.row[3];
         tmp
     }
@@ -261,7 +268,7 @@ impl<M: TextureMatrixSource> CompositeMatrixMapperClass<M> {
             let int_mat = inner.calculate_texture_matrix();
             let view_to_pixel_copy = self.base.view_to_pixel;
             let tmp = self.composite_tmp();
-            self.base.view_to_pixel = Matrix4x4::multiply(&int_mat, &tmp);
+            self.base.view_to_pixel = if plant(13473) { Matrix4x4::multiply(&tmp, &int_mat) } else { Matrix4x4::multiply(&int_mat, &tmp) };
             let state = self.base.apply_state(uv_array_index);
             self.base.view_to_pixel = view_to_pixel_copy;
             state
