@@ -12706,6 +12706,7 @@ mod differential {
         let wwlib = ww.join("WWLib");
         let shim_w3d = dif.join("shim_w3d");
         let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let wm_gen = out_dir.join("draft_wwmath_gen");
         let gen = out_dir.join("draft_ww3dpure_gen");
         std::fs::create_dir_all(&gen).expect("create draft_ww3dpure_gen");
         let ww3d = ww.join("WW3D2");
@@ -12736,12 +12737,22 @@ mod differential {
             .flag("-fms-extensions")
             .flag("-fdelayed-template-parsing")
             .include(&gen)
+            .include(&wm_gen)
             .include(&shim_w3d)
             .include(&wwlib)
+            .include(ww.join("WWMath"))
+            .include(ww.join("WW3D2"))
             .include(ww.join("WWDebug"))
+            .include(ww.join("WWSaveLoad"))
             .flag("-include")
-            .flag(shim_w3d.join("w3d_prelude.h").to_str().expect("UTF-8 path"));
-        for w in ["stripopt"] {
+            .flag(shim_w3d.join("w3d_prelude.h").to_str().expect("UTF-8 path"))
+            .flag("-include")
+            .flag(wm_gen.join("vector_this.h").to_str().expect("UTF-8 path"))
+            .flag("-include")
+            .flag(wm_gen.join("simplevec_this.h").to_str().expect("UTF-8 path"));
+        // coltest.cpp compiled unchanged (see differential/wrap_draft_coltest.cpp)
+        b.file(ww3d.join("coltest.cpp"));
+        for w in ["stripopt", "coltest"] {
             println!("cargo:rerun-if-changed=differential/wrap_draft_{w}.cpp");
             b.file(dif.join(format!("wrap_draft_{w}.cpp")));
         }
