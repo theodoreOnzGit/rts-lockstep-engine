@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 programs (setGoalSquad, setGoalAIGroup; the field-access functions named in the notes below are not functions here) (test: tests/differential_draft_hosts.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIStates.cpp (AIStateMachine::setGoalSquad, setGoalAIGroup)
@@ -12,6 +13,7 @@
 //! - `AIStateMachine::setGoalTeam` is translated: `crate::logic::ai::ai_commands::aism_set_goal_team`.
 
 use crate::logic::ai::ai_update::AiMachineExtras;
+use crate::logic::modules::plant;
 use crate::logic::world::player::Squad;
 use crate::logic::world::team_ops::GroupRef;
 use crate::logic::world::player_squads::{squad_from_ai_group, PlayerSquadHost};
@@ -21,13 +23,19 @@ use crate::logic::world::player_squads::{squad_from_ai_group, PlayerSquadHost};
 /// `machine.goal_squad` directly.
 pub fn aism_set_goal_squad(machine: &mut AiMachineExtras, squad: &Squad) {
     // (*m_goalSquad) = (*squad): Squad::operator= copies the id list; the cache is the target's own and is copied as well
-    machine.goal_squad = Some(squad.clone());
+    if plant(15736) && machine.goal_squad.is_some() {
+        return;
+    }
+    machine.goal_squad = Some(if plant(15733) { Squad { object_ids: squad.object_ids.clone(), objects_cached: Vec::new() } } else { squad.clone() });
 }
 
 /// `AIStateMachine::setGoalAIGroup(group)` (AIStates.cpp:1083): the goal squad (made if none) takes the group's ids,
 /// `m_goalSquad->squadFromAIGroup(group, true)`.
 pub fn aism_set_goal_ai_group<H: PlayerSquadHost>(machine: &mut AiMachineExtras, h: &H, group: Option<GroupRef>) {
-    if machine.goal_squad.is_none() {
+    if plant(15735) && group.is_none() {
+        return;
+    }
+    if machine.goal_squad.is_none() || plant(15734) {
         machine.goal_squad = Some(Squad::default());
     }
     if let Some(s) = machine.goal_squad.as_mut() {

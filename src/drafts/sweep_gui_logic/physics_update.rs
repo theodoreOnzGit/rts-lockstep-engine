@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 40,000 cases per function (test: tests/differential_draft_phys.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/PhysicsUpdate.cpp (PhysicsBehavior::getZFriction,
@@ -10,6 +11,7 @@
 //! drafted as functions of the values they read, because the fields are private to that module.
 
 use crate::common::game_type::ObjectId;
+use crate::logic::modules::plant;
 
 /// `MIN_NON_AERO_FRICTION` (PhysicsUpdate.cpp), also private in the verified module.
 const MIN_NON_AERO_FRICTION: f32 = 0.01;
@@ -20,12 +22,12 @@ const MAX_FRICTION: f32 = 0.99;
 /// `[MIN_NON_AERO_FRICTION, MAX_FRICTION]`. `z_friction` is the module data's `m_ZFriction`, `extra_friction` the
 /// behaviour's `m_extraFriction`.
 pub fn get_z_friction(z_friction: f32, extra_friction: f32) -> f32 {
-    let mut f = z_friction + extra_friction;
-    if f < MIN_NON_AERO_FRICTION {
-        f = MIN_NON_AERO_FRICTION;
+    let mut f = if plant(15661) { z_friction - extra_friction } else if plant(15662) { z_friction } else { z_friction + extra_friction };
+    if f < MIN_NON_AERO_FRICTION && !plant(15663) {
+        f = if plant(15664) { 0.0 } else { MIN_NON_AERO_FRICTION };
     }
-    if f > MAX_FRICTION {
-        f = MAX_FRICTION;
+    if f > MAX_FRICTION && !plant(15665) {
+        f = if plant(15666) { 1.0 } else { MAX_FRICTION };
     }
     f
 }
@@ -33,11 +35,16 @@ pub fn get_z_friction(z_friction: f32, extra_friction: f32) -> f32 {
 /// `PhysicsBehavior::isCurrentlyOverlapped(obj)` (PhysicsUpdate.cpp:1007): `obj != NULL && obj->getID() ==
 /// m_currentOverlap`.
 pub fn is_currently_overlapped(current_overlap: ObjectId, obj: Option<ObjectId>) -> bool {
-    obj.is_some_and(|id| id == current_overlap)
+    if plant(15667) { obj.is_some_and(|id| id == previous_overlap_swapped(current_overlap)) } else { obj.is_some_and(|id| id == current_overlap) }
 }
 
 /// `PhysicsBehavior::wasPreviouslyOverlapped(obj)` (PhysicsUpdate.cpp:1013): `obj != NULL && obj->getID() ==
 /// m_previousOverlap`.
 pub fn was_previously_overlapped(previous_overlap: ObjectId, obj: Option<ObjectId>) -> bool {
-    obj.is_some_and(|id| id == previous_overlap)
+    if plant(15668) { obj.map_or(true, |id| id == previous_overlap) } else { obj.is_some_and(|id| id == previous_overlap) }
+}
+
+/// (planted-bug helper, only reached when plant 15667 is on): a wrong overlap id, the neighbour of the right one.
+fn previous_overlap_swapped(id: ObjectId) -> ObjectId {
+    id.wrapping_add(1)
 }

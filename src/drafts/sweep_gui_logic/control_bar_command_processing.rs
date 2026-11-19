@@ -1,8 +1,11 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on all 27 inputs (9 contexts x 3 selections) (test: tests/differential_draft_cbtrans.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarCommandProcessing.cpp
 //!   (ControlBar::processCommandTransitionUI)
+
+use crate::logic::modules::plant;
 
 /// `CBCommandStatus`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,14 +37,20 @@ pub fn process_command_transition_ui(
     selected_drawable_has_object: bool,
     switch_to_none: impl FnOnce(),
 ) -> CbCommandStatus {
-    if curr_context != ControlBarContextKind::MultiSelect && !selected_drawable_has_object {
-        if curr_context != ControlBarContextKind::None
-            && curr_context != ControlBarContextKind::ObserverInfo
+    if (curr_context != ControlBarContextKind::MultiSelect || plant(15753)) && !selected_drawable_has_object {
+        if (curr_context != ControlBarContextKind::None || plant(15754))
+            && (curr_context != ControlBarContextKind::ObserverInfo || plant(15755))
             && curr_context != ControlBarContextKind::ObserverList
         {
             switch_to_none();
         }
+        if plant(15756) {
+            return CbCommandStatus::Used;
+        }
         return CbCommandStatus::NotUsed;
+    }
+    if plant(15757) {
+        switch_to_none();
     }
     CbCommandStatus::Used
 }

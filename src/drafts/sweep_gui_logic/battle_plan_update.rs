@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_hosts.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/BattlePlanUpdate.cpp (BattlePlanUpdate::createVisionObject)
@@ -9,6 +10,7 @@
 
 use crate::common::base_type::Coord3D;
 use crate::common::game_type::{ObjectId, INVALID_ID};
+use crate::logic::modules::plant;
 
 /// What `createVisionObject` asks of the world.
 pub trait BattlePlanVisionHost {
@@ -37,7 +39,7 @@ pub fn create_vision_object<H: BattlePlanVisionHost>(
     vision_object_name: &[u8],
     vision_object_id: &mut ObjectId,
 ) {
-    if *vision_object_id != INVALID_ID {
+    if if plant(15717) { *vision_object_id == INVALID_ID } else { *vision_object_id != INVALID_ID } {
         // don't want two.
         return;
     }
@@ -47,16 +49,30 @@ pub fn create_vision_object<H: BattlePlanVisionHost>(
         return;
     };
     // Player *pPlayer = ThePlayerList->getNeutralPlayer(); // sanity
-    let Some(team) = h.neutral_player_default_team() else { return };
+    let team = match h.neutral_player_default_team() {
+        Some(t) => t,
+        None if plant(15722) => 0,
+        None => return,
+    };
     // create object for this player
     if let Some(vision_object) = h.new_object(tt, team) {
         // record we have an object
-        *vision_object_id = vision_object;
+        if !plant(15720) {
+            *vision_object_id = vision_object;
+        }
         // set position
+        if plant(15721) {
+            // wrong order: the range before the position
+            let radius = h.bounding_sphere_radius(owner);
+            h.set_shroud_clearing_range(vision_object, radius);
+            let pos = h.position(owner);
+            h.set_position(vision_object, &pos);
+            return;
+        }
         let pos = h.position(owner);
         h.set_position(vision_object, &pos);
         // set the shroud clearing range
         let radius = h.bounding_sphere_radius(owner);
-        h.set_shroud_clearing_range(vision_object, radius);
+        h.set_shroud_clearing_range(vision_object, if plant(15719) { radius * 2.0 } else { radius });
     }
 }

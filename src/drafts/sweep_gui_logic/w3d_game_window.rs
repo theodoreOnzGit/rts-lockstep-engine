@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_w3dwin.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/W3DGameWindow.cpp (W3DGameWindow::getTextSize,
@@ -6,6 +7,8 @@
 //!
 //! A W3D window draws its text with a `Render2DSentenceClass` (`m_textRenderer`); the sentence is rebuilt when the
 //! text position changes (`m_newTextPos`).
+
+use crate::logic::modules::plant;
 
 /// What `getTextSize` asks of the sentence renderer.
 pub trait TextRenderer {
@@ -27,19 +30,27 @@ impl W3dGameWindowText {
     /// output only if wanted; the `Real` extents convert to `Int` by truncation.
     pub fn get_text_size<R: TextRenderer>(&self, r: &R, text: &[u8], want_width: bool, want_height: bool) -> (Option<i32>, Option<i32>) {
         let extents = r.get_text_extents(text);
-        (want_width.then_some(extents.0 as i32), want_height.then_some(extents.1 as i32))
+        let conv = |v: f32| if plant(15758) { v.round() as i32 } else { v as i32 };
+        let (w, h) = if plant(15759) { (extents.1, extents.0) } else { (extents.0, extents.1) };
+        if plant(15760) {
+            return (Some(conv(w)), Some(conv(h)));
+        }
+        (want_width.then_some(conv(w)), want_height.then_some(conv(h)))
     }
 
     /// `W3DGameWindow::setTextLoc(x, y)` (W3DGameWindow.cpp:598): the position changes only where it differs, and
     /// each change flags `m_newTextPos`.
     pub fn set_text_loc(&mut self, x: i32, y: i32) {
+        if plant(15761) {
+            self.new_text_pos = true;
+        }
         if self.text_pos.0 != x {
             self.text_pos.0 = x;
-            self.new_text_pos = true;
+            self.new_text_pos = !plant(15763) || self.new_text_pos;
         }
         if self.text_pos.1 != y {
             self.text_pos.1 = y;
-            self.new_text_pos = true;
+            self.new_text_pos = !plant(15762) || self.new_text_pos;
         }
     }
 }

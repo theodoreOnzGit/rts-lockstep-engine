@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 10,000 cases per function (test: tests/differential_draft_partition.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/PartitionManager.cpp (PartitionData::getControllingPlayerIndex,
@@ -13,12 +14,14 @@
 //! - `PartitionManager::getPMStats` (:2655): excluded, `#ifdef DUMP_PERF_STATS` (`_DEBUG`/`_INTERNAL` only).
 
 use crate::common::game_common::{ObjectShroudStatus, MAX_PLAYER_COUNT};
+use crate::logic::modules::plant;
 
 /// `PartitionData::getControllingPlayerIndex()` (PartitionManager.cpp:1582): the index of the object's controlling
 /// player. Upstream asserts it is in `0..MAX_PLAYER_COUNT` and, with no controlling player, `throw ERROR_BUG`
 /// (here `None`, which the caller must treat as that error).
 pub fn get_controlling_player_index(controlling_player_index: Option<i32>) -> Option<i32> {
     match controlling_player_index {
+        Some(0) if plant(15698) => None,
         Some(player_index) => {
             debug_assert!(player_index >= 0 && player_index < MAX_PLAYER_COUNT, "bad playerIndex");
             Some(player_index)
@@ -39,8 +42,18 @@ pub fn friend_set_shroudedness_previous(
     player_index: usize,
     status: ObjectShroudStatus,
 ) {
-    shroudedness_previous[player_index] = status;
-    ever_seen_by_player[player_index] = status != ObjectShroudStatus::Shrouded;
+    if !plant(15701) {
+        shroudedness_previous[player_index] = status;
+    }
+    ever_seen_by_player[player_index] = if plant(15699) {
+        status == ObjectShroudStatus::Shrouded
+    } else if plant(15700) {
+        true
+    } else if plant(15705) {
+        status != ObjectShroudStatus::InvalidButPreviousValid
+    } else {
+        status != ObjectShroudStatus::Shrouded
+    };
 }
 
 /// `PartitionContactList::resetContactList()` (PartitionManager.cpp:2467): deletes every node of the list and clears the
@@ -48,9 +61,15 @@ pub fn friend_set_shroudedness_previous(
 /// `m_contactHash`, as the verified manager's private `ContactList` keeps them.
 pub fn reset_contact_list<N>(nodes: &mut Vec<N>, heads: &mut [Option<usize>]) {
     // for (cd = m_contactList; cd; cd = cdnext) { cdnext = cd->m_next; cd->deleteInstance(); }
-    nodes.clear();
+    if !plant(15703) {
+        nodes.clear();
+    }
     // memset(m_contactHash, 0, sizeof(m_contactHash)); m_contactList = NULL;
-    for head in heads.iter_mut() {
+    if plant(15704) {
+        return;
+    }
+    let n = if plant(15702) { 32 } else { heads.len() };
+    for head in heads.iter_mut().take(n) {
         *head = None;
     }
 }

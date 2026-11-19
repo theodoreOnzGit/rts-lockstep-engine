@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_hosts.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIGroup.cpp (AIGroup::groupDoCommandButtonUsingWaypoints)
@@ -8,6 +9,7 @@
 //!   excluded, compiled only with `ALLOW_SURRENDER`, which no build defines (`crate::logic::ai::ai_group` says so too).
 
 use crate::common::game_type::ObjectId;
+use crate::logic::modules::plant;
 
 /// What the group asks of a member: `source->doCommandButtonUsingWaypoints(commandButton, way, cmdSource)`
 /// (Object.cpp), by the member's id.
@@ -31,8 +33,15 @@ pub fn group_do_command_button_using_waypoints<H: AiGroupCommandHost>(
     way: Option<u32>,
     cmd_source: crate::common::game_common::CommandSourceType,
 ) {
-    for &source in members {
+    let mut order: Vec<ObjectId> = members.to_vec();
+    if plant(15729) {
+        order.reverse();
+    }
+    if plant(15730) {
+        order.pop();
+    }
+    for &source in &order {
         // source->doCommandButtonUsingWaypoints( commandButton, way, cmdSource );
-        h.object_do_command_button_using_waypoints(source, command_button, way, cmd_source);
+        h.object_do_command_button_using_waypoints(source, command_button, if plant(15731) { None } else { way }, if plant(15732) { crate::common::game_common::CommandSourceType::FromPlayer } else { cmd_source });
     }
 }
