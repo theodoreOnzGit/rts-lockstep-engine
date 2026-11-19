@@ -1,4 +1,13 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per operation (test: tests/differential_draft_ixpure.rs);
+//! not yet wired into the game.
+//!
+//! Differential-test notes (#215): `Set`, `Copy_Partial_Results`, `Copy_Results`, `Intersect_Sphere_Quick`, `Intersect_Sphere`,
+//! `Append_Object_Array`, `Intersect_Box`, `Intersect_Object_Array` (both overloads, as the closure form) and
+//! `Append_Hierarchy_Objects` are compared with the real `intersec.h` and the verbatim `intersec.cpp` cuts, 0 mismatches after one
+//! draft fix (`Intersect_Box` on a miss: upstream writes the components of `Intersection` one at a time and leaves the rest as the caller
+//! had them; the first draft overwrote all three, 15,766 of 620,000 words differed). Not covered: the constructors that take
+//! pointers (the draft owns its vectors). Excluded: `Intersect_Object_Array` ranges that are NaN or at least 2^29 (upstream then copies
+//! `TemporaryResults[-1]`).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/intersec.cpp
@@ -12,6 +21,7 @@
 //! picks through `crate::client::pick_drawable`). `intersec.inl` (`Get_Screen_Ray`, `Calculate_Intersection`,
 //! `Intersect_Polygon*`, `_Intersect_Triangles_Z`, ...) is not in this draft's file list.
 
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 
@@ -123,14 +133,18 @@ impl IntersectionClass {
         destination.range = source.range;
         destination.alpha = source.alpha;
         destination.beta = source.beta;
-        destination.intersects = true;
+        if !plant(14742) {
+            destination.intersects = true;
+        }
         destination.intersection_type = source.intersection_type;
     }
 
     /// `IntersectionClass::Copy_Results(Destination, Source)` (intersec.h).
     pub fn copy_results(destination: &mut IntersectionResultClass, source: &IntersectionResultClass) {
         destination.model_matrix = source.model_matrix;
-        destination.model_location = source.model_location;
+        if !plant(14743) {
+            destination.model_location = source.model_location;
+        }
         Self::copy_partial_results(destination, source);
         destination.intersected_render_object = source.intersected_render_object;
     }
@@ -145,8 +159,13 @@ impl IntersectionClass {
         let sphere_vector = *center - self.ray_location;
         final_result.alpha = Vector3::dot_product(&sphere_vector, &self.ray_direction);
         final_result.beta =
-            radius * radius - (Vector3::dot_product(&sphere_vector, &sphere_vector) - final_result.alpha * final_result.alpha);
-        if final_result.beta < 0.0f32 {
+            radius * radius
+            - (if plant(14739) {
+                Vector3::dot_product(&sphere_vector, &sphere_vector) + final_result.alpha * final_result.alpha
+            } else {
+                Vector3::dot_product(&sphere_vector, &sphere_vector) - final_result.alpha * final_result.alpha
+            });
+        if (if plant(14738) { final_result.beta <= 0.0f32 } else { final_result.beta < 0.0f32 }) {
             final_result.intersects = false;
             return false;
         }
@@ -161,19 +180,19 @@ impl IntersectionClass {
         }
         let d = final_result.beta.sqrt();
         final_result.range = final_result.alpha - d;
-        if final_result.range > self.max_distance {
+        if if plant(14740) { final_result.range >= self.max_distance } else { final_result.range > self.max_distance } {
             return false;
         }
         final_result.intersection = self.ray_location + self.ray_direction * final_result.range;
         if self.intersection_normal.is_some() {
-            self.intersection_normal = Some(final_result.intersection - *center);
+            self.intersection_normal = Some(if plant(14741) { *center - final_result.intersection } else { final_result.intersection - *center });
         }
         true
     }
 
     /// `IntersectionClass::Append_Object_Array` (intersec.cpp:116): appends if there is room, else logs.
     pub fn append_object_array(max_count: usize, object_array: &mut Vec<usize>, object: usize) {
-        if object_array.len() < max_count {
+        if if plant(14744) { object_array.len() <= max_count } else { object_array.len() < max_count } {
             object_array.push(object);
             return;
         }
@@ -195,11 +214,10 @@ impl IntersectionClass {
         let dir = [self.ray_direction.x, self.ray_direction.y, self.ray_direction.z];
         let bmin = [box_min.x, box_min.y, box_min.z];
         let bmax = [box_max.x, box_max.y, box_max.z];
-        let mut isect = [0.0f32; PLANE_COUNT];
 
         // Find candidate planes
         for counter in 0..PLANE_COUNT {
-            if loc[counter] < bmin[counter] {
+            if if plant(14745) { loc[counter] <= bmin[counter] } else { loc[counter] < bmin[counter] } {
                 quadrant[counter] = LEFT;
                 candidate_plane[counter] = bmin[counter];
                 inside = false;
@@ -224,7 +242,7 @@ impl IntersectionClass {
             if quadrant[counter] != MIDDLE && dir[counter] != 0.0f32 {
                 distance[counter] = (candidate_plane[counter] - loc[counter]) / dir[counter];
             } else {
-                distance[counter] = -1.0f32;
+                distance[counter] = if plant(14746) { 0.0f32 } else { -1.0f32 };
             }
         }
 
@@ -241,19 +259,21 @@ impl IntersectionClass {
             final_result.intersects = false;
             return false;
         }
+        // Upstream writes the components of `FinalResult->Intersection` one by one (`(*intersection)[counter] = ...`) and returns
+        // at the first one outside the box, so the components after it keep the caller's values (found by the differential
+        // test, #215: the first draft built a fresh vector with zeros there).
         for counter in 0..PLANE_COUNT {
-            if nearest_plane != counter {
-                isect[counter] = loc[counter] + distance[nearest_plane] * dir[counter];
-                if isect[counter] < bmin[counter] || isect[counter] > bmax[counter] {
-                    final_result.intersects = false;
-                    final_result.intersection = Vector3::new(isect[0], isect[1], isect[2]);
-                    return false;
-                }
-            } else {
-                isect[counter] = candidate_plane[counter];
+            let v = if nearest_plane != counter { loc[counter] + distance[nearest_plane] * dir[counter] } else { candidate_plane[counter] };
+            match counter {
+                0 => final_result.intersection.x = v,
+                1 => final_result.intersection.y = v,
+                _ => final_result.intersection.z = v,
+            }
+            if nearest_plane != counter && (v < bmin[counter] || v > bmax[counter]) {
+                final_result.intersects = false;
+                return false;
             }
         }
-        final_result.intersection = Vector3::new(isect[0], isect[1], isect[2]);
         final_result.intersects = true; // ray hits box
         true
     }
@@ -290,7 +310,9 @@ impl IntersectionClass {
                     }
                     if hit {
                         nearest_index = counter as i32;
-                        counter = 0;
+                        if !plant(14747) {
+                            counter = 0;
+                        }
                     }
                 }
             } else {
@@ -309,7 +331,11 @@ impl IntersectionClass {
                 if sphere_quick(counter, &mut temporary_results[counter]) {
                     // `hit |= Intersect(...)`: the call is always made
                     let h = intersect(counter, &mut temporary_results[counter]);
-                    hit |= h;
+                    if plant(14749) {
+                        hit = h;
+                    } else {
+                        hit |= h;
+                    }
                 }
             }
         } else {
@@ -331,7 +357,7 @@ impl IntersectionClass {
             counter = object_count;
             while counter > 0 {
                 counter -= 1;
-                if temporary_results[counter].intersects && nearest_range > temporary_results[counter].range {
+                if temporary_results[counter].intersects && (if plant(14748) { nearest_range >= temporary_results[counter].range } else { nearest_range > temporary_results[counter].range }) {
                     nearest_index = counter as i32;
                     nearest_range = temporary_results[counter].range;
                 }
@@ -356,8 +382,9 @@ impl IntersectionClass {
         if test_bounding_sphere {
             while counter > 0 {
                 counter -= 1;
-                if sub_object_sphere_hit(counter) {
-                    Self::append_object_array(MAX_HIERARCHY_NODE_COUNT, object_array, counter);
+                let idx = if plant(14750) { num_sub_objects - 1 - counter } else { counter };
+                if sub_object_sphere_hit(idx) {
+                    Self::append_object_array(MAX_HIERARCHY_NODE_COUNT, object_array, idx);
                 }
             }
         } else {
