@@ -1,10 +1,12 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_cbcmd.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarCommand.cpp (ControlBar::populateInvDataCallback,
 //!   resetBuildQueueData, calculateVeterancyOverlayForThing)
 
 use crate::common::game_type::ObjectId;
+use crate::logic::modules::plant;
 
 /// `MAX_BUILD_QUEUE_BUTTONS` (ControlBar.h:414).
 pub const MAX_BUILD_QUEUE_BUTTONS: usize = 9;
@@ -67,21 +69,32 @@ pub trait PopulateInvHost {
 /// inventory button: the button remembers the object, shows its image with its veterancy overlay, and is enabled. Too
 /// many objects for the buttons is a `DEBUG_ASSERTCRASH` and the rest are ignored.
 pub fn populate_inv_data_callback<H: PopulateInvHost>(h: &mut H, contain_data: &mut [ContainEntry], obj: ObjectId, data: &mut PopulateInvButtonData) {
-    if data.curr_index > data.max_index {
+    if (if plant(15683) { data.curr_index >= data.max_index } else { data.curr_index > data.max_index }) {
         // DEBUG_ASSERTCRASH( 0, ("There is not enough GUI slots to hold the # of items inside a '%s'\n", ...) );
         return;
     }
     let control = data.controls.get(data.curr_index as usize).copied();
     // DEBUG_ASSERTCRASH( control, ("populateInvDataCallback: Control not found\n") );
     contain_data[data.curr_index as usize].control = control;
-    contain_data[data.curr_index as usize].object_id = obj;
-    data.curr_index += 1;
+    if !plant(15687) {
+        contain_data[data.curr_index as usize].object_id = obj;
+    }
+    if !plant(15684) {
+        data.curr_index += 1;
+    }
     let Some(control) = control else { return };
     let image = h.object_button_image(obj);
-    h.button_set_enabled_image(control, image);
+    if plant(15688) {
+        let overlay = h.veterancy_overlay_for_object(obj);
+        h.button_set_enabled_image(control, overlay);
+    } else {
+        h.button_set_enabled_image(control, image);
+    }
     let overlay = h.veterancy_overlay_for_object(obj);
-    h.button_draw_overlay_image(control, overlay);
-    h.win_enable(control, true);
+    if !plant(15685) {
+        h.button_draw_overlay_image(control, overlay);
+    }
+    h.win_enable(control, !plant(15686));
 }
 
 /// `ControlBar::resetBuildQueueData()` (ControlBarCommand.cpp:537): every queue entry has no control, an invalid type,
@@ -89,9 +102,15 @@ pub fn populate_inv_data_callback<H: PopulateInvHost>(h: &mut H, contain_data: &
 pub fn reset_build_queue_data(queue_data: &mut [QueueEntry; MAX_BUILD_QUEUE_BUTTONS]) {
     for q in queue_data.iter_mut() {
         q.control = None;
-        q.ty = ProductionType::Invalid;
-        q.production_id = 0; // PRODUCTIONID_INVALID
-        q.upgrade_to_research = None;
+        if !plant(15691) {
+            q.ty = ProductionType::Invalid;
+        }
+        if !plant(15690) {
+            q.production_id = 0; // PRODUCTIONID_INVALID
+        }
+        if !plant(15689) {
+            q.upgrade_to_research = None;
+        }
     }
 }
 
@@ -122,16 +141,27 @@ pub fn calculate_veterancy_overlay_for_thing(
     if !have_template {
         return None;
     }
-    if !have_local_player {
+    if !have_local_player && !plant(15695) {
         return None;
     }
     for (science_required, starting_level) in modules {
-        if science_required.map_or(true, |s| has_science(s)) && *starting_level > level {
+        let science_ok = if plant(15692) {
+            true
+        } else if plant(15697) {
+            science_required.map_or(false, |s| has_science(s))
+        } else {
+            science_required.map_or(true, |s| has_science(s))
+        };
+        if science_ok && (*starting_level > level || plant(15693)) {
             level = *starting_level;
+            if plant(15696) {
+                break;
+            }
         }
     }
     match level {
         VeterancyLevelRank::Veteran => rank_veteran_icon,
+        VeterancyLevelRank::Elite if plant(15694) => rank_heroic_icon,
         VeterancyLevelRank::Elite => rank_elite_icon,
         VeterancyLevelRank::Heroic => rank_heroic_icon,
         VeterancyLevelRank::Regular => None,
