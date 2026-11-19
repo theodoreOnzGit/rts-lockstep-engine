@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 4,000 programs, the colour table and the field table (after a draft fix, 2026-11-19: `add_chat` widens a player name signed, as `UnicodeString::translate` does) (test: tests/differential_draft_chat.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameNetwork/GameSpy/Chat.cpp (GameSpyColor and its `OnlineChatColorDefinition`
@@ -10,6 +11,7 @@
 
 use crate::common::ini::game_make_color;
 use crate::drafts::network::peer_defs::GameSpyColors;
+use crate::logic::modules::plant;
 
 /// `GSCOLOR_MAX`.
 pub const GSCOLOR_MAX: usize = 27;
@@ -20,7 +22,7 @@ pub fn game_spy_color_defaults() -> [i32; GSCOLOR_MAX] {
         game_make_color(255, 255, 255, 255), // GSCOLOR_DEFAULT
         game_make_color(255, 255, 0, 255),   // GSCOLOR_CURRENTROOM
         game_make_color(255, 255, 255, 255), // GSCOLOR_ROOM
-        game_make_color(128, 128, 0, 255),   // GSCOLOR_GAME
+        game_make_color(128, 128, if plant(15776) { 128 } else { 0 }, 255), // GSCOLOR_GAME
         game_make_color(128, 128, 128, 255), // GSCOLOR_GAME_FULL
         game_make_color(128, 128, 128, 255), // GSCOLOR_GAME_CRCMISMATCH
         game_make_color(255, 255, 255, 255), // GSCOLOR_PLAYER_NORMAL
@@ -160,10 +162,12 @@ pub fn send_chat<H: GameSpyChatHost>(
         match player_listbox {
             None => {
                 // Public message
-                if is_action || trimmed != *s_prev_msg {
+                if is_action || (trimmed != *s_prev_msg) == !plant(15765) {
                     // don't send duplicate messages
                     h.queue_message_room(&text, is_action);
-                    *s_prev_msg = trimmed;
+                    if !plant(15767) {
+                        *s_prev_msg = trimmed;
+                    }
                 }
                 return false;
             }
@@ -186,7 +190,7 @@ pub fn send_chat<H: GameSpyChatHost>(
                         let col = h.listbox_num_columns(listbox) - 1;
                         let a_str = h.listbox_text_ascii(listbox, sel, col);
                         // if (aStr.compareNoCase(getLocalName())): non-zero, i.e. different
-                        if !a_str.eq_ignore_ascii_case(&local) {
+                        if (if plant(15766) { a_str != local } else { !a_str.eq_ignore_ascii_case(&local) }) {
                             names.push(b',');
                             names.extend_from_slice(&a_str);
                         }
@@ -240,10 +244,10 @@ pub fn add_chat<H: GameSpyChatHost>(h: &mut H, p: &ChatPlayer, msg: &[u16], is_p
     }
     let is_owner = h.player_is_op(p.flags);
     let is_buddy = h.is_buddy(p.profile_id);
-    let is_me = p.name == h.local_name();
+    let is_me = if plant(15768) { p.name.eq_ignore_ascii_case(&h.local_name()) } else { p.name == h.local_name() };
     if !is_me {
         if h.disallow_asian_text() {
-            if msg.iter().any(|&c| c >= 256) {
+            if msg.iter().any(|&c| if plant(15769) { c > 256 } else { c >= 256 }) {
                 return;
             }
         } else if h.disallow_non_asian_text() {
@@ -252,11 +256,13 @@ pub fn add_chat<H: GameSpyChatHost>(h: &mut H, p: &ChatPlayer, msg: &[u16], is_p
                 return;
             }
         }
-        if !is_public {
+        if !is_public || plant(15771) {
             h.audio_add_event(b"GUIMessageReceived");
         }
     }
-    let style = if is_buddy {
+    let style = if plant(15770) && is_public && is_action {
+        if is_owner { GameSpyColors::ChatOwnerEmote } else { GameSpyColors::ChatEmote }
+    } else if is_buddy {
         GameSpyColors::ChatBuddy
     } else if is_public && is_action {
         if is_owner { GameSpyColors::ChatOwnerEmote } else { GameSpyColors::ChatEmote }
@@ -269,10 +275,14 @@ pub fn add_chat<H: GameSpyChatHost>(h: &mut H, p: &ChatPlayer, msg: &[u16], is_p
     } else {
         GameSpyColors::ChatPrivate
     };
-    // name.translate(p.m_name)
-    let name: Vec<u16> = p.name.iter().map(|&c| c as u16).collect();
+    // name.translate(p.m_name): `UnicodeString::translate` widens each `char` as `(WideChar)stringSrc.getCharAt(i)`, and `char` is
+    // signed (MSVC's default): a byte of 0x80 or more becomes 0xFF80..0xFFFF. ~~Zero extended (`c as u16`)~~ **Corrected 2026-11-19
+    // (differential, #215, tests/differential_draft_chat.rs):** sign extended; the draft mismatched upstream in 739 of 4,000 programs.
+    let name: Vec<u16> = p.name.iter().map(|&c| c as i8 as i16 as u16).collect();
     let mut msg = msg.to_vec();
-    h.language_filter_line(&mut msg);
+    if !plant(15775) {
+        h.language_filter_line(&mut msg);
+    }
     let mut full_msg: Vec<u16> = Vec::new();
     if is_action {
         // L"%ls %ls"
@@ -287,6 +297,9 @@ pub fn add_chat<H: GameSpyChatHost>(h: &mut H, p: &ChatPlayer, msg: &[u16], is_p
         full_msg.push(b' ' as u16);
         full_msg.extend_from_slice(&msg);
     }
+    if plant(15775) {
+        h.language_filter_line(&mut full_msg);
+    }
     let color = h.game_spy_color(style);
     let index = add_text(h, &full_msg, color, win);
     if index >= 0 {
@@ -300,19 +313,21 @@ pub fn add_chat<H: GameSpyChatHost>(h: &mut H, p: &ChatPlayer, msg: &[u16], is_p
 /// `GUIMessageReceived` and shows in the in-game UI; it is added to `win`, or to the first registered text window;
 /// `-1` when there is none. The new row's item data is `-1`.
 pub fn add_text<H: GameSpyChatHost>(h: &mut H, message: &[u16], c: i32, win: Option<u32>) -> i32 {
-    if h.game_in_progress() {
+    if h.game_in_progress() || plant(15773) {
         h.audio_add_event(b"GUIMessageReceived");
         h.in_game_ui_message(message);
     }
     let win = match win {
         Some(w) => w,
-        None => match h.first_text_window() {
+        None => match if plant(15774) { None } else { h.first_text_window() } {
             Some(w) => w,
             None => return -1,
         },
     };
     let index = h.listbox_add_entry_text(win, message, c);
-    h.listbox_set_item_data(win, -1, index);
+    if !plant(15772) {
+        h.listbox_set_item_data(win, -1, index);
+    }
     index
 }
 
