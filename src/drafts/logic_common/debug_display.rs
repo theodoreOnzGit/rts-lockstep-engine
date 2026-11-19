@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_debug_display.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameClient/DebugDisplay.h
@@ -8,11 +9,25 @@
 //! each line to the device's `drawText`. `drawText` is the device's ([`DebugDisplayDevice`]); the C varargs `printf` takes the
 //! already-formatted text.
 
-/// `DebugDisplay::Color`. Only `WHITE` (the first) is named by the .cpp.
+use crate::logic::modules::plant;
+
+/// `DebugDisplayInterface::Color` (DebugDisplay.h): `WHITE, BLACK, YELLOW, RED, GREEN, BLUE, NUM_COLORS`. The .cpp names only `WHITE`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DebugDisplayColor {
     /// `WHITE`.
     White,
+    /// `BLACK`.
+    Black,
+    /// `YELLOW`.
+    Yellow,
+    /// `RED`.
+    Red,
+    /// `GREEN`.
+    Green,
+    /// `BLUE`.
+    Blue,
+    /// `NUM_COLORS`.
+    NumColors,
 }
 
 /// `DebugDisplay::drawText(x, y, text)`, the pure virtual the device implements.
@@ -54,13 +69,20 @@ impl DebugDisplay {
         self.set_text_color(DebugDisplayColor::White);
         self.set_right_margin(0);
         let w = self.get_width();
-        self.set_left_margin(w);
+        if !plant(15287) {
+            self.set_left_margin(w);
+        }
     }
 
     /// `setCursorPos(x, y)`.
     pub fn set_cursor_pos(&mut self, x: i32, y: i32) {
-        self.x_pos = x;
-        self.y_pos = y;
+        if plant(15289) {
+            self.x_pos = y;
+            self.y_pos = x;
+        } else {
+            self.x_pos = x;
+            self.y_pos = y;
+        }
     }
     /// `getCursorXPos()`.
     pub fn get_cursor_x_pos(&self) -> i32 {
@@ -103,13 +125,19 @@ impl DebugDisplay {
                 break;
             }
             if ch == b'\n' {
-                if line_len > 0 {
-                    dev.draw_text(self.right_margin + self.x_pos, self.y_pos, &text[line_start..i]);
-                    line_len = 0;
+                if line_len > 0 || plant(15281) {
+                    dev.draw_text(self.right_margin + if plant(15285) { 0 } else { self.x_pos }, self.y_pos, &text[line_start..i]);
+                    if !plant(15290) {
+                        line_len = 0;
+                    }
                 }
                 line_start = i + 1;
-                self.y_pos += 1;
-                self.x_pos = 0;
+                if !plant(15284) {
+                    self.y_pos += 1;
+                }
+                if !plant(15283) {
+                    self.x_pos = 0;
+                }
             } else {
                 line_len += 1;
             }
@@ -117,7 +145,9 @@ impl DebugDisplay {
         if line_len > 0 {
             let end = text.iter().position(|&b| b == 0).unwrap_or(text.len());
             dev.draw_text(self.right_margin + self.x_pos, self.y_pos, &text[line_start..end]);
-            self.x_pos += line_len;
+            if !plant(15282) {
+                self.x_pos += line_len;
+            }
         }
     }
 }
