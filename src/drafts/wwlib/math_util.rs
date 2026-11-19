@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 60,000 cases per function (every function) (test: tests/differential_draft_mathutil.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/Wwutil/mathutil.h
@@ -9,6 +10,7 @@
 //! 32767, non-deterministic C library state) are replaced by a caller-supplied `rand` closure returning `0..=RAND_MAX`;
 //! none of this is logic-side, it is the networking/editor utility library.
 
+use crate::logic::modules::plant;
 use crate::ww::wwmath;
 
 /// `MISCUTIL_EPSILON` (miscutil.h:41).
@@ -31,13 +33,13 @@ fn cos(a: f64) -> f64 {
 pub fn angle_to_vector(angle: f64) -> (f64, f64) {
     debug_assert!(angle > -(wwmath::WWMATH_EPSILON as f64) && angle < 360.0 + wwmath::WWMATH_EPSILON as f64);
     let (mut dx, mut dy);
-    if angle >= 0.0 && angle < 90.0 {
+    if angle >= 0.0 && angle < (if plant(14863) { 90.0 + 1e-9 } else { 90.0 }) {
         let angle_radians = angle * PI_1 / 180.0;
         dx = sin(angle_radians);
         dy = cos(angle_radians);
     } else if angle >= 90.0 && angle < 180.0 {
         let angle_radians = (angle - 90.0) * PI_1 / 180.0;
-        dx = cos(angle_radians);
+        dx = if plant(14861) { sin(angle_radians) } else { cos(angle_radians) };
         dy = -sin(angle_radians);
     } else if angle >= 180.0 && angle < 270.0 {
         let angle_radians = (angle - 180.0) * PI_1 / 180.0;
@@ -51,7 +53,9 @@ pub fn angle_to_vector(angle: f64) -> (f64, f64) {
     let len = (dx * dx + dy * dy).sqrt();
     debug_assert!((len - 1.0).abs() < 0.0005);
     // Correction for Irish nature of windows y coords
-    dy *= -1.0;
+    if !plant(14862) {
+        dy *= -1.0;
+    }
     (dx, dy)
 }
 
@@ -62,13 +66,13 @@ pub fn vector_to_angle(dx: f64, dy: f64) -> f64 {
         theta = 0.0;
     }
     if dx == 0.0 {
-        if dy <= 0.0 {
+        if if plant(14864) { dy < 0.0 } else { dy <= 0.0 } {
             theta = 0.0;
         } else {
             theta = PI_1;
         }
     } else {
-        theta = wwmath::atan((-dy / dx) as f32) as f64;
+        theta = wwmath::atan((if plant(14865) { dy / dx } else { -dy / dx }) as f32) as f64;
         if dx < 0.0 {
             theta += PI_1;
         }
@@ -88,6 +92,9 @@ pub fn vector_to_angle(dx: f64, dy: f64) -> f64 {
 pub fn simple_distance(x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
     let dx = x2 - x1;
     let dy = y2 - y1;
+    if plant(14866) {
+        return ((dx as f32 * dx as f32 + dy as f32 * dy as f32) as f64).sqrt();
+    }
     (dx * dx + dy * dy).sqrt()
 }
 
@@ -96,7 +103,7 @@ pub fn round(arg: f64) -> i32 {
     if arg > MISCUTIL_EPSILON as f64 {
         (arg + 0.5f32 as f64) as i32
     } else if arg < -(MISCUTIL_EPSILON as f64) {
-        (arg - 0.5f32 as f64) as i32
+        (arg - if plant(14867) { -0.5f32 } else { 0.5f32 } as f64) as i32
     } else {
         0
     }
@@ -104,17 +111,17 @@ pub fn round(arg: f64) -> i32 {
 
 /// `cMathUtil::Rotate_Vector` (mathutil.cpp:143): rotates (vx, vy) by `angle` degrees.
 pub fn rotate_vector(vx: &mut f64, vy: &mut f64, angle: f64) {
-    let angle_radians = angle * PI_1 / 180.0;
+    let angle_radians = if plant(14869) { angle * core::f64::consts::PI / 180.0 } else { angle * PI_1 / 180.0 };
     let vx1 = *vx;
     let vy1 = *vy;
     *vx = vx1 * cos(angle_radians) - vy1 * sin(angle_radians);
-    *vy = vx1 * sin(angle_radians) + vy1 * cos(angle_radians);
+    *vy = if plant(14868) { vx1 * sin(angle_radians) - vy1 * cos(angle_radians) } else { vx1 * sin(angle_radians) + vy1 * cos(angle_radians) };
 }
 
 /// `cMathUtil::Get_Uniform_Pdf_Double` (mathutil.cpp:154); `rand` stands in for `::rand()`.
 pub fn get_uniform_pdf_double(lower: f64, upper: f64, rand: &mut impl FnMut() -> i32) -> f64 {
     debug_assert!(upper - lower > -(MISCUTIL_EPSILON as f64));
-    let x = lower + rand() as f64 / RAND_MAX as f64 * (upper - lower);
+    let x = lower + rand() as f64 / (if plant(14870) { 32768 } else { RAND_MAX }) as f64 * (upper - lower);
     debug_assert!(x - lower > -(MISCUTIL_EPSILON as f64) && upper - x > -(MISCUTIL_EPSILON as f64));
     x
 }
@@ -127,7 +134,7 @@ pub fn get_normalized_uniform_pdf_double(rand: &mut impl FnMut() -> i32) -> f64 
 /// `cMathUtil::Get_Uniform_Pdf_Int`.
 pub fn get_uniform_pdf_int(lower: i32, upper: i32, rand: &mut impl FnMut() -> i32) -> i32 {
     debug_assert!(lower <= upper);
-    let x = lower + rand() % (upper - lower + 1);
+    let x = lower + rand() % (if plant(14871) { upper - lower + 2 } else { upper - lower + 1 });
     debug_assert!(x >= lower && upper >= x);
     x
 }
@@ -142,9 +149,15 @@ pub fn get_hat_pdf_double(lower: f64, upper: f64, rand: &mut impl FnMut() -> i32
         let dx = (upper - lower) / 2.0f32 as f64;
         let dy = 1.0 / dx;
         let m = dy / dx;
-        let c = -m * lower;
-        x = get_uniform_pdf_double(lower, lower + dx, rand);
-        let y = get_uniform_pdf_double(0.0, dy, rand);
+        let c = if plant(14872) { m * lower } else { -m * lower };
+        let y;
+        if plant(14873) {
+            y = get_uniform_pdf_double(0.0, dy, rand);
+            x = get_uniform_pdf_double(lower, lower + dx, rand);
+        } else {
+            x = get_uniform_pdf_double(lower, lower + dx, rand);
+            y = get_uniform_pdf_double(0.0, dy, rand);
+        }
         if y > m * x + c {
             x += dx;
         }
@@ -160,5 +173,9 @@ pub fn get_normalized_hat_pdf_double(rand: &mut impl FnMut() -> i32) -> f64 {
 
 /// `cMathUtil::Get_Hat_Pdf_Int`.
 pub fn get_hat_pdf_int(lower: i32, upper: i32, rand: &mut impl FnMut() -> i32) -> i32 {
-    round(get_hat_pdf_double(lower as f64, upper as f64, rand))
+    let x = get_hat_pdf_double(lower as f64, upper as f64, rand);
+    if plant(14874) {
+        return x as i32;
+    }
+    round(x)
 }
