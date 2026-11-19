@@ -2,6 +2,7 @@
 ** instead of sent to Direct3D. The logging sink is g_dww3dl_log (differential/wrap_draft_matrixmapper.cpp). Values are
 ** the DirectX 8 constants' (d3d8types.h). */
 #ifndef DRAFT_DX8WRAPPER_STANDIN_H
+#define DX8Wrapper DX8WrapperMm /* distinct from the other stand-ins (ODR, issue #219) */
 #define DRAFT_DX8WRAPPER_STANDIN_H
 
 #include <stdint.h>

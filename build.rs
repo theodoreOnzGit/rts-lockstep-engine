@@ -12313,11 +12313,29 @@ mod differential {
             .include(&gen)
             .include(&wwmath)
             .include(&wwlib);
-        for w in ["matrixmapper", "rect"] {
+        // texturefilter.h and .cpp: copied into gen/tf, the .cpp with two mechanical edits (see differential/wrap_draft_texturefilter.cpp)
+        let tf = gen.join("tf");
+        std::fs::create_dir_all(&tf).expect("create tf");
+        std::fs::copy(ww.join("WW3D2/texturefilter.h"), tf.join("texturefilter.h")).expect("copy texturefilter.h");
+        {
+            let mut text = std::fs::read_to_string(ww.join("WW3D2/texturefilter.cpp")).expect("read texturefilter.cpp");
+            for (from, to) in [
+                ("#include \"dx8wrapper.h\"", "#include \"tf_dx8wrapper.h\""),
+                ("for (i=0;i<MAX_TEXTURE_STAGES;++i) {", "for (int i=0;i<MAX_TEXTURE_STAGES;++i) {"),
+            ] {
+                assert_eq!(text.matches(from).count(), 1, "texturefilter.cpp edit {from:?}");
+                text = text.replace(from, to);
+            }
+            std::fs::write(tf.join("texturefilter.cpp"), text).expect("write texturefilter.cpp");
+        }
+        m.include(&tf);
+        m.include(dif.join("shim_draft_ww3dl_tf"));
+        for w in ["matrixmapper", "rect", "texturefilter"] {
             println!("cargo:rerun-if-changed=differential/wrap_draft_{w}.cpp");
             m.file(dif.join(format!("wrap_draft_{w}.cpp")));
         }
         println!("cargo:rerun-if-changed=differential/shim_draft_ww3dl");
+        println!("cargo:rerun-if-changed=differential/shim_draft_ww3dl_tf");
         m.compile("upstream_draft_ww3dlogic");
     }
 }

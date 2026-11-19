@@ -1,5 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
-//!
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 sequences (test: tests/differential_draft_texturefilter.rs);
+//! not yet wired into the game. Two caps constants were wrong (MINFLINEAR, MIPFLINEAR) and are corrected below.
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/texturefilter.cpp
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/texturefilter.h
@@ -11,6 +11,8 @@
 //! device-only: `apply_state` returns the values.
 
 /// `MAX_TEXTURE_STAGES` (dx8wrapper.h:76).
+use crate::logic::modules::plant;
+
 pub const MAX_TEXTURE_STAGES: usize = 8;
 
 /// `D3DTEXF_NONE`.
@@ -22,12 +24,13 @@ pub const D3DTEXF_LINEAR: u32 = 2;
 /// `D3DTEXF_ANISOTROPIC`.
 pub const D3DTEXF_ANISOTROPIC: u32 = 3;
 
-/// `D3DPTFILTERCAPS_MINFLINEAR`.
-pub const D3DPTFILTERCAPS_MINFLINEAR: u32 = 0x0000_0100;
+/// `D3DPTFILTERCAPS_MINFLINEAR` (d3d8caps.h: 0x200). ~~0x100~~ **Corrected 2026-11-19 (#215):** 0x100 is `MINFPOINT`; found by the differential test
+/// (199,488 of 2,425,440 table words differed); the value is the DX8 SDK's, which is not in the upstream tree.
+pub const D3DPTFILTERCAPS_MINFLINEAR: u32 = 0x0000_0200;
 /// `D3DPTFILTERCAPS_MINFANISOTROPIC`.
 pub const D3DPTFILTERCAPS_MINFANISOTROPIC: u32 = 0x0000_0400;
-/// `D3DPTFILTERCAPS_MIPFLINEAR`.
-pub const D3DPTFILTERCAPS_MIPFLINEAR: u32 = 0x0001_0000;
+/// `D3DPTFILTERCAPS_MIPFLINEAR` (d3d8caps.h: 0x20000). ~~0x10000~~ **Corrected 2026-11-19 (#215):** 0x10000 is `MIPFPOINT`.
+pub const D3DPTFILTERCAPS_MIPFLINEAR: u32 = 0x0002_0000;
 /// `D3DPTFILTERCAPS_MAGFLINEAR`.
 pub const D3DPTFILTERCAPS_MAGFLINEAR: u32 = 0x0200_0000;
 /// `D3DPTFILTERCAPS_MAGFANISOTROPIC`.
@@ -98,7 +101,7 @@ impl TextureFilterTables {
     pub fn init_filters(&mut self, filter_type: TextureFilterMode, texture_filter_caps: u32) {
         self.min_texture_filters[0][FilterType::None as usize] = D3DTEXF_POINT;
         self.mag_texture_filters[0][FilterType::None as usize] = D3DTEXF_POINT;
-        self.mip_map_filters[0][FilterType::None as usize] = D3DTEXF_NONE;
+        self.mip_map_filters[0][FilterType::None as usize] = if plant(13498) { D3DTEXF_POINT } else { D3DTEXF_NONE };
 
         self.min_texture_filters[0][FilterType::Fast as usize] = D3DTEXF_LINEAR;
         self.mag_texture_filters[0][FilterType::Fast as usize] = D3DTEXF_LINEAR;
@@ -108,14 +111,14 @@ impl TextureFilterTables {
         self.min_texture_filters[0][FilterType::Best as usize] = D3DTEXF_POINT;
         self.mip_map_filters[0][FilterType::Best as usize] = D3DTEXF_POINT;
 
-        if texture_filter_caps & D3DPTFILTERCAPS_MAGFLINEAR != 0 {
+        if texture_filter_caps & (if plant(13488) { D3DPTFILTERCAPS_MINFLINEAR } else { D3DPTFILTERCAPS_MAGFLINEAR }) != 0 {
             self.mag_texture_filters[0][FilterType::Best as usize] = D3DTEXF_LINEAR;
         }
         if texture_filter_caps & D3DPTFILTERCAPS_MINFLINEAR != 0 {
             self.min_texture_filters[0][FilterType::Best as usize] = D3DTEXF_LINEAR;
         }
 
-        if filter_type == TextureFilterMode::Anisotropic {
+        if filter_type == (if plant(13489) { TextureFilterMode::Trilinear } else { TextureFilterMode::Anisotropic }) {
             if texture_filter_caps & D3DPTFILTERCAPS_MAGFANISOTROPIC != 0 {
                 self.mag_texture_filters[0][FilterType::Best as usize] = D3DTEXF_ANISOTROPIC;
             }
@@ -123,7 +126,7 @@ impl TextureFilterTables {
                 self.min_texture_filters[0][FilterType::Best as usize] = D3DTEXF_ANISOTROPIC;
             }
         }
-        if filter_type == TextureFilterMode::Anisotropic || filter_type == TextureFilterMode::Trilinear {
+        if filter_type == TextureFilterMode::Anisotropic || (filter_type == TextureFilterMode::Trilinear && !plant(13490)) {
             if texture_filter_caps & D3DPTFILTERCAPS_MIPFLINEAR != 0 {
                 self.mip_map_filters[0][FilterType::Best as usize] = D3DTEXF_LINEAR;
             }
@@ -134,11 +137,11 @@ impl TextureFilterTables {
             self.mag_texture_filters[i][FilterType::None as usize] = self.mag_texture_filters[i - 1][FilterType::None as usize];
             self.mip_map_filters[i][FilterType::None as usize] = self.mip_map_filters[i - 1][FilterType::None as usize];
 
-            self.min_texture_filters[i][FilterType::Fast as usize] = self.min_texture_filters[i - 1][FilterType::Fast as usize];
+            self.min_texture_filters[i][FilterType::Fast as usize] = if plant(13493) { self.min_texture_filters[i - 1][FilterType::Best as usize] } else { self.min_texture_filters[i - 1][FilterType::Fast as usize] };
             self.mag_texture_filters[i][FilterType::Fast as usize] = self.mag_texture_filters[i - 1][FilterType::Fast as usize];
             self.mip_map_filters[i][FilterType::Fast as usize] = self.mip_map_filters[i - 1][FilterType::Fast as usize];
 
-            if self.mag_texture_filters[i - 1][FilterType::Best as usize] == D3DTEXF_ANISOTROPIC {
+            if self.mag_texture_filters[i - 1][FilterType::Best as usize] == D3DTEXF_ANISOTROPIC && !plant(13491) {
                 self.mag_texture_filters[i][FilterType::Best as usize] = D3DTEXF_LINEAR;
             } else {
                 self.mag_texture_filters[i][FilterType::Best as usize] = self.mag_texture_filters[i - 1][FilterType::Best as usize];
@@ -154,7 +157,7 @@ impl TextureFilterTables {
         }
 
         for i in 0..MAX_TEXTURE_STAGES {
-            self.min_texture_filters[i][FilterType::Default as usize] = self.min_texture_filters[i][FilterType::Best as usize];
+            self.min_texture_filters[i][FilterType::Default as usize] = self.min_texture_filters[i][if plant(13492) { FilterType::Fast } else { FilterType::Best } as usize];
             self.mag_texture_filters[i][FilterType::Default as usize] = self.mag_texture_filters[i][FilterType::Best as usize];
             self.mip_map_filters[i][FilterType::Default as usize] = self.mip_map_filters[i][FilterType::Best as usize];
             // upstream: DX8Wrapper::Set_DX8_Texture_Stage_State(i, D3DTSS_MAXANISOTROPY, 2) — device-only, not translated
@@ -178,7 +181,11 @@ impl TextureFilterTables {
     /// `TextureFilterClass::_Set_Default_Mip_Filter` (texturefilter.cpp:198).
     pub fn set_default_mip_filter(&mut self, filter: FilterType) {
         for i in 0..MAX_TEXTURE_STAGES {
-            self.mip_map_filters[i][FilterType::Default as usize] = self.mip_map_filters[i][filter as usize];
+            if plant(13494) {
+                self.mag_texture_filters[i][FilterType::Default as usize] = self.mag_texture_filters[i][filter as usize];
+            } else {
+                self.mip_map_filters[i][FilterType::Default as usize] = self.mip_map_filters[i][filter as usize];
+            }
         }
     }
 }
@@ -213,7 +220,7 @@ impl TextureFilterClass {
             texture_mag_filter: FilterType::Default,
             u_address_mode: TxtAddrMode::Repeat,
             v_address_mode: TxtAddrMode::Repeat,
-            mip_map_filter: if mip_level_count != MipCountType::MipLevels1 { FilterType::Default } else { FilterType::None },
+            mip_map_filter: if mip_level_count != (if plant(13495) { MipCountType::MipLevelsAll } else { MipCountType::MipLevels1 }) { FilterType::Default } else { FilterType::None },
         }
     }
 
@@ -225,13 +232,13 @@ impl TextureFilterClass {
         const D3DTADDRESS_CLAMP: u32 = 3;
         TextureStageFilterState {
             min_filter: tables.min_texture_filters[stage][self.texture_min_filter as usize],
-            mag_filter: tables.mag_texture_filters[stage][self.texture_mag_filter as usize],
+            mag_filter: tables.mag_texture_filters[stage][(if plant(13497) { self.texture_min_filter } else { self.texture_mag_filter }) as usize],
             mip_filter: tables.mip_map_filters[stage][self.mip_map_filter as usize],
             address_u: match self.get_u_addr_mode() {
                 TxtAddrMode::Repeat => D3DTADDRESS_WRAP,
                 TxtAddrMode::Clamp => D3DTADDRESS_CLAMP,
             },
-            address_v: match self.get_v_addr_mode() {
+            address_v: match (if plant(13496) { self.get_u_addr_mode() } else { self.get_v_addr_mode() }) {
                 TxtAddrMode::Repeat => D3DTADDRESS_WRAP,
                 TxtAddrMode::Clamp => D3DTADDRESS_CLAMP,
             },
