@@ -1,4 +1,6 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#202, #215): `set_n_patches_gap_filling_mode`, `set_n_patches_level`, `invalidate_textures`, `set_texture_filter`, `normalize_coordinates`, `enable_large_texture_extra_reduction` match the upstream C++ (test: tests/differential_draft_ww3d.rs);
+//! the other functions forward to the device / registry host, or (`update_pixel_center`) implement a branch the shipped build does not compile: `WW3D_DX8` is defined nowhere in the submodule, so upstream's body is empty there (checked 2026-11-20).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/ww3d.cpp
@@ -12,6 +14,8 @@
 //! Not on the list because already translated: `Init`, `Shutdown`, `Begin_Render`, `End_Render`, `Sync`, `Pause_Movie`,
 //! `Get_Pixel_Center`, `Enable_Texturing`, `Get_Texture_Reduction`, `Set_Texture_Reduction`, `Enable_Sorting`,
 //! `Add_To_Static_Sort_List`, `Set_Gamma`, `Get_Window`.
+
+use crate::logic::modules::plant;
 
 /// `WW3DErrorType` (ww3d.h), the values these functions return.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,8 +39,10 @@ pub enum NPatchesGapFillingMode {
     Strong,
 }
 
-/// `TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC` (texturefilter.h): the largest `TextureFilterMode`.
-pub const TEXTURE_FILTER_ANISOTROPIC: i32 = 3;
+/// `TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC` (texturefilter.h:86): the largest `TextureFilterMode`
+/// (`BILINEAR`, `TRILINEAR`, `ANISOTROPIC` = 0, 1, 2).
+/// ~~3~~ **Corrected 2026-11-20 (#215, group ww3d4):** 2. The differential test caught it: `Set_Texture_Filter` clamped to 3.
+pub const TEXTURE_FILTER_ANISOTROPIC: i32 = 2;
 
 /// `RenderDeviceDescClass` placeholder: the host owns the real description.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -156,7 +162,7 @@ fn to_error(success: bool) -> Ww3dErrorType {
 impl Ww3dState {
     /// `WW3D::Set_NPatches_Gap_Filling_Mode` (ww3d.cpp:239).
     pub fn set_n_patches_gap_filling_mode<H: Ww3dHost>(&mut self, host: &mut H, mode: NPatchesGapFillingMode) {
-        if self.n_patches_gap_filling_mode != mode {
+        if self.n_patches_gap_filling_mode != mode || plant(17863) {
             self.n_patches_gap_filling_mode = mode;
             host.mesh_renderer_invalidate();
         }
@@ -165,7 +171,7 @@ impl Ww3dState {
     /// `WW3D::Set_NPatches_Level` (ww3d.cpp:247).
     pub fn set_n_patches_level<H: Ww3dHost>(&mut self, host: &mut H, mut level: u32) {
         if level > 8 {
-            level = 8;
+            level = if plant(17861) { 16 } else { 8 };
         }
         if level < 1 {
             level = 1;
@@ -173,7 +179,7 @@ impl Ww3dState {
         if self.n_patches_level == 1 && level > 1 {
             host.mesh_renderer_invalidate();
         }
-        if self.n_patches_level > 1 && level == 1 {
+        if self.n_patches_level > 1 && level == 1 && !plant(17862) {
             host.mesh_renderer_invalidate();
         }
         self.n_patches_level = level;
@@ -260,13 +266,15 @@ impl Ww3dState {
         if !host.asset_manager_exists() {
             return;
         }
-        host.texture_loader_flush_pending_load_tasks();
+        if !plant(17867) {
+            host.texture_loader_flush_pending_load_tasks();
+        }
         host.asset_manager_invalidate_all_textures();
     }
 
     /// `WW3D::Set_Texture_Filter` (ww3d.cpp:770).
     pub fn set_texture_filter<H: Ww3dHost>(&mut self, host: &mut H, mut texture_filter: i32) {
-        if texture_filter < 0 {
+        if texture_filter < 0 && !plant(17864) {
             texture_filter = 0;
         }
         if texture_filter > TEXTURE_FILTER_ANISOTROPIC {
@@ -317,9 +325,10 @@ impl Ww3dState {
         let w = host.dx8_device_resolution_width();
         let h = host.dx8_device_resolution_height();
         // Bound(x, 0, w): Min(Max(x, 0), w)
-        let x = x.max(0).min(w);
+        let x = x.max(0).min(if plant(17865) { w - 1 } else { w });
         let y = y.max(0).min(h);
-        (x as f32 / w as f32, y as f32 / h as f32)
+        let hd = if plant(17866) { w } else { h };
+        (x as f32 / w as f32, y as f32 / hd as f32)
     }
 
     /// `WW3D::Start_Movie_Capture` (ww3d.cpp:1474), the `_WINDOWS` branch.
@@ -398,7 +407,7 @@ impl Ww3dState {
 
     /// `WW3D::Enable_Large_Texture_Extra_Reduction` (ww3d.cpp:1816).
     pub fn enable_large_texture_extra_reduction<H: Ww3dHost>(&mut self, host: &mut H, onoff: bool) {
-        if self.large_texture_extra_reduction_enabled != onoff {
+        if self.large_texture_extra_reduction_enabled != onoff || plant(17868) {
             self.large_texture_extra_reduction_enabled = onoff;
             self.invalidate_textures(host);
         }
@@ -433,6 +442,8 @@ impl Ww3dState {
     }
 
     /// `WW3D::Update_Pixel_Center` (ww3d.cpp:1953), the `WW3D_DX8` branch, from the device's short name.
+    /// **Corrected note 2026-11-20 (#215, group ww3d4):** `WW3D_DX8` is defined nowhere in the upstream submodule (grep), so in the
+    /// shipped build the C++ body is EMPTY and the pixel centre stays 0.0; this implements the unshipped branch. Not testable.
     pub fn update_pixel_center(&mut self, name: &str) {
         if name.contains("OpenGL") {
             self.pixel_center_x = 0.0;

@@ -1,4 +1,6 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#202, #215): `TextureLoadTaskList` (push/pop/remove) and `get_texture_information` (with `clamp_reduction`) match the upstream C++ (test: tests/differential_draft_textureloader.rs);
+//! the rest is the load state machine over the `TextureLoaderHost` (D3D, DDS, Targa), not covered.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/textureloader.cpp
@@ -19,6 +21,8 @@
 //! Note: the cube map's `Begin_Compressed_Load` has no reduction clamp (the 2D one does); kept as upstream has it.
 
 use std::collections::VecDeque;
+
+use crate::logic::modules::plant;
 
 use crate::formats::texture::format::Ww3dFormat;
 
@@ -156,7 +160,11 @@ impl TextureLoadTaskList {
     pub fn push_front(&mut self, tasks: &mut [TextureLoadTask], task: TaskId) {
         debug_assert!(tasks[task].list.is_none());
         tasks[task].list = Some(self.id);
-        self.items.push_front(task);
+        if plant(17869) {
+            self.items.push_back(task);
+        } else {
+            self.items.push_front(task);
+        }
     }
 
     /// `TextureLoadTaskListClass::Push_Back` (textureloader.cpp:101); also
@@ -173,7 +181,7 @@ impl TextureLoadTaskList {
         if self.is_empty() {
             return None;
         }
-        let task = self.items.pop_front()?;
+        let task = if plant(17870) { self.items.pop_back()? } else { self.items.pop_front()? };
         tasks[task].list = None;
         Some(task)
     }
@@ -190,13 +198,15 @@ impl TextureLoadTaskList {
 
     /// `TextureLoadTaskListClass::Remove`: a task that is not on this list is ignored.
     pub fn remove(&mut self, tasks: &mut [TextureLoadTask], task: TaskId) {
-        if tasks[task].list != Some(self.id) {
+        if tasks[task].list != Some(self.id) && !plant(17872) {
             return;
         }
         if let Some(pos) = self.items.iter().position(|&t| t == task) {
             self.items.remove(pos);
         }
-        tasks[task].list = None;
+        if !plant(17871) {
+            tasks[task].list = None;
+        }
     }
 }
 
@@ -690,7 +700,7 @@ impl TextureLoaderState {
                     // count the mip levels the texture will occupy
                     let mut mips = 0u32;
                     let (mut i, mut j) = (tw as i32, th as i32);
-                    while i > 0 && j > 0 {
+                    while (if plant(17874) { i > 0 || j > 0 } else { i > 0 && j > 0 }) {
                         mips += 1;
                         i >>= 1;
                         j >>= 1;
@@ -706,11 +716,11 @@ impl TextureLoaderState {
                 Some(TextureInformation { reduction, w, h, d, format, mip_count })
             }
             Some(thumb) => {
-                if compressed && !is_dxt(thumb.original_format) {
+                if compressed && !is_dxt(thumb.original_format) || (plant(17876) && compressed && thumb.original_format == Ww3dFormat::Dxt5) {
                     return None;
                 }
                 let w = thumb.original_width >> reduction;
-                let h = thumb.original_height >> reduction;
+                let h = if plant(17875) { thumb.original_height } else { thumb.original_height >> reduction };
                 Some(TextureInformation { reduction, w, h, d: 1, format: thumb.original_format, mip_count: thumb.original_mip_level_count })
             }
         }
@@ -719,15 +729,18 @@ impl TextureLoaderState {
     /// The reduction clamp both branches of `Get_Texture_Information` share: the requested reduction, held below the mip
     /// count and stopped before a side falls to `WW3D::Get_Texture_Min_Dimension()`.
     fn clamp_reduction<H: TextureLoaderHost>(host: &H, mip_count: u32, width: i32, height: i32) -> u32 {
+        // ~~`req_reduction >= mip_count as i32` / `mip_count as i32 - 1`~~ **Corrected 2026-11-20 (#215, group ww3d4):** upstream compares
+        // the `int` with the `unsigned` `mip_count` as UNSIGNED (a negative request is huge and is capped to `mip_count - 1`; with
+        // `mip_count == 0`, `mip_count - 1` is `UINT_MAX`, i.e. -1 as an int). The differential test caught it on negative requests.
         let mut req_reduction = host.ww3d_texture_reduction();
-        if req_reduction >= mip_count as i32 {
-            req_reduction = mip_count as i32 - 1;
+        if (req_reduction as u32) >= mip_count {
+            req_reduction = mip_count.wrapping_sub(1) as i32;
         }
         let mut cur_reduction = 0;
         let mut cur_width = width;
         let mut cur_height = height;
         let min_dim = host.ww3d_texture_min_dimension();
-        while cur_reduction < req_reduction && cur_width > min_dim && cur_height > min_dim {
+        while cur_reduction < req_reduction && (if plant(17873) { cur_width >= min_dim } else { cur_width > min_dim }) && cur_height > min_dim {
             cur_width >>= 1;
             cur_height >>= 1;
             cur_reduction += 1;

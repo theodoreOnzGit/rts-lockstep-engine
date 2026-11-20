@@ -1,4 +1,6 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#202, #215): `set_plane_from_transform` matches the upstream C++ (test: tests/differential_draft_shattersystem.rs);
+//! `ShatterFragments` accessors are not covered (they read a vector of render objects).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/shattersystem.cpp
@@ -9,16 +11,20 @@
 //! empty (`ShatterSystem::Init` loads none), so these are not reached; see the first pass's note.
 
 use crate::drafts::ww3d::shattersystem::BSPClass;
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 
 /// `BSPClass::Set_Plane_From_Transform(tm)` (shattersystem.cpp:740): `Plane.Set(tm.Get_Z_Vector(), tm.Get_Translation())`,
 /// i.e. `N = z axis` and `D = dot(N, translation)`.
 pub fn set_plane_from_transform(bsp: &mut BSPClass, tm: &Matrix3D) {
-    let normal = tm.get_z_vector();
+    let normal = if plant(17906) { tm.get_y_vector() } else { tm.get_z_vector() };
     let point = tm.get_translation();
-    bsp.plane.n = normal;
-    bsp.plane.d = Vector3::dot_product(&normal, &point);
+    if !plant(17908) {
+        bsp.plane.n = normal;
+    }
+    let d = if plant(17907) { Vector3::dot_product(&normal, &normal) } else { Vector3::dot_product(&normal, &point) };
+    bsp.plane.d = if plant(17905) { -d } else { d };
 }
 
 /// `ShatterSystem`'s `MeshFragments`.
