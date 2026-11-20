@@ -14260,6 +14260,35 @@ mod differential {
         // decalmsh.cpp (see differential/wrap_draft_w6_decal.cpp): DecalPolyClass, VERBATIM
         span(&ww3d, "decalmsh.cpp", "class DecalPolyClass\n{", "static DecalPolyClass _DecalPoly0;", "decal_poly.inc");
 
+        // surfaceclass.cpp (see differential/wrap_draft_w6_surf.cpp): the pixel functions, VERBATIM but for the pointer cast named there; colorspace.h's inline conversions
+        for (anchor, inc) in [
+            ("unsigned int PixelSize(const SurfaceClass::SurfaceDescription &sd)", "surf_pixelsize.inc"),
+            ("void Convert_Pixel(Vector3 &rgb, const SurfaceClass::SurfaceDescription &sd, const unsigned char * pixel)", "surf_conv_read.inc"),
+            ("void Convert_Pixel(unsigned char * pixel,const SurfaceClass::SurfaceDescription &sd, const Vector3 &rgb)", "surf_conv_write.inc"),
+            ("void * SurfaceClass::Lock(int * pitch)", "surf_lock.inc"),
+            ("void SurfaceClass::Unlock(void)", "surf_unlock.inc"),
+            ("void SurfaceClass::Clear()", "surf_clear.inc"),
+            ("void SurfaceClass::Copy(const unsigned char *other)", "surf_copy1.inc"),
+            ("void SurfaceClass::Copy(Vector2i &min,Vector2i &max, const unsigned char *other)", "surf_copy2.inc"),
+            ("unsigned char *SurfaceClass::CreateCopy(int *width,int *height,int*size,bool flip)", "surf_createcopy.inc"),
+            ("void SurfaceClass::FindBB(Vector2i *min,Vector2i*max)", "surf_findbb.inc"),
+            ("bool SurfaceClass::Is_Transparent_Column(unsigned int column)", "surf_transcol.inc"),
+            ("void SurfaceClass::Get_Pixel(Vector3 &rgb, int x,int y)", "surf_getpixel.inc"),
+            ("void SurfaceClass::DrawPixel(const unsigned int x,const unsigned int y, unsigned int color)", "surf_drawpixel.inc"),
+            ("void SurfaceClass::DrawHLine(const unsigned int y,const unsigned int x1, const unsigned int x2, unsigned int color)", "surf_drawhline.inc"),
+            ("bool SurfaceClass::Is_Monochrome(void)", "surf_ismono.inc"),
+            ("void SurfaceClass::Hue_Shift(const Vector3 &hsv_shift)", "surf_hueshift.inc"),
+        ] {
+            cut(&ww3d, "surfaceclass.cpp", anchor, inc);
+        }
+        for inc in ["surf_findbb.inc", "surf_transcol.inc"] {
+            let path = gen.join(inc);
+            let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {inc}: {e}"));
+            assert_eq!(text.matches("(unsigned int)lock_rect.pBits").count(), 1, "{inc}: the pointer cast must occur once");
+            std::fs::write(&path, text.replace("(unsigned int)lock_rect.pBits", "(uintptr_t)lock_rect.pBits")).unwrap_or_else(|e| panic!("write {inc}: {e}"));
+        }
+        span(&ww3d, "colorspace.h", "inline void RGB_To_HSV(Vector3 &hsv,const Vector3 &rgb)", "inline void Recolor(unsigned& rgba, const Vector3 &hsv_shift)", "surf_colorspace.inc");
+
         // bwrender.cpp: WWMath::Float_To_Long is the MSVC x86 `fistp` branch in the shipped game (this g++/clang build takes the portable
         // `(long) f` branch), so the 10 calls name Ref_W6_Fistp, which the wrapper defines as the same two instructions
         copy(&ww3d, "bwrender.h", &[]);
@@ -14284,7 +14313,7 @@ mod differential {
             .flag(wm_gen.join("vector_this.h").to_str().expect("UTF-8 path"))
             .flag("-include")
             .flag(wm_gen.join("simplevec_this.h").to_str().expect("UTF-8 path"));
-        for w in ["bw", "vis", "comp", "txt", "decal"] {
+        for w in ["bw", "vis", "comp", "txt", "decal", "surf"] {
             println!("cargo:rerun-if-changed=differential/wrap_draft_w6_{w}.cpp");
             b.file(dif.join(format!("wrap_draft_w6_{w}.cpp")));
         }
