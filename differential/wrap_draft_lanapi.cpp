@@ -107,7 +107,6 @@ struct TransportStandIn
 {
 	void queueSend(UnsignedInt addr, UnsignedShort port, unsigned char *data, Int len)
 	{
-		if (getenv("LA_DUMP")) { fprintf(stderr, "CPP "); for (Int i = 0; i < len; ++i) fprintf(stderr, "%02x", data[i]); fprintf(stderr, "\n"); } /*TMPDBG*/
 		theLog.push_back(90); theLog.push_back(addr); theLog.push_back(port); theLog.push_back((unsigned)len); theLog.push_back(hashBytes(data, (unsigned)len));
 	}
 	void update() {}

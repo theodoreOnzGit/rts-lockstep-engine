@@ -505,7 +505,6 @@ fn drain_sent(a: &mut LANAPI<Host>, o: &mut Vec<u32>) {
             image.extend_from_slice(&m.data[..n]);
             let total = image.len();
             decrypt_buf(&mut image, total);
-            if std::env::var("LA_DUMP").is_ok() { eprintln!("RUST {}", image[6..].iter().map(|b| format!("{b:02x}")).collect::<String>()); } /*TMPDBG*/
             o.extend([90, m.addr, u32::from(m.port), m.length as u32, hash_bytes(&image[6..])]);
             m.length = 0;
         }
