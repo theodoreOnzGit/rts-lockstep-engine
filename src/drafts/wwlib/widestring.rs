@@ -1,4 +1,9 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 random programs (test: tests/differential_draft_widestring.rs);
+//! not yet wired into the game. Excluded from the comparison (see the test's header): `Compare_No_Case` over cased non-ASCII letters (the
+//! draft folds every Unicode letter, the C locale only A-Z), `Format` of 512 units or more and with `%` directives, `Convert_To` of units
+//! outside Windows-1252, `operator= (WCHAR 0)` followed by a reallocating `+=`, `Get_Buffer` contents other than non-zero units. Corrected
+//! 2026-11-20 (#215): `Trim` follows `wcstrim`'s early stop after leading blanks; every `const WCHAR *` argument ends at its first NUL;
+//! `Is_Empty`, `Erase`, `Convert_To`, `Is_ANSI` and `Format` follow the C string, not the whole buffer.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/widestring.h
@@ -20,6 +25,8 @@ const CP1252_HIGH: [u16; 32] = [
     0x203A, 0x0153, 0x009D, 0x017E, 0x0178,
 ];
 
+use crate::logic::modules::plant;
+
 /// `class WideStringClass`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WideStringClass {
@@ -35,6 +42,12 @@ fn wcscmp(a: &[u16], b: &[u16]) -> i32 {
         }
     }
     a.len() as i32 - b.len() as i32
+}
+
+/// The units of `s` before its first NUL: what a `const WCHAR *` argument means to `wcslen`, `wcscmp` and the other C functions.
+fn cstr(s: &[u16]) -> &[u16] {
+    let n = s.iter().position(|&c| c == 0).unwrap_or(s.len());
+    &s[..n]
 }
 
 /// `towlower` for the Basic Multilingual Plane (single code unit lower-case where one exists).
@@ -90,7 +103,8 @@ impl WideStringClass {
 
     /// `Is_Empty()`.
     pub fn is_empty(&self) -> bool {
-        self.buffer.is_empty()
+        // `m_Buffer[0] == m_NullChar`: a string holding one NUL (`operator= (WCHAR 0)`) is empty
+        self.buffer.first().map_or(true, |&c| c == 0)
     }
 
     /// `operator= (const WCHAR *)`: unchanged for NULL. A NUL inside `string` ends it (`wcslen`).
@@ -116,22 +130,30 @@ impl WideStringClass {
 
     /// `operator+= (WCHAR ch)`: "if (ch != m_NullChar) Store_Length (cur_len + 1)": appending a NUL changes nothing.
     pub fn append_char(&mut self, ch: u16) {
-        if ch != 0 {
+        if ch != 0 || plant(17363) {
             self.buffer.push(ch);
         }
     }
 
     /// `operator+ (a, b)`.
     pub fn concat(string1: &WideStringClass, string2: &WideStringClass) -> WideStringClass {
-        let mut r = string1.clone();
-        r.append_wide(Some(&string2.buffer));
+        // `operator+= (const WideStringClass &)` appends `string2.Get_Length()` units (the stored length, which can exceed the C string
+        // length: `operator= (WCHAR 0)` stores 1), not the C string
+        let (string1, string2) = if plant(17361) { (string2, string1) } else { (string1, string2) };
+        let mut r = WideStringClass::from_wide(Some(&string1.buffer));
+        {
+            let n = string2.get_length() as usize;
+            if n > 0 {
+                r.buffer.extend_from_slice(&string2.buffer[..n]);
+            }
+        }
         r
     }
 
     /// `Compare(string)`: `wcscmp`, -1 for NULL.
     pub fn compare(&self, string: Option<&[u16]>) -> i32 {
         match string {
-            Some(s) => wcscmp(&self.buffer, s),
+            Some(s) => wcscmp(cstr(&self.buffer), cstr(s)),
             None => -1,
         }
     }
@@ -140,8 +162,8 @@ impl WideStringClass {
     pub fn compare_no_case(&self, string: Option<&[u16]>) -> i32 {
         match string {
             Some(s) => {
-                let a: Vec<u16> = self.buffer.iter().map(|&c| towlower(c)).collect();
-                let b: Vec<u16> = s.iter().map(|&c| towlower(c)).collect();
+                let a: Vec<u16> = cstr(&self.buffer).iter().map(|&c| if plant(17368) { c } else { towlower(c) }).collect();
+                let b: Vec<u16> = cstr(s).iter().map(|&c| towlower(c)).collect();
                 wcscmp(&a, &b)
             }
             None => -1,
@@ -160,22 +182,22 @@ impl WideStringClass {
 
     /// `operator < (const WCHAR *)`: false for NULL.
     pub fn lt_wide(&self, string: Option<&[u16]>) -> bool {
-        string.map_or(false, |s| wcscmp(&self.buffer, s) < 0)
+        string.map_or(false, |s| wcscmp(cstr(&self.buffer), cstr(s)) < 0)
     }
 
     /// `operator <= (const WCHAR *)`: false for NULL.
     pub fn le_wide(&self, string: Option<&[u16]>) -> bool {
-        string.map_or(false, |s| wcscmp(&self.buffer, s) <= 0)
+        string.map_or(false, |s| wcscmp(cstr(&self.buffer), cstr(s)) <= 0)
     }
 
     /// `operator > (const WCHAR *)`: TRUE for NULL.
     pub fn gt_wide(&self, string: Option<&[u16]>) -> bool {
-        string.map_or(true, |s| wcscmp(&self.buffer, s) > 0)
+        string.map_or(!plant(17362), |s| wcscmp(cstr(&self.buffer), cstr(s)) > 0)
     }
 
     /// `operator >= (const WCHAR *)`: TRUE for NULL.
     pub fn ge_wide(&self, string: Option<&[u16]>) -> bool {
-        string.map_or(true, |s| wcscmp(&self.buffer, s) >= 0)
+        string.map_or(true, |s| wcscmp(cstr(&self.buffer), cstr(s)) >= 0)
     }
 
     /// `operator[] (index)`: asserts `0 <= index < Get_Length()`.
@@ -197,19 +219,48 @@ impl WideStringClass {
         if start_index < len {
             let mut char_count = char_count;
             if start_index + char_count > len {
-                char_count = len - start_index;
+                char_count = if plant(17364) { len - start_index - 1 } else { len - start_index };
             }
             let s = start_index as usize;
             let e = (start_index + char_count) as usize;
             self.buffer.drain(s..e);
+            // `Store_Length (wcslen (m_Buffer))`: the stored length is the C string's
+            let n = cstr(&self.buffer).len();
+            self.buffer.truncate(n);
         }
     }
 
     /// `Trim()`: `wcstrim`, "Trim leading and trailing whitespace (chars <= 32)".
     pub fn trim(&mut self) {
-        let start = self.buffer.iter().position(|&c| c > 32).unwrap_or(self.buffer.len());
-        let end = self.buffer.iter().rposition(|&c| c > 32).map_or(start, |p| p + 1);
-        self.buffer = self.buffer[start..end].to_vec();
+        // trim.cpp's wcstrim, step by step: after the leading blanks are copied away, the trailing loop tests `*source`, which still
+        // points `source` units into the SHIFTED buffer, not the first unit: with leading blanks it stops early (when that unit is NUL,
+        // or has been cleared), leaving trailing blanks. Without leading blanks `*source` is the first unit and the trim is complete.
+        let mut b: Vec<u16> = self.buffer.clone();
+        b.push(0);
+        let nul = |b: &Vec<u16>| b.iter().position(|&c| c == 0).expect("terminated");
+        let mut source = 0usize;
+        while b[source] != 0 && b[source] <= 32 {
+            source += 1;
+        }
+        if source != 0 {
+            let end = source + b[source..].iter().position(|&c| c == 0).expect("terminated");
+            for i in source..=end {
+                b[i - source] = b[i];
+            }
+        }
+        let mut index = nul(&b) as isize - 1;
+        while index >= 0 {
+            let blank = if plant(17365) { b[index as usize] < 32 } else { b[index as usize] <= 32 };
+            if (if plant(17366) { true } else { b[source] != 0 }) && blank {
+                b[index as usize] = 0;
+            } else {
+                break;
+            }
+            index -= 1;
+        }
+        let len = nul(&b);
+        b.truncate(len);
+        self.buffer = b;
     }
 
     /// `Format(format, ...)` / `Format_Args`: the caller formats; this stores the result as `_vsnwprintf(temp, 512, ..)`
@@ -219,8 +270,9 @@ impl WideStringClass {
         let Some(f) = formatted else {
             return 0;
         };
-        if f.len() > 512 {
-            self.assign_wide(Some(&f[..512]));
+        let f = cstr(f);
+        if f.len() > 512 || (plant(17367) && f.len() >= 510) {
+            self.assign_wide(Some(&f[..512.min(f.len())]));
             -1
         } else {
             self.assign_wide(Some(f));
@@ -245,7 +297,7 @@ impl WideStringClass {
     /// `Convert_To(StringClass &)` (`StringClass::Copy_Wide`): the narrow string, '?' for characters outside Windows-1252.
     pub fn convert_to(&self, string: &mut Vec<u8>) -> bool {
         string.clear();
-        for &c in self.buffer.iter() {
+        for &c in cstr(&self.buffer).iter() {
             let b = if c < 0x80 || (0xA0..=0xFF).contains(&c) {
                 c as u8
             } else if let Some(i) = CP1252_HIGH.iter().position(|&h| h == c) {
@@ -260,13 +312,13 @@ impl WideStringClass {
 
     /// `Is_ANSI()`: "Check if the string is composed of ANSI range characters. (0-255)".
     pub fn is_ansi(&self) -> bool {
-        self.buffer.iter().all(|&c| c <= 255)
+        cstr(&self.buffer).iter().all(|&c| if plant(17370) { c < 255 } else { c <= 255 })
     }
 
     /// `Get_Buffer(new_length)`: resizes to `new_length - 1` units (the length counts the terminator) and returns the
     /// buffer for writing (zero-filled where it grew).
     pub fn get_buffer(&mut self, new_length: i32) -> &mut [u16] {
-        let n = if new_length > 0 { (new_length - 1) as usize } else { 0 };
+        let n = if plant(17369) { new_length.max(0) as usize } else if new_length > 0 { (new_length - 1) as usize } else { 0 };
         self.buffer.resize(n, 0);
         &mut self.buffer
     }
