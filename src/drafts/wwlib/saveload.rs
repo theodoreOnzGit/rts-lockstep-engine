@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 10,000 random programs of WWSaveLoad operations (test: tests/differential_draft_saveload.rs);
+//! not yet wired into the game. Not covered: `Request_Ref_Counted_Pointer_Remap` (pointer_remap.rs is its own unit), `Force_Link_WWSaveLoad`, the order `On_Post_Load` runs in,
+//! registering a factory or sub-system twice and unregistering one that is not linked (upstream asserts / runs off the list). Corrected 2026-11-20 (#215): `Unregister_Persist_Factory` by instance.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWSaveLoad/saveload.h
@@ -17,6 +19,7 @@ use super::persistfactory::{PersistFactoryClass, PersistObject};
 use super::pointer_remap::PointerRemapClass;
 use super::saveloadstatus;
 use super::saveloadsubsystem::SaveLoadSubSystemClass;
+use crate::logic::modules::plant;
 use crate::ww::chunkio::ChunkLoad;
 use std::sync::{LazyLock, Mutex};
 
@@ -44,8 +47,13 @@ impl SaveLoadSystemClass {
         let mut ok = true;
         if subsystem.contains_data() {
             csave.begin_chunk(subsystem.chunk_id());
-            ok &= subsystem.save(csave);
-            csave.end_chunk();
+            if plant(18278) {
+                csave.end_chunk();
+                ok &= subsystem.save(csave);
+            } else {
+                ok &= subsystem.save(csave);
+                csave.end_chunk();
+            }
         }
         ok
     }
@@ -82,7 +90,7 @@ impl SaveLoadSystemClass {
         };
 
         // Call PostLoad on each PersistClass that wanted post-load
-        if auto_post_load {
+        if auto_post_load && !plant(18279) {
             Self::post_load_processing(None, &mut || 0);
         }
 
@@ -109,9 +117,12 @@ impl SaveLoadSystemClass {
             // UPDATE_NETWORK
             if let Some(cb) = network_callback.as_mut() {
                 let time2 = now_ms();
-                if time2.wrapping_sub(time) > 20 {
+                let elapsed = if plant(18276) { time2.saturating_sub(time) } else { time2.wrapping_sub(time) };
+                if if plant(18274) { elapsed >= 20 } else { elapsed > 20 } {
                     cb();
-                    time = time2;
+                    if !plant(18275) {
+                        time = time2;
+                    }
                 }
             }
 
@@ -146,20 +157,31 @@ impl SaveLoadSystemClass {
     pub fn register_persist_factory(factory: PersistFactoryClass) {
         let mut st = STATE.lock().unwrap();
         // (upstream asserts the factory is not already linked; two factories may share a chunk id)
-        st.factories.insert(0, factory);
+        if plant(18273) {
+            st.factories.push(factory);
+        } else {
+            st.factories.insert(0, factory);
+        }
     }
 
-    /// `Unregister_Persist_Factory(factory)` -> `Unlink_Factory`, by chunk id (the first match, as the head-first walk).
-    pub fn unregister_persist_factory(chunk_id: u32) {
+    /// `Unregister_Persist_Factory(factory)` -> `Unlink_Factory`: removes the factory itself (its instance id; upstream walks the list
+    /// comparing addresses), `chunk_id` being its chunk id. Nothing happens if it is not linked (upstream would run off the list).
+    pub fn unregister_persist_factory(instance: u32, chunk_id: u32) {
         let mut st = STATE.lock().unwrap();
-        if let Some(i) = st.factories.iter().position(|f| f.chunk_id == chunk_id) {
+        let found = if plant(18271) { st.factories.iter().position(|f| f.chunk_id == chunk_id) } else { st.factories.iter().position(|f| f.instance() == instance) };
+        if let Some(i) = found {
             st.factories.remove(i);
         }
     }
 
     /// `Find_Persist_Factory(chunk_id)`.
     pub fn find_persist_factory(chunk_id: u32) -> Option<PersistFactoryClass> {
-        STATE.lock().unwrap().factories.iter().find(|f| f.chunk_id == chunk_id).copied()
+        let st = STATE.lock().unwrap();
+        if plant(18272) {
+            st.factories.iter().rev().find(|f| f.chunk_id == chunk_id).copied()
+        } else {
+            st.factories.iter().find(|f| f.chunk_id == chunk_id).copied()
+        }
     }
 
     /// `Is_Post_Load_Callback_Registered(obj)` (obsolete upstream).
@@ -169,7 +191,7 @@ impl SaveLoadSystemClass {
 
     /// `Register_Post_Load_Callback(obj)`: once per object, at the head of the list.
     pub fn register_post_load_callback(obj: &PersistObject) {
-        if !obj.is_post_load_registered() {
+        if !obj.is_post_load_registered() || plant(18277) {
             obj.set_post_load_registered(true);
             STATE.lock().unwrap().post_load_list.insert(0, obj.clone());
         }

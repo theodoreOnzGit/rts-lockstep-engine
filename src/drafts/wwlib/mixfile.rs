@@ -1,4 +1,7 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 3,000 random programs (test: tests/differential_draft_mixfile.rs);
+//! not yet wired into the game. Not translated and not tested: `Add_Files`, `Setup_Mix_File` (a Windows directory tool). Corrected 2026-11-20 (#215):
+//! `Build_Internal_Filename_List` appends to the list (the draft replaced it); a sub-file is the `RawFileClass::Bias` view (its size is clipped to the archive's size
+//! and a read returns the bytes that exist); `Flush_Changes` with all 20 temporary names taken moves the 20th over the archive (as upstream).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/mixfile.h
@@ -14,6 +17,7 @@
 //! are matched by `CRC_Stringi` only (two names with the same CRC are indistinguishable). Not translated:
 //! `Add_Files` / `Setup_Mix_File` (a Windows `FindFirstFile` tool that builds MAKEMIX.MIX), and the `WWDEBUG_SAY` logs.
 
+use crate::logic::modules::plant;
 use crate::ww::realcrc::crc_stringi;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -33,24 +37,30 @@ pub struct AddInfoStruct {
     pub filename: String,
 }
 
-/// A sub-file of the archive: what `Get_File` returns after `Bias(BaseOffset + info->Offset, info->Size)`.
+/// A sub-file of the archive: what `Get_File` returns after `Bias(BaseOffset + info->Offset, info->Size)`, i.e. `RawFileClass::Bias`
+/// (rawfile.cpp), whose result is: with `start == 0` the file is NOT biased (it is the whole archive); otherwise `BiasStart = start` and
+/// `BiasLength = max(min(size of the archive file, length), 0)`: the length is clipped to the archive's own size, not to what is left
+/// after `start`. `Size()` is `BiasLength` (the archive's size when not biased; 0 if the archive cannot be opened), and a read returns
+/// the bytes the archive really holds in `[start, start + BiasLength)`. ~~Corrected 2026-11-20 (#215):~~ the draft reported the table's size and
+/// failed to read a sub-file that reaches past the end of the archive.
 #[derive(Clone, Debug)]
 pub struct MixSubFile {
     /// The archive on disk.
     pub path: String,
-    /// Absolute offset of the sub-file's first byte.
+    /// Absolute offset of the sub-file's first byte (`BiasStart`).
     pub offset: u64,
-    /// Size of the sub-file.
+    /// `Size()` of the sub-file (`BiasLength`).
     pub size: u64,
 }
 
 impl MixSubFile {
-    /// Reads the whole sub-file.
+    /// Reads the whole sub-file (`Seek(0, SEEK_SET)`, then `Read` of `Size()` bytes): the bytes that exist, at most `size`. An archive that
+    /// cannot be read gives nothing.
     pub fn read_all(&self) -> std::io::Result<Vec<u8>> {
         let mut f = File::open(&self.path)?;
         f.seek(SeekFrom::Start(self.offset))?;
-        let mut buf = vec![0u8; self.size as usize];
-        f.read_exact(&mut buf)?;
+        let mut buf = Vec::new();
+        f.take(self.size).read_to_end(&mut buf)?;
         Ok(buf)
     }
 }
@@ -167,8 +177,11 @@ impl MixFileFactoryClass {
     }
 
     /// `Build_Internal_Filename_List()`.
+    ///
+    /// `Build_Filename_List(FilenameList)`: the names are ADDED to the list the factory already holds (a second call doubles it).
+    /// ~~Corrected 2026-11-20 (#215):~~ the draft replaced the list.
     pub fn build_internal_filename_list(&mut self) -> bool {
-        let mut l = Vec::new();
+        let mut l = std::mem::take(&mut self.filename_list);
         let r = self.build_filename_list(&mut l);
         self.filename_list = l;
         r
@@ -193,7 +206,7 @@ impl MixFileFactoryClass {
         while stride > 0 {
             let pivot = stride / 2;
             let tryptr = base + pivot;
-            if crc < self.file_info[tryptr].crc {
+            if if plant(18311) { crc <= self.file_info[tryptr].crc } else { crc < self.file_info[tryptr].crc } {
                 stride = pivot;
             } else {
                 if self.file_info[tryptr].crc == crc {
@@ -205,7 +218,23 @@ impl MixFileFactoryClass {
             }
         }
 
-        info.map(|i| MixSubFile { path: self.mix_filename.clone(), offset: (self.base_offset as i64 + i.offset as i64) as u64, size: i.size as u64 })
+        info.map(|i| {
+            // `file->Bias(BaseOffset + info->Offset, info->Size)`: both arguments are `int`
+            let start = self.base_offset.wrapping_add(i.offset as i32);
+            let length = i.size as i32;
+            // `RawFileClass::Size()` of the archive: 0 if it cannot be opened
+            let file_len = fs::metadata(&self.mix_filename).map_or(0, |m| m.len() as i64);
+            if start == 0 {
+                MixSubFile { path: self.mix_filename.clone(), offset: 0, size: file_len as u64 }
+            } else {
+                let mut bias_length = file_len;
+                if length != -1 && !plant(18319) {
+                    bias_length = bias_length.min(length as i64);
+                }
+                bias_length = bias_length.max(0);
+                MixSubFile { path: self.mix_filename.clone(), offset: start.max(0) as u64, size: bias_length as u64 }
+            }
+        })
     }
 
     /// `Return_File(file)`: nothing to give back.
@@ -219,27 +248,29 @@ impl MixFileFactoryClass {
 
     /// `Delete_File(filename)`: removes the first name (case-insensitive) from the internal list.
     pub fn delete_file(&mut self, filename: &str) {
-        if let Some(i) = self.filename_list.iter().position(|n| n.eq_ignore_ascii_case(filename)) {
+        if let Some(i) = self.filename_list.iter().position(|n| if plant(18317) { n == filename } else { n.eq_ignore_ascii_case(filename) }) {
             self.filename_list.remove(i);
             self.is_modified = true;
         }
     }
 
-    /// `Get_Temp_Filename(path, full_path)`: the first of `<path>_tmpmix01.dat` .. `20.dat` that does not exist.
-    fn get_temp_filename(&self, path: &str) -> Option<String> {
+    /// `Get_Temp_Filename(path, full_path)`: the first of `<path>_tmpmix01.dat` .. `20.dat` that does not exist, and whether there was one.
+    /// `full_path` is written on every try, so when all 20 exist it holds the 20th name.
+    fn get_temp_filename(&self, path: &str) -> (String, bool) {
         let temp_path = format!("{}_tmpmix", path);
+        let mut full_path = String::new();
         for index in 0..20 {
-            let full_path = format!("{}{:02}.dat", temp_path, index + 1);
+            full_path = format!("{}{:02}.dat", temp_path, index + 1);
             if !std::path::Path::new(&full_path).exists() {
-                return Some(full_path);
+                return (full_path, true);
             }
         }
-        None
+        (if plant(18320) { String::new() } else { full_path }, false)
     }
 
     /// `Flush_Changes()` (mixfile.cpp:262): rebuilds the archive into a temporary file from the internal name list (each
     /// existing sub-file, and a pending add replacing the same name), then replaces the old archive with it. Upstream
-    /// deletes the old archive and moves the temporary file even when no temporary name was found.
+    /// deletes the old archive and moves the temporary file even when no temporary name was found (then the 20th name, an existing file).
     pub fn flush_changes(&mut self) {
         if !self.is_modified {
             return;
@@ -251,9 +282,9 @@ impl MixFileFactoryClass {
             None => String::new(),
         };
 
-        let full_path = self.get_temp_filename(&path);
-        if let Some(full_path) = &full_path {
-            let mut new_mix_file = MixFileCreator::new(full_path);
+        let (full_path, found) = self.get_temp_filename(&path);
+        if found {
+            let mut new_mix_file = MixFileCreator::new(&full_path);
 
             // Copy the files that are still wanted
             let names = self.filename_list.clone();
@@ -264,7 +295,9 @@ impl MixFileFactoryClass {
 
                         // A pending add of the same name is superseded by the copy
                         if let Some(t) = self.pending_add_file_list.iter().position(|p| filename.eq_ignore_ascii_case(&p.filename)) {
-                            self.pending_add_file_list.remove(t);
+                            if !plant(18318) {
+                                self.pending_add_file_list.remove(t);
+                            }
                         }
                     }
                 }
@@ -277,10 +310,10 @@ impl MixFileFactoryClass {
             // (the creator finishes the archive when it is dropped)
         }
 
+        // `::DeleteFile(MixFilename); ::MoveFile(full_path, MixFilename)` whether or not a free name was found (when none was, `full_path` is
+        // the 20th name, an existing file, which is moved over the archive)
         let _ = fs::remove_file(&self.mix_filename);
-        if let Some(full_path) = &full_path {
-            let _ = fs::rename(full_path, &self.mix_filename);
-        }
+        let _ = fs::rename(&full_path, &self.mix_filename);
         self.is_modified = false;
         self.pending_add_file_list.clear();
     }
@@ -304,7 +337,11 @@ impl MixFileFactoryClass {
         }
 
         if local_file_info.len() > 1 {
-            local_file_info.sort_unstable_by(|a, b| a.1.cmp(&b.1));
+            if plant(18316) {
+                local_file_info.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+            } else {
+                local_file_info.sort_unstable_by(|a, b| a.1.cmp(&b.1));
+            }
         }
 
         list.clear();
@@ -367,7 +404,7 @@ impl MixFileCreator {
             let _ = f.write_all(data);
 
             let pos = Self::tell(f) as i64;
-            let pad = ((8 - (pos & 7)) & 7) as usize;
+            let pad = if plant(18312) { ((4 - (pos & 3)) & 3) as usize } else { ((8 - (pos & 7)) & 7) as usize };
             if pad != 0 {
                 let _ = f.write_all(&[0u8; 8][..pad]);
             }
@@ -388,7 +425,9 @@ impl Drop for MixFileCreator {
         let _ = f.write_all(&num_files.to_le_bytes());
 
         if num_files > 1 {
-            self.file_info.sort_unstable_by(|a, b| a.crc.cmp(&b.crc));
+            if !plant(18313) {
+                self.file_info.sort_unstable_by(|a, b| a.crc.cmp(&b.crc));
+            }
         }
         for fi in self.file_info.iter() {
             let _ = f.write_all(&fi.crc.to_le_bytes());
@@ -399,7 +438,7 @@ impl Drop for MixFileCreator {
         let names_offset = Self::tell(f) as i32;
         let _ = f.write_all(&num_files.to_le_bytes());
         for fi in self.file_info.iter() {
-            let size = fi.filename.len() + 1;
+            let size = if plant(18314) { fi.filename.len() } else { fi.filename.len() + 1 };
             assert!(size < 255);
             let _ = f.write_all(&[size as u8]);
             let mut name = fi.filename.as_bytes().to_vec();
@@ -408,7 +447,12 @@ impl Drop for MixFileCreator {
         }
 
         let _ = f.seek(SeekFrom::Start(4));
-        let _ = f.write_all(&header_offset.to_le_bytes());
-        let _ = f.write_all(&names_offset.to_le_bytes());
+        if plant(18315) {
+            let _ = f.write_all(&names_offset.to_le_bytes());
+            let _ = f.write_all(&header_offset.to_le_bytes());
+        } else {
+            let _ = f.write_all(&header_offset.to_le_bytes());
+            let _ = f.write_all(&names_offset.to_le_bytes());
+        }
     }
 }
