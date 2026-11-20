@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_ime_manager.rs);
+//! not yet wired into the game. (Excluded inputs, where the draft deviates from upstream or upstream is undefined: a page size of 0, strings over MAX_COMPSTRINGLEN, a candidate window with no text area, NUL bytes inside an ANSI string.)
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/IMEManager.cpp (IMEManager::getCompositionString,
@@ -119,9 +120,9 @@ impl ImeCandidateState {
         if self.has_context {
             let (result, wide) = imm.get_composition_string_w(MAX_COMPSTRINGLEN);
             if result >= 0 {
-                self.composition_string_length = result / 2;
+                self.composition_string_length = if crate::logic::modules::plant(19892) { result } else { result / 2 };
                 self.composition_string = wide;
-                self.composition_cursor_pos = imm.get_composition_cursor_pos_w() & 0xffff;
+                self.composition_cursor_pos = if crate::logic::modules::plant(19891) { imm.get_composition_cursor_pos_w() } else { imm.get_composition_cursor_pos_w() & 0xffff };
             } else {
                 let (result, temp_buf) = imm.get_composition_string_a(MAX_COMPSTRINGLEN * 2);
                 if result > 0 {
@@ -138,7 +139,8 @@ impl ImeCandidateState {
                     self.composition_cursor_pos = imm.mbsnccnt(temp_buf, self.composition_cursor_pos);
                     self.composition_string.truncate(conv_res as usize);
                     self.composition_string_length = conv_res;
-                    if self.composition_cursor_pos > conv_res {
+                    if crate::logic::modules::plant(19893) {
+                    } else if self.composition_cursor_pos > conv_res {
                         self.composition_cursor_pos = conv_res;
                     } else if self.composition_cursor_pos < 0 {
                         self.composition_cursor_pos = 0;
@@ -164,7 +166,7 @@ impl ImeCandidateState {
                 if result > 0 {
                     let temp_buf = &temp_buf[..(result as usize).min(temp_buf.len())];
                     let converted = imm.multi_byte_to_wide_char(temp_buf);
-                    string_len = converted.len() as i32;
+                    string_len = converted.len() as i32 - if crate::logic::modules::plant(19894) { 1 } else { 0 };
                     self.results_string = converted;
                 }
             }
@@ -181,7 +183,7 @@ impl ImeCandidateState {
     /// `IMEManager::updateProperties()` (:1473): the keyboard layout's index base and Unicode flag.
     pub fn update_properties<I: ImmApi>(&mut self, imm: &I) {
         let prop = imm.get_property();
-        self.index_base = if prop & IME_PROP_CANDLIST_START_FROM_1 != 0 { 1 } else { 0 };
+        self.index_base = if prop & (if crate::logic::modules::plant(19895) { IME_PROP_UNICODE } else { IME_PROP_CANDLIST_START_FROM_1 }) != 0 { 1 } else { 0 };
         self.unicode_ime = prop & IME_PROP_UNICODE != 0;
     }
 
@@ -192,7 +194,7 @@ impl ImeCandidateState {
 
     /// `IMEManager::getCandidate(index)` (:1543): the candidate, or the empty string for an index out of range.
     pub fn get_candidate(&self, index: i32) -> Vec<u16> {
-        if !self.candidate_string.is_empty() && index >= 0 && index < self.candidate_count {
+        if !self.candidate_string.is_empty() && index >= (if crate::logic::modules::plant(19896) { 1 } else { 0 }) && index < self.candidate_count {
             return self.candidate_string[index as usize].clone();
         }
         Vec::new() // UnicodeString::TheEmptyString
@@ -222,20 +224,23 @@ impl ImeCandidateState {
                 let mut unicode = true;
                 let mut size = imm.get_candidate_list_count(true);
                 if size <= 0 {
+                    if crate::logic::modules::plant(19903) {
+                        return;
+                    }
                     unicode = false;
                     size = imm.get_candidate_list_count(false);
                     if size <= 0 {
                         return;
                     }
                 }
-                let (bytes_copied, mut clist) = imm.get_candidate_list(i, unicode, size);
+                let (bytes_copied, mut clist) = imm.get_candidate_list(if crate::logic::modules::plant(19899) { 0 } else { i }, unicode, size);
                 let mut ok = true;
                 if bytes_copied == 0 || bytes_copied > size {
                     // DEBUG_ASSERTCRASH(bytesCopied < size,("IME candidate buffer overrun"));
                     ok = false;
                 }
                 if ok && clist.dw_style != IME_CAND_UNKNOWN && clist.dw_style != IME_CAND_CODE {
-                    if clist.dw_page_start > clist.dw_selection || clist.dw_selection >= clist.dw_page_start + clist.dw_page_size {
+                    if !crate::logic::modules::plant(19897) && (clist.dw_page_start > clist.dw_selection || clist.dw_selection >= clist.dw_page_start + clist.dw_page_size) {
                         clist.dw_page_start = (clist.dw_selection / clist.dw_page_size.max(1)) * clist.dw_page_size;
                     }
                     self.page_size = clist.dw_page_size as i32;
@@ -246,7 +251,7 @@ impl ImeCandidateState {
                         wm.win_hide(up, self.page_start == 0);
                     }
                     if let Some(down) = self.candidate_down_arrow {
-                        wm.win_hide(down, self.candidate_count - self.page_start <= self.page_size);
+                        wm.win_hide(down, if crate::logic::modules::plant(19898) { self.candidate_count - self.page_start < self.page_size } else { self.candidate_count - self.page_start <= self.page_size });
                     }
                 }
                 if self.candidate_count > 0 {
@@ -256,7 +261,7 @@ impl ImeCandidateState {
                     for k in 0..(self.candidate_count.max(0) as usize) {
                         match clist.strings.get(k) {
                             Some(CandidateString::Wide(w)) => self.candidate_string[k] = w.clone(),
-                            Some(CandidateString::Ansi(a)) => self.candidate_string[k] = imm.multi_byte_to_wide_char(a),
+                            Some(CandidateString::Ansi(a)) => self.candidate_string[k] = if crate::logic::modules::plant(19904) { a.iter().map(|&b| b as u16).collect() } else { imm.multi_byte_to_wide_char(a) },
                             None => {}
                         }
                     }
@@ -282,7 +287,7 @@ impl ImeCandidateState {
         wm.win_set_size(host, window, w, h);
         if let Some(down) = self.candidate_down_arrow {
             let (x, mut y) = (wm.win(down).region.0, wm.win(down).region.1);
-            y += dif;
+            y += if crate::logic::modules::plant(19901) { 0 } else { dif };
             wm.win_set_position(down, x, y);
         }
     }
@@ -300,7 +305,7 @@ impl ImeCandidateState {
         wm.win_bring_to_top(window);
         wm.win_set_modal(Some(window));
         let (cwidth, _cheight) = wm.win(window).size;
-        let cx = wm.display.0 - cwidth;
+        let cx = if crate::logic::modules::plant(19902) { 0 } else { wm.display.0 - cwidth };
         let cy = 0;
         self.update_properties(imm);
         wm.win_set_position(window, cx, cy);
@@ -313,7 +318,9 @@ impl ImeCandidateState {
             wm.win_unset_modal(Some(window));
         }
         self.candidate_string.clear();
-        self.candidate_count = 0;
+        if !crate::logic::modules::plant(19900) {
+            self.candidate_count = 0;
+        }
     }
 
     /// `IMEManager::openStatusWindow()` (:1584): shows the status window.

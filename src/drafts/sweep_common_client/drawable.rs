@@ -1,4 +1,7 @@
 //! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! Differential-tested in part (#215, group lc3, tests/differential_draft_drawable.rs): `compute_health_region`, `draw_ammo`, `draw_contained`, `draw_construct_percent`, `draw_caption`, `draw_veterancy` and
+//! `draw_health_bar` match the upstream C++ on 20,000 cases after one fix (`draw_veterancy` added a truncated product; 2026-11-20). NOT covered: `draw_battle_plans`, `draw_ui_text`, `draw_healing`, `draw_enthusiastic`,
+//! `draw_bombed`, `draw_disabled`, `draws_any_ui_text`, the selection / tint / icon-info functions, the emoticon functions, `imitate_stealth_look` and the draw-module helpers. Excluded inputs: see the test.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/Drawable.cpp   (the functions the verified `crate::client::drawable`
@@ -460,7 +463,7 @@ impl DrawableUi {
 
     /// `Drawable::drawAmmo(healthBarRegion)` (Drawable.cpp:2885).
     pub fn draw_ammo<H: DrawableUiHost + ?Sized>(&mut self, health_bar_region: &IRegion2D, host: &mut H) {
-        if !(host.show_object_health() && (self.selected || host.is_moused_over()) && host.is_controlled_by_local_player()) {
+        if !(host.show_object_health() && (self.selected || (host.is_moused_over() && !crate::logic::modules::plant(19964))) && host.is_controlled_by_local_player()) {
             return;
         }
         let (num_total, num_full) = match host.ammo_pip_showing_info() {
@@ -491,8 +494,9 @@ impl DrawableUi {
         let posy = screen_center.1 + real_to_int(screen_off.1 * bounding);
         for i in 0..num_total {
             let img = if i < num_full { &full_ammo } else { &empty_ammo };
-            host.display_draw_image(img, posx, posy + 1, posx + box_width, posy + 1 + box_height, 0xffff_ffff);
-            posx += box_width + SPACING;
+            let dy = if crate::logic::modules::plant(19953) && i >= num_full { 0 } else { 1 };
+            host.display_draw_image(img, posx, posy + dy, posx + box_width, posy + dy + box_height, 0xffff_ffff);
+            posx += box_width + if crate::logic::modules::plant(19952) { 0 } else { SPACING };
         }
     }
 
@@ -532,10 +536,10 @@ impl DrawableUi {
         let mut posx = health_bar_region.lo_x;
         let posy = screen_center.1 + real_to_int(screen_off.1 * bounding);
         for i in 0..num_total {
-            let infantry_color = game_make_color(0, 255, 0, 255);
-            let non_infantry_color = game_make_color(0, 0, 255, 255);
+            let infantry_color = if crate::logic::modules::plant(19954) { game_make_color(0, 0, 255, 255) } else { game_make_color(0, 255, 0, 255) };
+            let non_infantry_color = if crate::logic::modules::plant(19954) { game_make_color(0, 255, 0, 255) } else { game_make_color(0, 0, 255, 255) };
             if i < num_full {
-                let c = if i < num_infantry { infantry_color } else { non_infantry_color };
+                let c = if i < num_infantry + if crate::logic::modules::plant(19955) { 1 } else { 0 } { infantry_color } else { non_infantry_color };
                 host.display_draw_image(&full_c, posx, posy, posx + box_width, posy + box_height, c);
             } else {
                 host.display_draw_image(&empty_c, posx, posy + 1, posx + box_width, posy + 1 + box_height, 0xffff_ffff);
@@ -835,14 +839,14 @@ impl DrawableUi {
         if !self.has_construct_display_string {
             self.has_construct_display_string = true;
         }
-        if self.last_construct_displayed != percent {
+        if self.last_construct_displayed != percent || crate::logic::modules::plant(19965) {
             host.set_construct_text(percent);
             self.last_construct_displayed = percent;
         }
         let pos = host.drawable_center_position();
         // `TheTacticalView->worldToScreen( &pos, &screen )` (its bool is not read upstream)
         let mut screen = host.world_to_screen(pos).unwrap_or((0, 0));
-        if screen.0 < 1 {
+        if screen.0 < 1 + if crate::logic::modules::plant(19960) { 1 } else { 0 } {
             return;
         }
         let color = game_make_color(255, 255, 255, 255);
@@ -860,9 +864,9 @@ impl DrawableUi {
         let pos = host.drawable_center_position();
         let mut screen = host.world_to_screen(pos).unwrap_or((0, 0));
         screen.0 -= width / 2;
-        let x_pos = screen.0 - 1;
+        let x_pos = screen.0 - if crate::logic::modules::plant(19962) { 0 } else { 1 };
         let y_pos = screen.1 - 1;
-        host.display_draw_fill_rect(x_pos, y_pos, width + 2, height + 2, game_make_color(0, 0, 0, 125));
+        host.display_draw_fill_rect(x_pos, y_pos, width + 2, height + 2, game_make_color(0, 0, 0, if crate::logic::modules::plant(19961) { 128 } else { 125 }));
         host.display_draw_open_rect(x_pos, y_pos, width + 2, height + 2, 1.0, game_make_color(20, 20, 20, 255));
         let color = host.drawable_caption_color();
         let drop_color = game_make_color(0, 0, 0, 255);
@@ -889,7 +893,9 @@ impl DrawableUi {
             None => return,
         };
         let _ = scale;
-        screen_center.0 += (w * (1.3f32 / host.view_zoom()) * 0.5) as i32;
+        // ~~`screen_center.0 += (w * scale * 0.5) as i32` (the product truncated, then an integer add)~~ **Corrected 2026-11-20 (#215, group lc3):** upstream's
+        // `screenCenter.x += healthBoxWidth * scale * 0.5f` adds as a float and truncates once (the two differ for a negative x).
+        screen_center.0 = if crate::logic::modules::plant(19951) { screen_center.0 + (w * (1.3f32 / host.view_zoom()) * 0.5) as i32 } else { (screen_center.0 as f32 + w * (1.3f32 / host.view_zoom()) * 0.5) as i32 };
         host.display_draw_image(
             &image,
             screen_center.0 + 1,
@@ -923,7 +929,7 @@ impl DrawableUi {
         let (color, outline_color);
         if host.health_bar_blue() {
             // blue to cyan
-            color = game_make_color(0, (health_ratio * 255.0) as u32, 255, 255);
+            color = game_make_color(0, (health_ratio * 255.0 + if crate::logic::modules::plant(19958) { 0.5 } else { 0.0 }) as u32, 255, 255);
             outline_color = game_make_color(0, (health_ratio * 128.0) as u32, 128, 255);
         } else {
             // red to green
@@ -939,11 +945,11 @@ impl DrawableUi {
             let out_r = in_r * 0.5;
             let out_g = in_g * 0.5;
             let out_b = 0.0f32;
-            let (really_damaged, damaged) = host.model_condition_damaged();
+            let (really_damaged, damaged) = if crate::logic::modules::plant(19963) { let (a, b) = host.model_condition_damaged(); (b, a) } else { host.model_condition_damaged() };
             if really_damaged {
                 // average the above color with red
                 in_r = (1.0 + in_r) * 0.5;
-                in_g *= 0.5;
+                in_g *= if crate::logic::modules::plant(19956) { 0.25 } else { 0.5 };
             } else if !damaged {
                 // average the above color with green
                 in_g = (1.0 + in_g) * 0.5;
@@ -956,7 +962,7 @@ impl DrawableUi {
         let health_box_height = 3.0f32.max((r.hi_y - r.lo_y) as f32);
         let health_box_outline_size = 1.0f32;
         host.display_draw_open_rect(r.lo_x, r.lo_y, health_box_width as i32, health_box_height as i32, health_box_outline_size, outline_color);
-        host.display_draw_fill_rect(r.lo_x + 1, r.lo_y + 1, ((health_box_width - 2.0) * health_ratio) as i32, (health_box_height - 2.0) as i32, color);
+        host.display_draw_fill_rect(r.lo_x + 1, r.lo_y + 1, ((health_box_width - if crate::logic::modules::plant(19957) { 0.0 } else { 2.0 }) * health_ratio) as i32, (health_box_height - 2.0) as i32, color);
     }
 }
 
@@ -977,7 +983,7 @@ pub fn compute_health_region<H: DrawableUiHost + ?Sized>(host: &H) -> Option<IRe
     let _ = health_box_height;
     // do this so health bar doesn't get too skinny or fat after scaling
     health_box_height = 3.0;
-    let lo_x = (screen_center.0 as f32 - health_box_width * 0.45) as i32;
+    let lo_x = (screen_center.0 as f32 - health_box_width * if crate::logic::modules::plant(19959) { 0.5 } else { 0.45 }) as i32;
     let lo_y = (screen_center.1 as f32 - health_box_height * 0.5) as i32;
     let hi_x = (lo_x as f32 + health_box_width) as i32;
     let hi_y = (lo_y as f32 + health_box_height) as i32;

@@ -1,4 +1,8 @@
 //! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! Differential-tested in part (#215, group lc3, tests/differential_draft_in_game_ui.rs): the script-hidden superweapon functions, `SuperweaponInfo::draw_name` / `draw_time`, `add_message_text`, `remove_message_at_index`,
+//! `begin_area_select_hint`, `create_move_hint`, `expire_hint`, `destroy_placement_icons`, `is_drawable_selected`, `is_all_selected_kind_of`, `can_selected_objects_non_attack_interact_with_object`, the floating text
+//! functions (two draft fixes, 2026-11-20) and the idle-worker functions match the upstream C++ on 20,000 cases. NOT covered: the world animations (Anim2D), the movie functions (device-only), `create_replay_control`,
+//! `play_cameo_movie` / `stop_cameo_movie`, `show_idle_worker_layout`'s host calls beyond those logged, the module's `new`.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp   (the functions the verified
@@ -272,7 +276,7 @@ impl InGameUiExtras {
             for list in player.values_mut() {
                 for info in list.iter_mut() {
                     if info.id == obj_id {
-                        info.hidden_by_script = false;
+                        info.hidden_by_script = crate::logic::modules::plant(19926);
                     }
                 }
             }
@@ -283,7 +287,11 @@ impl InGameUiExtras {
     /// `m_superweaponHiddenByScript` itself, which is the OPPOSITE of what the name says (`setSuperweaponDisplayEnabledByScript(enable)`
     /// stores `!enable`). Kept as upstream has it.
     pub fn get_superweapon_display_enabled_by_script(&self) -> bool {
-        self.superweapon_hidden_by_script
+        if crate::logic::modules::plant(19927) {
+            !self.superweapon_hidden_by_script
+        } else {
+            self.superweapon_hidden_by_script
+        }
     }
 
     /// `InGameUI::addMessageText(formattedMessage, rgbColor)` (InGameUI.cpp:2085). `rgb_color` is
@@ -292,14 +300,16 @@ impl InGameUiExtras {
         let mut color1 = self.message_color_1;
         let mut color2 = self.message_color_2;
         if let Some(rgb) = rgb_color {
-            color1 = rgb | game_make_color(0, 0, 0, 255);
+            color1 = rgb | if crate::logic::modules::plant(19915) { 0 } else { game_make_color(0, 0, 0, 255) };
             color2 = rgb | game_make_color(0, 0, 0, 255);
         }
         // delete the message stuff at the last index
         let last = MAX_UI_MESSAGES - 1;
         self.ui_messages[last].full_text.clear();
         if let Some(h) = self.ui_messages[last].display_string.take() {
-            host.free_display_string(h);
+            if !crate::logic::modules::plant(19913) {
+                host.free_display_string(h);
+            }
         }
         self.ui_messages[last].timestamp = 0;
         // shift all the messages down one index and remove the last one
@@ -314,7 +324,7 @@ impl InGameUiExtras {
         host.set_message_font(ds);
         host.display_string_set_text(ds, formatted_message);
         // assign a color for this string instance that will stay with it no matter what line it is rendered on
-        if self.ui_messages[1].display_string.is_none() || self.ui_messages[1].color == color2 {
+        if self.ui_messages[1].display_string.is_none() || self.ui_messages[1].color == (if crate::logic::modules::plant(19914) { color1 } else { color2 }) {
             self.ui_messages[0].color = color1;
         } else {
             self.ui_messages[0].color = color2;
@@ -327,7 +337,9 @@ impl InGameUiExtras {
         if let Some(h) = self.ui_messages[i].display_string.take() {
             host.free_display_string(h);
         }
-        self.ui_messages[i].timestamp = 0;
+        if !crate::logic::modules::plant(19916) {
+            self.ui_messages[i].timestamp = 0;
+        }
     }
 
     /// `InGameUI::beginAreaSelectHint(msg)` (InGameUI.cpp:2148): `msg->getArgument(0)->pixelRegion`.
@@ -344,7 +356,9 @@ impl InGameUiExtras {
                     return;
                 }
                 self.move_hint[hint_index].source_id = 0;
-                self.move_hint[hint_index].frame = 0;
+                if !crate::logic::modules::plant(19918) {
+                    self.move_hint[hint_index].frame = 0;
+                }
             }
         }
     }
@@ -368,7 +382,7 @@ impl InGameUiExtras {
         self.move_hint[n].pos = location;
         self.next_move_hint += 1;
         // wrap around
-        if self.next_move_hint == MAX_MOVE_HINTS {
+        if self.next_move_hint == MAX_MOVE_HINTS || (crate::logic::modules::plant(19917) && self.next_move_hint >= MAX_MOVE_HINTS - 1) {
             self.next_move_hint = 0;
         }
     }
@@ -390,7 +404,9 @@ impl InGameUiExtras {
                 if let Some(d) = self.place_icon[i] {
                     host.destroy_placement_icon(d);
                 }
-                self.place_icon[i] = None;
+                if !crate::logic::modules::plant(19930) {
+                    self.place_icon[i] = None;
+                }
             }
         }
         host.remove_all_bibs();
@@ -437,12 +453,16 @@ impl InGameUiExtras {
         let mut i = 0;
         while i < self.floating_text_list.len() {
             // move it up
-            self.floating_text_list[i].frame_count += 1;
+            if !crate::logic::modules::plant(19919) || curr_logic_frame > self.floating_text_list[i].frame_time_out {
+                self.floating_text_list[i].frame_count += 1;
+            }
             // fade the text
             if curr_logic_frame > self.floating_text_list[i].frame_time_out {
                 let (r, g, b, a) = game_get_color_components(self.floating_text_list[i].color);
                 let amount = ((curr_logic_frame - self.floating_text_list[i].frame_time_out) as f32 * self.floating_text_move_vanish_rate) as i32;
-                let a = if (a as i32) - amount < 0 { 0 } else { (a as i32 - amount) as u32 };
+                // ~~`(a - amount) as u32`~~ **Corrected 2026-11-20 (#215, group lc3):** `a` is an `UnsignedByte` upstream, so `a -= amount` wraps (a negative
+                // `amount`, i.e. a negative vanish rate, would otherwise carry into the red channel).
+                let a = if (a as i32) - amount < 0 { 0 } else if crate::logic::modules::plant(19912) { (a as i32 - amount) as u32 } else { (a as i32 - amount) as u8 as u32 };
                 self.floating_text_list[i].color = game_make_color(r as u32, g as u32, b as u32, a);
                 // if we have 0 alpha delete it
                 if a == 0 {
@@ -463,12 +483,14 @@ impl InGameUiExtras {
             let clear = host.cell_of_pos_clear_for_local_player(ftd.pos_3d.0, ftd.pos_3d.1);
             if let (Some(mut pos), Some(ds)) = (host.world_to_screen(ftd.pos_3d), ftd.d_string) {
                 if clear {
-                    pos.1 -= (ftd.frame_count as f32 * self.floating_text_move_up_speed) as i32;
+                    // ~~`pos.1 -= (frame_count * speed) as i32` (the product truncated, then an integer subtraction)~~ **Corrected 2026-11-20 (#215, group lc3):**
+                    // upstream's `pos.y -= m_frameCount * m_floatingTextMoveUpSpeed` subtracts as a float and truncates once.
+                    pos.1 = if crate::logic::modules::plant(19911) { pos.1 - (ftd.frame_count as f32 * self.floating_text_move_up_speed) as i32 } else { (pos.1 as f32 - ftd.frame_count as f32 * self.floating_text_move_up_speed) as i32 };
                     // make drop color black, but use the alpha setting of the fill color specified (for fading)
                     let (_r, _g, _b, a) = game_get_color_components(ftd.color);
-                    let drop_color = game_make_color(0, 0, 0, a as u32);
+                    let drop_color = game_make_color(0, 0, 0, if crate::logic::modules::plant(19920) { 255 } else { a as u32 });
                     let (width, _h) = host.display_string_size(ds);
-                    host.display_string_draw(ds, pos.0 - (width / 2), pos.1, ftd.color, drop_color);
+                    host.display_string_draw(ds, pos.0 - (if crate::logic::modules::plant(19921) { width } else { width / 2 }), pos.1, ftd.color, drop_color);
                 }
             }
         }
@@ -551,6 +573,7 @@ impl InGameUiExtras {
     /// `InGameUI::findIdleWorker(obj)` (InGameUI.cpp:5445): the object if it is in its controlling player's list.
     pub fn find_idle_worker(&self, obj: Option<(u32, usize)>) -> Option<u32> {
         let (obj_id, index) = obj?;
+        let index = if crate::logic::modules::plant(19933) { 0 } else { index };
         if self.idle_workers[index].is_empty() {
             return None;
         }
@@ -563,7 +586,7 @@ impl InGameUiExtras {
             Some(o) => o,
             None => return,
         };
-        if self.find_idle_worker(obj).is_some() {
+        if self.find_idle_worker(obj).is_some() && !crate::logic::modules::plant(19922) {
             return;
         }
         self.idle_workers[index].push(obj_id);
@@ -616,7 +639,7 @@ impl InGameUiExtras {
         if idle_count > 0 && self.current_idle_worker_display != idle_count && self.input_enabled {
             self.show_idle_worker_layout(host);
         }
-        if (idle_count <= 0 && self.idle_worker_win.is_some()) || !self.input_enabled {
+        if (idle_count <= (if crate::logic::modules::plant(19923) { -1 } else { 0 }) && self.idle_worker_win.is_some()) || !self.input_enabled {
             self.hide_idle_worker_layout(host);
         }
     }
@@ -627,7 +650,7 @@ impl InGameUiExtras {
             host.idle_worker_window_clear_text(w);
         }
         self.current_idle_worker_display = -1;
-        for i in 0..MAX_PLAYER_COUNT {
+        for i in 0..(if crate::logic::modules::plant(19925) { MAX_PLAYER_COUNT - 1 } else { MAX_PLAYER_COUNT }) {
             self.idle_workers[i].clear();
         }
     }
@@ -639,12 +662,12 @@ impl SuperweaponInfo {
     pub fn draw_name<H: InGameUiHost + ?Sized>(&self, host: &mut H, x: i32, y: i32, color: Color, drop_color: Color) {
         let color = if color == 0 { self.color } else { color };
         let w = host.display_string_width(self.name_display_string);
-        host.display_string_draw(self.name_display_string, x - w, y, color, drop_color);
+        host.display_string_draw(self.name_display_string, if crate::logic::modules::plant(19928) { x + w } else { x - w }, y, color, drop_color);
     }
 
     /// `SuperweaponInfo::drawTime(x, y, color, dropColor)` (InGameUI.cpp:334).
     pub fn draw_time<H: InGameUiHost + ?Sized>(&self, host: &mut H, x: i32, y: i32, color: Color, drop_color: Color) {
-        let color = if color == 0 { self.color } else { color };
+        let color = if color == 0 && !crate::logic::modules::plant(19929) { self.color } else { color };
         host.display_string_draw(self.time_display_string, x, y, color, drop_color);
     }
 }
@@ -657,6 +680,9 @@ pub fn is_drawable_selected(selected: &[u32], id_to_check: u32) -> bool {
 /// `InGameUI::isAllSelectedKindOf(kindOf)` (InGameUI.cpp:3381): TRUE when every (non-NULL) selected drawable has the
 /// kind; vacuously TRUE for an empty selection. `is_kind_of` is `draw->isKindOf(kindOf)`.
 pub fn is_all_selected_kind_of(selected: &[u32], is_kind_of: &dyn Fn(u32) -> bool) -> bool {
+    if selected.is_empty() && crate::logic::modules::plant(19931) {
+        return false;
+    }
     for &d in selected {
         if !is_kind_of(d) {
             return false;
@@ -673,7 +699,7 @@ pub fn disregard_drawable() {}
 /// type from 1 up, except `ACTIONTYPE_ATTACK_OBJECT`, that `canSelectedObjectsDoAction` allows. `attack_object` is
 /// `ACTIONTYPE_ATTACK_OBJECT`'s value, `num_actiontypes` is `NUM_ACTIONTYPES`.
 pub fn can_selected_objects_non_attack_interact_with_object(num_actiontypes: i32, attack_object: i32, can_do_action: &mut dyn FnMut(i32) -> bool) -> bool {
-    for i in 1..num_actiontypes {
+    for i in (if crate::logic::modules::plant(19932) { 0 } else { 1 })..num_actiontypes {
         if i != attack_object && can_do_action(i) {
             return true;
         }
