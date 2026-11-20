@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on all 19 names, in order (test: tests/differential_draft_w3d_module_factory.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/Common/Thing/W3DModuleFactory.cpp
@@ -10,6 +11,8 @@
 //! ([`crate::common::module_factory`]) deliberately holds no `MODULETYPE_DRAW` module (a test pins that), so the draw names live
 //! here for the client's factory to register in this order. Each `addModule(X)` expands (via `MAKE_STANDARD_MODULE_MACRO`'s
 //! `friend_newModuleData`/`friend_newInstance`) to the name `"X"`, type `MODULETYPE_DRAW`.
+
+use crate::logic::modules::plant;
 
 /// The `addModule(...)` calls of `W3DModuleFactory::init()`, in upstream's order.
 pub const W3D_DRAW_MODULE_NAMES: [&str; 19] = [
@@ -36,5 +39,18 @@ pub const W3D_DRAW_MODULE_NAMES: [&str; 19] = [
 
 /// `W3DModuleFactory::init()`: `ModuleFactory::init()` (the caller's), then each draw module name in order. Returns the names to register.
 pub fn w3d_module_factory_init() -> Vec<&'static str> {
-    W3D_DRAW_MODULE_NAMES.to_vec()
+    let mut v = W3D_DRAW_MODULE_NAMES.to_vec();
+    if plant(16891) {
+        v.swap(2, 3);
+    }
+    if plant(16892) {
+        v.pop();
+    }
+    if plant(16893) {
+        v.reverse();
+    }
+    if plant(16894) {
+        v.insert(0, "W3DDefaultDraw");
+    }
+    v
 }

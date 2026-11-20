@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! Not differential-tested (#215, group lc2): every function with behaviour (`pick_visual_location`, `add_visual`, `remove_visual`, the `OpenContainVirtuals` methods, `on_collide`) is under `#[cfg(any())]` and does not compile (it needs the `World` calls marked `// wire:`); what compiles is two constructors, two field tables and `Snapshot` impls that call `OpenContain`'s own `xfer`, whose C++ is not isolable here.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameLogic/Module/PrisonBehavior.h
