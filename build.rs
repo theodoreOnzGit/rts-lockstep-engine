@@ -14733,6 +14733,17 @@ mod differential {
             ("ime_get.inc", "GameEngine/Source/GameClient/GUI/IMEManager.cpp", "UnicodeString* IMEManager::getCandidate( Int index )", Some("//============================================================================\n// IMEManager::getSelectedCandidateIndex\n")),
             ("ime_page.inc", "GameEngine/Source/GameClient/GUI/IMEManager.cpp", "Int IMEManager::getCandidatePageStart()", Some("//============================================================================\n// IMEManager::openStatusWindow\n")),
             ("ime_status.inc", "GameEngine/Source/GameClient/GUI/IMEManager.cpp", "void IMEManager::openStatusWindow( void )", Some("//============================================================================\n// IMEManager::updateStatusWindow\n")),
+            ("igu_super.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "void InGameUI::showObjectSuperweaponDisplayByScript(const Object *obj)", Some("void InGameUI::addNamedTimer(")),
+            ("igu_draw.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "void SuperweaponInfo::drawName(Int x, Int y, Color color, Color dropColor)", Some("Real SuperweaponInfo::getHeight() const")),
+            ("igu_msg.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "void InGameUI::addMessageText( const UnicodeString& formattedMessage, const RGBColor *rgbColor )", Some("void InGameUI::createAttackHint( const GameMessage *msg )")),
+            ("igu_icons.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "void InGameUI::destroyPlacementIcons( void )", Some("void InGameUI::placeBuildAvailable(")),
+            ("igu_sel.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "Bool InGameUI::isDrawableSelected( DrawableID idToCheck ) const", Some("void InGameUI::setInputEnabled( Bool enable )")),
+            ("igu_expire.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "void InGameUI::expireHint( HintType type, UnsignedInt hintIndex )", Some("void InGameUI::createControlBar( void )")),
+            ("igu_can.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "Bool InGameUI::canSelectedObjectsNonAttackInteractWithObject( const Object *objectToInteractWith, SelectionRules rule ) const", Some("CanAttackResult InGameUI::getCanSelectedObjectsAttack(")),
+            ("igu_float.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "void InGameUI::updateFloatingText( void )", Some("/** If we want to use the default text color, then we call this function */")),
+            ("igu_idle.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "Object *InGameUI::findIdleWorker( Object *obj)", Some("void InGameUI::selectNextIdleWorker( void )")),
+            ("igu_idle2.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "Int InGameUI::getIdleWorkerCount( void )", Some("void InGameUI::recreateControlBar( void )")),
+            ("igu_color.inc", "GameEngine/Source/GameClient/Color.cpp", "void GameGetColorComponents( Color color,", Some("void GameGetColorComponentsReal")),
             ("display_views.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::deleteViews( void )", Some("/// Redraw the entire display")),
             ("display_stop.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::stopMovie( void )", Some("//============================================================================\n// Display::update\n")),
             ("display_logo.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::playLogoMovie(", Some("//============================================================================\n// Display::playMovie\n")),
@@ -14750,6 +14761,7 @@ mod differential {
             ("wrap_draft_display.cpp", "draft_lc3_display"),
             ("wrap_draft_game_client.cpp", "draft_lc3_game_client"),
             ("wrap_draft_ime_manager.cpp", "draft_lc3_ime_manager"),
+            ("wrap_draft_in_game_ui.cpp", "draft_lc3_in_game_ui"),
         ] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();
