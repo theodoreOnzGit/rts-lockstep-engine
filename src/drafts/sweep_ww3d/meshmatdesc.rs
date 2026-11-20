@@ -1,4 +1,6 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#202, #215): `UvBufferClass::update_crc` and `is_equal_to` match the upstream C++ (test: tests/differential_draft_meshmatdesc.rs);
+//! the `Arc` buffers, `get_material_array`, `get_shader_array` and the `make_*_unique` functions stand in for intrusive reference counts and are not covered.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/meshmatdesc.cpp
@@ -10,6 +12,8 @@
 //! `Get_Element`'s `Add_Ref` and `Peek_Element` are `clone`, `clone` and a borrow.
 
 use std::sync::Arc;
+
+use crate::logic::modules::plant;
 
 use crate::ww::realcrc::crc_memory;
 
@@ -62,20 +66,28 @@ pub struct UvBufferClass {
 impl UvBufferClass {
     /// `UVBufferClass(count, msg)`.
     pub fn new(count: usize) -> Self {
-        UvBufferClass { array: vec![[0.0; 2]; count], crc: 0xFFFF_FFFF }
+        UvBufferClass { array: vec![[0.0; 2]; count], crc: if plant(17900) { 0 } else { 0xFFFF_FFFF } }
     }
 
     /// `UVBufferClass::Is_Equal_To` (meshmatdesc.cpp:155): equal CRCs, valid only after `Update_CRC` on both.
     pub fn is_equal_to(&self, that: &UvBufferClass) -> bool {
-        self.crc == that.crc
+        if plant(17901) { self.crc <= that.crc } else { self.crc == that.crc }
     }
 
     /// `UVBufferClass::Update_CRC` (meshmatdesc.cpp:162): `CRC_Memory(Get_Array(), Get_Count() * sizeof(Vector2))`.
     pub fn update_crc(&mut self) {
         let mut bytes = Vec::with_capacity(self.array.len() * 8);
         for v in &self.array {
-            bytes.extend_from_slice(&v[0].to_le_bytes());
-            bytes.extend_from_slice(&v[1].to_le_bytes());
+            if plant(17899) {
+                bytes.extend_from_slice(&v[1].to_le_bytes());
+                bytes.extend_from_slice(&v[0].to_le_bytes());
+            } else if plant(17898) {
+                bytes.extend_from_slice(&v[0].to_be_bytes());
+                bytes.extend_from_slice(&v[1].to_be_bytes());
+            } else {
+                bytes.extend_from_slice(&v[0].to_le_bytes());
+                bytes.extend_from_slice(&v[1].to_le_bytes());
+            }
         }
         self.crc = crc_memory(&bytes, 0);
     }
