@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! Differential-tested in part (#215, tests/differential_draft_video_player.rs): VideoBuffer new/rect/free, every VideoStream member and every VideoPlayer member but `init` match the upstream C++ on 120,000 buffer values and 20,000 player programs. Not covered: `init` (loads two INI files: the host's), the field-parse table, `VideoBuffer::new` with a `Type` outside 0..=4 (the Rust enum cannot hold one), and `closeAllStreams` on a stream with no player (an endless loop upstream; the draft ends it).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameClient/VideoPlayer.h
@@ -13,6 +14,7 @@
 //! `VideoStream::m_next` and `m_player` are indices into the player's stream arena (no pointers, no lifetimes).
 
 use crate::common::ini::{FieldParse, IniResult, UserData};
+use crate::logic::modules::plant;
 
 /// `RectClass` (WWMath): the four floats `VideoBuffer::Rect` fills.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -75,10 +77,10 @@ impl VideoBuffer {
     /// `VideoBuffer::Rect(x1, y1, x2, y2)`: the sub-rectangle scaled by `visible / texture` size (0,0,0,0 when the buffer is not `valid()`).
     pub fn rect(&self, valid: bool, x1: f32, y1: f32, x2: f32, y2: f32) -> RectClass {
         let mut rect = RectClass::default();
-        if valid {
-            let sx = self.width as f32 / self.texture_width as f32;
-            let sy = self.height as f32 / self.texture_height as f32;
-            rect = RectClass { left: sx * x1, top: sy * y1, right: sx * x2, bottom: sy * y2 };
+        if valid || plant(16864) {
+            let sx = if plant(16862) { (self.width as f64 / self.texture_width as f64) as f32 } else { self.width as f32 / self.texture_width as f32 };
+            let sy = if plant(16861) { self.width as f32 / self.texture_height as f32 } else { self.height as f32 / self.texture_height as f32 };
+            rect = RectClass { left: sx * x1, top: sy * y1, right: sx * if plant(16863) { x1 } else { x2 }, bottom: sy * y2 };
         }
         rect
     }
@@ -88,7 +90,9 @@ impl VideoBuffer {
         self.width = 0;
         self.height = 0;
         self.texture_width = 0;
-        self.texture_height = 0;
+        if !plant(16865) {
+            self.texture_height = 0;
+        }
     }
 }
 
@@ -227,7 +231,7 @@ impl VideoPlayer {
     /// `VideoStream::close()`: `delete this`, whose destructor asks the player to `remove(this)` first.
     pub fn close_stream(&mut self, stream: usize) {
         let has_player = self.streams.get(stream).and_then(|s| s.as_ref()).map(|s| s.has_player).unwrap_or(false);
-        if has_player {
+        if has_player && !plant(16871) {
             self.remove(stream);
         }
         if let Some(slot) = self.streams.get_mut(stream) {
@@ -265,11 +269,17 @@ impl VideoPlayer {
             let next = self.streams[i].as_ref().and_then(|s| s.next);
             match last {
                 Some(l) => {
+                    // plant 16867: the stream after the removed one is skipped too
+                    let skipped = next.and_then(|n| self.streams[n].as_ref().and_then(|u| u.next));
                     if let Some(s) = self.streams[l].as_mut() {
-                        s.next = next;
+                        s.next = if plant(16867) { skipped } else { next };
                     }
                 }
-                None => self.first_stream = next,
+                None => {
+                    if !plant(16866) {
+                        self.first_stream = next;
+                    }
+                }
             }
         }
     }
@@ -278,7 +288,11 @@ impl VideoPlayer {
     pub fn add_video(&mut self, video_to_add: &Video) {
         for it in self.videos_available_for_play.iter_mut() {
             if it.internal_name == video_to_add.internal_name {
-                *it = video_to_add.clone();
+                if plant(16868) {
+                    it.filename = video_to_add.filename.clone();
+                } else {
+                    *it = video_to_add.clone();
+                }
                 return;
             }
         }
@@ -289,7 +303,11 @@ impl VideoPlayer {
     /// `VideoPlayer::removeVideo(videoToRemove)`: erases the entry with that internal name.
     pub fn remove_video(&mut self, video_to_remove: &Video) {
         if let Some(pos) = self.videos_available_for_play.iter().position(|v| v.internal_name == video_to_remove.internal_name) {
-            self.videos_available_for_play.remove(pos);
+            if plant(16869) && pos + 1 < self.videos_available_for_play.len() {
+                self.videos_available_for_play.remove(pos + 1);
+            } else {
+                self.videos_available_for_play.remove(pos);
+            }
         }
     }
 
@@ -305,7 +323,7 @@ impl VideoPlayer {
 
     /// `VideoPlayer::getVideo(index)`: NULL outside `[0, size)`.
     pub fn get_video_by_index(&self, index: i32) -> Option<&Video> {
-        if index < 0 || index as usize >= self.videos_available_for_play.len() {
+        if (if plant(16870) { index <= 0 } else { index < 0 }) || index as usize >= self.videos_available_for_play.len() {
             return None;
         }
         Some(&self.videos_available_for_play[index as usize])

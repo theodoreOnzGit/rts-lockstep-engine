@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 programs and 4 cache scenarios (the Windows registry calls are the host's, a fake on both sides) (test: tests/differential_draft_registry.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/Common/registry.h
@@ -7,6 +8,8 @@
 //! "Simple interface for storing/retrieving registry values." The Windows registry itself (`RegOpenKeyEx`, `RegQueryValueEx`,
 //! `RegCreateKeyEx`, `RegSetValueEx`, `RegCloseKey`) is the host's: [`RegistryHost`] is the five calls' outcome, so the
 //! logic upstream wraps (the two key prefixes, the local-machine-then-current-user order, the defaults and the language cache) is here.
+
+use crate::logic::modules::plant;
 
 /// `HKEY_LOCAL_MACHINE` / `HKEY_CURRENT_USER`: the two roots registry.cpp reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,7 +44,12 @@ pub fn get_string_from_registry<H: RegistryHost>(host: &mut H, root: RegistryRoo
             *val = v;
             true
         }
-        None => false,
+        None => {
+            if plant(16910) {
+                val.clear();
+            }
+            false
+        }
     }
 }
 
@@ -52,7 +60,7 @@ pub fn get_unsigned_int_from_registry<H: RegistryHost>(host: &mut H, root: Regis
             *val = v;
             true
         }
-        None => false,
+        None => plant(16911),
     }
 }
 
@@ -74,8 +82,14 @@ fn full_path(base: &[u8], path: &[u8]) -> Vec<u8> {
 
 /// `GetStringFromGeneralsRegistry(path, key, val)`: the base game's key, local machine first, then current user.
 pub fn get_string_from_generals_registry<H: RegistryHost>(host: &mut H, path: &[u8], key: &[u8], val: &mut Vec<u8>) -> bool {
-    let full = full_path(GENERALS_KEY, path);
+    let full = full_path(if plant(16901) { ZERO_HOUR_KEY } else { GENERALS_KEY }, path);
     // DEBUG_LOG(("GetStringFromRegistry - looking in %s for key %s\n", ...));
+    if plant(16902) {
+        if get_string_from_registry(host, RegistryRoot::CurrentUser, &full, key, val) {
+            return true;
+        }
+        return get_string_from_registry(host, RegistryRoot::LocalMachine, &full, key, val);
+    }
     if get_string_from_registry(host, RegistryRoot::LocalMachine, &full, key, val) {
         return true;
     }
@@ -88,6 +102,9 @@ pub fn get_string_from_zero_hour_registry<H: RegistryHost>(host: &mut H, path: &
     if get_string_from_registry(host, RegistryRoot::LocalMachine, &full, key, val) {
         return true;
     }
+    if plant(16903) {
+        return false;
+    }
     get_string_from_registry(host, RegistryRoot::CurrentUser, &full, key, val)
 }
 
@@ -97,7 +114,7 @@ pub fn get_unsigned_int_from_zero_hour_registry<H: RegistryHost>(host: &mut H, p
     if get_unsigned_int_from_registry(host, RegistryRoot::LocalMachine, &full, key, val) {
         return true;
     }
-    get_unsigned_int_from_registry(host, RegistryRoot::CurrentUser, &full, key, val)
+    get_unsigned_int_from_registry(host, if plant(16904) { RegistryRoot::LocalMachine } else { RegistryRoot::CurrentUser }, &full, key, val)
 }
 
 /// The `static` cache of `GetRegistryLanguage`: `cached` and `val = "english"`.
@@ -120,11 +137,13 @@ impl RegistryLanguageCache {
         if self.cached {
             return self.val.clone();
         }
-        self.cached = true;
+        self.cached = !plant(16905);
         let mut v = self.val.clone();
         get_string_from_zero_hour_registry(host, b"", b"Language", &mut v);
-        self.val = v;
-        self.val.clone()
+        if !plant(16906) {
+            self.val = v.clone();
+        }
+        v
     }
 }
 
@@ -136,14 +155,14 @@ impl Default for RegistryLanguageCache {
 
 /// `GetRegistryGameName()`: the `SKU` value, default `"GeneralsMPTest"`.
 pub fn get_registry_game_name<H: RegistryHost>(host: &mut H) -> Vec<u8> {
-    let mut val = b"GeneralsMPTest".to_vec();
+    let mut val = if plant(16907) { b"GeneralsMPtest".to_vec() } else { b"GeneralsMPTest".to_vec() };
     get_string_from_zero_hour_registry(host, b"", b"SKU", &mut val);
     val
 }
 
 /// `GetRegistryVersion()`: the `Version` value, default 65536.
 pub fn get_registry_version<H: RegistryHost>(host: &mut H) -> u32 {
-    let mut val: u32 = 65536;
+    let mut val: u32 = if plant(16908) { 65535 } else { 65536 };
     get_unsigned_int_from_zero_hour_registry(host, b"", b"Version", &mut val);
     val
 }
@@ -151,6 +170,6 @@ pub fn get_registry_version<H: RegistryHost>(host: &mut H) -> u32 {
 /// `GetRegistryMapPackVersion()`: the `MapPackVersion` value, default 65536.
 pub fn get_registry_map_pack_version<H: RegistryHost>(host: &mut H) -> u32 {
     let mut val: u32 = 65536;
-    get_unsigned_int_from_zero_hour_registry(host, b"", b"MapPackVersion", &mut val);
+    get_unsigned_int_from_zero_hour_registry(host, b"", if plant(16909) { b"Version" } else { b"MapPackVersion" }, &mut val);
     val
 }

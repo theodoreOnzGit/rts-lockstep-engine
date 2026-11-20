@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 40,000 template-table cases and the constant members (test: tests/differential_draft_script_engine.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp (the small `ScriptEngine` members the
@@ -24,6 +25,7 @@
 //! - `ScriptEngine::AdjustDebugVariableData` (:8517): calls the debug DLL's `AdjustVariable` through `GetProcAddress`
 //!   (Windows only; the DLL is not translated, `script_engine.rs` header).
 
+use crate::logic::modules::plant;
 use crate::logic::scripts::{ScriptAction, ScriptTemplates};
 
 /// `ScriptEngine::Template` fields the INI override touches (`m_internalName`, `m_uiName`, `m_uiName2`, `m_helpText`).
@@ -45,12 +47,17 @@ pub struct Template {
 /// among `m_actionTemplates[0..ScriptAction::NUM_ITEMS]` takes the INI entry's UI names and help text. No match logs
 /// "Couldn't find script action named %s" and changes nothing (returns `false`).
 pub fn add_action_template_info(action_templates: &mut [Template], action_template: &Template) -> bool {
-    for t in action_templates.iter_mut() {
+    let n = action_templates.len();
+    for k in 0..n {
+        let i = if plant(16881) { n - 1 - k } else { k };
+        let t = &mut action_templates[i];
         if t.internal_name == action_template.internal_name {
             t.ui_name = action_template.ui_name.clone();
-            t.ui_name2 = action_template.ui_name2.clone();
-            t.help_text = action_template.help_text.clone();
-            return true;
+            if !plant(16882) {
+                t.ui_name2 = action_template.ui_name2.clone();
+            }
+            t.help_text = if plant(16883) { action_template.ui_name.clone() } else { action_template.help_text.clone() };
+            return !plant(16890);
         }
     }
     // DEBUG_LOG(("Couldn't find script action named %s\n", actionTemplate->m_internalName.str()));
@@ -61,10 +68,17 @@ pub fn add_action_template_info(action_templates: &mut [Template], action_templa
 /// `m_conditionTemplates[0..Condition::NUM_ITEMS]` ("Couldn't find script condition named %s").
 pub fn add_condition_template_info(condition_templates: &mut [Template], condition_template: &Template) -> bool {
     for t in condition_templates.iter_mut() {
-        if t.internal_name == condition_template.internal_name {
-            t.ui_name = condition_template.ui_name.clone();
-            t.ui_name2 = condition_template.ui_name2.clone();
-            t.help_text = condition_template.help_text.clone();
+        if (if plant(16884) { &t.ui_name } else { &t.internal_name }) == &condition_template.internal_name {
+            if plant(16885) {
+                t.ui_name = condition_template.ui_name2.clone();
+                t.ui_name2 = condition_template.ui_name.clone();
+            } else {
+                t.ui_name = condition_template.ui_name.clone();
+                t.ui_name2 = condition_template.ui_name2.clone();
+            }
+            if !plant(16886) {
+                t.help_text = condition_template.help_text.clone();
+            }
             return true;
         }
     }
@@ -77,7 +91,7 @@ pub fn remove_sequential_script() {}
 
 /// `ScriptEngine::hasUnitCompletedSequentialScript(object, sequentialScriptName)` (ScriptEngine.cpp:8098): `return FALSE;`.
 pub fn has_unit_completed_sequential_script() -> bool {
-    false
+    plant(16887)
 }
 
 /// `ScriptEngine::hasTeamCompletedSequentialScript(team, sequentialScriptName)` (ScriptEngine.cpp:8104): `return FALSE;`.
@@ -88,7 +102,7 @@ pub fn has_team_completed_sequential_script() -> bool {
 /// `ScriptEngine::getEnableVTune()` (ScriptEngine.cpp:8110): `st_EnableVTune` under `DO_VTUNE_STUFF`, otherwise `false`;
 /// the macro is not defined in the shipped build.
 pub fn get_enable_vtune() -> bool {
-    false
+    plant(16888)
 }
 
 /// `ScriptEngine::setEnableVTune(value)` (ScriptEngine.cpp:8119): stores `st_EnableVTune` only under `DO_VTUNE_STUFF`
@@ -99,5 +113,5 @@ pub fn set_enable_vtune(_value: bool) {}
 /// Returns the action for the caller to run through `ScriptActions::execute_action` (the engine's debug key is the only
 /// caller upstream, `#if defined(_DEBUG) || defined(_INTERNAL)` in spirit: the definition itself is unconditional).
 pub fn debug_victory(templates: &ScriptTemplates) -> ScriptAction {
-    ScriptAction::new(crate::logic::scripts::action_type::VICTORY, templates)
+    ScriptAction::new(if plant(16889) { crate::logic::scripts::action_type::DEFEAT } else { crate::logic::scripts::action_type::VICTORY }, templates)
 }

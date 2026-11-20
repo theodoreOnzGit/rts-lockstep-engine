@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,001 cases after one draft fix (`new_drive` inserts at the head, as `LList::add` does); the Windows drive calls are the host's (test: tests/differential_draft_cd_manager.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/Common/CDManager.h
@@ -29,6 +30,8 @@ pub struct CdDrive {
     /// `m_disk`.
     pub disk: CdDisk,
 }
+
+use crate::logic::modules::plant;
 
 /// The OS calls.
 pub trait CdHost {
@@ -69,21 +72,23 @@ impl CdDrive {
     /// `CDDrive::refreshInfo()` (the base's; the Win32 drive overrides it, see [`CdDrive::win32_refresh_info`]): `m_disk = UNKNOWN_DISK`.
     pub fn refresh_info(&mut self) {
         // map disk names to disk ID
-        self.disk = CdDisk::UnknownDisk;
+        self.disk = if plant(16931) { CdDisk::NoDisk } else { CdDisk::UnknownDisk };
     }
 
     /// `Win32CDDrive::refreshInfo()` ("an override, not an extension of CDDrive"): a readable volume sets the name and `UNKNOWN_DISK`;
     /// otherwise the name clears, the disk is `NO_DISK`, and a drive that had a disc unloads the music files from the CD.
     pub fn win32_refresh_info<H: CdHost>(&mut self, host: &mut H) {
-        let may_require_update = self.disk != CdDisk::NoDisk;
+        let may_require_update = self.disk != CdDisk::NoDisk || plant(16924);
         // read the volume info
         match host.volume_name(&self.drive_path) {
             Some(name) => {
                 self.disk_name = name;
-                self.disk = CdDisk::UnknownDisk;
+                self.disk = if plant(16926) { CdDisk::NoDisk } else { CdDisk::UnknownDisk };
             }
             None => {
-                self.disk_name.clear();
+                if !plant(16925) {
+                    self.disk_name.clear();
+                }
                 self.disk = CdDisk::NoDisk;
                 if may_require_update {
                     host.unload_music_files_from_cd();
@@ -115,20 +120,24 @@ impl CdManager {
     /// `Win32CDManager::init()`: `CDManager::init()` (empty), `destroyAllDrives()`, then a drive for every letter `a:\` to `z:\` that
     /// `GetDriveType` calls a CD-ROM, then `refreshDrives()`.
     pub fn init<H: CdHost>(&mut self, host: &mut H) {
-        self.destroy_all_drives();
+        if !plant(16928) {
+            self.destroy_all_drives();
+        }
         // detect CD Drives
-        for drive_letter in b'a'..=b'z' {
+        for drive_letter in b'a'..=(if plant(16927) { b'y' } else { b'z' }) {
             let drive_path = vec![drive_letter, b':', b'\\'];
             if host.is_cdrom(&drive_path) {
                 self.new_drive(&drive_path);
             }
         }
-        self.refresh_drives(host);
+        if !plant(16929) {
+            self.refresh_drives(host);
+        }
     }
 
     /// `CDManager::update()`: "Every so often, check to make sure the CD is still in the drive": every 300th frame (`% 300 == 299`).
     pub fn update<H: CdHost>(&mut self, host: &mut H, frame: u32) {
-        if (frame % 300) == 299 {
+        if (if plant(16922) { frame % 300 == 0 } else if plant(16923) { frame % 100 == 99 } else { (frame % 300) == 299 }) {
             self.refresh_drives(host);
         }
     }
@@ -143,18 +152,23 @@ impl CdManager {
 
     /// `CDManager::getDrive(index)`: NULL (`None`) out of range.
     pub fn get_drive(&self, index: i32) -> Option<&CdDrive> {
-        if index < 0 {
+        if index < 0 && !plant(16921) {
             return None;
         }
-        self.drives.get(index as usize)
+        self.drives.get(index.unsigned_abs() as usize)
     }
 
-    /// `CDManager::newDrive(path)`: creates a drive (`createDrive()`), sets its path and appends it to the list.
+    /// `CDManager::newDrive(path)`: creates a drive (`createDrive()`), sets its path and adds it with `LList::add`.
+    ///
+    /// ~~appends it to the list~~ **Corrected 2026-11-20 (#215, group lc2):** `LList::add` (List.cpp) with `m_sortMode == DESCENDING` and
+    /// `m_addToEndOfGroup` FALSE inserts the new node BEFORE the first node whose priority is `>=` its own (all drives are priority 0), i.e.
+    /// at the HEAD, so the list is in the reverse of detection order (`z:` first). `LList::LList` never initialises `m_addToEndOfGroup`;
+    /// the game's `NEW Win32CDManager` is zero-filled by `DynamicMemoryAllocator::allocateBytes`, so it is FALSE in the shipped game.
     pub fn new_drive(&mut self, path: &[u8]) -> &mut CdDrive {
         let mut drive = CdDrive::new();
         drive.set_path(path);
-        self.drives.push(drive);
-        self.drives.last_mut().unwrap()
+        self.drives.insert(0, drive);
+        self.drives.first_mut().unwrap()
     }
 
     /// `CDManager::refreshDrives()` as `Win32CDManager` runs it: every drive's `Win32CDDrive::refreshInfo()`.
@@ -166,6 +180,8 @@ impl CdManager {
 
     /// `CDManager::destroyAllDrives()`: unlinks and deletes every drive.
     pub fn destroy_all_drives(&mut self) {
-        self.drives.clear();
+        if !plant(16930) {
+            self.drives.clear();
+        }
     }
 }

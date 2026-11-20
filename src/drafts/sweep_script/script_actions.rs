@@ -1,4 +1,5 @@
 //! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! Not differential-tested (#215, group lc2): the file holds one data type, the `ScriptClientCall` event enum, and no function; each variant stands for a call on the client (`TheTacticalView`, `TheInGameUI`, `TheDisplay`, ...) that has no isolable C++ to compare.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/ScriptActions.cpp (the calls the actions make on

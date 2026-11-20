@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #208, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 165,536 flag pairs, 20,000 warning boxes and 20,000 engine updates (the boxes, sleep, pump and audio are the host's) (test: tests/differential_draft_os_display.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/Common/OSDisplay.h
@@ -7,6 +8,8 @@
 //!
 //! The OS warning box: the game's flag set mapped to `MessageBox` flags, and the button mapped back. The box itself
 //! (`MessageBoxW/A`, `SetWindowPos`) and `Win32GameEngine`'s message pump are the host's.
+
+use crate::logic::modules::plant;
 
 /// `OSDisplayButtonType`.
 pub const OSDBT_OK: u32 = 0x0000_0001;
@@ -63,7 +66,7 @@ pub fn rts_flags_to_os_flags(button_flags: u32, other_flags: u32) -> u32 {
         out_windows_flags |= MB_OK;
     }
     if bit_test(button_flags, OSDBT_CANCEL) {
-        out_windows_flags |= MB_OKCANCEL;
+        out_windows_flags |= if plant(16941) { MB_OK } else { MB_OKCANCEL };
     }
     if bit_test(other_flags, OSDOF_SYSTEMMODAL) {
         out_windows_flags |= MB_SYSTEMMODAL;
@@ -72,7 +75,7 @@ pub fn rts_flags_to_os_flags(button_flags: u32, other_flags: u32) -> u32 {
         out_windows_flags |= MB_APPLMODAL;
     }
     if bit_test(other_flags, OSDOF_TASKMODAL) {
-        out_windows_flags |= MB_TASKMODAL;
+        out_windows_flags |= if plant(16947) { MB_SYSTEMMODAL } else { MB_TASKMODAL };
     }
     if bit_test(other_flags, OSDOF_EXCLAMATIONICON) {
         out_windows_flags |= MB_ICONEXCLAMATION;
@@ -81,7 +84,7 @@ pub fn rts_flags_to_os_flags(button_flags: u32, other_flags: u32) -> u32 {
         out_windows_flags |= MB_ICONINFORMATION;
     }
     if bit_test(other_flags, OSDOF_ERRORICON) {
-        out_windows_flags |= MB_ICONERROR;
+        out_windows_flags |= if plant(16942) { MB_ICONINFORMATION } else { MB_ICONERROR };
     }
     if bit_test(other_flags, OSDOF_STOPICON) {
         out_windows_flags |= MB_ICONSTOP;
@@ -102,14 +105,14 @@ pub trait OsDisplayHost {
 /// `OSDisplayWarningBox(p, m, buttonFlags, otherFlags)`: `OSDBT_ERROR` without `TheGameText`; else the box over the fetched prompt and
 /// message; `IDOK` is `OSDBT_OK`, any other answer `OSDBT_CANCEL`.
 pub fn os_display_warning_box<H: OsDisplayHost>(host: &mut H, p: &[u8], m: &[u8], button_flags: u32, other_flags: u32) -> u32 {
-    if !host.has_game_text() {
+    if !host.has_game_text() && !plant(16946) {
         return OSDBT_ERROR;
     }
     let prompt_str = host.fetch(p);
     let mesg_str = host.fetch(m);
     let windows_options_flags = rts_flags_to_os_flags(button_flags, other_flags);
-    let return_result = host.message_box(&mesg_str, &prompt_str, windows_options_flags);
-    if return_result == IDOK {
+    let return_result = if plant(16944) { host.message_box(&prompt_str, &mesg_str, windows_options_flags) } else { host.message_box(&mesg_str, &prompt_str, windows_options_flags) };
+    if (if plant(16945) { return_result != IDOK } else if plant(16943) { return_result != 0 && return_result != 2 || return_result == 1 } else { return_result == IDOK }) {
         return OSDBT_OK;
     }
     OSDBT_CANCEL
@@ -143,17 +146,21 @@ pub fn win32_game_engine_update<H: Win32GameEngineHost>(host: &mut H) {
     if host.is_iconic() {
         while host.is_iconic() {
             // We are alt-tabbed out here.  Sleep a bit, & process windows so that we can become un-alt-tabbed out.
-            host.sleep_ms(5);
+            host.sleep_ms(if plant(16948) { 50 } else { 5 });
             host.service_windows_os();
             host.update_lan_if_present();
             // If we are running a multiplayer game, keep running the logic.
-            if host.must_keep_running() {
+            if host.must_keep_running() && !plant(16949) {
                 break; // keep running.
             }
         }
         // When we are alt-tabbed out... the MilesAudioManager seems to go into a coma sometimes: this wakes it up.
         host.rewake_audio();
+    } else if plant(16950) {
+        host.rewake_audio();
     }
     // allow windows to perform regular windows maintenance stuff like msgs
-    host.service_windows_os();
+    if !plant(16951) {
+        host.service_windows_os();
+    }
 }
