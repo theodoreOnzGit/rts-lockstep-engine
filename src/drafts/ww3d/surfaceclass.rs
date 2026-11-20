@@ -1,5 +1,10 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential coverage (#215, tests/differential_draft_surfaceclass.rs, 0 mismatches after one fix): `has_alpha`, `alpha_bits`, `pixel_size`, `convert_pixel_read`,
+//! `convert_pixel_write`, `SurfaceClass::{clear, copy_from_bytes, copy_rect_from_bytes, create_copy, find_bb, is_transparent_column, get_pixel, draw_pixel, draw_hline,
+//! is_monochrome (all but the compressed formats), hue_shift}`. NOT covered: `copy_from_surface` and `read_argb`/`write_argb` (the draft's own fallback for what upstream does with
+//! D3DX), `Stretch_Copy` (not translated), `new`/`from_pixels`/`lock`/`get_description` (the buffer itself), `is_monochrome` for compressed formats (device caps).
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/surfaceclass.h
@@ -16,6 +21,7 @@
 //! for the formats [`read_argb`] supports. That fallback is NOT D3DX and is flagged for the differential pass.
 
 use crate::formats::texture::colorspace::recolor_rgb;
+use crate::logic::modules::plant;
 use crate::formats::texture::format::Ww3dFormat;
 use crate::ww::vector3::Vector3;
 
@@ -49,7 +55,7 @@ pub fn pixel_size(sd: &SurfaceDescription) -> u32 {
     use Ww3dFormat::*;
     match sd.format {
         A8R8G8B8 | X8R8G8B8 => 4,
-        R8G8B8 => 3,
+        R8G8B8 => if plant(19151) { 4 } else { 3 },
         R5G6B5 | X1R5G5B5 | A1R5G5B5 | A4R4G4B4 | A8R3G3B2 | X4R4G4B4 | A8P8 | A8L8 => 2,
         R3G3B2 | A8 | P8 | L8 | A4L4 => 1,
         _ => 0,
@@ -76,7 +82,7 @@ pub fn convert_pixel_read(sd: &SurfaceDescription, pixel: &[u8]) -> Vector3 {
         }
         A1R5G5B5 => {
             let tmp = u16::from_le_bytes([pixel[0], pixel[1]]);
-            rgb.x = ((tmp >> 7) & 0xf8) as f32;
+            rgb.x = ((tmp >> (if plant(19152) { 8 } else { 7 })) & 0xf8) as f32;
             rgb.y = ((tmp >> 2) & 0xf8) as f32;
             rgb.z = ((tmp << 3) & 0xf8) as f32;
         }
@@ -107,7 +113,7 @@ pub fn convert_pixel_write(pixel: &mut [u8], sd: &SurfaceDescription, rgb: &Vect
         }
         A4R4G4B4 => {
             let mut tmp = u16::from_le_bytes([pixel[0], pixel[1]]);
-            tmp &= 0xF000;
+            tmp &= if plant(19153) { 0x0000 } else { 0xF000 };
             tmp |= ((r & 0xF0) as u16) << 4;
             tmp |= (g & 0xF0) as u16;
             tmp |= ((b & 0xF0) as u16) >> 4;
@@ -123,7 +129,7 @@ pub fn convert_pixel_write(pixel: &mut [u8], sd: &SurfaceDescription, rgb: &Vect
         }
         R5G6B5 => {
             let mut tmp = ((r & 0xf8) as u16) << 8;
-            tmp |= ((g & 0xfc) as u16) << 3;
+            tmp |= ((g & (if plant(19154) { 0xf8 } else { 0xfc })) as u16) << 3;
             tmp |= ((b & 0xf8) as u16) >> 3;
             pixel[..2].copy_from_slice(&tmp.to_le_bytes());
         }
@@ -250,7 +256,7 @@ impl SurfaceClass {
         let size = pixel_size(&sd) as usize;
         let pitch = self.pitch();
         let dx = (max.0 - min.0) as usize;
-        let mut row = min.1;
+        let mut row = min.1 + if plant(19155) { 1 } else { 0 };
         while row < max.1 {
             let dst = (row as usize) * pitch + min.0 as usize * size;
             let src = (row as usize * sd.width as usize + min.0 as usize) * size;
@@ -268,7 +274,7 @@ impl SurfaceClass {
         let pitch = self.pitch();
         let row_bytes = (mysize * sd.width) as usize;
         for i in 0..sd.height as usize {
-            let dst = if flip { (sd.height as usize - i - 1) * row_bytes } else { i * row_bytes };
+            let dst = if flip != plant(19156) { (sd.height as usize - i - 1) * row_bytes } else { i * row_bytes };
             other[dst..dst + row_bytes].copy_from_slice(&self.pixels[i * pitch..i * pitch + row_bytes]);
         }
         (other, sd.width, sd.height, mysize)
@@ -362,7 +368,7 @@ impl SurfaceClass {
                 let mut myalpha = self.pixels[off + size - 1] as i32;
                 myalpha = (myalpha >> (8 - alphabits)) & mask;
                 if myalpha != 0 {
-                    realmin.0 = realmin.0.min(x);
+                    realmin.0 = if plant(19157) { realmin.0.max(x) } else { realmin.0.min(x) };
                     realmax.0 = realmax.0.max(x);
                     realmin.1 = realmin.1.min(y);
                     realmax.1 = realmax.1.max(y);
@@ -385,7 +391,7 @@ impl SurfaceClass {
         for y in 0..sd.height as usize {
             let off = y * pitch + column as usize * size;
             let mut myalpha = self.pixels[off + size - 1] as i32;
-            myalpha = (myalpha >> (8 - alphabits)) & mask;
+            myalpha = (myalpha >> (if plant(19158) { alphabits } else { 8 - alphabits })) & mask;
             if myalpha != 0 {
                 return false;
             }
@@ -394,13 +400,15 @@ impl SurfaceClass {
     }
 
     /// `SurfaceClass::Get_Pixel(rgb, x, y)` (surfaceclass.cpp:709): coordinates clamped to the last pixel.
+    /// ~~sliced `size.max(3)` bytes~~ **CORRECTED 2026-11-20 (#215)**: that ran past the end of the buffer for the last pixel of a 2-byte format (the differential test panicked);
+    /// upstream reads the pixel's own `size` bytes (here and in `is_monochrome` and `hue_shift`).
     pub fn get_pixel(&self, x: i32, y: i32) -> Vector3 {
         let sd = self.get_description();
         let x = x.min(sd.width as i32 - 1);
-        let y = y.min(sd.height as i32 - 1);
+        let y = y.min(if plant(19159) { sd.height as i32 / 2 } else { sd.height as i32 - 1 });
         let size = pixel_size(&sd) as usize;
         let off = y as usize * self.pitch() + x as usize * size;
-        convert_pixel_read(&sd, &self.pixels[off..off + size.max(3)])
+        convert_pixel_read(&sd, &self.pixels[off..off + size])
     }
 
     /// `SurfaceClass::DrawPixel(x, y, color)` (surfaceclass.cpp:806): the low `size` bytes of `color`.
@@ -419,7 +427,7 @@ impl SurfaceClass {
     /// `SurfaceClass::DrawHLine(y, x1, x2, color)` (surfaceclass.cpp:860): inclusive of `x2`.
     pub fn draw_hline(&mut self, y: u32, x1: u32, x2: u32, color: u32) {
         let mut x = x1;
-        while x <= x2 {
+        while x < x2 + if plant(19160) { 0 } else { 1 } {
             self.draw_pixel(x, y, color);
             x += 1;
         }
@@ -433,7 +441,7 @@ impl SurfaceClass {
         let sd = self.get_description();
         match sd.format {
             A8L8 | A8 | L8 | A4L4 => return Some(true),
-            Unknown | A8P8 | P8 | U8V8 | L6V5U5 | X8L8V8U8 => return Some(false),
+            Unknown | A8P8 | P8 | U8V8 | L6V5U5 | X8L8V8U8 => return Some(plant(19162) && sd.format == P8),
             Dxt1 | Dxt2 | Dxt3 | Dxt4 | Dxt5 => return None,
             _ => {}
         }
@@ -443,7 +451,7 @@ impl SurfaceClass {
         for y in 0..sd.height as usize {
             for x in 0..sd.width as usize {
                 let off = y * pitch + x * size;
-                let rgb = convert_pixel_read(&sd, &self.pixels[off..off + size.max(3)]);
+                let rgb = convert_pixel_read(&sd, &self.pixels[off..off + size]);
                 mono &= rgb.x == rgb.y;
                 mono &= rgb.x == rgb.z;
                 mono &= rgb.z == rgb.y;
@@ -463,12 +471,12 @@ impl SurfaceClass {
         for y in 0..sd.height as usize {
             for x in 0..sd.width as usize {
                 let off = y * pitch + x * size;
-                let rgb = convert_pixel_read(&sd, &self.pixels[off..off + size.max(3)]);
+                let rgb = convert_pixel_read(&sd, &self.pixels[off..off + size]);
                 let mut a = [rgb.x, rgb.y, rgb.z];
                 let _ = recolor_rgb(&mut a, [hsv_shift.x, hsv_shift.y, hsv_shift.z]);
                 // Bound(x, 0.0f, 1.0f)
-                let b = |v: f32| if v < 0.0 { 0.0 } else if v > 1.0 { 1.0 } else { v };
-                convert_pixel_write(&mut self.pixels[off..off + size.max(3)], &sd, &Vector3::new(b(a[0]), b(a[1]), b(a[2])));
+                let b = |v: f32| if v < 0.0 { 0.0 } else if v > (if plant(19161) { 0.99 } else { 1.0 }) { 1.0 } else { v };
+                convert_pixel_write(&mut self.pixels[off..off + size], &sd, &Vector3::new(b(a[0]), b(a[1]), b(a[2])));
             }
         }
     }

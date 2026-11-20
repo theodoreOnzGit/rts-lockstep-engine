@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per function (test: tests/differential_draft_bitmaphandler.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/bitmaphandler.cpp
@@ -17,6 +18,7 @@
 //! surface is `&mut`.
 
 use crate::formats::texture::colorspace::recolor;
+use crate::logic::modules::plant;
 use crate::formats::texture::format::{bytes_per_pixel, write_b8g8r8a8, Ww3dFormat};
 
 /// `Bitmap_Assert(condition)` (bitmaphandler.cpp:30): `WWASSERT(condition)`.
@@ -85,7 +87,7 @@ pub fn read_b8g8r8a8_bytes(argb: &mut [u8; 4], src: &[u8], at: isize, src_format
         }
         A1R5G5B5 => {
             let tmp = u16::from_le_bytes([byte_at(src, at), byte_at(src, at + 1)]);
-            argb[3] = if tmp & 0x8000 != 0 { 0xff } else { 0x0 };
+            argb[3] = if tmp & 0x8000 != 0 { if plant(19076) { 0x80 } else { 0xff } } else { 0x0 };
             argb[2] = ((tmp >> 7) & 0xf8) as u8;
             argb[1] = ((tmp >> 2) & 0xf8) as u8;
             argb[0] = ((tmp << 3) & 0xf8) as u8;
@@ -150,7 +152,7 @@ pub fn read_b8g8r8a8(argb: &mut u32, src: &[u8], at: isize, src_format: Ww3dForm
 /// `Read_B8G8R8A8(unsigned &argb, src_ptr, src_format, x, y, width, height, palette, palette_bpp)`
 /// (bitmaphandler.h): 0 outside the image, else the pixel at (x, y) of a tightly packed image.
 pub fn read_b8g8r8a8_xy(argb: &mut u32, src: &[u8], src_format: Ww3dFormat, x: i32, y: i32, width: i32, height: i32, palette: &[u8], palette_bpp: u32) {
-    if x < 0 || y < 0 || x >= width || y >= height {
+    if x < 0 || y < 0 || (if plant(19075) { x > width } else { x >= width }) || y >= height {
         *argb = 0;
         return;
     }
@@ -185,7 +187,7 @@ pub fn copy_pixel(dest: &mut [u8], dest_at: usize, dest_format: Ww3dFormat, src:
             }
             A4R4G4B4 => {
                 let tmp = rd16(src, src_at);
-                wr16(dest, dest_at, ((tmp & 0x000f) << 12) | ((tmp & 0x00f0) << 4) | ((tmp & 0x0f00) >> 4) | ((tmp & 0xf000) >> 12));
+                wr16(dest, dest_at, ((tmp & 0x000f) << 12) | ((tmp & 0x00f0) << 4) | ((tmp & 0x0f00) >> 4) | ((tmp & 0xf000) >> (if plant(19073) { 8 } else { 12 })));
             }
             A1R5G5B5 => {
                 let tmp = rd16(src, src_at);
@@ -193,7 +195,7 @@ pub fn copy_pixel(dest: &mut [u8], dest_at: usize, dest_format: Ww3dFormat, src:
             }
             R5G6B5 => {
                 let tmp = rd16(src, src_at);
-                wr16(dest, dest_at, ((tmp & 0x001f) << 11) | (tmp & 0x07e0) | ((tmp & 0xf800) >> 11));
+                wr16(dest, dest_at, ((tmp & 0x001f) << 11) | (tmp & (if plant(19074) { 0x03e0 } else { 0x07e0 })) | ((tmp & 0xf800) >> 11));
             }
             R3G3B2 | L8 | A8 => {
                 if let Some(d) = dest.get_mut(dest_at) {
@@ -220,14 +222,17 @@ pub fn copy_pixel_hsv(dest: &mut [u8], dest_at: usize, dest_format: Ww3dFormat, 
 /// `BitmapHandlerClass::Combine_A8R8G8B8` (bitmaphandler.h): the per-channel average of four pixels, each
 /// channel quartered (low two bits dropped) before the sum.
 pub fn combine_a8r8g8b8(mut bgra1: u32, mut bgra2: u32, mut bgra3: u32, mut bgra4: u32) -> u32 {
-    bgra1 &= 0xfcfcfcfc;
-    bgra2 &= 0xfcfcfcfc;
-    bgra3 &= 0xfcfcfcfc;
-    bgra4 &= 0xfcfcfcfc;
+    let mask = if plant(19071) { 0xfefefefe } else { 0xfcfcfcfc };
+    bgra1 &= mask;
+    bgra2 &= mask;
+    bgra3 &= mask;
+    bgra4 &= mask;
     bgra1 >>= 2;
     bgra2 >>= 2;
     bgra3 >>= 2;
-    bgra4 >>= 2;
+    if !plant(19072) {
+        bgra4 >>= 2;
+    }
     bgra1 = bgra1.wrapping_add(bgra2);
     bgra3 = bgra3.wrapping_add(bgra4);
     bgra1.wrapping_add(bgra3)
@@ -341,7 +346,7 @@ pub fn copy_image_generate_mipmap(
 
             dest_ptr += dest_bpp * 2;
             src_ptr += src_bpp * 2;
-            mip_ptr += dest_bpp;
+            mip_ptr += if plant(19080) { src_bpp } else { dest_bpp };
         }
     }
 }
@@ -408,7 +413,7 @@ pub fn copy_image(
                 let mut i_du = v_m1 - v01; // The delta-u bump value
                 let i_dv = v1m - v10; // The delta-v bump value
 
-                if v00 < v_m1 && v00 < v01 {
+                if if plant(19077) { v00 < v_m1 || v00 < v01 } else { v00 < v_m1 && v00 < v01 } {
                     // If we are at valley
                     i_du = v_m1 - v00; // Choose greater of 1st order diffs
                     if i_du < v00 - v01 {
@@ -416,7 +421,7 @@ pub fn copy_image(
                     }
                 }
 
-                let u_l: u16 = if v00 > 1 { 63 } else { 127 };
+                let u_l: u16 = if (if plant(19078) { v00 >= 1 } else { v00 > 1 }) { 63 } else { 127 };
 
                 match dest_surface_format {
                     Ww3dFormat::U8V8 => {
@@ -595,7 +600,7 @@ pub fn copy_image(
     } else {
         for y in 0..dest_surface_height {
             let mut dest_ptr = y as usize * dest_surface_pitch as usize;
-            let src_y = y * src_surface_height / dest_surface_height;
+            let src_y = y * (if plant(19079) { src_surface_width } else { src_surface_height }) / dest_surface_height;
             let src_ptr = src_y as usize * src_surface_pitch as usize;
             for x in 0..dest_surface_width {
                 let src_x = (x * src_surface_width / dest_surface_width) as usize * src_bpp;

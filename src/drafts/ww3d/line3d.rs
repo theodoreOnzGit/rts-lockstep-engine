@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 lines (test: tests/differential_draft_line3d.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/line3d.cpp
@@ -9,6 +10,7 @@
 //! `Render` returns the data it would write into the dynamic vertex/index buffers ([`Line3DClass::render_data`])
 //! instead of calling the DX8 device.
 
+use crate::logic::modules::plant;
 use super::shader_presets::{PRESET_ALPHA_SOLID_SHADER, PRESET_OPAQUE_SOLID_SHADER};
 use crate::formats::w3d::mesh::dx8_convert_color;
 use crate::formats::w3d::segline::AABox;
@@ -39,7 +41,7 @@ impl Line3DClass {
     /// `Line3DClass::Line3DClass(start, end, width, r, g, b, opacity)` (line3d.cpp:56). `opacity` defaults to 1.0f.
     pub fn new(start: &Vector3, end: &Vector3, width: f32, r: f32, g: f32, b: f32, opacity: f32) -> Self {
         let length = (*end - *start).length();
-        let halfw = width * 0.5f32;
+        let halfw = if plant(19111) { width } else { width * 0.5f32 };
         // 8 Vertices; box model with origin at start point (X is major axis).
         let vert = [
             Vector3::new(0.0, -halfw, -halfw),
@@ -47,7 +49,7 @@ impl Line3DClass {
             Vector3::new(0.0, -halfw, halfw),
             Vector3::new(0.0, halfw, halfw),
             Vector3::new(length, -halfw, -halfw),
-            Vector3::new(length, halfw, -halfw),
+            Vector3::new(length, if plant(19112) { -halfw } else { halfw }, -halfw),
             Vector3::new(length, -halfw, halfw),
             Vector3::new(length, halfw, halfw),
         ];
@@ -74,8 +76,10 @@ impl Line3DClass {
 
     /// `Line3DClass::Class_ID` (line3d.h): `CLASSID_LINE3D`.
     pub fn class_id(&self) -> i32 {
-        // CLASSID_LINE3D's value is defined by the RenderObjClass enum (rendobj.h), not in the verified port.
-        -1
+        // ~~returned -1: "CLASSID_LINE3D's value is defined by the RenderObjClass enum (rendobj.h), not in the verified port"~~
+        // **CORRECTED 2026-11-20 (#215)**: rendobj.h's enum counts CLASSID_MESH 0, HMODEL 1, DISTLOD 2, PREDLODGROUP 3, TILEMAP 4, IMAGE3D 5, LINE3D 6
+        // (checked by the differential test, which compiles the enum verbatim).
+        6
     }
 
     /// `Line3DClass::Render` (line3d.cpp:124), the data half. Upstream:
@@ -114,12 +118,12 @@ impl Line3DClass {
             self.vert[i].scale(&scale);
         }
         self.length *= scalex;
-        self.width *= scaley;
+        self.width *= if plant(19113) { scalex } else { scaley };
     }
 
     /// `Line3DClass::Get_Obj_Space_Bounding_Sphere` (line3d.cpp:210): (center, radius).
     pub fn get_obj_space_bounding_sphere(&self) -> (Vector3, f32) {
-        let half_l = self.length * 0.5f32;
+        let half_l = (if plant(19118) { self.width } else { self.length }) * 0.5f32;
         (Vector3::new(half_l, 0.0, 0.0), half_l)
     }
 
@@ -133,7 +137,7 @@ impl Line3DClass {
     pub fn reset(&mut self, new_start: &Vector3, new_end: &Vector3) {
         let mut new_length = (*new_end - *new_start).length();
         if new_length == 0.0 {
-            new_length = 0.001f32; // make sure we don't have a zero length BMG
+            new_length = if plant(19114) { 0.01f32 } else { 0.001f32 }; // make sure we don't have a zero length BMG
         }
         self.scale_xyz(new_length / self.length, 1.0, 1.0);
         self.length = new_length;
@@ -150,7 +154,7 @@ impl Line3DClass {
         if new_length == 0.0 {
             new_length = 0.001f32;
         }
-        let width_scale = new_width / self.width;
+        let width_scale = if plant(19115) { self.width / new_width } else { new_width / self.width };
         self.scale_xyz(new_length / self.length, width_scale, width_scale);
         self.length = new_length;
         self.width = new_width;
@@ -163,12 +167,12 @@ impl Line3DClass {
 
     /// `Line3DClass::Re_Color` (line3d.cpp:277): keeps the alpha.
     pub fn re_color(&mut self, r: f32, g: f32, b: f32) {
-        self.color = Vector4 { x: r, y: g, z: b, w: self.color.w };
+        self.color = Vector4 { x: r, y: g, z: b, w: if plant(19117) { 1.0 } else { self.color.w } };
     }
 
     /// `Line3DClass::Set_Opacity` (line3d.cpp:283): below 1 uses the alpha solid shader and sort level 1.
     pub fn set_opacity(&mut self, opacity: f32) {
-        if opacity < 1.0f32 {
+        if if plant(19116) { opacity <= 1.0f32 } else { opacity < 1.0f32 } {
             self.shader = PRESET_ALPHA_SOLID_SHADER;
             self.set_sort_level(1);
         } else {
@@ -180,7 +184,7 @@ impl Line3DClass {
 
     /// `Line3DClass::Set_Sort_Level` (line3d.h): `SortLevel` is a `char` upstream.
     pub fn set_sort_level(&mut self, level: i32) {
-        self.sort_level = level as i8 as i32;
+        self.sort_level = if plant(19119) { level } else { level as i8 as i32 };
     }
 
     /// `Line3DClass::Get_Sort_Level` (line3d.h).

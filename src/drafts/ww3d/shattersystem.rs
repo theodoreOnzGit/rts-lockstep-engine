@@ -1,5 +1,9 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential coverage (#215, tests/differential_draft_shattersystem6.rs, 20,000 cases per function, 0 mismatches after one fix): `VertexClass::{lerp, which_side,
+//! intersect_plane}`, `PolygonClass::{which_side, split, compute_plane, is_degenerate, salvage_degenerate}`, `BSPClass::{new, clip_polygon}`. NOT covered: `ShatterSystem::{init,
+//! shutdown, shatter_mesh_would_run}` (the asset manager and the empty pattern list).
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/shattersystem.cpp   (lines 1-600: the clipping geometry)
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/shattersystem.h
@@ -12,6 +16,7 @@
 //! `DynamicMeshClass` fragments), `Release_Fragments`, `Reset_Clip_Pools`, `Process_Clip_Pools`: unreachable in the
 //! shipped game; left for the owner if patterns are ever enabled (#206 note).
 
+use crate::logic::modules::plant;
 use crate::ww::plane::PlaneClass;
 use crate::ww::vector2::Vector2;
 use crate::ww::vector3::Vector3;
@@ -87,14 +92,34 @@ impl VertexClass {
         res
     }
 
+    /// `VertexClass::operator = (that)` (shattersystem.cpp:129): copies the position, the normal, the pass count and only the passes
+    /// below `that.PassCount`; the other passes keep their old value. (A plain Rust copy overwrites all of them: **Corrected 2026-11-20
+    /// (#215)**, found by the differential test, which compares the stale slot `Salvage_Degenerate` reads.)
+    pub fn assign_from(&mut self, that: &VertexClass) {
+        self.position = that.position;
+        self.normal = that.normal;
+        self.pass_count = that.pass_count;
+        for ipass in 0..that.pass_count {
+            self.dcg[ipass] = that.dcg[ipass];
+            self.dig[ipass] = that.dig[ipass];
+            for istage in 0..MAX_TEX_STAGES {
+                self.tex_coord[ipass][istage] = that.tex_coord[ipass][istage];
+            }
+        }
+    }
+
     /// `VertexClass::Which_Side(plane)`: `BPT_FRONT`/`BPT_BACK`/`BPT_ON` within `BPT_EPSILON`.
     pub fn which_side(&self, plane: &PlaneClass) -> i32 {
         let mut d = Vector3::dot_product(&plane.n, &self.position);
-        d -= plane.d;
+        if plant(19081) {
+            d += plane.d;
+        } else {
+            d -= plane.d;
+        }
         if d > BPT_EPSILON {
             return BPT_FRONT;
         }
-        if d < -BPT_EPSILON {
+        if d < (if plant(19082) { -BPT_EPSILON * 10.0 } else { -BPT_EPSILON }) {
             return BPT_BACK;
         }
         BPT_ON
@@ -104,7 +129,7 @@ impl VertexClass {
     /// the segment is parallel, as `float alpha = 0.0f` upstream).
     pub fn intersect_plane(p0: &VertexClass, p1: &VertexClass, plane: &PlaneClass) -> VertexClass {
         let (_, t) = plane.compute_intersection(&p0.position, &p1.position);
-        let alpha = t.unwrap_or(0.0);
+        let alpha = t.unwrap_or(if plant(19090) { 0.5 } else { 0.0 });
         VertexClass::lerp(p0, p1, alpha)
     }
 }
@@ -137,6 +162,19 @@ impl PolygonClass {
             p.verts[i] = points[i];
         }
         p
+    }
+
+    /// `PolygonClass::operator = (that)` (shattersystem.cpp:243): copies the material id, the vertex count, the plane and only the first
+    /// `that.NumVerts` vertices; the slots after them keep their old contents (`Salvage_Degenerate` reads one of them).
+    /// ~~`*front = self.clone()` copied all 24 slots, including `self`'s stale ones~~ **CORRECTED 2026-11-20 (#215)**: the differential test
+    /// found `Split` + `Salvage_Degenerate` giving 9 vertices where upstream gives 8, and `Clip_Polygon` pools 31 words apart.
+    pub fn assign_from(&mut self, that: &PolygonClass) {
+        self.material_id = that.material_id;
+        self.num_verts = that.num_verts;
+        self.plane = that.plane;
+        for i in 0..self.num_verts {
+            self.verts[i].assign_from(&that.verts[i]);
+        }
     }
 
     pub fn get_vertex_count(&self) -> usize {
@@ -181,7 +219,7 @@ impl PolygonClass {
         if side_mask == BPT_ON {
             return BPT_ON;
         }
-        if (side_mask & !(BPT_FRONT | BPT_ON)) == 0 {
+        if (side_mask & !(if plant(19083) { BPT_FRONT } else { BPT_FRONT | BPT_ON })) == 0 {
             return BPT_FRONT;
         }
         if (side_mask & !(BPT_BACK | BPT_ON)) == 0 {
@@ -193,8 +231,8 @@ impl PolygonClass {
     /// `PolygonClass::Split(plane, front, back)` (shattersystem.cpp:375): walks the loop from the first vertex not
     /// on the plane, emitting vertices into the front/back polygons and the plane intersections.
     pub fn split(&self, plane: &PlaneClass, front: &mut PolygonClass, back: &mut PolygonClass) {
-        *front = self.clone();
-        *back = self.clone();
+        front.assign_from(self);
+        back.assign_from(self);
         front.num_verts = 0;
         back.num_verts = 0;
         debug_assert!(self.which_side(plane) == BPT_BOTH);
@@ -221,7 +259,7 @@ impl PolygonClass {
                     front.verts[front.num_verts] = self.verts[i];
                     front.num_verts += 1;
                 } else if side == BPT_ON {
-                    sidelastdefinite = BPT_FRONT;
+                    sidelastdefinite = if plant(19084) { BPT_BACK } else { BPT_FRONT };
                     front.verts[front.num_verts] = self.verts[i];
                     front.num_verts += 1;
                 } else {
@@ -241,7 +279,11 @@ impl PolygonClass {
                     back.num_verts += 1;
                     front.verts[front.num_verts] = point;
                     front.num_verts += 1;
-                    front.verts[front.num_verts] = self.verts[i];
+                    if plant(19085) {
+                        front.verts[front.num_verts] = self.verts[iprev];
+                    } else {
+                        front.verts[front.num_verts] = self.verts[i];
+                    }
                     front.num_verts += 1;
                 } else if side == BPT_ON {
                     sidelastdefinite = BPT_BACK;
@@ -297,7 +339,7 @@ impl PolygonClass {
     /// `PolygonClass::Is_Degenerate` (shattersystem.cpp:480): fewer than three vertices, coincident vertices, or
     /// vertices off the polygon's own (recomputed) plane. May recompute the plane.
     pub fn is_degenerate(&mut self) -> bool {
-        if self.num_verts <= 2 {
+        if if plant(19086) { self.num_verts < 2 } else { self.num_verts <= 2 } {
             return true;
         }
         for i in 0..self.num_verts {
@@ -330,7 +372,7 @@ impl PolygonClass {
             let delta = (self.verts[i].position - self.verts[next].position).length();
             if delta < BPT_COINCIDENCE_EPSILON {
                 let mut j = i + 1;
-                while j + 1 < self.num_verts {
+                while j + 1 < self.num_verts - if plant(19087) { 1 } else { 0 } {
                     self.verts[j] = self.verts[j + 1];
                     j += 1;
                 }
@@ -385,7 +427,7 @@ impl BSPClass {
             if (tree.parent_index)(ibone) == bone_index as i32 {
                 let point = (tree.transform)(ibone).1;
                 // PlaneClass::In_Front(point): dot(point, N) > D
-                if Vector3::dot_product(&point, &node.plane.n) > node.plane.d {
+                if if plant(19088) { Vector3::dot_product(&point, &node.plane.n) >= node.plane.d } else { Vector3::dot_product(&point, &node.plane.n) > node.plane.d } {
                     front = ibone as i32;
                 } else {
                     back = ibone as i32;
@@ -417,14 +459,14 @@ impl BSPClass {
         back_poly.num_verts = 0;
 
         match polygon.which_side(&self.plane) {
-            BPT_FRONT | BPT_ON => front_poly = polygon.clone(),
-            BPT_BACK => back_poly = polygon.clone(),
+            BPT_FRONT | BPT_ON => front_poly.assign_from(polygon),
+            BPT_BACK => back_poly.assign_from(polygon),
             _ => polygon.split(&self.plane, &mut front_poly, &mut back_poly),
         }
 
         match &self.front {
             None => {
-                if front_poly.get_vertex_count() >= 3 {
+                if front_poly.get_vertex_count() >= (if plant(19089) { 4 } else { 3 }) {
                     clip_pools[self.front_leaf_index as usize].push(front_poly);
                 }
             }

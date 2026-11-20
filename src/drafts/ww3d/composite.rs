@@ -1,5 +1,9 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential coverage (#215, tests/differential_draft_composite.rs, 20,000 cases per function, 0 mismatches): `SphereClass::{init, add_sphere}`,
+//! `MinMaxAABoxClass::{init, add_box}`, `aabox_from_minmax`, `update_obj_space_bounding_volumes`. NOT covered (pure forwarding through the
+//! host contract, no arithmetic): the names, `restart`, `get_num_polys`, `notify_added/removed`, the `cast_*`/`intersect_*` traversals, the decal calls, `set_user_data`.
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/composite.cpp
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/composite.h
@@ -12,6 +16,7 @@
 //! data this class holds ([`CompositeRenderObjClass`]) and its operations are generic over the host.
 
 use super::handles::RenderObjHandle;
+use crate::logic::modules::plant;
 use crate::formats::w3d::segline::AABox;
 use crate::ww::vector3::Vector3;
 
@@ -33,13 +38,13 @@ impl SphereClass {
     /// `s`; the larger radius for concentric spheres; the larger sphere when one holds the other; else the
     /// sphere through both far ends).
     pub fn add_sphere(&mut self, s: &SphereClass) {
-        if s.radius == 0.0 {
+        if s.radius == 0.0 && !plant(19102) {
             return;
         }
 
         let dist = (s.center - self.center).length();
         if dist == 0.0 {
-            self.radius = if self.radius > s.radius { self.radius } else { s.radius };
+            self.radius = if self.radius > s.radius && !plant(19101) { self.radius } else { s.radius };
             return;
         }
 
@@ -53,7 +58,7 @@ impl SphereClass {
             self.init(&s.center, s.radius);
         } else {
             // Neither sphere is completely inside the other, so rnew is the new radius
-            let lerp = (rnew - self.radius) / dist;
+            let lerp = (rnew - if plant(19103) { s.radius } else { self.radius }) / dist;
             let center = (s.center - self.center) * lerp + self.center;
             self.init(&center, rnew);
         }
@@ -76,17 +81,17 @@ impl MinMaxAABoxClass {
 
     /// `MinMaxAABoxClass::Add_Box(const AABoxClass &)` (aabox.h:607): a zero-extent box adds nothing.
     pub fn add_box(&mut self, box_: &AABox) {
-        if box_.extent == Vector3::new(0.0, 0.0, 0.0) {
+        if box_.extent == Vector3::new(0.0, 0.0, 0.0) && !plant(19104) {
             return;
         }
-        self.min_corner.update_min(&(box_.center - box_.extent));
+        self.min_corner.update_min(&(box_.center - if plant(19105) { box_.center } else { box_.extent }));
         self.max_corner.update_max(&(box_.center + box_.extent));
     }
 }
 
 /// `AABoxClass::Init(const MinMaxAABoxClass &)` (aabox.h:291): centre and half-extent of the corners.
 pub fn aabox_from_minmax(mmbox: &MinMaxAABoxClass) -> AABox {
-    AABox { center: (mmbox.max_corner + mmbox.min_corner) * 0.5, extent: (mmbox.max_corner - mmbox.min_corner) * 0.5 }
+    AABox { center: (mmbox.max_corner + mmbox.min_corner) * 0.5, extent: (if plant(19106) { mmbox.max_corner + mmbox.min_corner } else { mmbox.max_corner - mmbox.min_corner }) * 0.5 }
 }
 
 /// What `CompositeRenderObjClass` asks of its sub-objects (the `RenderObjClass` virtuals) and of its container.
@@ -296,7 +301,7 @@ impl CompositeRenderObjClass {
     /// first one initialises the corners whatever it is), then the cached bounds are invalidated and the
     /// container updated.
     pub fn update_obj_space_bounding_volumes<H: CompositeHost>(&mut self, host: &mut H, this: RenderObjHandle) {
-        if host.get_num_sub_objects(this) == 0 {
+        if if plant(19108) { host.get_num_sub_objects(this) <= 1 } else { host.get_num_sub_objects(this) == 0 } {
             self.obj_sphere.init(&Vector3::new(0.0, 0.0, 0.0), 0.0);
             self.obj_box.center.set(0.0, 0.0, 0.0);
             self.obj_box.extent.set(0.0, 0.0, 0.0);
@@ -310,7 +315,7 @@ impl CompositeRenderObjClass {
         let mut box_ = MinMaxAABoxClass::default();
         box_.init(&obj_aabox);
 
-        for i in 1..host.get_num_sub_objects(this) {
+        for i in 1..host.get_num_sub_objects(this) - if plant(19107) { 1 } else { 0 } {
             let robj = host.get_sub_object(this, i);
             let sphere = host.get_obj_space_bounding_sphere(robj);
             let obj_aabox = host.get_obj_space_bounding_box(robj);

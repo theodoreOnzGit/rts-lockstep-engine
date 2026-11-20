@@ -1,5 +1,8 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential coverage (#215, tests/differential_draft_decalpoly.rs, 20,000 cases, 0 mismatches): `DecalPolyClass::{reset, add_vertex, clip}` only. NOT covered:
+//! `DecalMeshClass` and `MultiFixed...` (`create_decal`, `render`, `delete_decal`, `destroyed_decal_ids`, the run/range helpers): they need `MeshClass`, `MeshModelClass` and the DX8 buffers.
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/decalmsh.cpp
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/decalmsh.h
@@ -21,6 +24,7 @@ use super::coltest::ObBoxClass;
 use super::decalsys::DecalGeneratorClass;
 use super::handles::{TextureHandle, VertexMaterialHandle};
 use crate::formats::w3d::shader::ShaderClass;
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::plane::PlaneClass;
 use crate::ww::vector2::Vector2;
@@ -48,12 +52,12 @@ impl DecalPolyClass {
 
     /// `PlaneClass::In_Front(point)` (plane.h:183): `Dot_Product(point, N) > D`.
     fn in_front(plane: &PlaneClass, point: &Vector3) -> bool {
-        Vector3::dot_product(point, &plane.n) > plane.d
+        if plant(19131) { Vector3::dot_product(point, &plane.n) >= plane.d } else { Vector3::dot_product(point, &plane.n) > plane.d }
     }
 
     /// `Vector3::Lerp(a, b, alpha, &out)` (vector3.h): `a + (b - a) * alpha` per component.
     fn lerp(a: &Vector3, b: &Vector3, alpha: f32) -> Vector3 {
-        Vector3::new(a.x + (b.x - a.x) * alpha, a.y + (b.y - a.y) * alpha, a.z + (b.z - a.z) * alpha)
+        Vector3::new(a.x + (b.x - a.x) * alpha, a.y + (b.y - a.y) * alpha, a.z + (b.z - a.z) * (if plant(19136) { 1.0 - alpha } else { alpha }))
     }
 
     /// `DecalPolyClass::Clip` (decalmsh.cpp:81): Sutherland-Hodgeman against one plane into `dest`.
@@ -61,12 +65,12 @@ impl DecalPolyClass {
     pub fn clip(&self, plane: &PlaneClass, dest: &mut DecalPolyClass) {
         dest.reset();
         let count = self.verts.len();
-        if count <= 2 {
+        if if plant(19132) { count < 2 } else { count <= 2 } {
             return;
         }
         let mut i = 0usize;
         let mut iprev = count - 1;
-        let mut prev_point_in_front = Self::in_front(plane, &self.verts[iprev]);
+        let mut prev_point_in_front = Self::in_front(plane, &self.verts[if plant(19133) { 0 } else { iprev }]);
         for _j in 0..count {
             let cur_point_in_front = Self::in_front(plane, &self.verts[i]);
             if prev_point_in_front {
@@ -78,7 +82,7 @@ impl DecalPolyClass {
                     let (_, t) = plane.compute_intersection(&self.verts[iprev], &self.verts[i]);
                     let alpha = t.unwrap_or(0.0);
                     let int_point = Self::lerp(&self.verts[iprev], &self.verts[i], alpha);
-                    let int_normal = Self::lerp(&self.vert_norms[iprev], &self.vert_norms[i], alpha);
+                    let int_normal = if plant(19134) { Self::lerp(&self.vert_norms[i], &self.vert_norms[iprev], alpha) } else { Self::lerp(&self.vert_norms[iprev], &self.vert_norms[i], alpha) };
                     dest.add_vertex(&int_point, &int_normal);
                 }
             } else if cur_point_in_front {
@@ -87,7 +91,9 @@ impl DecalPolyClass {
                 let int_point = Self::lerp(&self.verts[iprev], &self.verts[i], alpha);
                 let int_normal = Self::lerp(&self.vert_norms[iprev], &self.vert_norms[i], alpha);
                 dest.add_vertex(&int_point, &int_normal);
-                dest.add_vertex(&self.verts[i], &self.vert_norms[i]);
+                if !plant(19135) {
+                    dest.add_vertex(&self.verts[i], &self.vert_norms[i]);
+                }
             }
             prev_point_in_front = cur_point_in_front;
             iprev = i;
