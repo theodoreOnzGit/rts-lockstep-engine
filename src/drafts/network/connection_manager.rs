@@ -397,6 +397,50 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
         self.connections[slot] = c;
     }
 
+    /// Test-only (tests/differential_draft_cmgr.rs): `m_packetRouterSlot` and `m_packetRouterFallback`.
+    #[doc(hidden)]
+    pub fn debug_set_router(&mut self, slot: u32, fallback: [u32; SLOTS]) {
+        self.packet_router_slot = slot;
+        self.packet_router_fallback = fallback;
+    }
+    /// Test-only: one entry of `m_packetRouterFallback`.
+    #[doc(hidden)]
+    pub fn debug_set_fallback(&mut self, i: usize, v: u32) {
+        self.packet_router_fallback[i] = v;
+    }
+    /// Test-only: `m_packetRouterSlot`.
+    #[doc(hidden)]
+    pub fn debug_set_router_slot(&mut self, v: u32) {
+        self.packet_router_slot = v;
+    }
+    /// Test-only: one entry of `m_fpsAverages`.
+    #[doc(hidden)]
+    pub fn debug_set_fps_average(&mut self, i: usize, v: i32) {
+        self.fps_averages[i] = v;
+    }
+    /// Test-only: one entry of `m_latencyAverages`.
+    #[doc(hidden)]
+    pub fn debug_set_latency_average(&mut self, i: usize, v: f32) {
+        self.latency_averages[i] = v;
+    }
+    /// Test-only: `m_smallestPacketArrivalCushion`.
+    #[doc(hidden)]
+    pub fn debug_set_smallest_cushion(&mut self, v: u32) {
+        self.smallest_packet_arrival_cushion = v;
+    }
+    /// Test-only: the connection of a slot (None for the local player's and empty slots).
+    #[doc(hidden)]
+    pub fn debug_connection_mut(&mut self, slot: usize) -> Option<&mut Connection> {
+        self.connections[slot].as_mut()
+    }
+    /// Test-only: whether a connection exists and whether it is quitting.
+    #[doc(hidden)]
+    pub fn debug_connection_state(&self, slot: usize) -> (bool, bool) {
+        match self.connections[slot].as_ref() {
+            Some(c) => (true, c.is_quitting()),
+            None => (false, false),
+        }
+    }
     /// `getLocalPlayerID`.
     pub fn get_local_player_id(&self) -> u32 {
         self.local_slot

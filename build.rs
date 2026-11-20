@@ -13447,6 +13447,156 @@ mod differential {
                 .file(ge.join("Source/Common/System/AsciiString.cpp"));
             b.compile("draft_network3_firewall");
         }
+        // the LANAPI wrapper: cuts of LANAPI.cpp and LANAPI.h (see the wrapper), one edit (the message struct is renamed LANMessagePod), on upstream's own UnicodeString.cpp and AsciiString.cpp
+        {
+            let nd = read_upstream(ge.join("Include/GameNetwork/NetworkDefs.h"));
+            let lh = read_upstream(ge.join("Include/GameNetwork/LANAPI.h"));
+            let lc = read_upstream(ge.join("Source/GameNetwork/LANAPI.cpp"));
+            let cuts: Vec<(&str, String)> = vec![
+                ("la_net.inc", piece(&nd, "NetworkDefs.h", "enum ConnectionNumbers", Some("/**\n * Command packet - contains frame #"))),
+                ("la_consts.inc", piece(&lh, "LANAPI.h", "//static const Int g_lanPlayerNameLength = 20;", Some("struct LANMessage;\n"))),
+                ("la_chat.inc", piece(&lh, "LANAPI.h", "\tenum ChatType\n\t{", Some("\n\t// Request functions generate network traffic\n\tvirtual void RequestLocations( void ) = 0;"))),
+                ("la_ret.inc", piece(&lh, "LANAPI.h", "\tenum ReturnType\n\t{", Some("\tUnicodeString getErrorStringFromReturnType( ReturnType ret );"))),
+                ("la_pending.inc", piece(&lh, "LANAPI.h", "\tenum PendingActionType\n\t{", Some("\tstatic const UnsignedInt s_resendDelta; // in ms"))),
+                ("la_msg.inc", {
+                    let m = piece(&lh, "LANAPI.h", "struct LANMessage\n{", Some("#pragma pack(pop)"));
+                    assert_eq!(m.matches("struct LANMessage\n{").count(), 1, "LANAPI.h: the struct line must occur once in its cut");
+                    m.replacen("struct LANMessage\n{", "struct LANMessagePod\n{", 1)
+                }),
+                ("la_head.inc", piece(&lc, "LANAPI.cpp", "static const UnsignedShort lobbyPort = 8086;", Some("AsciiString GetMessageTypeString(UnsignedInt type);\n\nconst UnsignedInt LANAPI::s_resendDelta"))),
+                ("la_head2.inc", piece(&lc, "LANAPI.cpp", "const UnsignedInt LANAPI::s_resendDelta = 10 * 1000;", Some("/*\nLANGame::LANGame( void )"))),
+                ("la_send.inc", piece(&lc, "LANAPI.cpp", "void LANAPI::sendMessage(LANMessage *msg, UnsignedInt ip /* = 0 */)", Some("void LANAPI::checkMOTD( void )"))),
+                ("la_requests.inc", piece(&lc, "LANAPI.cpp", "void LANAPI::RequestLocations( void )", Some("void LANAPI::RequestGameCreate( UnicodeString gameName, Bool isDirectConnect )"))),
+                ("la_misc.inc", piece(&lc, "LANAPI.cpp", "void LANAPI::RequestSetName( UnicodeString newName )", Some("Bool LANAPI::SetLocalIP( UnsignedInt localIP )"))),
+                ("la_ishost.inc", piece(&lc, "LANAPI.cpp", "Bool LANAPI::AmIHost( void )", None)),
+            ];
+            for (name, text) in &cuts {
+                std::fs::write(gen.join(name), format!("{head}{text}")).expect("write a LANAPI cut");
+            }
+            println!("cargo:rerun-if-changed=differential/wrap_draft_lanapi.cpp");
+            println!("cargo:rerun-if-changed=differential/shim_draft_n3");
+            let sys = ge.join("Source/Common/System");
+            let mut b = cc::Build::new();
+            base(&mut b);
+            b.flag("-fpermissive")
+                .flag("-fshort-wchar")
+                .define("UnicodeString", Some("N3LaUnicodeString"))
+                .define("AsciiString", Some("N3LaAsciiString"))
+                .define("TheDynamicMemoryAllocator", Some("N3LaAllocator"))
+                .define("LANAPI", Some("N3LaLANAPI"))
+                .define("LANPlayer", Some("N3LaLANPlayer"))
+                .define("LANGameInfo", Some("N3LaLANGameInfo"))
+                .define("LANMessage", Some("N3LaLANMessage"))
+                .define("LANMessagePod", Some("N3LaLANMessagePod"))
+                .define("LANAPIInterface", Some("N3LaLANAPIInterface"))
+                .define("GameSlot", Some("N3LaGameSlot"))
+                .define("GetMessageTypeString", Some("N3LaGetMessageTypeString"))
+                .include(dif.join("shim_draft_n3"))
+                .include(dif.join("shim_draft_text"))
+                .include(&gen)
+                .include(dif.join("shim_stl_unicode"))
+                .include(dif.join("shim_ascii"))
+                .include(dif.join("shim_stl"))
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(shim)
+                .include(dif)
+                .flag("-include")
+                .flag(dif.join("shim_draft_n3/n3_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_draft_lanapi.cpp"))
+                .file(sys.join("UnicodeString.cpp"))
+                .file(sys.join("AsciiString.cpp"));
+            b.compile("draft_network3_lanapi");
+        }
+        // the NAT wrapper: NAT.cpp from the pair table to the end, NAT.h's declarations, two for-scope edits, on the REAL FirewallHelper.h; classes renamed
+        {
+            let nd = read_upstream(ge.join("Include/GameNetwork/NetworkDefs.h"));
+            let nh = read_upstream(ge.join("Include/GameNetwork/NAT.h"));
+            let nc = read_upstream(ge.join("Source/GameNetwork/NAT.cpp"));
+            let net = format!(
+                "{}{}{}\n",
+                piece(&nd, "NetworkDefs.h", "enum ConnectionNumbers", Some("// UDP (8 bytes) + IP header")),
+                piece(&nd, "NetworkDefs.h", "#define MAX_MESSAGE_LEN 1024", Some("static const Int numCommandsPerCommandPacket")),
+                piece(&nd, "NetworkDefs.h", "static const Int NETWORK_BASE_PORT_NUMBER = 8088;", Some("\n\n// the singleton\nclass NetworkInterface;"))
+            );
+            let mut cpp = piece(&nc, "NAT.cpp", "/* static */ Int NAT::m_connectionPairs[MAX_SLOTS-1][MAX_SLOTS-1][MAX_SLOTS] =", None);
+            let edits: &[(&str, &str)] = &[
+                ("\tm_targetNodeNumber = -1;\n\n\tfor (Int i = 0; i < MAX_SLOTS; ++i) {\n", "\tm_targetNodeNumber = -1;\n\n\tInt i;\n\tfor (i = 0; i < MAX_SLOTS; ++i) {\n"),
+                ("\tm_numNodes = 0;\n\tfor (Int i = 0; i < MAX_SLOTS; ++i) {\n", "\tm_numNodes = 0;\n\tInt i;\n\tfor (i = 0; i < MAX_SLOTS; ++i) {\n"),
+                ("\tInt slot = 0;\n\tfor (Int i = 0; i < MAX_SLOTS; ++i) {\n", "\tInt slot = 0;\n\tInt i;\n\tfor (i = 0; i < MAX_SLOTS; ++i) {\n"),
+            ];
+            for (a, b) in edits {
+                assert_eq!(cpp.matches(a).count(), 1, "NAT.cpp: a for-scope edit must apply once: {a:?}");
+                cpp = cpp.replace(a, b);
+            }
+            std::fs::write(gen.join("nat_net.inc"), format!("{head}{net}")).expect("write nat_net.inc");
+            std::fs::write(gen.join("nat_h.inc"), format!("{head}{}", piece(&nh, "NAT.h", "enum NATStateType {", Some("#endif // #ifndef __NAT_H")))).expect("write nat_h.inc");
+            std::fs::write(gen.join("nat_cpp.inc"), format!("{head}{cpp}")).expect("write nat_cpp.inc");
+            println!("cargo:rerun-if-changed=differential/wrap_draft_nat.cpp");
+            let sys = ge.join("Source/Common/System");
+            let mut b = cc::Build::new();
+            base(&mut b);
+            b.flag("-fpermissive")
+                .flag("-fshort-wchar")
+                .define("UnicodeString", Some("N3NatUnicodeString"))
+                .define("AsciiString", Some("N3NatAsciiString"))
+                .define("TheDynamicMemoryAllocator", Some("N3NatAllocator"))
+                .define("NAT", Some("N3Nat"))
+                .define("TheNAT", Some("N3NatThe"))
+                .define("FirewallHelperClass", Some("N3NatFw"))
+                .define("TheFirewallHelper", Some("N3NatTheFw"))
+                .define("createFirewallHelper", Some("N3NatCreateFw"))
+                .define("Transport", Some("N3NatTransport"))
+                .define("GameSlot", Some("N3NatGameSlot"))
+                .define("PeerRequest", Some("N3NatPeerRequest"))
+                .include(dif.join("shim_draft_n3"))
+                .include(dif.join("shim_draft_text"))
+                .include(&gen)
+                .include(dif.join("shim_stl_unicode"))
+                .include(dif.join("shim_ascii"))
+                .include(dif.join("shim_stl"))
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(shim)
+                .include(dif)
+                .flag("-include")
+                .flag(dif.join("shim_draft_n3/n3_prelude.h").to_str().expect("UTF-8 path"))
+                .file(dif.join("wrap_draft_nat.cpp"))
+                .file(sys.join("UnicodeString.cpp"))
+                .file(sys.join("AsciiString.cpp"));
+            b.compile("draft_network3_nat");
+        }
+        // the ConnectionManager accessors wrapper: the verified network2 environment (wrap_draft_conn.cpp, #included) and cuts of ConnectionManager.cpp
+        {
+            let cm = read_upstream(ge.join("Source/GameNetwork/ConnectionManager.cpp"));
+            let cm_cuts: Vec<(&str, String)> = vec![
+                ("cm_a.inc", piece(&cm, "ConnectionManager.cpp", "UnsignedInt ConnectionManager::getPacketRouterFallbackSlot(Int packetRouterNumber) {", Some("/**\n * The local player is leaving. Tell the local player as well as the other players"))),
+                ("cm_b.inc", piece(&cm, "ConnectionManager.cpp", "Real ConnectionManager::getMaximumLatency() {", Some("/**\n * The commands for the given frame are all ready, time to send out our command count"))),
+                ("cm_c.inc", piece(&cm, "ConnectionManager.cpp", "Bool ConnectionManager::isPacketRouter( void )", Some("#if defined(_DEBUG) || defined(_INTERNAL)\nvoid ConnectionManager::debugPrintConnectionCommands() {"))),
+                ("cm_d.inc", piece(&cm, "ConnectionManager.cpp", "UnsignedInt ConnectionManager::getNextPacketRouterSlot(UnsignedInt playerID) {", Some("void ConnectionManager::requestFrameDataResend(Int playerID, UnsignedInt frame) {"))),
+                ("cm_e.inc", piece(&cm, "ConnectionManager.cpp", "UnsignedInt ConnectionManager::getPacketArrivalCushion() {", Some("void ConnectionManager::sendChat(UnicodeString text, Int playerMask, UnsignedInt executionFrame)"))),
+            ];
+            for (name, text) in &cm_cuts {
+                std::fs::write(gen.join(name), format!("{head}{text}")).expect("write a ConnectionManager cut");
+            }
+            println!("cargo:rerun-if-changed=differential/wrap_draft_cmgr.cpp");
+            let n2 = out_dir.join("network2_gen");
+            let mut b = cc::Build::new();
+            base(&mut b);
+            b.include(&gen)
+                .include(&n2)
+                .include(out_dir.join("netpkt_gen"))
+                .include(dif.join("shim_network2"))
+                .include(dif.join("shim_netlogic"))
+                .include(dif.join("shim_netpkt"))
+                .include(shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(_ww.join("WWMath"))
+                .include(_ww.join("WWLib"))
+                .file(dif.join("wrap_draft_cmgr.cpp"));
+            b.compile("draft_network3_cmgr");
+        }
         let _ = shim;
         println!("cargo:rerun-if-changed=upstream/GeneralsMD/Code/GameEngine/Source/GameNetwork");
         println!("cargo:rerun-if-changed=upstream/GeneralsMD/Code/GameEngine/Include/GameNetwork");
