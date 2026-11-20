@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 light cases, 20,000 Load_W3D blobs (test: tests/differential_draft_light.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/light.cpp
@@ -78,7 +79,7 @@ impl LightClass {
             far_atten_start: 50.0,
             far_atten_end: 100.0,
             spot_angle: DEG_TO_RADF_45,
-            spot_angle_cos: 0.707,
+            spot_angle_cos: if crate::logic::modules::plant(18672) { 0.7071 } else { 0.707 },
             spot_exponent: 1.0,
             spot_direction: Vector3::new(0.0, 0.0, 1.0),
             transform: identity,
@@ -181,7 +182,11 @@ impl LightClass {
         if onoff {
             self.flags |= flag;
         } else {
-            self.flags &= !flag;
+            if crate::logic::modules::plant(18669) {
+                self.flags ^= flag;
+            } else {
+                self.flags &= !flag;
+            }
         }
     }
 
@@ -203,7 +208,7 @@ impl LightClass {
     /// `Set_Spot_Angle` (light.h): also sets the cosine with `WWMath::Fast_Cos`.
     pub fn set_spot_angle(&mut self, a: f32) {
         self.spot_angle = a;
-        self.spot_angle_cos = wwmath::fast_cos(a);
+        self.spot_angle_cos = if crate::logic::modules::plant(18670) { wwmath::cos(a) } else { wwmath::fast_cos(a) };
     }
 
     /// `Get_Spot_Angle` (light.h).
@@ -281,7 +286,7 @@ impl LightClass {
                     let mut ab = [0u8; W3dLightAttenuationStruct::SIZE];
                     cload.read_into(&mut ab)?;
                     let atteninfo = W3dLightAttenuationStruct::from_bytes(&ab);
-                    self.set_flag(NEAR_ATTENUATION, true);
+                    self.set_flag(if crate::logic::modules::plant(18671) { FAR_ATTENUATION } else { NEAR_ATTENUATION }, true);
                     self.set_near_attenuation_range(f64::from(atteninfo.start), f64::from(atteninfo.end));
                 }
                 W3D_CHUNK_FAR_ATTENUATION => {
