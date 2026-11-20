@@ -14221,6 +14221,34 @@ mod differential {
             }
             std::fs::write(gen.join("w5_lightenv.inc"), format!("{}{}", head("lightenvironment.cpp"), body)).expect("write w5_lightenv.inc");
         }
+        // from the line holding `from` to the line before the first `to` after it (or the end of the file), as gen/<inc>
+        let span = |file: &str, from: &str, to: Option<&str>, inc: &str| {
+            let text = read_upstream(ww3d.join(file));
+            assert_eq!(text.matches(from).count(), 1, "{file}: a span's start must occur once: {from:?}");
+            let i = text.find(from).expect("from");
+            let i = text[..i].rfind('\n').map_or(0, |k| k + 1);
+            let j = match to {
+                Some(t) => {
+                    let j = i + text[i..].find(t).unwrap_or_else(|| panic!("{file}: a span's end must follow its start: {t:?}"));
+                    let ls = text[..j].rfind('\n').map_or(0, |k| k + 1);
+                    // an anchor inside a /*** banner: stop before the banner's first line
+                    let prev = text[..ls.saturating_sub(1)].rfind('\n').map_or(0, |k| k + 1);
+                    if text[prev..].starts_with("/**") { prev } else { ls }
+                }
+                None => text.len(),
+            };
+            std::fs::write(gen.join(inc), format!("{}{}", head(file), &text[i..j])).unwrap_or_else(|e| panic!("write {inc}: {e}"));
+        };
+        span("static_sort_list.h", "// Just defines the interface for the class as used by WW3D..", Some("#endif //STATIC_SORT_LIST_H"), "w5_ssl_h.inc");
+        span("static_sort_list.cpp", "DefaultStaticSortListClass::DefaultStaticSortListClass(void) :", None, "w5_ssl_cpp.inc");
+        span("shader.cpp", "// Texturing, zbuffer, primary gradient, no blending", Some("ShaderClass::Init_From_Material3 --"), "w5_presets.inc");
+        func("shader.cpp", "void ShaderClass::Enable_Fog (const char *source)", "w5_fog.inc");
+        span("w3dexclusionlist.cpp", "W3DExclusionListClass::W3DExclusionListClass(const DynamicVectorClass<StringClass> & names) :", None, "w5_excl.inc");
+        span("matpass.cpp", "bool MaterialPassClass::EnablePerPolygonCulling = true;", Some("MaterialPassClass::MaterialPassClass -- Constructor"), "w5_mp_static.inc");
+        func("matpass.cpp", "MaterialPassClass::MaterialPassClass(void) :", "w5_mp_ctor.inc");
+        func("matpass.cpp", "void MaterialPassClass::Set_Shader(ShaderClass shader)", "w5_mp_shader.inc");
+        span("rinfo.h", "const unsigned MAX_ADDITIONAL_MATERIAL_PASSES=32;", Some("#endif"), "w5_rinfo_h.inc");
+        span("rinfo.cpp", "RenderInfoClass::RenderInfoClass(CameraClass & cam) :", None, "w5_rinfo_cpp.inc");
         let mut cl = cc::Build::new();
         base(&mut cl);
         cl.compiler("clang++")
@@ -14241,7 +14269,7 @@ mod differential {
             .flag(wm_gen.join("vector_this.h").to_str().expect("UTF-8 path"))
             .flag("-include")
             .flag(wm_gen.join("simplevec_this.h").to_str().expect("UTF-8 path"));
-        for w in ["light"] {
+        for w in ["light", "misc"] {
             println!("cargo:rerun-if-changed=differential/wrap_draft_ww3d5_{w}.cpp");
             cl.file(dif.join(format!("wrap_draft_ww3d5_{w}.cpp")));
         }

@@ -53,7 +53,7 @@ impl MaterialPassClass {
             texture: [None; MAX_TEX_STAGES],
             shader: ShaderClass(0),
             material: None,
-            enable_on_translucent_meshes: true,
+            enable_on_translucent_meshes: !crate::logic::modules::plant(18686),
             cull_volume: None,
         }
     }
@@ -75,7 +75,9 @@ impl MaterialPassClass {
     /// `MaterialPassClass::Set_Shader` (matpass.cpp:67): stores the shader, then `Shader.Enable_Fog("MaterialPassClass")`.
     pub fn set_shader(&mut self, shader: ShaderClass) {
         self.shader = shader;
-        self.shader.enable_fog();
+        if !crate::logic::modules::plant(18685) {
+            self.shader.enable_fog();
+        }
     }
 
     /// `MaterialPassClass::Set_Material` (matpass.cpp:74).

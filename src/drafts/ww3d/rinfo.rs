@@ -72,7 +72,7 @@ impl RenderInfoClass {
     /// `RenderInfoClass::Push_Material_Pass` (rinfo.cpp:48): appends while
     /// `count < MAX_ADDITIONAL_MATERIAL_PASSES - 1` (so 31 fit, as upstream), else counts a rejection.
     pub fn push_material_pass(&mut self, matpass: Option<MaterialPassHandle>) {
-        if self.additional_material_pass_count < MAX_ADDITIONAL_MATERIAL_PASSES - 1 {
+        if self.additional_material_pass_count < MAX_ADDITIONAL_MATERIAL_PASSES - if crate::logic::modules::plant(18687) { 2 } else { 1 } {
             // matpass->Add_Ref() — not modelled
             self.additional_material_pass_array[self.additional_material_pass_count] = matpass;
             self.additional_material_pass_count += 1;
@@ -84,7 +84,7 @@ impl RenderInfoClass {
     /// `RenderInfoClass::Pop_Material_Pass` (rinfo.cpp:63): pops the last pass, unless passes were rejected, in
     /// which case it only forgets one rejection.
     pub fn pop_material_pass(&mut self) {
-        if self.rejected_material_passes == 0 {
+        if self.rejected_material_passes == 0 || (crate::logic::modules::plant(18688) && self.additional_material_pass_count > 0) {
             assert!(self.additional_material_pass_count > 0); // WWASSERT
             self.additional_material_pass_count -= 1;
             // mpass->Release_Ref() — not modelled
@@ -107,13 +107,15 @@ impl RenderInfoClass {
     pub fn push_override_flags(&mut self, flg: RinfoOverrideFlags) {
         assert!(self.override_flag_level < MAX_OVERRIDE_FLAG_LEVEL); // WWASSERT
         self.override_flag_level += 1;
-        self.override_flag[self.override_flag_level] = flg;
+        if !crate::logic::modules::plant(18689) {
+            self.override_flag[self.override_flag_level] = flg;
+        }
     }
 
     /// `RenderInfoClass::Pop_Override_Flags` (rinfo.cpp:94).
     pub fn pop_override_flags(&mut self) {
         assert!(self.override_flag_level > 0); // WWASSERT
-        self.override_flag_level -= 1;
+        self.override_flag_level -= if crate::logic::modules::plant(18690) { 0 } else { 1 };
     }
 
     /// `RenderInfoClass::Current_Override_Flags` (rinfo.cpp:100): upstream returns a reference.
