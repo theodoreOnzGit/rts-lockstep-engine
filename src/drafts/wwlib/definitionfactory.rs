@@ -1,4 +1,7 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): the registration, lookup and unregistration match the upstream C++ on 20,000 random programs
+//! (test: tests/differential_draft_deffactory.rs); not yet wired into the game. `Create` and `Is_Displayed` are not exercised (the test's
+//! factories return NULL). Corrected 2026-11-20 (#215): a factory is identified by an instance id (upstream: its address), not its class id;
+//! two factories of one class id made `Get_Next` loop forever and `Unregister` remove the wrong one.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWSaveLoad/definitionfactory.h
@@ -25,17 +28,27 @@ pub struct DefinitionFactoryClass {
     pub is_displayed: bool,
     /// `Create()`: `W3DNEW T`.
     pub create: fn() -> DefinitionHandle,
+    /// The factory's identity (upstream: its address): two factories may share a class id, and `Unregister_Factory` and `Get_Next`
+    /// act on the one object. Assigned by `new`; copies of a factory share it.
+    instance: u32,
 }
+
+static NEXT_INSTANCE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 
 impl DefinitionFactoryClass {
     /// `SimpleDefinitionFactoryClass(is_displayed)` for `T` made by `create`.
     pub fn new(class_id: u32, name: &'static str, is_displayed: bool, create: fn() -> DefinitionHandle) -> Self {
-        DefinitionFactoryClass { class_id, name, is_displayed, create }
+        DefinitionFactoryClass { class_id, name, is_displayed, create, instance: NEXT_INSTANCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed) }
     }
 
     /// `Create()`.
     pub fn create(&self) -> DefinitionHandle {
         (self.create)()
+    }
+
+    /// Whether `other` is the same factory object (a copy of it).
+    pub fn same_as(&self, other: &DefinitionFactoryClass) -> bool {
+        self.instance == other.instance
     }
 
     /// `Get_Name()`.
@@ -60,6 +73,6 @@ impl DefinitionFactoryClass {
 
     /// The destructor's `DefinitionFactoryMgrClass::Unregister_Factory(this)`.
     pub fn unregister(&self) {
-        DefinitionFactoryMgrClass::unregister_factory(self.class_id);
+        DefinitionFactoryMgrClass::unregister_factory(self);
     }
 }

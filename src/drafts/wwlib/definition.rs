@@ -53,7 +53,7 @@ pub const CLASSID_GLOBAL_SETTINGS: u32 = next_super_classid(14);
 /// below `DEF_CLASSID_START` divides toward zero).
 pub fn super_class_id_from_class_id(class_id: u32) -> u32 {
     let delta = (class_id as i32).wrapping_sub(DEF_CLASSID_START);
-    let num_ranges = delta / DEF_CLASSID_RANGE;
+    let num_ranges = if crate::logic::modules::plant(17408) { ((delta as u32) / DEF_CLASSID_RANGE as u32) as i32 } else { delta / DEF_CLASSID_RANGE };
     (DEF_CLASSID_START + num_ranges * DEF_CLASSID_RANGE) as u32
 }
 
