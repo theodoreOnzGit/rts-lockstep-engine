@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 programs (test: tests/differential_draft_ipenum.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/IPEnumeration.h
@@ -9,6 +10,7 @@
 //! none). `EnumeratedIP`'s `m_next` chain is the `Vec` order (ascending by address).
 
 use crate::common::ascii_string::AsciiString;
+use crate::logic::modules::plant;
 
 /// `gethostname` and `gethostbyname`.
 pub trait LocalAddressSource {
@@ -68,7 +70,7 @@ impl IPEnumeration {
     /// list is looked up again next time). Each address enters the list in ascending order: before the head if
     /// smaller than it, else after the head and after every following smaller address.
     pub fn get_addresses<S: LocalAddressSource>(&mut self, src: &mut S) -> &[EnumeratedIP] {
-        if !self.ip_list.is_empty() {
+        if !self.ip_list.is_empty() && !plant(20294) {
             return &self.ip_list;
         }
         let hostname = match src.host_name() {
@@ -81,22 +83,22 @@ impl IPEnumeration {
         };
         for entry in addrs {
             let mut new_ip = EnumeratedIP::new();
-            let s = format!("{}.{}.{}.{}", entry[0], entry[1], entry[2], entry[3]);
+            let s = if plant(20295) { format!("{}.{}.{}.{}", entry[3], entry[2], entry[1], entry[0]) } else { format!("{}.{}.{}.{}", entry[0], entry[1], entry[2], entry[3]) };
             let mut str_ = AsciiString::default();
             let _ = str_.set(s.as_bytes());
-            let ip = u32::from_be_bytes(entry); // ntohl of the in-memory bytes
+            let ip = if plant(20291) { u32::from_le_bytes(entry) } else { u32::from_be_bytes(entry) }; // ntohl of the in-memory bytes
             new_ip.set_ip_string(str_);
             new_ip.set_ip(ip);
             if self.ip_list.is_empty() {
                 self.ip_list.push(new_ip);
-            } else if new_ip.get_ip() < self.ip_list[0].get_ip() {
+            } else if (if plant(20292) { new_ip.get_ip() > self.ip_list[0].get_ip() } else { new_ip.get_ip() < self.ip_list[0].get_ip() }) {
                 self.ip_list.insert(0, new_ip);
             } else {
                 let mut p = 0usize;
                 while p + 1 < self.ip_list.len() && self.ip_list[p + 1].get_ip() < new_ip.get_ip() {
                     p += 1;
                 }
-                self.ip_list.insert(p + 1, new_ip);
+                self.ip_list.insert(if plant(20293) { p } else { p + 1 }, new_ip);
             }
         }
         &self.ip_list

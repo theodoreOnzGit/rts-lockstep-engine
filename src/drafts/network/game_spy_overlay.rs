@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 programs (test: tests/differential_draft_overlay.rs; a callback that re-enters the
+//! tracker is not representable by the draft's host, so upstream's clear-after-call quirk for such callbacks is untested);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/GameSpyOverlay.h
@@ -23,6 +25,8 @@
 //! * `GameSpyOpenOverlay(GSOVERLAY_BUDDY)` does nothing but explain when the buddy thread is not connected.
 
 /// An opaque `GameWinMsgBoxFunc`.
+use crate::logic::modules::plant;
+
 pub type CallbackId = u32;
 
 /// `enum GSOverlayType`.
@@ -149,9 +153,23 @@ impl GameSpyOverlays {
         GameSpyOverlays::default()
     }
 
+    /// The state as words, in the order of the differential test's dump (#215, tests/differential_draft_overlay.rs): whether a message box is up, the OK
+    /// and Cancel callbacks (`0xFFFFFFFE` for none), the re-open flag and the nine layouts.
+    pub fn state_words(&self) -> Vec<u32> {
+        let mut w = vec![
+            0xD0D0D0D0,
+            self.message_box_window as u32,
+            self.ok_func.unwrap_or(0xFFFF_FFFE),
+            self.cancel_func.unwrap_or(0xFFFF_FFFE),
+            self.re_open_player_info_flag as u32,
+        ];
+        w.extend(self.overlay_layouts.iter().map(|&b| b as u32));
+        w
+    }
+
     /// `messageBoxOK`: the box is gone; calls `okFunc` if set, then clears it (see the module doc).
     pub fn message_box_ok<H: OverlayHost>(&mut self, host: &mut H) {
-        self.message_box_window = false;
+        self.message_box_window = plant(20330) && self.message_box_window;
         if let Some(f) = self.ok_func {
             self.dispatch(host, f);
             self.ok_func = None;
@@ -182,7 +200,9 @@ impl GameSpyOverlays {
             self.message_box_window = false;
         }
         self.ok_func = None;
-        self.cancel_func = None;
+        if !plant(20321) {
+            self.cancel_func = None;
+        }
     }
 
     /// `GSMessageBoxOk(title, message, okFunc)`.
@@ -218,13 +238,20 @@ impl GameSpyOverlays {
     ) {
         self.clear_gs_message_boxes(host);
         self.message_box_window = host.create_message_box(MessageBoxKind::YesNo, title, message);
-        self.ok_func = new_yes_func;
-        self.cancel_func = new_no_func;
+        if plant(20322) {
+            self.ok_func = new_no_func;
+            self.cancel_func = new_yes_func;
+        } else {
+            self.ok_func = new_yes_func;
+            self.cancel_func = new_no_func;
+        }
     }
 
     /// `RaiseGSMessageBox`: raises the overlays, then the message box if there is one.
     pub fn raise_gs_message_box<H: OverlayHost>(&mut self, host: &mut H) {
-        self.raise_overlays(host);
+        if !plant(20326) {
+            self.raise_overlays(host);
+        }
         if !self.message_box_window {
             return;
         }
@@ -239,7 +266,7 @@ impl GameSpyOverlays {
         if overlay == GsOverlayType::Buddy {
             if !host.buddy_is_connected() {
                 // not connected - is it because we were disconnected?
-                if host.buddy_local_profile_id() != 0 {
+                if (host.buddy_local_profile_id() != 0) != plant(20328) {
                     // used to be connected
                     let t = host.game_text_fetch("GUI:GPErrorTitle");
                     let m = host.game_text_fetch("GUI:GPDisconnected");
@@ -254,7 +281,7 @@ impl GameSpyOverlays {
             }
             host.play_communicator_open_sound();
         }
-        if self.overlay_layouts[i] {
+        if self.overlay_layouts[i] && !plant(20323) {
             host.layout_show(i);
         } else {
             self.overlay_layouts[i] = true;
@@ -266,7 +293,7 @@ impl GameSpyOverlays {
     /// layout is shut down, destroyed and forgotten.
     pub fn game_spy_close_overlay<H: OverlayHost>(&mut self, host: &mut H, overlay: GsOverlayType) {
         let i = overlay as usize;
-        if overlay == GsOverlayType::Options && self.overlay_layouts[i] {
+        if overlay == GsOverlayType::Options && (self.overlay_layouts[i] || plant(20324)) {
             host.signal_options_closed();
         }
         if self.overlay_layouts[i] {
@@ -282,7 +309,7 @@ impl GameSpyOverlays {
 
     /// `GameSpyToggleOverlay`.
     pub fn game_spy_toggle_overlay<H: OverlayHost>(&mut self, host: &mut H, overlay: GsOverlayType) {
-        if self.game_spy_is_overlay_open(overlay) {
+        if self.game_spy_is_overlay_open(overlay) != plant(20325) {
             self.game_spy_close_overlay(host, overlay);
         } else {
             self.game_spy_open_overlay(host, overlay);
@@ -304,7 +331,9 @@ impl GameSpyOverlays {
             self.game_spy_close_overlay(host, *o);
         }
         // if we're shutting down the rest, chances are we don't want this popping up.
-        host.delete_notification_box();
+        if !plant(20329) {
+            host.delete_notification_box();
+        }
     }
 
     /// `GameSpyUpdateOverlays`: runs each open overlay's update.
@@ -327,6 +356,6 @@ impl GameSpyOverlays {
             return;
         }
         self.game_spy_open_overlay(host, GsOverlayType::PlayerInfo);
-        self.re_open_player_info_flag = false;
+        self.re_open_player_info_flag = plant(20327);
     }
 }
