@@ -14723,6 +14723,11 @@ mod differential {
         // (inc name, upstream file under Code/, start anchor, end anchor)
         let cuts: &[(&str, &str, &str, Option<&str>)] = &[
             ("sel_xlat.inc", "GameEngine/Source/GameClient/MessageStream/SelectionXlat.cpp", "Bool SelectionTranslator::selectFriends", Some("GameMessageDisposition SelectionTranslator::translateGameMessage")),
+            ("display_views.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::deleteViews( void )", Some("/// Redraw the entire display")),
+            ("display_stop.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::stopMovie( void )", Some("//============================================================================\n// Display::update\n")),
+            ("display_logo.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::playLogoMovie(", Some("//============================================================================\n// Display::playMovie\n")),
+            ("display_dbg.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::setDebugDisplayCallback", None),
+            ("view_prepend.inc", "GameEngine/Source/GameClient/View.cpp", "View *View::prependViewToList( View *list )", Some("void View::zoomIn( void )")),
         ];
         for (name, path, from, to) in cuts {
             println!("cargo:rerun-if-changed={}", up.join(path).display());
@@ -14732,6 +14737,7 @@ mod differential {
         }
         for (wrapper, lib) in [
             ("wrap_draft_selection_xlat.cpp", "draft_lc3_selection_xlat"),
+            ("wrap_draft_display.cpp", "draft_lc3_display"),
         ] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();
