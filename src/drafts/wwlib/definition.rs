@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 10,000 random programs of WWSaveLoad operations (test: tests/differential_draft_saveload.rs);
+//! not yet wired into the game. Covered: the `Generic` kind (ids, names, save-enabled, `Save`/`Load`, `Set_ID` re-linking, `SuperClassID_From_ClassID`). NOT covered: the
+//! `Twiddler` kind (twiddler.rs), `Create`, `Is_Valid_Config`, `Get_User_Data`/`Set_User_Data` (trivial accessors).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWSaveLoad/definition.h
@@ -19,6 +21,7 @@ use super::definitionmgr::DefinitionMgrClass;
 use super::persistfactory::{PersistObject, PostLoadableClass};
 use super::saveload_ids::CHUNKID_TWIDDLER;
 use super::twiddler::TwiddlerClass;
+use crate::logic::modules::plant;
 use crate::ww::chunkio::ChunkLoad;
 use std::sync::{Arc, RwLock};
 
@@ -122,6 +125,11 @@ impl DefinitionClass {
             DefinitionKind::Generic { factory_chunk_id, .. } => *factory_chunk_id,
             DefinitionKind::Twiddler(_) => CHUNKID_TWIDDLER,
         }
+    }
+
+    /// `m_DefinitionMgrLink`: the index in the manager's sorted array, -1 when not registered.
+    pub fn mgr_link(&self) -> i32 {
+        self.mgr_link
     }
 
     /// `Get_ID()`.
@@ -243,7 +251,11 @@ impl DefinitionClass {
     /// `Save_Variables(csave)`: the id and the name (with its NUL) as micro chunks.
     fn save_variables(&self, csave: &mut ChunkSaveClass) -> bool {
         csave.write_micro_chunk(VARID_INSTANCEID, &self.m_id.to_le_bytes());
-        csave.write_micro_chunk_string(VARID_NAME, &self.m_name);
+        if plant(18285) {
+            csave.write_micro_chunk(VARID_NAME, self.m_name.as_bytes());
+        } else {
+            csave.write_micro_chunk_string(VARID_NAME, &self.m_name);
+        }
         true
     }
 
@@ -261,7 +273,9 @@ impl DefinitionClass {
                     let mut buf = vec![0u8; len];
                     let _ = cload.read(&mut buf, len as u32);
                     if let Some(nul) = buf.iter().position(|&c| c == 0) {
-                        buf.truncate(nul);
+                        if !plant(18286) {
+                            buf.truncate(nul);
+                        }
                     }
                     self.m_name = String::from_utf8_lossy(&buf).into_owned();
                 }
@@ -279,7 +293,7 @@ pub fn definition_set_id(definition: &DefinitionHandle, id: u32) {
     let registered = {
         let mut d = definition.write().unwrap();
         d.m_id = id;
-        d.mgr_link != -1
+        d.mgr_link != -1 || plant(18288)
     };
     if registered {
         DefinitionMgrClass::unregister_definition(definition);

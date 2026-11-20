@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 10,000 random programs of WWSaveLoad operations (test: tests/differential_draft_saveload.rs);
+//! not yet wired into the game. Not covered: `PersistObject::on_post_load` (the draft's has no body to observe). Corrected 2026-11-20 (#215): a persist factory has an
+//! instance id (upstream: its address) and `Unregister_Persist_Factory` removes that factory, not the first with its chunk id.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWSaveLoad/persist.h
@@ -24,7 +26,9 @@
 use super::chunk_save::ChunkSaveClass;
 use super::definition::DefinitionHandle;
 use super::saveload::SaveLoadSystemClass;
+use crate::logic::modules::plant;
 use crate::ww::chunkio::ChunkLoad;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// `SIMPLEFACTORY_CHUNKID_OBJPOINTER = 0x00100100`, `SIMPLEFACTORY_CHUNKID_OBJDATA` (the next value).
 pub const SIMPLEFACTORY_CHUNKID_OBJPOINTER: u32 = 0x00100100;
@@ -101,6 +105,9 @@ impl PostLoadableClass {
 
     /// `Set_Post_Load_Registered(onoff)`.
     pub fn set_post_load_registered(&mut self, onoff: bool) {
+        if plant(18284) && !onoff {
+            return;
+        }
         self.is_post_load_registered = onoff;
     }
 }
@@ -114,12 +121,17 @@ pub struct PersistFactoryClass {
     pub load: fn(&mut ChunkLoad<'_>) -> Option<PersistObject>,
     /// `Save(csave, obj)`.
     pub save: fn(&mut ChunkSaveClass, &PersistObject),
+    /// Which factory this is (upstream: its address). Two factories may share a chunk id; `Unregister_Persist_Factory` removes the one
+    /// asked for, not the first with that chunk id. Copies of one factory keep its instance id.
+    instance: u32,
 }
+
+static NEXT_FACTORY_INSTANCE: AtomicU32 = AtomicU32::new(1);
 
 impl PersistFactoryClass {
     /// `PersistFactoryClass()`: "SaveLoadSystemClass::Register_Persist_Factory(this)" is the explicit [`Self::register`].
     pub fn new(chunk_id: u32, load: fn(&mut ChunkLoad<'_>) -> Option<PersistObject>, save: fn(&mut ChunkSaveClass, &PersistObject)) -> Self {
-        PersistFactoryClass { chunk_id, load, save }
+        PersistFactoryClass { chunk_id, load, save, instance: NEXT_FACTORY_INSTANCE.fetch_add(1, Ordering::Relaxed) }
     }
 
     /// `Chunk_ID()`.
@@ -134,20 +146,33 @@ impl PersistFactoryClass {
 
     /// The destructor's `SaveLoadSystemClass::Unregister_Persist_Factory(this)`.
     pub fn unregister(&self) {
-        SaveLoadSystemClass::unregister_persist_factory(self.chunk_id);
+        SaveLoadSystemClass::unregister_persist_factory(self.instance, self.chunk_id);
+    }
+
+    /// Which factory this is (the address upstream compares).
+    pub fn instance(&self) -> u32 {
+        self.instance
     }
 }
 
 /// `SimplePersistFactoryClass<T,CHUNKID>::Save(csave, obj)`: "objptr" chunk (the object's id as a `uint32`) then the
 /// "objdata" chunk written by the object's own `Save`.
 pub fn simple_persist_factory_save(csave: &mut ChunkSaveClass, obj_id: u32, save_obj: impl FnOnce(&mut ChunkSaveClass) -> bool) {
+    let mut save_obj = Some(save_obj);
+    if plant(18281) {
+        csave.begin_chunk(SIMPLEFACTORY_CHUNKID_OBJDATA);
+        (save_obj.take().unwrap())(csave);
+        csave.end_chunk();
+    }
     csave.begin_chunk(SIMPLEFACTORY_CHUNKID_OBJPOINTER);
-    csave.write(&obj_id.to_le_bytes());
+    csave.write(&if plant(18282) { obj_id.to_be_bytes() } else { obj_id.to_le_bytes() });
     csave.end_chunk();
 
-    csave.begin_chunk(SIMPLEFACTORY_CHUNKID_OBJDATA);
-    save_obj(csave);
-    csave.end_chunk();
+    if let Some(save_obj) = save_obj {
+        csave.begin_chunk(SIMPLEFACTORY_CHUNKID_OBJDATA);
+        save_obj(csave);
+        csave.end_chunk();
+    }
 }
 
 /// `SimplePersistFactoryClass<T,CHUNKID>::Load(cload)`: the old id, then `new_obj->Load(cload)` in the data chunk;
@@ -160,7 +185,7 @@ pub fn simple_persist_factory_load<T>(cload: &mut ChunkLoad<'_>, make: impl FnOn
     assert!(cload.cur_chunk_id().unwrap_or(0) == SIMPLEFACTORY_CHUNKID_OBJPOINTER);
     let mut b = [0u8; 4];
     let _ = cload.read_into(&mut b);
-    let old_obj = u32::from_le_bytes(b);
+    let old_obj = if plant(18283) { u32::from_le_bytes(b).wrapping_add(1) } else { u32::from_le_bytes(b) };
     let _ = cload.close_chunk();
 
     let _ = cload.open_chunk();

@@ -1,4 +1,7 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 10,000 random programs of WWSaveLoad operations (test: tests/differential_draft_saveload.rs);
+//! not yet wired into the game. Not covered: `Twiddle()` (the reference's stand-in returns the definition itself, as the draft does for a non-twiddler), `definition_mgr_set_id`, `same_definition`.
+//! Equal ids after a `Load` that appends to a non-empty table are not compared (`qsort`'s order of ties is the C library's). The reference walks `Count()` entries in
+//! `Find_Typed_Definition`'s cache loop; upstream walks `Length()` (the capacity) and reads uninitialised slots (an upstream defect, reported on #211).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWSaveLoad/definitionmgr.h
@@ -19,6 +22,7 @@ use super::definition::{definition_set_id, super_class_id_from_class_id, Definit
 use super::persistfactory::PersistObject;
 use super::saveload::SaveLoadSystemClass;
 use super::saveload_ids::CHUNKID_SAVELOAD_DEFMGR;
+use crate::logic::modules::plant;
 use crate::ww::chunkio::ChunkLoad;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -147,7 +151,7 @@ impl DefinitionMgrClass {
     pub fn find_named_definition(name: &str, twiddle: bool, random_int: &mut dyn FnMut(i32, i32) -> i32) -> Option<DefinitionHandle> {
         let definition = {
             let st = STATE.lock().unwrap();
-            st.sorted.iter().find(|d| d.read().unwrap().get_name().eq_ignore_ascii_case(name)).cloned()
+            st.sorted.iter().find(|d| if plant(18291) { d.read().unwrap().get_name() == name } else { d.read().unwrap().get_name().eq_ignore_ascii_case(name) }).cloned()
         };
 
         if twiddle {
@@ -170,13 +174,13 @@ impl DefinitionMgrClass {
             // Sanity check
             st.hash.as_ref()?;
 
-            let lower_case_name = name.to_ascii_lowercase();
+            let lower_case_name = if plant(18293) { name.to_string() } else { name.to_ascii_lowercase() };
 
             // Check the hash table first.
             if let Some(defs) = st.hash.as_ref().unwrap().get(&lower_case_name) {
                 for curr_def in defs.iter() {
                     let curr_class_id = def_class_id(curr_def);
-                    if curr_class_id == class_id || super_class_id_from_class_id(curr_class_id) == class_id || (twiddle && curr_class_id == CLASSID_TWIDDLERS) {
+                    if curr_class_id == class_id || (super_class_id_from_class_id(curr_class_id) == class_id && !plant(18292)) || (twiddle && curr_class_id == CLASSID_TWIDDLERS) {
                         definition = Some(curr_def.clone());
                         break;
                     }
@@ -191,7 +195,7 @@ impl DefinitionMgrClass {
                     .find(|curr_def| {
                         // Is this the correct class of definition?
                         let curr_class_id = def_class_id(curr_def);
-                        (curr_class_id == class_id || super_class_id_from_class_id(curr_class_id) == class_id || (twiddle && curr_class_id == CLASSID_TWIDDLERS))
+                        (curr_class_id == class_id || (super_class_id_from_class_id(curr_class_id) == class_id && !plant(18292)) || (twiddle && curr_class_id == CLASSID_TWIDDLERS))
                             && curr_def.read().unwrap().get_name().eq_ignore_ascii_case(name) // Is this the definition we were looking for?
                     })
                     .cloned();
@@ -235,6 +239,7 @@ impl DefinitionMgrClass {
     }
 
     fn matches(curr_def: &DefinitionHandle, id: u32, type_: IdType) -> bool {
+        let type_ = if plant(18299) { if type_ == IdType::Class { IdType::SuperClass } else { IdType::Class } } else { type_ };
         let class_id = def_class_id(curr_def);
         (type_ == IdType::SuperClass && super_class_id_from_class_id(class_id) == id) || (type_ == IdType::Class && class_id == id)
     }
@@ -273,7 +278,9 @@ impl DefinitionMgrClass {
     /// `Free_Definitions()`: clears the hash and releases every definition.
     pub fn free_definitions() {
         let mut st = STATE.lock().unwrap();
-        st.hash = None;
+        if !plant(18300) {
+            st.hash = None;
+        }
         st.sorted.clear();
     }
 
@@ -311,7 +318,7 @@ impl DefinitionMgrClass {
 
                 // Check to make sure we aren't trying to register a definition that has the same ID as one already in
                 // the list.
-                if curr_id == id {
+                if curr_id == id && !plant(18294) {
                     insert_index = index;
                     keep_going = false;
                     is_valid = false;
@@ -354,12 +361,17 @@ impl DefinitionMgrClass {
         let link = definition.read().unwrap().mgr_link;
         if link != -1 {
             let mut st = STATE.lock().unwrap();
+            if plant(18295) && link as usize >= st.sorted.len() {
+                return;
+            }
             // Re-index the definitions that come after this definition in the list
             st.sorted.remove(link as usize);
             for i in link as usize..st.sorted.len() {
                 st.sorted[i].write().unwrap().mgr_link = i as i32;
             }
-            definition.write().unwrap().mgr_link = -1;
+            if !plant(18295) {
+                definition.write().unwrap().mgr_link = -1;
+            }
         }
     }
 
@@ -402,7 +414,7 @@ impl DefinitionMgrClass {
                 let d = definition.read().unwrap();
                 (d.is_save_enabled(), d.get_factory_chunk_id())
             };
-            if enabled {
+            if enabled || plant(18297) {
                 // Save this definition object
                 csave.begin_chunk(chunk_id);
                 if let Some(factory) = SaveLoadSystemClass::find_persist_factory(chunk_id) {
@@ -439,7 +451,7 @@ impl DefinitionMgrClass {
 
         // Sort the definitions (by id) and assign a mgr link to each
         let mut st = STATE.lock().unwrap();
-        if !st.sorted.is_empty() {
+        if !st.sorted.is_empty() && !plant(18298) {
             st.sorted.sort_unstable_by(|a, b| def_id(a).cmp(&def_id(b)));
         }
         for i in 0..st.sorted.len() {
@@ -476,7 +488,7 @@ impl DefinitionMgrClass {
                 let mut is_ok = false;
                 if index < count - 1 {
                     // Check to see if the next definition in our array leaves a hole in the ID range.
-                    if def_id(&st.sorted[index + 1]) > curr_id + 1 {
+                    if if plant(18296) { def_id(&st.sorted[index + 1]) >= curr_id + 1 } else { def_id(&st.sorted[index + 1]) > curr_id + 1 } {
                         is_ok = true;
                     }
                 } else {
