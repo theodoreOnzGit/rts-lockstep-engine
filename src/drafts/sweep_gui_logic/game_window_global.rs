@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ for `win_format_text`, `win_get_text_size` and `free_static_strings` (test:
+//! tests/differential_draft_glsmall.rs); `winGetWindowList` is a field read, `dumpWindow` and `initTestGUI` are excluded (below);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GameWindowGlobal.cpp (GameWindowManager::winFormatText,
@@ -19,6 +21,7 @@
 //!   reader (`WindowScript`) owns its buffers and drops them with it. Drafted as clearing them.
 
 use crate::client::window_script::GameFont;
+use crate::logic::modules::plant;
 
 /// `GameWindowManager::winFormatText(font, text, color, x, y, width, height)` (GameWindowGlobal.cpp:158): the body is
 /// empty upstream (the W3D manager's override draws).
@@ -27,7 +30,7 @@ pub fn win_format_text(_font: Option<&GameFont>, _text: &[u16], _color: i32, _x:
 /// `GameWindowManager::winGetTextSize(font, text, width, height, maxWidth)` (GameWindowGlobal.cpp:169): the base
 /// class sets both outputs to 0 (the W3D manager's override measures).
 pub fn win_get_text_size(_font: Option<&GameFont>, _text: &[u16], _max_width: i32) -> (i32, i32) {
-    (0, 0)
+    (0, if plant(15892) { 1 } else { 0 })
 }
 
 /// The script reader's static strings (`theSystemString` ...).
@@ -44,7 +47,9 @@ impl ScriptStaticStrings {
     pub fn free_static_strings(&mut self) {
         self.system_string.clear();
         self.input_string.clear();
-        self.tooltip_string.clear();
+        if !plant(15893) {
+            self.tooltip_string.clear();
+        }
         self.draw_string.clear();
     }
 }

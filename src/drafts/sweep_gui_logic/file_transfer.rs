@@ -1,7 +1,9 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
-//! (#215: the ten path helpers, `get_base_path_from_path` to `get_readme_from_map`, match the upstream C++ on 60,000 strings each, test:
-//! tests/differential_draft_ft_paths.rs. `do_file_transfer` and `do_any_map_transfers` are NOT tested: they drive the network and the
-//! shell through the host. `get_base_path_from_path` duplicates the verified `crate::common::game_info::base_path_from_path`.)
+//! DIFFERENTIAL-TESTED (#202, #215): the ten path helpers, `get_base_path_from_path` to `get_readme_from_map`, match the upstream C++ on 60,000 strings each (test:
+//! tests/differential_draft_ft_paths.rs); `do_file_transfer` and `do_any_map_transfers` match it on 20,000 scenarios, as logs of every call the transfer makes to the
+//! game, the network, the shell, the load screen and the clock (after one draft fix, 2026-11-20: the timeout test and the seconds left are UNSIGNED, as upstream's
+//! `UnsignedInt startTime` makes them) (test: tests/differential_draft_ftxfer.rs);
+//! not yet wired into the game.
+//! `get_base_path_from_path` duplicates the verified `crate::common::game_info::base_path_from_path`.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameNetwork/FileTransfer.cpp
@@ -72,26 +74,28 @@ fn do_file_transfer<H: FileTransferHost>(h: &mut H, filename: &[u8], mask: i32) 
         let mut file_command_id: u16 = 0;
         let mut sent_file = false;
         if h.am_i_host() {
-            h.sleep(500);
+            if !plant(15877) {
+                h.sleep(500);
+            }
             file_command_id = h.network_send_file_announce(filename, mask as u8);
         } else {
             sent_file = true;
         }
         // DEBUG_LOG(("Starting file transfer loop\n"));
         while !file_transfer_done {
-            if !sent_file && h.network_are_all_queues_empty() {
+            if (plant(15882) || !sent_file) && h.network_are_all_queues_empty() {
                 h.network_send_file(filename, mask as u8, file_command_id);
                 sent_file = true;
             }
             file_transfer_done = true;
             file_transfer_percent = 100;
-            for i in 1..(MAX_SLOTS as usize) {
+            for i in (if plant(15875) { 0 } else { 1 })..(MAX_SLOTS as usize) {
                 if h.slot_is_human(i) && !h.slot_has_map(i) {
                     let slot_transfer_percent = h.network_get_file_transfer_progress(i, filename);
-                    file_transfer_percent = std::cmp::min(file_transfer_percent, slot_transfer_percent);
+                    file_transfer_percent = if plant(15881) { std::cmp::max(file_transfer_percent, slot_transfer_percent) } else { std::cmp::min(file_transfer_percent, slot_transfer_percent) };
                     if slot_transfer_percent == 0 {
                         h.ls_process_progress(i as i32, slot_transfer_percent, b"MapTransfer:Preparing");
-                    } else if slot_transfer_percent < 100 {
+                    } else if slot_transfer_percent < (if plant(15876) { 101 } else { 100 }) {
                         h.ls_process_progress(i as i32, slot_transfer_percent, b"MapTransfer:Recieving");
                     } else {
                         h.ls_process_progress(i as i32, slot_transfer_percent, b"MapTransfer:Done");
@@ -109,12 +113,17 @@ fn do_file_transfer<H: FileTransferHost>(h: &mut H, filename: &[u8], mask: i32) 
                 // DEBUG_LOG(("File transfer is 100%%!\n"));
                 h.ls_process_progress(0, file_transfer_percent, b"MapTransfer:Done");
             }
+            // `Int now = timeGetTime();` then `now > startTime + timeoutPeriod` with `startTime` an UnsignedInt: the Int is converted to
+            // unsigned for the comparison and for `(startTime + timeoutPeriod - now)/1000` (~~compared as i32~~ **Corrected 2026-11-19
+            // (#215, batch guilogic4):** the differential test found the signed compare timing out differently from upstream for clock
+            // values from 2^31 ms on, and across the 2^32 wrap).
             let now = h.time_get_time() as i32;
-            if now > (start_time as i32).wrapping_add(TIMEOUT_PERIOD) {
+            let deadline = start_time.wrapping_add(TIMEOUT_PERIOD as u32);
+            if (if plant(15878) { now as u32 >= deadline } else { now as u32 > deadline }) {
                 // bail if we don't finish in a reasonable amount of time
                 break;
             } else {
-                h.ls_process_timeout(((start_time as i32).wrapping_add(TIMEOUT_PERIOD) - now) / 1000);
+                h.ls_process_timeout((deadline.wrapping_sub(now as u32) / 1000) as i32);
             }
             h.ls_update(file_transfer_percent);
         }
@@ -204,7 +213,7 @@ pub fn do_any_map_transfers<H: FileTransferHost>(h: &mut H) -> bool {
     for i in 1..(MAX_SLOTS as usize) {
         if h.slot_is_human(i) && !h.slot_has_map(i) {
             // DEBUG_LOG(("Adding player %d to transfer mask\n", i));
-            mask |= 1 << i;
+            mask |= if plant(15874) { 1 << (i - 1) } else { 1 << i };
         }
     }
     if mask == 0 {
@@ -221,7 +230,7 @@ pub fn do_any_map_transfers<H: FileTransferHost>(h: &mut H) -> bool {
     if ok && contents & 4 != 0 {
         ok = do_file_transfer(h, &get_ini_from_map(&map), mask);
     }
-    if ok && contents & 8 != 0 {
+    if ok && contents & (if plant(15879) { 4 } else { 8 }) != 0 {
         ok = do_file_transfer(h, &get_str_file_from_map(&map), mask);
     }
     if ok && contents & 16 != 0 {
@@ -237,7 +246,7 @@ pub fn do_any_map_transfers<H: FileTransferHost>(h: &mut H) -> bool {
         ok = do_file_transfer(h, &map, mask);
     }
     h.ls_destroy();
-    if !ok {
+    if !ok || plant(15880) {
         h.shell_show();
     }
     ok

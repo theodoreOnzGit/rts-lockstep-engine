@@ -1,4 +1,13 @@
 //! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! (#215, group guilogic4, tests/differential_draft_cbar.rs: `populate_purchase_science`, `update_context_purchase_science`, `hide_communicator`,
+//! `set_control_bar_scheme_by_name`, `populate_special_power_shortcut`, `has_any_shortcut_selection`, `update_special_power_shortcut` and
+//! `draw_special_power_shortcut_multiplier_text` match the upstream C++ on 20,000 random worlds (call logs and the state of every window) after four draft fixes,
+//! 2026-11-20: a missing purchase screen parent still searches (the host's `win_get_window_from_name` takes `Option<u32>`), `populateSpecialPowerShortcut` returns
+//! before hiding the buttons when the player has no template, its enhanced image search is under "the player holds the required science", and
+//! `updateSpecialPowerShortcut` asks for the most ready power only when an object of the type exists. NOT tested: `friend_add_to_list`, `new_command_button`,
+//! `new_command_set`, `new_command_set_override` (the real `CommandSet` and `CommandButton` classes are the INI-driven command model; the draft keeps a name and a
+//! list), `get_marker_pos`, `update_purchase_science`, `update_command_marker_image`, `draw_transition_handler` (empty bodies or a field read),
+//! `process_context_sensitive_button_transition` (the tested `control_bar_command_processing`). Excluded inputs: see the test.)
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBar.cpp (ControlBar::populatePurchaseScience,
@@ -18,6 +27,7 @@
 
 use crate::client::control_bar::gui;
 use crate::common::game_type::ObjectId;
+use crate::logic::modules::plant;
 
 /// `MAX_PURCHASE_SCIENCE_RANK_1`, `_3`, `_8` (ControlBar.h).
 pub const MAX_PURCHASE_SCIENCE_RANK_1: usize = 4;
@@ -67,8 +77,10 @@ pub trait ControlBarWindowsHost {
     fn win_is_hidden(&self, win: u32) -> bool;
     fn win_set_status(&mut self, win: u32, bits: u32);
     fn win_clear_status(&mut self, win: u32, bits: u32);
-    /// `TheWindowManager->winGetWindowFromId(parent, nameToKey(name))`.
-    fn win_get_window_from_name(&self, parent: u32, name: &[u8]) -> Option<u32>;
+    /// `TheWindowManager->winGetWindowFromId(parent, nameToKey(name))`; a NULL `parent` (`None`) searches every window.
+    /// ~~`parent: u32`~~ **Corrected 2026-11-20 (#215, batch guilogic4):** a missing parent screen made the draft skip the whole lookup, and
+    /// `populatePurchaseScience`'s closing `updateContextPurchaseScience()`, where upstream searches globally and goes on.
+    fn win_get_window_from_name(&self, parent: Option<u32>, name: &[u8]) -> Option<u32>;
     /// `GadgetStaticTextSetText(win, text)`.
     fn static_text_set_text(&mut self, win: u32, text: &[u16]);
     /// `GadgetProgressBarSetProgress(win, progress)`.
@@ -163,7 +175,7 @@ fn populate_rank<H: ControlBarWindowsHost>(h: &mut H, rank: u32, count: usize, s
     for i in 0..count {
         let win = h.science_purchase_window(rank, i);
         let command_button = h.command_set_button(set_name, i).flatten();
-        let Some(cb) = command_button.filter(|cb| !bit_test(cb.options, command_option::SCRIPT_ONLY)) else {
+        let Some(cb) = command_button.filter(|cb| !bit_test(cb.options, if plant(15912) { command_option::NEED_UPGRADE } else { command_option::SCRIPT_ONLY })) else {
             h.win_hide(win, true);
             continue;
         };
@@ -171,7 +183,7 @@ fn populate_rank<H: ControlBarWindowsHost>(h: &mut H, rank: u32, count: usize, s
         h.win_enable(win, false);
         h.set_control_command(win, &cb);
         let st = match (rank, cb.science_vec.first()) {
-            (1, None) => continue, // if (!commandButton->getScienceVec().empty()) { .. }
+            (1, None) => if plant(15905) { SCIENCE_INVALID } else { continue }, // if (!commandButton->getScienceVec().empty()) { .. }
             (_, Some(&s)) => s,
             (_, None) => SCIENCE_INVALID,
         };
@@ -180,15 +192,15 @@ fn populate_rank<H: ControlBarWindowsHost>(h: &mut H, rank: u32, count: usize, s
         } else if h.player_is_science_hidden(st) {
             h.win_hide(win, true);
         } else {
-            if !h.player_has_science(st) && h.science_player_has_prereqs(st) && h.science_purchase_cost(st) <= h.player_science_purchase_points() {
+            if (plant(15907) || !h.player_has_science(st)) && h.science_player_has_prereqs(st) && (if plant(15906) { h.science_purchase_cost(st) < h.player_science_purchase_points() } else { h.science_purchase_cost(st) <= h.player_science_purchase_points() }) {
                 h.win_enable(win, true);
             }
-            if h.player_has_science(st) {
+            if h.player_has_science(st) != plant(15908) {
                 h.win_set_status(win, WIN_STATUS_ALWAYS_COLOR);
             } else {
                 h.win_clear_status(win, WIN_STATUS_ALWAYS_COLOR);
             }
-            if !h.science_player_has_root_prereqs(st) {
+            if h.science_player_has_root_prereqs(st) == plant(15909) {
                 h.win_hide(win, true);
             }
         }
@@ -228,7 +240,7 @@ pub fn populate_purchase_science<H: ControlBarWindowsHost>(h: &mut H, update_con
     populate_rank(h, 3, MAX_PURCHASE_SCIENCE_RANK_3, &names[1]);
     populate_rank(h, 8, MAX_PURCHASE_SCIENCE_RANK_8, &names[2]);
 
-    let Some(parent) = h.context_parent_purchase_science() else { return };
+    let parent = h.context_parent_purchase_science();
     if let Some(win) = h.win_get_window_from_name(parent, b"GeneralsExpPoints.wnd:StaticTextRankPointsAvailable") {
         let text: Vec<u16> = h.player_science_purchase_points().to_string().encode_utf16().collect();
         h.static_text_set_text(win, &text);
@@ -236,11 +248,11 @@ pub fn populate_purchase_science<H: ControlBarWindowsHost>(h: &mut H, update_con
     // (StaticTextLevel is commented out upstream: "redundant to StaticTextTitle in the Zero Hour context")
     if let Some(win) = h.win_get_window_from_name(parent, b"GeneralsExpPoints.wnd:ProgressBarExperience") {
         let down = h.player_skill_points_level_down();
-        let progress = ((h.player_skill_points() - down) * 100) / (h.player_skill_points_level_up() - down);
+        let progress = if plant(15910) { ((h.player_skill_points() - down) / (h.player_skill_points_level_up() - down)) * 100 } else { ((h.player_skill_points() - down) * 100) / (h.player_skill_points_level_up() - down) };
         h.progress_bar_set_progress(win, progress);
     }
     if let Some(win) = h.win_get_window_from_name(parent, b"GeneralsExpPoints.wnd:StaticTextTitle") {
-        let label = format!("SCIENCE:Rank{}", h.player_rank_level());
+        let label = format!("SCIENCE:Rank{}", h.player_rank_level() + if plant(15911) { 1 } else { 0 });
         let text = h.game_text_fetch(label.as_bytes());
         h.static_text_set_text(win, &text);
     }
@@ -251,10 +263,10 @@ pub fn populate_purchase_science<H: ControlBarWindowsHost>(h: &mut H, update_con
 /// `ControlBar::updateContextPurchaseScience()` (ControlBar.cpp:458): the experience bar of the purchase screen. (The
 /// rest of the function is a comment block upstream.)
 pub fn update_context_purchase_science<H: ControlBarWindowsHost>(h: &mut H) {
-    let Some(parent) = h.context_parent_purchase_science() else { return };
+    let parent = h.context_parent_purchase_science();
     if let Some(win) = h.win_get_window_from_name(parent, b"GeneralsExpPoints.wnd:ProgressBarExperience") {
         let down = h.player_skill_points_level_down();
-        let progress = ((h.player_skill_points() - down) * 100) / (h.player_skill_points_level_up() - down);
+        let progress = if plant(15910) { ((h.player_skill_points() - down) / (h.player_skill_points_level_up() - down)) * 100 } else { ((h.player_skill_points() - down) * 100) / (h.player_skill_points_level_up() - down) };
         h.progress_bar_set_progress(win, progress);
     }
 }
@@ -353,7 +365,7 @@ pub fn set_control_bar_scheme_by_name(
 pub fn has_any_shortcut_selection<H: ControlBarWindowsHost>(h: &H) -> bool {
     for i in 0..h.currently_used_special_powers_buttons() {
         let Some(win) = h.shortcut_button(i) else { continue };
-        if h.win_is_hidden(win) {
+        if h.win_is_hidden(win) && !plant(15913) {
             continue;
         }
         let Some(command) = h.button_data(win) else { continue };
@@ -371,7 +383,9 @@ pub fn has_any_shortcut_selection<H: ControlBarWindowsHost>(h: &H) -> bool {
 pub fn populate_special_power_shortcut<H: ControlBarWindowsHost>(h: &mut H, update_special_power_shortcut_fn: impl FnOnce(&mut H)) {
     // if(!player || !player->getPlayerTemplate() || !player->isLocalPlayer() || m_currentlyUsedSpecialPowersButtons == 0
     //    || m_specialPowerShortcutButtons == NULL || m_specialPowerShortcutButtonParents == NULL) return;
-    if !h.player_exists() || !h.player_is_local() || h.currently_used_special_powers_buttons() == 0 || !h.shortcut_buttons_exist() {
+    // (~~`!player->getPlayerTemplate()` was missing: the buttons were hidden before the missing template returned~~ **Corrected 2026-11-20 (#215, batch guilogic4):**
+    // upstream returns first, and leaves the windows as they are)
+    if !h.player_exists() || h.special_power_shortcut_command_set_name().is_none() || !h.player_is_local() || h.currently_used_special_powers_buttons() == 0 || !h.shortcut_buttons_exist() {
         return;
     }
     let n = h.currently_used_special_powers_buttons();
@@ -395,7 +409,7 @@ pub fn populate_special_power_shortcut<H: ControlBarWindowsHost>(h: &mut H, upda
         let Some(Some(command_button)) = h.command_set_button(&set_name, i) else { continue };
         if bit_test(command_button.options, command_option::NEED_UPGRADE) {
             if let Some(mask) = command_button.upgrade_mask {
-                if !h.player_has_upgrade_complete(mask) {
+                if h.player_has_upgrade_complete(mask) == plant(15916) {
                     continue;
                 }
             }
@@ -408,16 +422,18 @@ pub fn populate_special_power_shortcut<H: ControlBarWindowsHost>(h: &mut H, upda
             if h.find_most_ready_shortcut_special_power_of_type(power_type).is_none() {
                 continue;
             }
+            // ~~the `bestIndex` search for the enhanced image was in the `else` of `required != SCIENCE_INVALID`~~ **Corrected 2026-11-20 (#215, batch guilogic4):**
+            // upstream has it in the `else` of "the player lacks the required science", inside `required != SCIENCE_INVALID`; nothing happens when the
+            // power has no required science (found by the differential test)
             if required_science != SCIENCE_INVALID {
                 if !h.player_has_science(required_science) {
                     continue;
                 }
-            } else {
                 let mut best_index: i32 = -1;
                 for (science_index, &science) in command_button.science_vec.iter().enumerate() {
                     if h.player_has_science(science) {
                         best_index = science_index as i32;
-                    } else {
+                    } else if !plant(15919) {
                         break;
                     }
                 }
@@ -461,7 +477,9 @@ pub fn populate_special_power_shortcut<H: ControlBarWindowsHost>(h: &mut H, upda
         h.win_hide(b, false);
         h.win_hide(p, false);
         h.win_enable(b, true);
-        h.win_enable(p, true);
+        if !plant(15917) {
+            h.win_enable(p, true);
+        }
         h.set_control_command(b, &command_button);
         h.button_set_alt_sound(b, b"GUIGenShortcutClick");
         current_button += 1;
@@ -510,7 +528,9 @@ pub fn update_special_power_shortcut<H: ControlBarWindowsHost>(h: &mut H) {
         }
         let Some(command) = h.button_data(win) else { continue };
         h.win_clear_status(win, WIN_STATUS_NOT_READY);
-        h.win_clear_status(win, WIN_STATUS_ALWAYS_COLOR);
+        if !plant(15918) {
+            h.win_clear_status(win, WIN_STATUS_ALWAYS_COLOR);
+        }
         let mut availability = CommandAvailability::Restricted;
         if let Some((power_type, _)) = command.special_power {
             let obj = h.find_most_ready_shortcut_special_power_of_type(power_type);
@@ -518,19 +538,21 @@ pub fn update_special_power_shortcut<H: ControlBarWindowsHost>(h: &mut H) {
         } else if command.command_type == gui::SELECT_ALL_UNITS_OF_TYPE {
             availability = CommandAvailability::Hidden;
             if let Some(template) = command.thing_template {
+                // ~~`findMostReadyShortcutSpecialPowerForThing` was asked even when no object of the type exists~~ **Corrected 2026-11-20 (#215, batch guilogic4):**
+                // upstream asks it only inside `if( obj )` of `findAnyExistingObjectWithThingTemplate` (found by the differential test)
                 if h.find_any_existing_object_with_thing_template(template).is_some() {
                     availability = CommandAvailability::Available;
-                }
-                if let Some(obj) = h.find_most_ready_shortcut_special_power_for_thing(template) {
-                    let set_name = h.object_command_set_string(obj);
-                    if h.command_set_button(&set_name, 0).is_some() {
-                        for command_index in 0..MAX_COMMANDS_PER_SET {
-                            let eval_button = h.command_set_button(&set_name, command_index).flatten();
-                            let eval_button_win = h.command_window(command_index);
-                            if let Some(eb) = eval_button {
-                                if eb.command_type == gui::SPECIAL_POWER {
-                                    availability = h.get_command_availability(&eb, Some(obj), eval_button_win, Some(win));
-                                    break;
+                    if let Some(obj) = h.find_most_ready_shortcut_special_power_for_thing(template) {
+                        let set_name = h.object_command_set_string(obj);
+                        if h.command_set_button(&set_name, 0).is_some() {
+                            for command_index in 0..MAX_COMMANDS_PER_SET {
+                                let eval_button = h.command_set_button(&set_name, command_index).flatten();
+                                let eval_button_win = h.command_window(command_index);
+                                if let Some(eb) = eval_button {
+                                    if eb.command_type == gui::SPECIAL_POWER {
+                                        availability = h.get_command_availability(&eb, Some(obj), eval_button_win, Some(win));
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -547,7 +569,7 @@ pub fn update_special_power_shortcut<H: ControlBarWindowsHost>(h: &mut H) {
             }
             CommandAvailability::CantAfford => {
                 h.win_enable(win, false);
-                h.win_set_status(win, WIN_STATUS_ALWAYS_COLOR);
+                h.win_set_status(win, if plant(15915) { WIN_STATUS_NOT_READY } else { WIN_STATUS_ALWAYS_COLOR });
             }
             _ => h.win_enable(win, true),
         }
@@ -574,7 +596,7 @@ pub fn draw_special_power_shortcut_multiplier_text<H: ControlBarWindowsHost>(h: 
                 num_ready = h.count_ready_shortcut_special_powers_of_type(power_type);
             }
             // Lorenzen changed... Displaying a "1" is superfluous
-            if num_ready > 1 {
+            if if plant(15914) { num_ready >= 1 } else { num_ready > 1 } {
                 let text: Vec<u16> = num_ready.to_string().encode_utf16().collect();
                 h.button_set_text(win, &text);
             } else {

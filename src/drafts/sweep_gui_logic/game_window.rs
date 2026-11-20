@@ -1,4 +1,9 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 random forests (149,842 calls of each leaf finder) and 20,000 operation sequences
+//! (250,371 operations, 40,000 state comparisons) (after one draft fix, 2026-11-20: `win_set_instance_data` sets the window's own `id` from the data, as the
+//! copy of `m_instData` does) (test: tests/differential_draft_gwin.rs);
+//! not yet wired into the game.
+//! Not covered: a NULL output pointer of `winGetCursorPosition` / `winGetRegion` and a NULL `m_draw` (the draft returns both values and its draw callback is never
+//! absent); `winGetEnabledTextBorderColor` is not in this draft.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GameWindow.cpp (findFirstLeaf, findLastLeaf, findPrevLeaf,
@@ -25,6 +30,7 @@
 
 use crate::client::window_manager::{GameWindowManager, DrawFunc, SystemFunc, WIN_ERR_INVALID_PARAMETER, WIN_ERR_OK};
 use crate::client::window_script::{win_status, WinId, WinInstanceData, MAX_DRAW_DATA};
+use crate::logic::modules::plant;
 
 /// `m_prev`: the window before `w` in its parent's child list, or in the window list.
 pub fn prev_of(wm: &GameWindowManager, w: WinId) -> Option<WinId> {
@@ -73,7 +79,7 @@ pub fn find_last_leaf(wm: &GameWindowManager, this: WinId) -> WinId {
     // Find the last leaf
     while let Some(c) = child_of(wm, leaf) {
         leaf = c;
-        while let Some(n) = wm.next_of(leaf) {
+        while let Some(n) = if plant(15861) { None } else { wm.next_of(leaf) } {
             leaf = n;
         }
     }
@@ -86,7 +92,7 @@ pub fn find_prev_leaf(wm: &GameWindowManager, this: WinId) -> Option<WinId> {
     let mut leaf = this;
     if let Some(p) = prev_of(wm, leaf) {
         leaf = p;
-        while let (Some(c), false) = (child_of(wm, leaf), is_tab_stop(wm, leaf)) {
+        while let (Some(c), false) = (child_of(wm, leaf), !plant(15862) && is_tab_stop(wm, leaf)) {
             leaf = c;
             while let Some(n) = wm.next_of(leaf) {
                 leaf = n;
@@ -97,7 +103,7 @@ pub fn find_prev_leaf(wm: &GameWindowManager, this: WinId) -> Option<WinId> {
         while let Some(parent) = wm.tree.windows[leaf].parent {
             leaf = parent;
             if wm.tree.windows[leaf].parent.is_some() {
-                if let Some(p) = prev_of(wm, leaf) {
+                if let Some(p) = if plant(15865) { wm.next_of(leaf) } else { prev_of(wm, leaf) } {
                     leaf = p;
                     while let (Some(c), false) = (child_of(wm, leaf), is_tab_stop(wm, leaf)) {
                         leaf = c;
@@ -124,7 +130,7 @@ pub fn find_next_leaf(wm: &GameWindowManager, this: WinId) -> Option<WinId> {
         }
         let mut cur = Some(n);
         while let Some(l) = cur {
-            if child_of(wm, l).is_none() || is_tab_stop(wm, l) {
+            if if plant(15863) { child_of(wm, l).is_none() && is_tab_stop(wm, l) } else { child_of(wm, l).is_none() || is_tab_stop(wm, l) } {
                 return Some(l);
             }
             cur = child_of(wm, l);
@@ -133,7 +139,7 @@ pub fn find_next_leaf(wm: &GameWindowManager, this: WinId) -> Option<WinId> {
     } else {
         while let Some(parent) = wm.tree.windows[leaf].parent {
             leaf = parent;
-            if wm.tree.windows[leaf].parent.is_some() {
+            if plant(15864) || wm.tree.windows[leaf].parent.is_some() {
                 if let Some(n) = wm.next_of(leaf) {
                     let mut cur = Some(n);
                     while let Some(l) = cur {
@@ -172,7 +178,11 @@ pub fn win_get_draw_offset(wm: &GameWindowManager, w: WinId, have_x: bool, have_
     if !have_x || !have_y {
         return None;
     }
-    Some(wm.tree.windows[w].inst.image_offset)
+    let (x, y) = wm.tree.windows[w].inst.image_offset;
+    if plant(15870) {
+        return Some((y, x));
+    }
+    Some((x, y))
 }
 
 /// `GameWindow::winGetTextLength()` (:829): the length of the window's text (`m_instData.getTextLength()`).
@@ -219,6 +229,9 @@ pub fn win_set_instance_data(wm: &mut GameWindowManager, w: WinId, data: &WinIns
     let own_text = wm.tree.windows[w].text.clone();
     // m_instData = *data;
     wm.tree.windows[w].inst = data.clone();
+    // winGetWindowId() is `m_instData.m_id`, which the copy just replaced (~~the window's own `id` kept its old value~~ **Corrected 2026-11-20
+    // (#215, batch guilogic4):** found by the differential test, 6,333 of 40,000 sequences ended with `id != m_id`)
+    wm.tree.windows[w].id = data.id;
     // put our text instance pointers back
     wm.tree.windows[w].inst.tooltip_text = own_tooltip_text;
     wm.tree.windows[w].text = own_text;
@@ -228,7 +241,7 @@ pub fn win_set_instance_data(wm: &mut GameWindowManager, w: WinId, data: &WinIns
         wm.win_set_text(w, &label);
     }
     if let Some(t) = data.tooltip_text.as_ref() {
-        if !t.is_empty() {
+        if !t.is_empty() || plant(15872) {
             wm.tree.windows[w].inst.tooltip_text = Some(t.clone());
         }
     }
@@ -238,7 +251,9 @@ pub fn win_set_instance_data(wm: &mut GameWindowManager, w: WinId, data: &WinIns
 /// `GameWindow::winSetWindowId(id)` (:1092): `m_instData.m_id = id`.
 pub fn win_set_window_id(wm: &mut GameWindowManager, w: WinId, id: i32) -> i32 {
     wm.tree.windows[w].inst.id = id;
-    wm.tree.windows[w].id = id;
+    if !plant(15871) {
+        wm.tree.windows[w].id = id;
+    }
     WIN_ERR_OK
 }
 
@@ -250,6 +265,9 @@ pub fn win_set_layout(wm: &mut GameWindowManager, w: WinId, layout: Option<usize
 /// `GameWindow::winSetSystemFunc(system)` (:1305): "if (system) m_system = system; else m_system =
 /// TheWindowManager->getDefaultSystem()".
 pub fn win_set_system_func(wm: &mut GameWindowManager, w: WinId, system: Option<SystemFunc>) -> i32 {
+    if plant(15868) && system.is_none() {
+        return WIN_ERR_OK;
+    }
     wm.ext[w].system = system.unwrap_or(SystemFunc::Default);
     WIN_ERR_OK
 }
@@ -257,7 +275,7 @@ pub fn win_set_system_func(wm: &mut GameWindowManager, w: WinId, system: Option<
 /// `GameWindow::winSetDrawFunc(draw)` (:1334): "if (draw) m_draw = draw; else m_draw =
 /// TheWindowManager->getDefaultDraw()", which on the W3D manager is `W3DGameWinDefaultDraw`.
 pub fn win_set_draw_func(wm: &mut GameWindowManager, w: WinId, draw: Option<DrawFunc>) -> i32 {
-    wm.ext[w].draw = draw.unwrap_or(DrawFunc::W3DDefault);
+    wm.ext[w].draw = draw.unwrap_or(if plant(15869) { DrawFunc::GameWinDefault } else { DrawFunc::W3DDefault });
     WIN_ERR_OK
 }
 
@@ -279,11 +297,11 @@ pub fn win_set_callbacks(
 /// `GameWindow::winDrawWindow()` (:1377): a shown window with a draw callback draws itself, `m_draw(this,
 /// &m_instData)`. The draw callback is the host's (`GuiHost::draw`), so this answers whether it is called.
 pub fn win_draw_window_should_draw(wm: &GameWindowManager, w: WinId) -> bool {
-    wm.tree.windows[w].status & win_status::HIDDEN == 0
+    (wm.tree.windows[w].status & win_status::HIDDEN == 0) != plant(15873)
 }
 
 fn in_range(index: i32) -> bool {
-    index >= 0 && index < MAX_DRAW_DATA as i32
+    (if plant(15866) { index > 0 } else { index >= 0 }) && index < MAX_DRAW_DATA as i32
 }
 
 /// `winSetEnabledColor(index, color)` (:1585): `WIN_ERR_INVALID_PARAMETER` outside `0..MAX_DRAW_DATA`.
@@ -331,7 +349,11 @@ pub fn win_set_hilite_color(wm: &mut GameWindowManager, w: WinId, index: i32, co
     if !in_range(index) {
         return WIN_ERR_INVALID_PARAMETER;
     }
-    wm.tree.windows[w].inst.hilite_draw_data[index as usize].color = color;
+    if plant(15867) {
+        wm.tree.windows[w].inst.hilite_draw_data[index as usize].border_color = color;
+    } else {
+        wm.tree.windows[w].inst.hilite_draw_data[index as usize].color = color;
+    }
     WIN_ERR_OK
 }
 /// `winSetHiliteBorderColor(index, color)` (:1732).
