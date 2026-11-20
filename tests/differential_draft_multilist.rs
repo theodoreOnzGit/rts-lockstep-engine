@@ -30,6 +30,14 @@
 //! `Internal_Remove` removed the first match from the head of the list, upstream removes the node found first on the object's chain
 //! (the newest), which is not always the first in the ring (after `Add_Tail`, `Add_After`). Everything else 0.
 
+//! **Results.** The draft was rewritten before the first run (node identities, as above), so the predicted defect was not measured on the
+//! original: plant 17388 restores it (1,749 of 20,000 programs mismatch). With the rewrite: 0 of 20,000 programs mismatch (about 600,000 ops;
+//! every op's result and the three lists compared whole). `Internal_Add_After` takes the k-th object of the list at call time, so that no program
+//! names a non-member whatever the draft does. Planted bugs (mismatching programs of 20,000): 17381 chain oldest first: 4,962; 17382 `Add` at the tail:
+//! 14,208; 17383 `Add_Tail` ignores `onlyonce == false`: 5,939; 17384 `Add_After` before: 14,008; 17385 `Remove` takes the oldest chain entry: 2,674;
+//! 17386 `Remove_List_Head` takes the tail: 11,554; 17387 `Remove_List_Head` unlinks the head node: 1,145; 17388 `Remove` unlinks the first ring entry
+//! of the object: 1,749. 8 of 8 caught. The draft's `Registry`/handle model replaces pointers; `GenericMultiListIterator` order is `objects()`.
+
 mod support;
 
 use rts_lockstep_engine::drafts::sweep_wwlib::multilist::{MultiListId, MultiListObjectId, MultiListRegistry};
@@ -58,50 +66,36 @@ struct Prog {
 fn gen_prog(g: &mut Gen) -> Prog {
     let nops = 1 + g.below(60) as i32;
     let mut w = Vec::new();
-    let mut shadow = MultiListRegistry::new();
-    let lists: Vec<MultiListId> = (0..NL).map(|_| shadow.new_list()).collect();
     for _ in 0..nops {
         let l = g.below(NL);
         let o = g.below(NO);
         let once = g.below(3) == 0; // mostly false: duplicates are what the remove cases need
-        let mut op = g.below(7) as i32;
+        let op = g.below(7) as i32;
         if op == 2 {
-            // an existing member of this list
-            let members = shadow.objects(lists[l as usize]);
-            if members.is_empty() {
-                op = 0;
-            } else {
-                let e = members[g.below(members.len() as u32) as usize].0;
-                w.extend([2, l as i32, o as i32, e as i32, once as i32]);
-                shadow.internal_add_after(lists[l as usize], MultiListObjectId(o), MultiListObjectId(e), once);
-                continue;
-            }
+            // an existing member of this list: the k-th object of the list at the time of the call, chosen by each side from its own list
+            // (so that the program never names a non-member, whatever the draft does)
+            w.extend([2, l as i32, o as i32, g.below(1000) as i32, once as i32]);
+            continue;
         }
         match op {
             0 => {
                 w.extend([0, l as i32, o as i32, once as i32]);
-                shadow.internal_add(lists[l as usize], MultiListObjectId(o), once);
             }
             1 => {
                 w.extend([1, l as i32, o as i32, once as i32]);
-                shadow.internal_add_tail(lists[l as usize], MultiListObjectId(o), once);
             }
             3 => {
                 w.extend([3, l as i32, o as i32]);
-                shadow.internal_remove(lists[l as usize], MultiListObjectId(o));
             }
             4 => {
                 w.extend([4, l as i32, o as i32]);
-                shadow.internal_remove_list_head(lists[l as usize]);
             }
             5 => {
                 w.extend([5, l as i32, o as i32]);
-                shadow.drop_object(MultiListObjectId(o));
             }
             6 => w.extend([6, l as i32, o as i32]),
             _ => {
                 w.extend([0, l as i32, o as i32, 0]);
-                shadow.internal_add(lists[l as usize], MultiListObjectId(o), false);
             }
         }
     }
@@ -132,9 +126,15 @@ fn run_rust(p: &Prog) -> Vec<i32> {
                 out.push(reg.internal_add_tail(lists[l], o, once) as i32);
             }
             2 => {
-                let e = MultiListObjectId(next() as u32);
+                let k = next() as usize;
                 let once = next() != 0;
-                out.push(reg.internal_add_after(lists[l], o, e, once) as i32);
+                let members = reg.objects(lists[l]);
+                if members.is_empty() {
+                    out.push(-5);
+                } else {
+                    let e = members[k % members.len()];
+                    out.push(reg.internal_add_after(lists[l], o, e, once) as i32);
+                }
             }
             3 => out.push(reg.internal_remove(lists[l], o) as i32),
             4 => out.push(reg.internal_remove_list_head(lists[l]).map_or(-1, |x| x.0 as i32)),

@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,008 values (test: tests/differential_draft_systimer.rs);
+//! not yet wired into the game. `SysTimeClass::Get` (`timeGetTime`, an OS call) is not tested.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/systimer.cpp (`SysTimeClass::Is_Getting_Late`)

@@ -44,7 +44,13 @@ extern "C" int ref_ml_run(const int *prog, int nops, int *out, int cap)
 		switch (op) {
 		case 0: put(lists[l].add(objs[o], *p++ != 0)); break;
 		case 1: put(lists[l].add_tail(objs[o], *p++ != 0)); break;
-		case 2: { int e = *p++; bool once = *p++ != 0; put(lists[l].add_after(objs[o], objs[e], once)); break; }
+		case 2: { int kk = *p++; bool once = *p++ != 0;
+			/* the kk-th object of the list (modulo its count), as the iterator sees them: an existing member */
+			TestIt it(&lists[l]); int cnt = lists[l].Count();
+			if (cnt == 0) { put(-5); break; }
+			int e = -1; int at = 0;
+			for (it.First(); !it.Is_Done(); it.Next(), at++) if (at == kk % cnt) e = idx(it.cur());
+			put(lists[l].add_after(objs[o], objs[e], once)); break; }
 		case 3: put(lists[l].remove(objs[o])); break;
 		case 4: put(idx(lists[l].remove_head())); break;
 		case 5: delete objs[o]; objs[o] = new MultiListObjectClass; break; /* ~MultiListObjectClass removes it from every list */

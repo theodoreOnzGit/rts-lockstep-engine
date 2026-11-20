@@ -28,6 +28,15 @@
 //! id (`Unregister`, `Get_Next`), upstream by its address; and an integer-overflow panic in `super_class_id_from_class_id` for class ids
 //! near `0x7fffffff` (release builds here have overflow checks on; upstream wraps).
 
+//! **Results.** First run: the test binary was killed (SIGKILL, out of memory): with two factories of one class id the draft's `Get_Next`
+//! found the first of them again and again, so the traversal of the list never ended (prediction: a mismatch, missed: it was a hang). Corrected in
+//! `definitionfactory.rs` and `definitionfactorymgr.rs`: a factory carries an instance id (upstream: its address). After: 0 mismatches over 20,000
+//! programs (about 1,000,000 ops, each followed by the whole list) and 14 `SuperClassID_From_ClassID` values, including 0x7fffffff and 0xffffffff
+//! (no overflow panic in this build). Planted bugs (mismatching programs of 20,014 checks): 17401 `Register` at the back: 16,881; 17402 name lookup
+//! case-sensitive: 10,528; 17403 `Get_First(superclass)` takes the last: 2,018; 17404 `Get_Next(superclass)` ignores the superclass: 7,249; 17405 `Get_Next`
+//! returns the same factory: caught by an endless traversal (the run is killed, no count); 17406 `Unregister` by class id: 1,714; 17407 `Find_Factory`
+//! takes the last: 911; 17408 unsigned division in `SuperClassID_From_ClassID`: 1,366. 8 of 8 caught.
+
 mod support;
 
 use rts_lockstep_engine::drafts::wwlib::definition::{super_class_id_from_class_id, DefinitionHandle};
@@ -121,7 +130,7 @@ fn run_rust(p: &Prog) -> Vec<i32> {
     let slot_of = |slots: &Vec<Option<Slot>>, f: &Option<DefinitionFactoryClass>| -> i32 {
         match f {
             None => -1,
-            Some(f) => slots.iter().position(|s| s.as_ref().map_or(false, |s| (s.handle.class_id == f.class_id && s.handle.name == f.name))).map_or(-2, |x| x as i32),
+            Some(f) => slots.iter().position(|s| s.as_ref().map_or(false, |s| s.handle.same_as(f))).map_or(-2, |x| x as i32),
         }
     };
     for _ in 0..p.nops {

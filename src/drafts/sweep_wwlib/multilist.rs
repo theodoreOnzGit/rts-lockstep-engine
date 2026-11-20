@@ -1,4 +1,7 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 random programs (test: tests/differential_draft_multilist.rs);
+//! not yet wired into the game. Not covered: `Internal_Add_After` with a member of no list or of other lists only (upstream dereferences
+//! NULL; the guard returns `false`). Corrected 2026-11-20 (#215): the draft removed the first ring entry of an object in a list twice, upstream
+//! unlinks the node found first on the object's chain; nodes now carry an identity (plant 17388 is the old behaviour: 1,749 of 20,000 programs).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/multilist.cpp (`GenericMultiListClass::Internal_Add_Tail`,
@@ -167,7 +170,7 @@ impl MultiListRegistry {
             self.chains.remove(&obj);
         }
         let nodes = &mut self.lists[list.0 as usize];
-        if let Some(pos) = nodes.iter().position(|&(_, n)| n == node) {
+        if let Some(pos) = if plant(17388) { nodes.iter().position(|&(o, _)| o == obj) } else { nodes.iter().position(|&(_, n)| n == node) } {
             nodes.remove(pos);
         }
         true
