@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): `GameResultsQueue` (every member) matches the upstream C++ on 20,000 programs (test: tests/differential_draft_gres.rs).
+//! NOT covered: `GameResultsWorker::thread_step` and `GameResultsHost` (winsock).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/GameSpy/GameResultsThread.h

@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): `Pinger` (every member) matches the upstream C++ on 20,000 programs (test: tests/differential_draft_ping.rs; `getPingString(0)`
+//! excluded, upstream traps). NOT covered: `PingWorker::thread_step` and `PingHost` (winsock name resolution and ICMP).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/GameSpy/PingThread.h

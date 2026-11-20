@@ -366,7 +366,10 @@ fn dump_post(host: &Host, u: &MainMenuUtils) {
     put_str(&mut l, host.file.as_deref().unwrap_or(b""));
 }
 
+thread_local! { static TRACE: RefCell<Vec<String>> = RefCell::new(Vec::new()); }
+
 fn program(g: &mut Gen) -> (Vec<u32>, Vec<u32>) {
+    TRACE.with(|t| t.borrow_mut().clear());
     let mut host = Host {
         log: RefCell::new(Vec::new()),
         pending: Vec::new(),
@@ -453,6 +456,7 @@ fn program(g: &mut Gen) -> (Vec<u32>, Vec<u32>) {
                 if !host.pending.is_empty() {
                     let at = (idx as usize) % host.pending.len();
                     let (kind, run) = host.pending.remove(at);
+                    TRACE.with(|t| t.borrow_mut().push(format!("deliver kind {} ok {} buf {:?} headers {:?}", kind_id(kind), ok, String::from_utf8_lossy(&buf), String::from_utf8_lossy(&host.headers))));
                     host.l(&[70, kind_id(kind)]);
                     match kind {
                         HttpRequestKind::PatchCheck => u.game_patch_check_callback(&mut host, run, ok, &buf),
@@ -517,9 +521,16 @@ fn main_menu_utils_programs_match_cpp() {
                 k - marker,
                 r.len(),
                 c.len(),
-                &r[k.saturating_sub(6)..(k + 8).min(r.len())],
-                &c[k.saturating_sub(6)..(k + 8).min(c.len())]
+                &r[marker.max(k.saturating_sub(40))..(k + 8).min(r.len())],
+                &c[marker.max(k.saturating_sub(40))..(k + 8).min(c.len())]
             );
+        }
+        if r != c && std::env::var("MMU_DUMP").is_ok() {
+            let txt: Vec<String> = input.iter().map(|x| x.to_string()).collect();
+            std::fs::write(std::env::var("MMU_DUMP").unwrap(), txt.join(" ")).ok();
+        }
+        if r != c && std::env::var("MMU_TRACE").is_ok() {
+            TRACE.with(|t| println!("{:#?}", t.borrow()));
         }
         chk.eq(r == c, true, || format!("mmu program {i}"));
     }

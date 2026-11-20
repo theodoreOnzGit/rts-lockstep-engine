@@ -1,4 +1,8 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 10,000 programs (test: tests/differential_draft_mmu.rs; the http SDK, registry, windows,
+//! `Config.txt` and the DNS thread are stand-ins; `asyncGethostbyname`'s thread is the host's, untested).
+//! The test found two defects, fixed (2026-11-20, #215): `configCallback` wrote the buffer BEFORE its last byte became NUL (upstream writes after), and a
+//! DNS lookup that FAILED left `s_asyncDNSLookupInProgress` set (upstream's `asyncGethostbyname` clears it for any finished lookup).
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/GameSpy/MainMenuUtils.h
@@ -463,7 +467,9 @@ impl MainMenuUtils {
         if let Some(last) = b.last_mut() {
             *last = 0;
         }
-        host.write_config_file(buffer); // fwrite(configBuffer, bufferLen, 1, fp): the NUL is part of the file
+        // fwrite(configBuffer, bufferLen, 1, fp): the buffer after `configBuffer[bufferLen-1] = 0`, so the file's last byte is the NUL
+        // (~~the original buffer~~ **Corrected 2026-11-20 (#215, net4):** found by the differential test)
+        host.write_config_file(&b);
         let mut stored = b;
         stored.pop();
         self.config_buffer = Some(stored);
@@ -640,6 +646,8 @@ impl MainMenuUtils {
             let ret = host.async_gethostbyname(PATCH_SERVER_NAME);
             match ret {
                 LookupState::Failed => {
+                    // asyncGethostbyname clears s_asyncDNSLookupInProgress when it reports a finished lookup, failed or not
+                    self.async_dns_lookup_in_progress = false;
                     self.cant_connect_before_online = true;
                     self.start_online(host);
                 }
@@ -681,6 +689,7 @@ impl MainMenuUtils {
         let ret = host.async_gethostbyname(PATCH_SERVER_NAME);
         match ret {
             LookupState::Failed => {
+                self.async_dns_lookup_in_progress = false;
                 self.cant_connect_before_online = true;
                 self.start_online(host);
             }

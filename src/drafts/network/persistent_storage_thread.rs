@@ -1,4 +1,9 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215): `PsPlayerStats` (new, reset, incorporate, copy_constructed), `PsRequest`/`PsResponse`, `PsMessageQueue` (every member),
+//! `parse_player_kv_pairs`, `format_player_kv_pairs`, `atoi`, `atof` match the upstream C++ on 20,000 + 20,000 + 6,000 cases (test: tests/differential_draft_ps.rs).
+//! The test found five defects, fixed (2026-11-20, #215): `%d` of an `UnsignedInt` map value prints it signed (values >= 2^31 negative); `atoi` is `strtol`
+//! truncated to `int` (saturating at `long`, not 32-bit wrapping); `atof` did not read `nan`, `inf` or hex floats; `trackPlayerStats` ASSIGNS the stored record
+//! (zero map entries stay), it does not copy-construct; the queues copy requests and responses through the copy constructor (zero map entries dropped).
+//! NOT covered: `PsThread` and `PersistSdkHost` (the GameSpy stats SDK).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/GameSpy/PersistentStorageThread.h

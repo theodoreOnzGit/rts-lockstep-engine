@@ -14786,7 +14786,9 @@ mod differential {
                 .include(up.join("GameEngine/Include"))
                 .include(up.join("Libraries/Include"))
                 .flag("-include")
-                .flag(dif.join("shim_draft_g3/g3_prelude.h").to_str().expect("UTF-8 path"));
+                .flag(dif.join("shim_draft_g3/g3_prelude.h").to_str().expect("UTF-8 path"))
+                .flag("-include")
+                .flag(dif.join("shim_draft_net4/net4_prelude.h").to_str().expect("UTF-8 path"));
             for f in ["wrap_draft_ping.cpp", "wrap_draft_ipenum.cpp", "wrap_draft_dl.cpp", "wrap_draft_mmu.cpp", "wrap_draft_overlay.cpp"] {
                 println!("cargo:rerun-if-changed=differential/{f}");
                 b.file(dif.join(f));
