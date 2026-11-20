@@ -1,4 +1,10 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! ~~UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.~~
+//! **Corrected 2026-11-20 (#215):** PARTLY DIFFERENTIAL-TESTED. Since 776987d (group network3) `sendMessage`, `GetMessageTypeString`,
+//! the request functions (all but `RequestGameCreate`), `fillInLANMessage`, the game and player lists, `AmIHost`, `setIsActive` and
+//! `LANMessage`'s layout and constants match the upstream C++: 0 mismatches over 15,000 programs, 35 layout checks and 42 type
+//! strings, 10 of 10 plants caught (16404-16413), test `tests/differential_draft_lanapi.rs`. Not compared: `RequestGameAnnounce`,
+//! `RequestGameCreate`, `init`, `reset`, `update`, `checkMOTD`, `SetLocalIP`, the transport's socket write and
+//! `getErrorStringFromReturnType` (see the test's doc comment for why).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/LANAPI.h
