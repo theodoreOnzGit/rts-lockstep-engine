@@ -1,4 +1,12 @@
 //! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215, group network3): matches the upstream C++ on 60,000 port sets and 20,000 programs (tests/differential_draft_firewall.rs,
+//! 13 of 13 planted bugs caught): `get_nat_port_allocation_scheme`, `get_firewall_hardness`, `get_firewall_retries`, `is_nat`, `is_netgear`, the
+//! constructor's port pool, `set_source_port_pool_start`, `get_source_port_pool`, `detect_firewall`, `behavior_detection_update` and
+//! `detection_begin_update` up to the point where it opens a socket, `get_firewall_behavior`, `get_raw_firewall_behavior`, `write_firewall_behavior`,
+//! `flag_need_to_refresh`, `get_mangler_name`, `reset` with no socket open, and the sizes and constants. NOT covered (the draft's sockets are native, so a path
+//! that opens one cannot be compared with a stand-in): `open_spare_socket`, `close_spare_socket`, `close_all_spare_sockets` with sockets open,
+//! `get_next_temporary_source_port`, `send_to_mangler_from_port`, `get_mangler_response`, `byte_adjust`, `detection_test1_update` .. `detection_test5_update`
+//! and the rest of `detection_begin_update`.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/FirewallHelper.h
@@ -34,6 +42,7 @@
 //! * The "could not open" debug message prints `%d` without an argument.
 
 use super::net_command_msg::GENERALS_MAGIC_NUMBER;
+use crate::logic::modules::plant;
 use super::nat::firewall_type;
 use super::udp::UDP;
 use crate::common::crc::Crc;
@@ -231,7 +240,7 @@ impl FirewallHelperClass {
             m_last_behavior: firewall_type::UNKNOWN,
             m_source_port_allocation_delta: 0,
             m_last_source_port_allocation_delta: 0,
-            m_source_port_pool: INITIAL_SOURCE_PORT_POOL + ((host.time_get_time() / 1000) % 1000) as i32,
+            m_source_port_pool: INITIAL_SOURCE_PORT_POOL + ((host.time_get_time() / 1000) % if plant(16382) { 1024 } else { 1000 }) as i32,
             m_spare_sockets: Default::default(),
             m_manglers: [0; MAX_NUM_MANGLERS],
             m_num_manglers: 0,
@@ -256,6 +265,34 @@ impl FirewallHelperClass {
         }
     }
 
+    /// Every field of the helper as words, for the differential test (tests/differential_draft_firewall.rs): behaviour, last behaviour,
+    /// delta, last delta, pool, mangler count, the four manglers, packet id, state, timeout start and length, current try, response count,
+    /// then per spare socket its port, spare port, mangled port and stored message length.
+    #[doc(hidden)]
+    pub fn debug_words(&self) -> Vec<u32> {
+        let mut o = vec![
+            self.m_behavior,
+            self.m_last_behavior,
+            self.m_source_port_allocation_delta as u32,
+            self.m_last_source_port_allocation_delta as u32,
+            self.m_source_port_pool as u32,
+            self.m_num_manglers as u32,
+        ];
+        o.extend(self.m_manglers.iter().copied());
+        o.push(u32::from(self.m_packet_id));
+        o.push(self.m_current_state as u32);
+        o.push(self.m_timeout_start);
+        o.push(self.m_timeout_length);
+        o.push(self.m_current_try as u32);
+        o.push(self.m_num_responses as u32);
+        for i in 0..MAX_SPARE_SOCKETS {
+            o.push(u32::from(self.m_spare_sockets[i].port));
+            o.push(u32::from(self.m_spare_ports[i]));
+            o.push(u32::from(self.m_mangled_ports[i]));
+            o.push(self.m_messages[i].length as u32);
+        }
+        o
+    }
     /// `getRawFirewallBehavior`.
     pub fn get_raw_firewall_behavior(&self) -> u16 {
         self.m_behavior as u16
@@ -274,7 +311,9 @@ impl FirewallHelperClass {
     }
     /// `getFirewallBehavior`: sets the state back to idle and returns the behaviour.
     pub fn get_firewall_behavior(&mut self) -> u32 {
-        self.m_current_state = FirewallDetectionState::Idle;
+        if !plant(16381) {
+            self.m_current_state = FirewallDetectionState::Idle;
+        }
         self.m_behavior
     }
     /// `readFirewallBehavior`: its body is `#if (0)` upstream.
@@ -286,7 +325,7 @@ impl FirewallHelperClass {
     }
     /// `isNAT(behavior)`: not unknown and not simple.
     pub fn is_nat_behavior(behavior: u32) -> bool {
-        !(behavior == firewall_type::UNKNOWN || (behavior & firewall_type::SIMPLE) != 0)
+        !(behavior == firewall_type::UNKNOWN || if plant(16380) { behavior == firewall_type::SIMPLE } else { (behavior & firewall_type::SIMPLE) != 0 })
     }
     /// `isNetgear(behavior)`.
     pub fn is_netgear_behavior(behavior: u32) -> bool {
@@ -549,7 +588,7 @@ impl FirewallHelperClass {
         // If the user specified a particular port to use then we act as if there is no firewall.
         if host.global_firewall_port_override() != 0 {
             self.m_behavior = firewall_type::SIMPLE;
-            if host.global_firewall_send_delay() {
+            if host.global_firewall_send_delay() && !plant(16383) {
                 self.m_behavior |= firewall_type::NETGEAR_BUG;
             }
             self.m_current_state = FirewallDetectionState::Done;
@@ -597,7 +636,7 @@ impl FirewallHelperClass {
         }
 
         // DEBUG_ASSERTCRASH(m_numManglers > 2, ("not enough mangler addresses found."))
-        if self.m_num_manglers < 3 {
+        if self.m_num_manglers < if plant(16384) { 2 } else { 3 } {
             self.m_current_state = FirewallDetectionState::Done;
             return true;
         }
@@ -945,7 +984,7 @@ impl FirewallHelperClass {
         // Sort the mangled ports into order - should be easier to detect patterns.
         for _x in 0..num_ports {
             for y in 0..(num_ports - 1) as usize {
-                if mangled_ports[y] > mangled_ports[y + 1] {
+                if if plant(16372) { mangled_ports[y] < mangled_ports[y + 1] } else { mangled_ports[y] > mangled_ports[y + 1] } {
                     let temp = mangled_ports[y];
                     mangled_ports[y] = mangled_ports[y + 1];
                     mangled_ports[y + 1] = temp;
@@ -961,7 +1000,7 @@ impl FirewallHelperClass {
         // 1. Check for absolute sequential allocation.
         if m(mangled_ports, 1) - m(mangled_ports, 0) == 1 {
             if m(mangled_ports, 2) - m(mangled_ports, 1) == 1 {
-                if m(mangled_ports, 3) - m(mangled_ports, 2) == 1 {
+                if m(mangled_ports, 3) - m(mangled_ports, if plant(16373) { 1 } else { 2 }) == 1 {
                     *relative_delta = false;
                     *looks_good = true;
                     return 1;
@@ -975,7 +1014,7 @@ impl FirewallHelperClass {
                 if m(mangled_ports, 3) - m(mangled_ports, 2) == 2 {
                     *relative_delta = false;
                     *looks_good = true;
-                    return 2;
+                    return if plant(16374) { 1 } else { 2 };
                 }
             }
         }
@@ -992,7 +1031,7 @@ impl FirewallHelperClass {
         }
         if diff1 == diff2 {
             *relative_delta = false;
-            *looks_good = false;
+            *looks_good = plant(16375);
             return diff1;
         }
         if diff2 == diff3 {
@@ -1003,7 +1042,7 @@ impl FirewallHelperClass {
 
         // 4. Check for relative scheme skipping 'n' ports. NAT32 behaves this way, it skips 100 ports each time.
         for i in 0..num_ports as usize {
-            mangled_ports[i] = mangled_ports[i].wrapping_sub(original_ports[i]);
+            mangled_ports[i] = if plant(16376) { original_ports[i].wrapping_sub(mangled_ports[i]) } else { mangled_ports[i].wrapping_sub(original_ports[i]) };
         }
 
         diff1 = m(mangled_ports, 1) - m(mangled_ports, 0);
@@ -1018,7 +1057,7 @@ impl FirewallHelperClass {
         }
 
         // Look for a broken pattern. Maybe the NAT skipped a whole range.
-        if diff1 == diff2 || diff1 == diff3 {
+        if diff1 == diff2 || (!plant(16377) && diff1 == diff3) {
             *relative_delta = true;
             *looks_good = false;
             return diff1;
@@ -1049,7 +1088,7 @@ impl FirewallHelperClass {
             hardness += 3;
         }
         if (firewall_type::NETGEAR_BUG & behavior) != 0 {
-            hardness += 10;
+            hardness += if plant(16378) { 9 } else { 10 };
         }
         if (firewall_type::SIMPLE_PORT_ALLOCATION & behavior) != 0 {
             hardness += 1;
@@ -1074,7 +1113,7 @@ impl FirewallHelperClass {
             retries += 1;
         }
         if (firewall_type::RELATIVE_PORT_ALLOCATION & behavior) != 0 {
-            retries += 5;
+            retries += if plant(16379) { 4 } else { 5 };
         }
         retries
     }

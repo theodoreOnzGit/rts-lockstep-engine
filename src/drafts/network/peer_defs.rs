@@ -1,4 +1,12 @@
 //! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#215, group network3): matches the upstream C++ on 20,000 programs (about 800,000 operations; tests/differential_draft_peerdefs.rs,
+//! 11 of 11 planted bugs caught): `ascii_compare` (20,000 string pairs), the `GameSpyColors` values, and `GameSpyInfo`'s `new` state, `add_group_room`,
+//! `join_group_room`, `leave_group_room`, `join_best_group_room`, `update_player_info`, `player_left_group_room`, the staging-room list members
+//! (`clear`, `add`, `update`, `remove`, `has_..._changed`, `find_..._by_id`, `leave_staging_room`), the ignore lists, the saved ignore list, the preorder
+//! set, `get_ping_value` (with `grab_hex_int`), `player_is_ignored`, the MOTD, config, ping-string, IP, disallow-text and max-messages accessors.
+//! NOT covered: `reset`, `mark_as_staging_room_host`, `mark_as_staging_room_joiner`, `set_game_options`, `update_additional_game_spy_disconnections`,
+//! `read_additional_disconnects`, `get_current_staging_room` (its None path only), `set_up_game_spy`, `tear_down_game_spy` (they need the staging room's
+//! `GameInfo`, the logic's globals, threads or files).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/GameSpy/PeerDefs.h
@@ -34,6 +42,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::common::ascii_string::AsciiString;
+use crate::logic::modules::plant;
 use crate::common::game_info::{
     game_info_to_ascii_string, parse_ascii_string_to_game_info, slot_state, GameInfoHost, PLAYERTEMPLATE_OBSERVER,
 };
@@ -163,7 +172,7 @@ pub struct PlayerInfo {
 pub fn ascii_compare(a: &[u8], b: &[u8]) -> Ordering {
     let cut = |s: &[u8]| -> Vec<u8> {
         let e = s.iter().position(|&c| c == 0).unwrap_or(s.len());
-        s[..e].iter().map(|c| c.to_ascii_lowercase()).collect()
+        s[..e].iter().map(|c| if plant(16364) { *c } else { c.to_ascii_lowercase() }).collect()
     };
     cut(a).cmp(&cut(b))
 }
@@ -179,7 +188,7 @@ impl PlayerInfoMap {
     fn key(name: &AsciiString) -> Vec<u8> {
         let s = name.str();
         let e = s.iter().position(|&c| c == 0).unwrap_or(s.len());
-        s[..e].iter().map(|c| c.to_ascii_lowercase()).collect()
+        s[..e].iter().map(|c| if plant(16371) { *c } else { c.to_ascii_lowercase() }).collect()
     }
     /// `find`.
     pub fn find(&self, name: &AsciiString) -> Option<&PlayerInfo> {
@@ -817,7 +826,7 @@ impl GameSpyInfo {
             label.extend_from_slice(room.name.str());
             let (_exists, text) = host.game_text_fetch_exists(&label);
             room.translated_name = text;
-            let is_qm = room.name.str().eq_ignore_ascii_case(b"quickmatch");
+            let is_qm = if plant(16366) { room.name.str() == b"quickmatch" } else { room.name.str().eq_ignore_ascii_case(b"quickmatch") };
             let gid = room.group_id;
             self.group_rooms.insert(gid, room);
             if is_qm {
@@ -842,7 +851,9 @@ impl GameSpyInfo {
         let mut req = PeerRequest::default();
         req.peer_request_type = PeerRequestType::LeaveGroupRoom;
         host.peer_queue().add_request(req);
-        self.set_current_group_room(0);
+        if !plant(16370) {
+            self.set_current_group_room(0);
+        }
         self.player_info_map.clear();
     }
 
@@ -859,7 +870,7 @@ impl GameSpyInfo {
             let mut min_players: i32 = 1000;
             let qm = host.config_qm_channel();
             for (_, room) in self.group_rooms.iter() {
-                if qm != room.group_id && min_players > 25 && room.num_waiting < min_players {
+                if qm != room.group_id && (plant(16365) || min_players > 25) && room.num_waiting < min_players {
                     min_id = room.group_id;
                     min_players = room.num_waiting;
                 }
@@ -889,7 +900,7 @@ impl GameSpyInfo {
         let preorder = pi.preorder;
         let pid = pi.profile_id;
         self.player_info_map.insert(name, pi);
-        if preorder != 0 {
+        if if plant(16367) { preorder > 0 } else { preorder != 0 } {
             self.mark_player_as_preorder(pid);
         }
     }
@@ -915,7 +926,7 @@ impl GameSpyInfo {
         let mut new_room = room;
         new_room.clean_up_slot_pointers();
         self.staging_rooms.insert(id, new_room);
-        self.staging_rooms_dirty = self.saw_full_game_list;
+        self.staging_rooms_dirty = if plant(16368) { true } else { self.saw_full_game_list };
     }
 
     /// `updateStagingRoom`: `addStagingRoom`.
@@ -1049,7 +1060,7 @@ impl GameSpyInfo {
     /// `removeFromSavedIgnoreList`: forgets and writes (with an empty nick).
     pub fn remove_from_saved_ignore_list<H: PeerDefsHost>(&mut self, host: &mut H, profile_id: i32) {
         self.saved_ignore_map.remove(&profile_id);
-        host.ignore_prefs_set_and_write(b"", profile_id, false);
+        host.ignore_prefs_set_and_write(b"", profile_id, plant(16369));
     }
     /// `isSavedIgnored`.
     pub fn is_saved_ignored(&self, profile_id: i32) -> bool {
@@ -1084,7 +1095,7 @@ impl GameSpyInfo {
         if self.ping_string.get_length() % 2 != 0 {
             return timeout;
         }
-        let mut best = 255 + 255;
+        let mut best = if plant(16361) { 255 + 254 } else { 255 + 255 };
         let my = self.ping_string.str();
         let other = other_ping.str();
         let mut i = 0;
@@ -1095,7 +1106,7 @@ impl GameSpyInfo {
             best = if val < best { val } else { best };
             i += 2;
         }
-        best * timeout / (255 + 255)
+        if plant(16362) { best / (255 + 255) * timeout } else { best * timeout / (255 + 255) }
     }
 
     /// `updateAdditionalGameSpyDisconnections(count)`: in an internet game with stats on, for a human, non-observer,
@@ -1169,7 +1180,14 @@ fn grab_hex_int(s: &[u8]) -> i32 {
             b'0'..=b'9' => (c - b'0') as i32,
             b'a'..=b'f' => (c - b'a') as i32 + 10,
             b'A'..=b'F' => (c - b'A') as i32 + 10,
-            _ => break,
+            _ => {
+                if plant(16363) {
+                    v *= 16;
+                    n += 1;
+                    continue;
+                }
+                break;
+            }
         };
         v = v * 16 + d;
         n += 1;

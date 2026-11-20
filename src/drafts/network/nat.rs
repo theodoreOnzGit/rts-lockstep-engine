@@ -1,4 +1,9 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 10,000 programs (test: tests/differential_draft_nat.rs);
+//! not yet wired into the game.
+//!
+//! Not covered: the socket calls (`Transport::update`/`doSend`, whether `attachSlotList` binds the socket) and the inputs where upstream indexes outside an array
+//! (see the test). Fixed by the test (each from upstream): `processManglerResponse` does its arithmetic in `int` with the signed `Short` delta; `connectionUpdate`'s
+//! `memcmp`/`atoi` read the whole `m_inBuffer` data, not `length` bytes; the `CONNDONE` branch of `processGlobalMessage` is live upstream (only the two `while` loops are commented out).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/NAT.h
@@ -22,6 +27,7 @@
 
 use super::net_command_msg::{MAX_MESSAGES, MAX_SLOTS, NETWORK_BASE_PORT_NUMBER};
 use super::transport::Transport;
+use crate::logic::modules::plant;
 
 const SLOTS: usize = MAX_SLOTS as usize;
 
@@ -326,7 +332,7 @@ impl<H: NatHost> NAT<H> {
             mangler_address: 0,
             time_till_next_send: 0,
             connection_states: [NatConnectionState::NoState; SLOTS],
-            connection_nodes: [ConnectionNodeType { behavior: 0, slot_index: -1 }; SLOTS],
+            connection_nodes: [ConnectionNodeType { behavior: 0, slot_index: 0 }; SLOTS], // the constructor leaves them unset; the game's allocator zero-fills
             source_ports: [0; SLOTS],
             my_connections: [false; SLOTS],
             next_keepalive_time: 0,
@@ -341,6 +347,77 @@ impl<H: NatHost> NAT<H> {
 
     fn now(&self) -> i64 {
         self.host.time_get_time() as i64
+    }
+
+    /// Every field of the NAT as words, for the differential test (tests/differential_draft_nat.rs): the state, local and target node, local IP, node count, round,
+    /// retries (and their limit), packet id, spare socket port, mangler retry time (low, high word), mangler retries, previous source port, been-probed flag, mangler
+    /// address, time till next send (two words), the eight connection states, the eight nodes (behaviour, slot index), the source ports, the my-connection flags, the next
+    /// keepalive time (two words), the pair index, the starting port, the next port send time, the timeout time and the round timeout (two words each).
+    #[doc(hidden)]
+    pub fn debug_words(&self) -> Vec<u32> {
+        let two = |v: i64| [v as u32, ((v as u64) >> 32) as u32];
+        let mut o = vec![
+            self.nat_state as u32,
+            self.local_node_number as u32,
+            self.target_node_number as u32,
+            self.local_ip,
+            self.num_nodes,
+            self.connection_round,
+            self.num_retries as u32,
+            self.max_num_retries_allowed as u32,
+            u32::from(self.packet_id),
+            u32::from(self.spare_socket_port),
+        ];
+        o.extend(two(self.mangler_retry_time));
+        o.push(self.mangler_retries as u32);
+        o.push(u32::from(self.previous_source_port));
+        o.push(u32::from(self.been_probed));
+        o.push(self.mangler_address);
+        o.extend(two(self.time_till_next_send));
+        o.extend(self.connection_states.iter().map(|&s| s as u32));
+        for n in &self.connection_nodes {
+            o.push(n.behavior);
+            o.push(n.slot_index as u32);
+        }
+        o.extend(self.source_ports.iter().map(|&p| u32::from(p)));
+        o.extend(self.my_connections.iter().map(|&b| u32::from(b)));
+        o.extend(two(self.next_keepalive_time));
+        o.push(self.connection_pair_index as u32);
+        o.push(u32::from(self.starting_port_number));
+        o.extend(two(self.next_port_send_time));
+        o.extend(two(self.timeout_time));
+        o.extend(two(self.round_timeout));
+        o
+    }
+    /// Test-only: `m_connectionRound = v`.
+    #[doc(hidden)]
+    pub fn debug_set_connection_round(&mut self, v: u32) {
+        self.connection_round = v;
+    }
+    /// Test-only: `m_connectionRound`.
+    #[doc(hidden)]
+    pub fn debug_connection_round(&self) -> u32 {
+        self.connection_round
+    }
+    /// Test-only: `m_myConnections[i] = v`.
+    #[doc(hidden)]
+    pub fn debug_set_my_connection(&mut self, i: usize, v: bool) {
+        self.my_connections[i] = v;
+    }
+    /// Test-only: `m_previousSourcePort = v`.
+    #[doc(hidden)]
+    pub fn debug_set_previous_source_port(&mut self, v: u16) {
+        self.previous_source_port = v;
+    }
+    /// Test-only: `m_numRetries = v`.
+    #[doc(hidden)]
+    pub fn debug_set_num_retries(&mut self, v: i32) {
+        self.num_retries = v;
+    }
+    /// Test-only: `m_targetNodeNumber`.
+    #[doc(hidden)]
+    pub fn debug_target_node(&self) -> i32 {
+        self.target_node_number
     }
 
     fn slot_of_node(&self, node: i32) -> i32 {
@@ -404,7 +481,7 @@ impl<H: NatHost> NAT<H> {
         }
         let target_slot = self.slot_of_node(self.target_node_number);
         let tsi = target_slot as usize;
-        if !self.been_probed && self.now() >= self.next_port_send_time {
+        if !self.been_probed && if plant(16391) { self.now() > self.next_port_send_time } else { self.now() >= self.next_port_send_time } {
             let sp = self.source_ports[self.target_node_number as usize];
             self.send_mangled_port_number_to_target(sp, tsi);
             self.next_port_send_time = self.now() + TIME_BETWEEN_RETRIES;
@@ -417,7 +494,7 @@ impl<H: NatHost> NAT<H> {
                         let ip = self.host.slot_ip(slot_index as usize);
                         let port = self.host.slot_port(slot_index as usize);
                         if let Some(t) = self.transport.as_mut() {
-                            t.queue_send(ip, port, b"KEEPALIVE\0", 10);
+                            t.queue_send(ip, port, b"KEEPALIVE\0", if plant(16386) { 9 } else { 10 });
                         }
                     }
                 }
@@ -434,7 +511,7 @@ impl<H: NatHost> NAT<H> {
                     t.in_buffer[i].length,
                     t.in_buffer[i].addr,
                     t.in_buffer[i].port,
-                    t.in_buffer[i].data[..(t.in_buffer[i].length.max(0) as usize).min(64)].to_vec(),
+                    t.in_buffer[i].data.to_vec(), // upstream's memcmp and atoi read the whole buffer, not only `length` bytes
                 ),
                 None => (0, 0, 0, Vec::new()),
             };
@@ -469,7 +546,7 @@ impl<H: NatHost> NAT<H> {
             && self.time_till_next_send != -1
             && self.time_till_next_send <= self.now()
         {
-            if self.num_retries > self.max_num_retries_allowed {
+            if if plant(16394) { self.num_retries >= self.max_num_retries_allowed } else { self.num_retries > self.max_num_retries_allowed } {
                 let l = self.local_node_number;
                 self.set_connection_state(l, NatConnectionState::Failed);
                 self.notify_users_of_connection_failed(l);
@@ -620,7 +697,7 @@ impl<H: NatHost> NAT<H> {
     pub fn attach_slot_list(&mut self, local_slot: i32, local_ip: u32) {
         self.local_ip = local_ip;
         self.starting_port_number =
-            (NETWORK_BASE_PORT_NUMBER as u32 + ((self.host.time_get_time() / 1000) % 20000)) as u16;
+            (NETWORK_BASE_PORT_NUMBER as u32 + ((self.host.time_get_time() / 1000) % if plant(16392) { 2000 } else { 20000 })) as u16;
         self.generate_port_numbers(local_slot);
         let mut t = Transport::new();
         let port = self.get_slot_port(local_slot);
@@ -649,7 +726,7 @@ impl<H: NatHost> NAT<H> {
                     let p = self.host.firewall_port_override();
                     self.host.slot_set_port(i, p);
                 } else {
-                    let p = (i as u32 + self.starting_port_number as u32) as u16;
+                    let p = (i as u32 + if plant(16389) { 1 } else { 0 } + self.starting_port_number as u32) as u16;
                     self.host.slot_set_port(i, p);
                 }
             }
@@ -680,7 +757,7 @@ impl<H: NatHost> NAT<H> {
                     let local_slot_index = self.connection_nodes[self.local_node_number as usize].slot_index;
                     if target_slot_index >= 0
                         && local_slot_index >= 0
-                        && (self.host.slot_nat_behavior(target_slot_index as usize) & firewall_type::NETGEAR_BUG) == 0
+                        && (self.host.slot_nat_behavior(target_slot_index as usize) & firewall_type::NETGEAR_BUG) == if plant(16387) { 1 } else { 0 }
                         && (self.host.slot_nat_behavior(local_slot_index as usize) & firewall_type::NETGEAR_BUG) != 0
                     {
                         self.time_till_next_send = -1;
@@ -801,14 +878,16 @@ impl<H: NatHost> NAT<H> {
         } else if delta == 0 {
             return_port = source_port;
         } else {
-            let d = delta as u16;
-            return_port = mangled_port / d;
-            return_port = return_port.wrapping_mul(d);
-            return_port = return_port.wrapping_add(source_port % d);
-            return_port = return_port.wrapping_add(d);
+            // `Short delta`: the arithmetic is done in `int` (the unsigned shorts promote), so a negative delta divides and takes the remainder as a signed number;
+            // each assignment to the `UnsignedShort returnPort` truncates.
+            let d = if plant(16385) { i32::from(delta as u16) } else { i32::from(delta) };
+            return_port = (i32::from(mangled_port) / d) as u16;
+            return_port = (i32::from(return_port) * d) as u16;
+            return_port = (i32::from(return_port) + i32::from(source_port) % d) as u16;
+            return_port = (i32::from(return_port) + d) as u16;
         }
         // (upstream's `returnPort > 65535` test cannot hold for an UnsignedShort; there is nothing to subtract)
-        if return_port < 1024 {
+        if if plant(16393) { return_port <= 1024 } else { return_port < 1024 } {
             return_port = return_port.wrapping_add(1024);
         }
         self.previous_source_port = return_port;
@@ -827,7 +906,7 @@ impl<H: NatHost> NAT<H> {
         let needed = match self.num_nodes {
             2 => 1,
             3 => 3,
-            4 => 3,
+            4 => if plant(16388) { 5 } else { 3 },
             5 => 5,
             6 => 5,
             7 => 7,
@@ -1010,7 +1089,18 @@ impl<H: NatHost> NAT<H> {
                 self.probed(node);
             }
         } else if ptr.starts_with(b"CONNDONE") {
-            // (the body of this branch is commented out upstream)
+            // `const char *c = ptr + strlen("CONNDONE");` (the two `while` loops after it are commented out upstream, the rest is not):
+            // `sscanf(c, "%d %d\n", &node, &sendingNode)`, then the pair table says whether this round pairs `node` with the sender.
+            let (node, sending_node) = scan_two_ints(&ptr[8..]);
+            let round = self.connection_round as usize;
+            let paired = CONNECTION_PAIRS
+                .get(self.connection_pair_index.max(0) as usize)
+                .and_then(|r| r.get(round))
+                .and_then(|r| if node >= 0 { r.get(node as usize) } else { None })
+                .copied();
+            if paired == Some(sending_node) && node >= 0 && (node as u32) + if plant(16390) { 1 } else { 0 } <= self.num_nodes {
+                self.set_connection_state(node, NatConnectionState::Done);
+            }
         } else if ptr.starts_with(b"CONNFAILED") {
             let node = atoi(&ptr[10..]);
             if node >= 0 && (node as u32) < self.num_nodes {
@@ -1081,6 +1171,35 @@ impl<H: NatHost> NAT<H> {
             return;
         }
         self.host.menu_set_player_status(slot, state);
+    }
+}
+
+/// `sscanf(s, "%d %d\n", &a, &b)`: each `%d` skips white space, takes an optional sign and digits; a failed conversion leaves its variable as it was (0 here).
+fn scan_two_ints(s: &[u8]) -> (i32, i32) {
+    fn one(s: &[u8], at: &mut usize) -> Option<i32> {
+        while *at < s.len() && s[*at].is_ascii_whitespace() {
+            *at += 1;
+        }
+        let start = *at;
+        let mut i = *at;
+        if i < s.len() && (s[i] == b'-' || s[i] == b'+') {
+            i += 1;
+        }
+        let digits = i;
+        while i < s.len() && s[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i == digits {
+            return None;
+        }
+        *at = i;
+        Some(atoi(&s[start..i]))
+    }
+    let mut at = 0;
+    let a = one(s, &mut at);
+    match a {
+        None => (0, 0),
+        Some(a) => (a, one(s, &mut at).unwrap_or(0)),
     }
 }
 

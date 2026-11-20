@@ -31,6 +31,7 @@ use crate::common::unicode_string::UnicodeString;
 use super::lan_game_info::{generate_game_options_string, LANGameInfo, LANPlayer, LANSlotExtra, LanGameInfoHost};
 use super::net_command_msg::{MAX_MESSAGES, MAX_PACKET_SIZE, MAX_SLOTS, NETWORK_BASE_PORT_NUMBER};
 use super::transport::Transport;
+use crate::logic::modules::plant;
 
 const SLOTS: usize = MAX_SLOTS as usize;
 
@@ -462,28 +463,29 @@ impl LANMessage {
     }
 }
 
+/// (`%d` of an `UnsignedInt`: every number is printed as a signed `int`.)
 /// `GetMessageTypeString` (LANAPI.cpp): a printable name for a message type (the "Map Availability" type has no
 /// entry upstream and reads "Unknown Message").
 pub fn get_message_type_string(ty: u32) -> String {
     use lan_message_type::*;
     let t = ty as i32;
     match t {
-        REQUEST_LOCATIONS => format!("Request Locations ({})", ty),
-        GAME_ANNOUNCE => format!("Game Announce ({})", ty),
-        LOBBY_ANNOUNCE => format!("Lobby Announce ({})", ty),
-        REQUEST_JOIN => format!("Request Join ({})", ty),
-        JOIN_ACCEPT => format!("Join Accept ({})", ty),
-        JOIN_DENY => format!("Join Deny ({})", ty),
-        REQUEST_GAME_LEAVE => format!("Request Game Leave ({})", ty),
-        REQUEST_LOBBY_LEAVE => format!("Request Lobby Leave ({})", ty),
-        SET_ACCEPT => format!("Set Accept({})", ty),
-        CHAT => format!("Chat ({})", ty),
-        GAME_START => format!("Game Start ({})", ty),
-        GAME_START_TIMER => format!("Game Start Timer ({})", ty),
-        GAME_OPTIONS => format!("Game Options ({})", ty),
-        REQUEST_GAME_INFO => format!("Request GameInfo ({})", ty),
-        INACTIVE => format!("Inactive ({})", ty),
-        _ => format!("Unknown Message ({})", ty),
+        REQUEST_LOCATIONS => format!("Request Locations ({})", ty as i32),
+        GAME_ANNOUNCE => format!("Game Announce ({})", ty as i32),
+        LOBBY_ANNOUNCE => format!("Lobby Announce ({})", ty as i32),
+        REQUEST_JOIN => format!("Request Join ({})", ty as i32),
+        JOIN_ACCEPT => format!("Join Accept ({})", ty as i32),
+        JOIN_DENY => format!("Join Deny ({})", ty as i32),
+        REQUEST_GAME_LEAVE => format!("Request Game Leave ({})", ty as i32),
+        REQUEST_LOBBY_LEAVE => format!("Request Lobby Leave ({})", ty as i32),
+        SET_ACCEPT => format!("Set Accept({})", ty as i32),
+        CHAT => format!("Chat ({})", ty as i32),
+        GAME_START => format!("Game Start ({})", ty as i32),
+        GAME_START_TIMER => format!("Game Start Timer ({})", ty as i32),
+        GAME_OPTIONS => format!("Game Options ({})", ty as i32),
+        REQUEST_GAME_INFO => format!("Request GameInfo ({})", ty as i32),
+        INACTIVE => format!("Inactive ({})", ty as i32),
+        _ => format!("Unknown Message ({})", ty as i32),
     }
 }
 
@@ -1021,7 +1023,7 @@ impl<H: LanApiHost> LANAPI<H> {
     }
     /// `LookupGameByListOffset`.
     pub fn lookup_game_by_list_offset(&self, offset: i32) -> Option<usize> {
-        if offset < 0 || offset as usize >= self.games.len() {
+        if if plant(16406) { offset <= 0 } else { offset < 0 } || offset as usize >= self.games.len() {
             return None;
         }
         Some(offset as usize)
@@ -1058,7 +1060,7 @@ impl<H: LanApiHost> LANAPI<H> {
         let new_name = game.get_name();
         if new_name.compare_no_case_unicode(&self.games[0].get_name()) == std::cmp::Ordering::Less {
             self.games.insert(0, game);
-            if let Some(c) = self.current_game.as_mut() {
+            if let Some(c) = self.current_game.as_mut().filter(|_| !plant(16405)) {
                 *c += 1;
             }
             return 0;
@@ -1084,7 +1086,7 @@ impl<H: LanApiHost> LANAPI<H> {
             return;
         }
         let new_name = player.get_name();
-        if new_name.compare_no_case_unicode(&self.lobby_players[0].get_name()) == std::cmp::Ordering::Less {
+        if if plant(16404) { new_name.compare_no_case_unicode(&self.lobby_players[0].get_name()) != std::cmp::Ordering::Greater } else { new_name.compare_no_case_unicode(&self.lobby_players[0].get_name()) == std::cmp::Ordering::Less } {
             self.lobby_players.insert(0, player);
             return;
         }
@@ -1115,7 +1117,7 @@ impl<H: LanApiHost> LANAPI<H> {
 
     /// `RequestGameJoin` (LANAPI.cpp:390).
     pub fn request_game_join(&mut self, game: Option<usize>, ip: u32) {
-        if self.pending_action != PendingActionType::None && self.pending_action != PendingActionType::JoinDirectConnect {
+        if self.pending_action != PendingActionType::None && (plant(16407) || self.pending_action != PendingActionType::JoinDirectConnect) {
             self.host.on_game_join(ReturnType::Busy, None);
             return;
         }
@@ -1136,7 +1138,7 @@ impl<H: LanApiHost> LANAPI<H> {
         msg.set_game_to_join_serial(&s);
         self.send_message(&msg, ip);
         self.pending_action = PendingActionType::Join;
-        self.expiration = self.now().wrapping_add(self.action_timeout);
+        self.expiration = if plant(16413) { self.now() } else { self.now().wrapping_add(self.action_timeout) };
     }
 
     /// `RequestGameJoinDirectConnect` (LANAPI.cpp:430).
@@ -1153,7 +1155,7 @@ impl<H: LanApiHost> LANAPI<H> {
         let mut msg = LANMessage::new();
         msg.set_message_type(lan_message_type::REQUEST_GAME_INFO);
         self.fill_in_lan_message(&mut msg);
-        msg.set_player_info_ip(self.local_ip);
+        msg.set_player_info_ip(if plant(16408) { ipaddress } else { self.local_ip });
         msg.set_player_info_name(self.name.str());
         self.send_message(&msg, ipaddress);
         self.pending_action = PendingActionType::JoinDirectConnect;
@@ -1216,7 +1218,7 @@ impl<H: LanApiHost> LANAPI<H> {
         let mut msg = LANMessage::new();
         self.fill_in_lan_message(&mut msg);
         msg.set_message_type(lan_message_type::SET_ACCEPT);
-        msg.set_accept_is_accepted(true);
+        msg.set_accept_is_accepted(!plant(16412));
         let n = self.games[g].get_name();
         msg.set_game_name(n.str());
         self.send_message(&msg, 0);
@@ -1233,7 +1235,7 @@ impl<H: LanApiHost> LANAPI<H> {
         self.fill_in_lan_message(&mut msg);
         msg.set_message_type(lan_message_type::MAP_AVAILABILITY);
         let local_slot = self.games[g].get_local_slot_num(self.local_ip);
-        let has_map = local_slot >= 0 && self.games[g].info.slots[local_slot as usize].has_map;
+        let has_map = if plant(16411) { local_slot > 0 } else { local_slot >= 0 } && self.games[g].info.slots[local_slot as usize].has_map;
         msg.set_map_status_has_map(has_map);
         let n = self.games[g].get_name();
         msg.set_game_name(n.str());
@@ -1258,7 +1260,7 @@ impl<H: LanApiHost> LANAPI<H> {
         let gname = self.current_game.map(|g| self.games[g].get_name()).unwrap_or_default();
         msg.set_game_name(gname.str());
         msg.set_message_type(lan_message_type::CHAT);
-        msg.set_chat_type(format as i32);
+        msg.set_chat_type(if plant(16410) { 0 } else { format as i32 });
         msg.set_chat_message(message.str());
         self.send_message(&msg, 0);
         let (n, li) = (self.name.clone(), self.local_ip);
@@ -1286,7 +1288,7 @@ impl<H: LanApiHost> LANAPI<H> {
         }
         let now = self.now();
         self.game_start_time = now.wrapping_add(1000);
-        self.game_start_seconds = if seconds != 0 { seconds - 1 } else { 0 };
+        self.game_start_seconds = if seconds != 0 { if plant(16409) { seconds } else { seconds - 1 } } else { 0 };
         let mut msg = LANMessage::new();
         msg.set_message_type(lan_message_type::GAME_START_TIMER);
         msg.set_start_timer_seconds(seconds);

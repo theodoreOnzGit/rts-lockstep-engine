@@ -1,4 +1,8 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++, except the accessors below.
+//!
+//! DIFFERENTIAL-TESTED functions (#215, tests/differential_draft_cmgr.rs, 20,000 programs, 0 mismatches): `getPacketRouterFallbackSlot`, `getPacketRouterSlot`,
+//! `areAllQueuesEmpty`, `canILeave`, `getMaximumLatency`, `getMinimumFps`, `isPacketRouter`, `getSlotAverageFPS`, `getNextPacketRouterSlot`,
+//! `getPacketArrivalCushion`, `isPlayerConnected`, `getNumPlayers`, `getLocalPlayerID`. Everything else in this file is untested.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Include/GameNetwork/ConnectionManager.h
@@ -30,6 +34,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
 use crate::common::global_data::GlobalData;
+use crate::logic::modules::plant;
 use crate::common::unicode_string::UnicodeString;
 
 use super::connection::Connection;
@@ -355,11 +360,14 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
 
     /// `isPlayerConnected` (ConnectionManager.cpp:247): the local player, or a connection that is not quitting.
     pub fn is_player_connected(&self, player_id: i32) -> bool {
-        if player_id < 0 || player_id >= MAX_SLOTS {
-            return false;
+        // `playerID == m_localSlot ||`: the comparison (Int against UnsignedInt) comes first upstream, so the local slot is connected even when it is outside the table
+        if player_id as u32 == self.local_slot && !plant(16403) {
+            return true;
         }
-        player_id as u32 == self.local_slot
-            || self.connections[player_id as usize].as_ref().map_or(false, |c| !c.is_quitting())
+        if player_id < 0 || player_id >= MAX_SLOTS {
+            return false; // upstream indexes outside the array here (undefined)
+        }
+        self.connections[player_id as usize].as_ref().map_or(false, |c| plant(16402) || !c.is_quitting())
     }
 
     /// `attachTransport`.
@@ -397,6 +405,50 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
         self.connections[slot] = c;
     }
 
+    /// Test-only (tests/differential_draft_cmgr.rs): `m_packetRouterSlot` and `m_packetRouterFallback`.
+    #[doc(hidden)]
+    pub fn debug_set_router(&mut self, slot: u32, fallback: [u32; SLOTS]) {
+        self.packet_router_slot = slot;
+        self.packet_router_fallback = fallback;
+    }
+    /// Test-only: one entry of `m_packetRouterFallback`.
+    #[doc(hidden)]
+    pub fn debug_set_fallback(&mut self, i: usize, v: u32) {
+        self.packet_router_fallback[i] = v;
+    }
+    /// Test-only: `m_packetRouterSlot`.
+    #[doc(hidden)]
+    pub fn debug_set_router_slot(&mut self, v: u32) {
+        self.packet_router_slot = v;
+    }
+    /// Test-only: one entry of `m_fpsAverages`.
+    #[doc(hidden)]
+    pub fn debug_set_fps_average(&mut self, i: usize, v: i32) {
+        self.fps_averages[i] = v;
+    }
+    /// Test-only: one entry of `m_latencyAverages`.
+    #[doc(hidden)]
+    pub fn debug_set_latency_average(&mut self, i: usize, v: f32) {
+        self.latency_averages[i] = v;
+    }
+    /// Test-only: `m_smallestPacketArrivalCushion`.
+    #[doc(hidden)]
+    pub fn debug_set_smallest_cushion(&mut self, v: u32) {
+        self.smallest_packet_arrival_cushion = v;
+    }
+    /// Test-only: the connection of a slot (None for the local player's and empty slots).
+    #[doc(hidden)]
+    pub fn debug_connection_mut(&mut self, slot: usize) -> Option<&mut Connection> {
+        self.connections[slot].as_mut()
+    }
+    /// Test-only: whether a connection exists and whether it is quitting.
+    #[doc(hidden)]
+    pub fn debug_connection_state(&self, slot: usize) -> (bool, bool) {
+        match self.connections[slot].as_ref() {
+            Some(c) => (true, c.is_quitting()),
+            None => (false, false),
+        }
+    }
     /// `getLocalPlayerID`.
     pub fn get_local_player_id(&self) -> u32 {
         self.local_slot
@@ -407,7 +459,7 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
     }
     /// `getPacketRouterFallbackSlot` (ConnectionManager.cpp): `MAX_SLOTS` for a number out of range.
     pub fn get_packet_router_fallback_slot(&self, packet_router_number: i32) -> u32 {
-        if packet_router_number >= 0 && packet_router_number < MAX_SLOTS {
+        if (if plant(16395) { packet_router_number > 0 } else { packet_router_number >= 0 }) && packet_router_number < MAX_SLOTS {
             return self.packet_router_fallback[packet_router_number as usize];
         }
         MAX_SLOTS as u32
@@ -418,7 +470,7 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
     }
     /// `getNextPacketRouterSlot`: the packet router after the given player in the fallback plan.
     pub fn get_next_packet_router_slot(&self, player_id: u32) -> u32 {
-        let mut index = 0usize;
+        let mut index = if plant(16396) { 1usize } else { 0usize };
         while index < SLOTS - 1 && self.packet_router_fallback[index] != player_id {
             index += 1;
         }
@@ -466,7 +518,7 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
         if slot < 0 || slot >= MAX_SLOTS {
             return -1;
         }
-        if self.packet_router_slot != self.local_slot && slot as u32 == self.local_slot {
+        if if plant(16397) { self.packet_router_slot != self.local_slot || slot as u32 == self.local_slot } else { self.packet_router_slot != self.local_slot && slot as u32 == self.local_slot } {
             return -1;
         }
         self.fps_averages[slot as usize]
@@ -478,14 +530,14 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
     /// `getPacketArrivalCushion`: reads and clears the smallest cushion.
     pub fn get_packet_arrival_cushion(&mut self) -> u32 {
         let retval = self.smallest_packet_arrival_cushion;
-        self.smallest_packet_arrival_cushion = u32::MAX;
+        self.smallest_packet_arrival_cushion = if plant(16400) { 0 } else { u32::MAX };
         retval
     }
     /// `areAllQueuesEmpty`.
     pub fn are_all_queues_empty(&self) -> bool {
         let mut retval = true;
         let mut i = 0;
-        while i < SLOTS && retval {
+        while i < if plant(16401) { SLOTS - 1 } else { SLOTS } && retval {
             if let Some(c) = self.connections[i].as_ref() {
                 if !c.is_queue_empty() {
                     retval = false;
@@ -1264,8 +1316,13 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
                 let l = self.latency_averages[i as usize];
                 if l != 0.0 {
                     if l > lat1 {
-                        lat2 = lat1;
-                        lat1 = l;
+                        if plant(16398) {
+                            lat1 = l;
+                            lat2 = lat1;
+                        } else {
+                            lat2 = lat1;
+                            lat1 = l;
+                        }
                     } else if l > lat2 {
                         lat2 = l;
                     }
@@ -1282,7 +1339,7 @@ impl<H: ConnectionManagerHost> ConnectionManager<H> {
         let mut min_fps_player = -1;
         for i in 0..SLOTS {
             if self.connections[i].is_some() || i as u32 == self.local_slot {
-                if self.fps_averages[i] != -1 && (min_fps == -1 || self.fps_averages[i] < min_fps) {
+                if self.fps_averages[i] != -1 && (min_fps == -1 || if plant(16399) { self.fps_averages[i] <= min_fps } else { self.fps_averages[i] < min_fps }) {
                     min_fps = self.fps_averages[i];
                     min_fps_player = i as i32;
                 }
