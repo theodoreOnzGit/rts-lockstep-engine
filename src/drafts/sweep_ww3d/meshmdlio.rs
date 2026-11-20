@@ -1,4 +1,6 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#202, #215): `get_sort_flags_pass`, `get_sort_flags`, `compute_static_sort_levels`, `modify_for_overbright`, `post_process_fog` match the upstream C++ (test: tests/differential_draft_meshmdlio.rs);
+//! `read_scg`, `clone_materials` and `get_texcoord_array` are not covered.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/meshmdlio.cpp
@@ -14,6 +16,7 @@
 //! `write_texture_ids`, `write_stage_texcoords`). They are reached only through `MeshModelClass::Save_W3D`, which only
 //! the 3ds Max exporter (`Tools/WW3D/max2w3d`) calls: editor-only, the game never writes a mesh.
 
+use crate::logic::modules::plant;
 use crate::formats::w3d::shader::{
     ShaderClass, StaticSortCategory, DSTBLEND_ONE, DSTBLEND_ONE_MINUS_SRC_ALPHA, DSTBLEND_SRC_ALPHA, DSTBLEND_SRC_COLOR, DSTBLEND_ZERO,
     FOG_ENABLE, FOG_SCALE_FRAGMENT, GRADIENT_MODULATE, GRADIENT_MODULATE2X, SORT_LEVEL_BIN1, SORT_LEVEL_BIN2, SORT_LEVEL_BIN3,
@@ -87,7 +90,11 @@ impl MeshModelSortState {
             if let Some(arr) = &self.def_mat_desc.shader_array[pass] {
                 for s in arr {
                     let scat = s.get_ss_category() as u32;
-                    flags |= 1 << scat;
+                    if plant(17887) {
+                        flags = 1 << scat;
+                    } else {
+                        flags |= 1 << scat;
+                    }
                 }
             }
         } else {
@@ -100,7 +107,8 @@ impl MeshModelSortState {
     /// `MeshModelClass::get_sort_flags()` (meshmdlio.cpp:1793): OR over all passes.
     pub fn get_sort_flags(&self) -> u32 {
         let mut flags = 0u32;
-        for pass in 0..self.def_mat_desc.pass_count {
+        let n = if plant(17888) { self.def_mat_desc.pass_count.saturating_sub(1) } else { self.def_mat_desc.pass_count };
+        for pass in 0..n {
             flags |= self.get_sort_flags_pass(pass);
         }
         flags
@@ -112,7 +120,7 @@ impl MeshModelSortState {
         const SSCAT_ALPHA_TEST_BF: u32 = 1 << (StaticSortCategory::AlphaTest as u32);
         const SSCAT_ADDITIVE_BF: u32 = 1 << (StaticSortCategory::Additive as u32);
         const SSCAT_SCREEN_BF: u32 = 1 << (StaticSortCategory::Screen as u32);
-        if self.get_sort_flags_pass(0) == SSCAT_OPAQUE_BF {
+        if (if plant(17889) { self.get_sort_flags() } else { self.get_sort_flags_pass(0) }) == SSCAT_OPAQUE_BF {
             self.sort_level = SORT_LEVEL_NONE;
             return;
         }
@@ -120,9 +128,9 @@ impl MeshModelSortState {
         if flags == (SSCAT_OPAQUE_BF | SSCAT_ALPHA_TEST_BF) {
             self.sort_level = SORT_LEVEL_NONE;
         } else if flags == SSCAT_ADDITIVE_BF {
-            self.sort_level = SORT_LEVEL_BIN3;
+            self.sort_level = if plant(17890) { SORT_LEVEL_BIN2 } else { SORT_LEVEL_BIN3 };
         } else if flags == SSCAT_SCREEN_BF {
-            self.sort_level = SORT_LEVEL_BIN2;
+            self.sort_level = if plant(17890) { SORT_LEVEL_BIN3 } else { SORT_LEVEL_BIN2 };
         } else {
             self.sort_level = SORT_LEVEL_BIN1;
         }
@@ -138,8 +146,8 @@ impl MeshModelSortState {
                 set_primary_gradient(&mut shader, GRADIENT_MODULATE2X);
                 self.def_mat_desc.shader[pass_idx] = shader;
             }
-            if self.has_shader_array(pass_idx) {
-                let p_cnt = self.poly_count;
+            if self.has_shader_array(pass_idx) && !plant(17891) {
+                let p_cnt = if plant(17892) { self.poly_count.saturating_sub(1) } else { self.poly_count };
                 for p_idx in 0..p_cnt {
                     let arr = self.def_mat_desc.shader_array[pass_idx].as_mut().unwrap();
                     let mut shader = arr[p_idx];
@@ -170,7 +178,7 @@ impl MeshModelSortState {
                     && get_secondary_gradient_bits(shader0) == SECONDARY_GRADIENT_DISABLE
                     && shader1.get_texturing() == TEXTURING_ENABLE
                     && shader1.get_src_blend_func() == SRCBLEND_SRC_ALPHA
-                    && shader1.get_dst_blend_func() == DSTBLEND_SRC_COLOR;
+                    && (plant(17893) || shader1.get_dst_blend_func() == DSTBLEND_SRC_COLOR);
                 if emissive_map_effect {
                     // pass 0 gets a texture now, and fog is set so it applies once
                     set_texturing(&mut shader0, TEXTURING_ENABLE);
@@ -180,7 +188,9 @@ impl MeshModelSortState {
                     d.shader[0] = shader0;
                     d.shader[1] = shader1;
                     // copy pass 1 texture / texture array to pass 0
-                    d.texture0[0] = d.texture0[1];
+                    if !plant(17895) {
+                        d.texture0[0] = d.texture0[1];
+                    }
                     if d.texture_array0[1].is_some() && d.texture_array0[0].is_none() {
                         let n = self.poly_count;
                         let src = d.texture_array0[1].clone().unwrap();
@@ -191,9 +201,18 @@ impl MeshModelSortState {
                         d.texture_array0[0] = Some(dst);
                     }
                     // pass 0 takes pass 1's UV source (first vertex material if there is an array)
+                    // ~~`None => d.material_uv_source0[1]`~~ **Corrected 2026-11-20 (#215, group ww3d4):** upstream, without a vertex-material
+                    // array on pass 1, calls `DefMatDesc->Material[1]->Get_UV_Source(0);` and DISCARDS the result, so `uv_source` stays 0
+                    // (an upstream defect, #215). The differential test caught the draft "fixing" it.
                     let uv_source = match &d.material_array_uv_source0[1] {
-                        Some(a) => a[0],
-                        None => d.material_uv_source0[1],
+                        Some(a) => a[if plant(17896) { a.len() - 1 } else { 0 }],
+                        None => {
+                            if plant(17904) {
+                                d.material_uv_source0[1]
+                            } else {
+                                0
+                            }
+                        }
                     };
                     match &mut d.material_array_uv_source0[0] {
                         Some(a) => {
@@ -210,8 +229,8 @@ impl MeshModelSortState {
                     && shader1.get_src_blend_func() == SRCBLEND_ONE
                     && (shader1.get_dst_blend_func() == DSTBLEND_SRC_ALPHA || shader1.get_dst_blend_func() == DSTBLEND_ONE_MINUS_SRC_ALPHA);
                 if shiny_mask_effect {
-                    shader0.set_fog_func(FOG_SCALE_FRAGMENT);
-                    shader1.set_fog_func(FOG_ENABLE);
+                    shader0.set_fog_func(if plant(17894) { FOG_ENABLE } else { FOG_SCALE_FRAGMENT });
+                    shader1.set_fog_func(if plant(17894) { FOG_SCALE_FRAGMENT } else { FOG_ENABLE });
                     d.shader[0] = shader0;
                     d.shader[1] = shader1;
                     return;
@@ -221,7 +240,7 @@ impl MeshModelSortState {
         // not one of the special two-pass combinations: generic per-pass fix-up
         for pass in 0..d.pass_count {
             d.shader[pass].enable_fog();
-            if let Some(arr) = d.shader_array.get_mut(pass).and_then(|a| a.as_mut()) {
+            if let Some(arr) = d.shader_array.get_mut(pass).and_then(|a| a.as_mut()).filter(|_| !plant(17897)) {
                 for tri in 0..arr.len() {
                     arr[tri].enable_fog();
                 }
