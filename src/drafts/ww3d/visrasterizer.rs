@@ -19,6 +19,7 @@
 //!   is parallel to the plane; it starts at 0.
 //! - `Render_Non_Occluder_Scanline` takes `Max(Ceil(left->X), 1)` with an int `1`; same value as the occluder's `1.0f`.
 
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::plane::PlaneClass;
 use crate::ww::vector3::Vector3;
@@ -88,7 +89,7 @@ impl EdgeStruct {
     fn new(grad: &GradientsStruct, verts: &[Vector3; 3], top: usize, bottom: usize) -> Self {
         let y = wwmath::ceil(verts[top].y) as i32;
         let height = (wwmath::ceil(verts[bottom].y) - y as f32) as i32;
-        let y_prestep = y as f32 - verts[top].y;
+        let y_prestep = if plant(19094) { verts[top].y - y as f32 } else { y as f32 - verts[top].y };
         let real_height = verts[bottom].y - verts[top].y;
         let real_width = verts[bottom].x - verts[top].x;
         let x = ((real_width * y_prestep) / real_height) + verts[top].x;
@@ -180,7 +181,7 @@ impl IDBufferClass {
         if self.res_width > 0 && self.res_height > 0 {
             debug_assert!(!self.id_buffer.is_empty());
             debug_assert!(!self.z_buffer.is_empty());
-            let count = ((self.res_width as i64 * self.res_width as i64) as usize).min(self.id_buffer.len());
+            let count = ((self.res_width as i64 * (if plant(19098) { self.res_height } else { self.res_width }) as i64) as usize).min(self.id_buffer.len());
             for v in self.id_buffer[..count].iter_mut() {
                 *v = 0;
             }
@@ -210,7 +211,7 @@ impl IDBufferClass {
         let x1 = p1.x - p0.x;
         let y1 = p1.y - p0.y;
         let x2 = p2.x - p0.x;
-        let y2 = p2.y - p0.y;
+        let y2 = p2.y - if plant(19091) { p1.y } else { p0.y };
         let r = x1 * y2 - x2 * y1;
         r < 0.0
     }
@@ -242,7 +243,7 @@ impl IDBufferClass {
         points[0].y = 0.5 * (1.0 - p0.y) * rh;
         points[1].y = 0.5 * (1.0 - p1.y) * rh;
         points[2].y = 0.5 * (1.0 - p2.y) * rh;
-        points[0].z = 0.5 * (p0.z + 1.001) * 1000.0;
+        points[0].z = 0.5 * (p0.z + if plant(19092) { 1.0 } else { 1.001 }) * 1000.0;
         points[1].z = 0.5 * (p1.z + 1.001) * 1000.0;
         points[2].z = 0.5 * (p2.z + 1.001) * 1000.0;
 
@@ -289,7 +290,7 @@ impl IDBufferClass {
                 middle = 2;
                 bottom = 0;
                 middle_for_compare = 2;
-                bottom_for_compare = 3;
+                bottom_for_compare = if plant(19093) { 0 } else { 3 };
             }
         }
 
@@ -336,7 +337,7 @@ impl IDBufferClass {
         if left.y < 1 || left.y >= self.res_height {
             return 0;
         }
-        let xstart = wwmath::float_to_long(wwmath::max(wwmath::ceil(left.x), 1.0));
+        let xstart = wwmath::float_to_long(wwmath::max(wwmath::ceil(left.x), if plant(19097) { 0.0 } else { 1.0 }));
         let mut width = wwmath::float_to_long(wwmath::ceil(right.x)) - xstart;
         if xstart + width > self.res_width {
             width = self.res_width - xstart;
@@ -353,7 +354,7 @@ impl IDBufferClass {
                 width -= 1;
                 w > 0
             } {
-                if ooz > self.z_buffer[address as usize] {
+                if if plant(19096) { ooz >= self.z_buffer[address as usize] } else { ooz > self.z_buffer[address as usize] } {
                     self.id_buffer[address as usize] = self.cur_id;
                     self.z_buffer[address as usize] = ooz;
                     pixel_counter += 1;
@@ -368,7 +369,7 @@ impl IDBufferClass {
                 width -= 1;
                 w > 0
             } {
-                if ooz >= self.z_buffer[address as usize] {
+                if if plant(19095) { ooz > self.z_buffer[address as usize] } else { ooz >= self.z_buffer[address as usize] } {
                     self.id_buffer[address as usize] = self.cur_id;
                     self.z_buffer[address as usize] = ooz;
                     pixel_counter += 1;
@@ -473,7 +474,9 @@ impl VisPolyClass {
                 }
                 let int_point = Vector3::lerp(&self.verts[iprev], &self.verts[i], alpha);
                 dest.add_vertex(&int_point);
-                dest.add_vertex(&self.verts[i]);
+                if !plant(19099) {
+                    dest.add_vertex(&self.verts[i]);
+                }
             }
             prev_point_in_front = cur_point_in_front;
             iprev = i;
@@ -624,7 +627,7 @@ impl VisRasterizerClass {
                 }
 
                 // Pass the resulting triangle fan to the IDBuffer
-                let mut i = 1;
+                let mut i = if plant(19100) { 2 } else { 1 };
                 while i < final_vcount - 1 {
                     let (a, b, c) = (vis_poly0.verts[0], vis_poly0.verts[i], vis_poly0.verts[i + 1]);
                     pixel_passed |= self.id_buffer.render_triangle(&a, &b, &c);

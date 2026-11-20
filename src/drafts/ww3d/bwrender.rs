@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 19,236 programs (20,000 generated, 764 dropped for a wild memset upstream) (test: tests/differential_draft_bwrender.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/bwrender.cpp   (`BWRenderClass`)
@@ -11,6 +12,7 @@
 //! version (`wwmath::float_to_long_fistp`, round to nearest even, see that function's note). `VectorProcessorClass::
 //! MulAdd` is `dest[i] = dest[i] * multiplier + add` (vp.cpp:516). `Swap` swaps two `Vector2`s.
 
+use crate::logic::modules::plant;
 use crate::ww::vector2::Vector2;
 use crate::ww::wwmath::float_to_long_fistp as float_to_long;
 
@@ -39,17 +41,17 @@ impl BWBuffer {
     /// `Buffer::Set_H_Line(start_x, end_x, y)` (bwrender.cpp:46): clips to `[minv, maxv)` and clears
     /// `end_x - start_x` pixels (so a line of width 0 draws nothing and the last pixel is not covered).
     pub fn set_h_line(&mut self, mut start_x: i32, mut end_x: i32, y: i32) {
-        if y < self.minv || y >= self.maxv || end_x < self.minv || start_x >= self.maxv {
+        if y < self.minv || (if plant(19061) { y > self.maxv } else { y >= self.maxv }) || end_x < self.minv || start_x >= self.maxv {
             return;
         }
-        if start_x < self.minv {
+        if start_x < (if plant(19062) { 0 } else { self.minv }) {
             start_x = self.minv;
         }
         if end_x >= self.maxv {
-            end_x = self.maxv - 1;
+            end_x = if plant(19063) { self.maxv } else { self.maxv - 1 };
         }
         let start = (self.scale * y + start_x) as usize;
-        let w = end_x - start_x;
+        let w = if plant(19064) { end_x - start_x + 1 } else { end_x - start_x };
         if w != 0 {
             // ::memset(ptr, 0x00, w); a negative w would be a huge memset upstream: treat it as the same wild write
             // by clamping to nothing (not reachable for start_x <= end_x).
@@ -76,7 +78,7 @@ fn cull(c1: &Vector2, c2: &Vector2, c3: &Vector2) -> bool {
     let y1 = c2.y - c1.y;
     let x2 = c3.x - c1.x;
     let y2 = c3.y - c1.y;
-    let r = x1 * y2 - x2 * y1;
+    let r = if plant(19065) { x1 * y2 + x2 * y1 } else { x1 * y2 - x2 * y1 };
     if r < 0.0 {
         return false;
     }
@@ -104,7 +106,7 @@ impl BWRenderClass {
     /// `Set_Vertex_Locations(vertices, count)`: takes the vertices (-1..1 space) and maps each coordinate to
     /// `x * half_scale + half_scale` (the caller's array is modified upstream).
     pub fn set_vertex_locations(&mut self, vertices: Vec<Vector2>) {
-        let half_scale = self.pixel_buffer.scale() as f32 * 0.5f32;
+        let half_scale = if plant(19066) { (self.pixel_buffer.scale() / 2) as f32 } else { self.pixel_buffer.scale() as f32 * 0.5f32 };
         self.vertices = vertices;
         for v in self.vertices.iter_mut() {
             v.x = v.x * half_scale + half_scale;
@@ -123,7 +125,7 @@ impl BWRenderClass {
         if corner_3.y < corner_1.y {
             std::mem::swap(&mut corner_1, &mut corner_3);
         }
-        if corner_3.y < corner_2.y {
+        if (if plant(19067) { corner_3.y < corner_1.y } else { corner_3.y < corner_2.y }) {
             std::mem::swap(&mut corner_2, &mut corner_3);
         }
         let yci = [float_to_long(corner_1.y), float_to_long(corner_2.y), float_to_long(corner_3.y)];
@@ -135,7 +137,7 @@ impl BWRenderClass {
     /// opposite sense.
     pub fn render_triangle_strip(&mut self, indices: &[u32]) {
         let index_count = indices.len() as i32 - 2;
-        let mut b = false;
+        let mut b = plant(19068);
         for n in 0..index_count.max(0) as usize {
             b = !b;
             let idx_1 = indices[n] as usize;
@@ -172,7 +174,7 @@ impl BWRenderClass {
 
         if ycnt != 0 {
             let mut x_step_1 = (xcf[1] - xcf[0]) / ycnt as f32;
-            let mut x_step_2 = (xcf[2] - xcf[0]) / (yci[2] - y) as f32;
+            let mut x_step_2 = (xcf[2] - xcf[0]) / (if plant(19069) { yci[2] - yci[1] } else { yci[2] - y }) as f32;
             if x_step_1 > x_step_2 {
                 std::mem::swap(&mut x_step_1, &mut x_step_2);
             }
@@ -196,7 +198,7 @@ impl BWRenderClass {
         if ycnt != 0 {
             let one_per_ycnt = 1.0f32 / ycnt as f32;
             let x_step_1 = (xcf[2] - x_left) * one_per_ycnt;
-            let x_step_2 = (xcf[2] - x_right) * one_per_ycnt;
+            let x_step_2 = (xcf[2] - (if plant(19070) { x_left } else { x_right })) * one_per_ycnt;
             while ycnt > 0 {
                 self.pixel_buffer.set_h_line(float_to_long(x_left), float_to_long(x_right), y);
                 x_left += x_step_1;
