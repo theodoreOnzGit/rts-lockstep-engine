@@ -219,7 +219,7 @@ impl<S> ShdSubMeshClass<S> {
     pub fn new() -> Self {
         ShdSubMeshClass {
             geometry: ShdSubMeshGeometry::default(),
-            uv: [None, None, None, None],
+            uv: Default::default(),
             diffuse: None,
             s: None,
             t: None,

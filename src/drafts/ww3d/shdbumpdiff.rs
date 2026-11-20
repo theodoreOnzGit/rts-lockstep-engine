@@ -120,9 +120,9 @@ impl ShdBumpDiffDefClass {
                     match cload.cur_micro_chunk_id() {
                         VARID_TEXTURE_NAME => self.texture_name = read_micro_wwstring(cload)?,
                         VARID_BUMP_MAP_NAME => self.bump_map_name = read_micro_wwstring(cload)?,
-                        VARID_AMBIENT_COLOR => self.ambient = read_micro_vector3(cload)?,
-                        VARID_DIFFUSE_COLOR => self.diffuse = read_micro_vector3(cload)?,
-                        VARID_DIFFUSE_BUMPINESS => self.diffuse_bumpiness = read_micro_vector2(cload)?,
+                        VARID_AMBIENT_COLOR => { read_micro_vector3(cload, &mut self.ambient)?; }
+                        VARID_DIFFUSE_COLOR => { read_micro_vector3(cload, &mut self.diffuse)?; }
+                        VARID_DIFFUSE_BUMPINESS => { read_micro_vector2(cload, &mut self.diffuse_bumpiness)?; }
                         _ => {}
                     }
                     cload.close_micro_chunk()?;

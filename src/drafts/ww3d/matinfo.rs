@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases per class (test: tests/differential_draft_ww3d7_matinfo.rs);
+//! not yet wired into the game.
+//! Not covered: `peek_texture_by_name` (upstream declares `MaterialInfoClass::Peek_Texture(const char *)`, matinfo.h:104, and defines it nowhere).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matinfo.cpp
@@ -56,7 +58,11 @@ impl MaterialInfoClass {
         let mut me = MaterialInfoClass::new();
         for mi in 0..src.vertex_materials.len() {
             // upstream dereferences the slot: a NULL slot is a crash there
-            let vmat = clone_vertex_material(src.vertex_materials[mi].expect("matinfo.cpp:42 clones a NULL vertex material"));
+            let vmat = if crate::logic::modules::plant(19522) {
+                src.vertex_materials[mi].expect("matinfo.cpp:42 clones a NULL vertex material")
+            } else {
+                clone_vertex_material(src.vertex_materials[mi].expect("matinfo.cpp:42 clones a NULL vertex material"))
+            };
             me.vertex_materials.push(Some(vmat));
         }
         for ti in 0..src.textures.len() {
@@ -84,7 +90,11 @@ impl MaterialInfoClass {
     pub fn add_vertex_material(&mut self, vmat: Option<VertexMaterialHandle>) -> usize {
         let index = self.vertex_materials.len();
         self.vertex_materials.push(vmat);
-        index
+        if crate::logic::modules::plant(19523) {
+            self.vertex_materials.len()
+        } else {
+            index
+        }
     }
 
     /// `MaterialInfoClass::Add_Texture` (matinfo.cpp:68).
@@ -110,7 +120,8 @@ impl MaterialInfoClass {
     /// `MaterialInfoClass::Get_Texture_Index` (matinfo.cpp:80): case-insensitive, -1 if absent.
     pub fn get_texture_index<F: Fn(TextureHandle) -> String>(&self, name: &str, texture_name: F) -> i32 {
         for (i, t) in self.textures.iter().enumerate() {
-            if name.eq_ignore_ascii_case(&texture_name(*t)) {
+            let same = if crate::logic::modules::plant(19521) { name == texture_name(*t) } else { name.eq_ignore_ascii_case(&texture_name(*t)) };
+            if same {
                 return i as i32;
             }
         }
@@ -155,6 +166,9 @@ impl MaterialInfoClass {
 
     /// `Has_Time_Variant_Texture_Mappers` (matinfo.h): any `Are_Mappers_Time_Variant()`.
     pub fn has_time_variant_texture_mappers<F: Fn(VertexMaterialHandle) -> bool>(&self, are_mappers_time_variant: F) -> bool {
+        if crate::logic::modules::plant(19530) {
+            return self.vertex_materials.iter().flatten().last().map_or(false, |v| are_mappers_time_variant(*v));
+        }
         for v in self.vertex_materials.iter().flatten() {
             if are_mappers_time_variant(*v) {
                 return true;
@@ -181,7 +195,9 @@ impl MaterialInfoClass {
 
     /// `Replace_Texture` (matinfo.h).
     pub fn replace_texture(&mut self, index: usize, new_texture: TextureHandle) {
-        self.textures[index] = new_texture;
+        if !crate::logic::modules::plant(19529) {
+            self.textures[index] = new_texture;
+        }
     }
 
     /// `MaterialInfoClass::Free` (matinfo.cpp:123): releases and deletes everything. (The commented-out
@@ -241,7 +257,8 @@ impl MaterialRemapperClass {
     /// `WWASSERT(0)` and NULL.
     pub fn remap_texture(&mut self, src: Option<TextureHandle>) -> Option<TextureHandle> {
         let src_h = src?;
-        if src == self.last_src_tex {
+        let cached = if crate::logic::modules::plant(19524) { self.last_dest_tex } else { self.last_src_tex };
+        if src == cached {
             return self.last_dest_tex;
         }
         for i in 0..self.texture_remaps.len() {
@@ -296,7 +313,8 @@ impl MaterialRemapperClass {
         // Remap the textures if there is at least one of them
         if self.src_texture_count >= 1 {
             for pass in 0..srcmeshmatdesc.get_pass_count() {
-                for stage in 0..MESH_MAX_TEX_STAGES {
+                let stages = if crate::logic::modules::plant(19525) { MESH_MAX_TEX_STAGES - 1 } else { MESH_MAX_TEX_STAGES };
+                for stage in 0..stages {
                     if srcmeshmatdesc.has_texture_array(pass, stage) {
                         for poly_index in 0..srcmeshmatdesc.get_polygon_count() {
                             let src = srcmeshmatdesc.peek_texture(poly_index, pass, stage);
@@ -333,7 +351,7 @@ impl MaterialCollectorClass {
             shaders: Vec::new(),
             vertex_materials: Vec::new(),
             textures: Vec::new(),
-            last_shader: ShaderClass(0xFFFF_FFFF),
+            last_shader: ShaderClass(if crate::logic::modules::plant(19528) { 0 } else { 0xFFFF_FFFF }),
             last_material: None,
             last_texture: None,
         }
@@ -356,7 +374,7 @@ impl MaterialCollectorClass {
             }
 
             // Shaders (single or per poly...)
-            if mesh.has_shader_array(pass) {
+            if mesh.has_shader_array(pass) && !crate::logic::modules::plant(19527) {
                 for poly_index in 0..mesh.get_polygon_count() {
                     self.add_shader(mesh.get_shader(poly_index, pass));
                 }
@@ -385,6 +403,11 @@ impl MaterialCollectorClass {
         self.textures.clear();
         self.vertex_materials.clear();
         self.shaders.clear();
+        if crate::logic::modules::plant(19526) {
+            self.last_texture = None;
+            self.last_material = None;
+            self.last_shader = ShaderClass(0xFFFF_FFFF);
+        }
     }
 
     /// `MaterialCollectorClass::Add_Texture` (matinfo.cpp:381).

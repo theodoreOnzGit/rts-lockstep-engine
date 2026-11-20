@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 programs (test: tests/differential_draft_ww3d7_shd.rs);
+//! not yet wired into the game.
+//! Not covered: a name micro-chunk of length 0 or without a NUL (depends on `StringClass::Get_Buffer`'s internals), `Save` (not translated).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/wwshade/shddef.cpp
@@ -130,6 +132,9 @@ impl ShdDefClass {
     /// `ShdDefClass::Reset` (shddef.cpp:106): the surface type back to 0 (the name is kept).
     pub fn reset(&mut self) {
         self.surface_type = 0;
+        if crate::logic::modules::plant(19481) {
+            self.name = String::from("UnNamed");
+        }
     }
 
     /// `Get_Surface_Type` (shddef.h).
@@ -146,15 +151,18 @@ impl ShdDefClass {
     /// result), loads the variables regardless, and closes the chunk.
     pub fn load(&mut self, cload: &mut ChunkLoad<'_>) -> W3dResult<bool> {
         cload.open_chunk()?;
-        let retval = cload.cur_chunk_id()? == CHUNKID_VARIABLES;
+        let retval = cload.cur_chunk_id()? == CHUNKID_VARIABLES || crate::logic::modules::plant(19482);
         self.load_variables(cload)?;
         cload.close_chunk()?;
         Ok(retval)
     }
 
     /// `ShdDefClass::Load_Variables` (shddef.cpp:170): micro-chunks `VARID_NAME` (the string is the raw
-    /// micro-chunk bytes; the string ends at the first NUL, NOT RE-VERIFIED against `StringClass::Get_Buffer`) and
+    /// micro-chunk bytes; the string ends at the first NUL: compared with the C++ in tests/differential_draft_ww3d7_shd.rs for a chunk that holds a NUL; a chunk of length 0 or without a NUL depends on `StringClass::Get_Buffer`'s internals (it keeps the old buffer when the length fits) and is NOT covered) and
     /// `VARID_SURFACETYPE` (an `int`); others are skipped. Always true.
+    ///
+    /// ~~The surface type was read into a zeroed buffer, so a micro-chunk shorter than 4 bytes set it to 0.~~ **CORRECTED 2026-11-20 (#215, group
+    /// ww3d7: 1,605 of 20,000 programs differed):** upstream's `READ_MICRO_CHUNK` reads into the member, so a short chunk leaves the old value.
     fn load_variables(&mut self, cload: &mut ChunkLoad<'_>) -> W3dResult<bool> {
         while cload.open_micro_chunk()? {
             match cload.cur_micro_chunk_id() {
@@ -166,9 +174,10 @@ impl ShdDefClass {
                     self.name = String::from_utf8_lossy(&buf[..end]).into_owned();
                 }
                 VARID_SURFACETYPE => {
-                    let mut b = [0u8; 4];
+                    // READ_MICRO_CHUNK reads INTO SurfaceType: a micro-chunk shorter than 4 bytes leaves the old value (a failed `Read` copies nothing)
+                    let mut b = self.surface_type.to_le_bytes();
                     cload.read_into(&mut b)?;
-                    self.surface_type = i32::from_le_bytes(b);
+                    self.surface_type = if crate::logic::modules::plant(19483) { i32::from_be_bytes(b) } else { i32::from_le_bytes(b) };
                 }
                 _ => {}
             }

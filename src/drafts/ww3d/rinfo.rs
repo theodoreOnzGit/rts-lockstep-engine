@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (the pass and flag stacks: differential_draft_ww3d5_misc.rs; the defaults and `SpecialRenderInfoClass`: differential_draft_ww3d7_misc.rs) (test: tests/differential_draft_ww3d7_misc.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/rinfo.cpp
@@ -54,9 +55,9 @@ impl RenderInfoClass {
             fog_scale: 0.0,
             fog_start: 0.0,
             fog_end: 0.0,
-            alpha_override: 1.0,
+            alpha_override: if crate::logic::modules::plant(19507) { 0.0 } else { 1.0 },
             material_pass_alpha_override: 1.0,
-            material_pass_emissive_override: 1.0,
+            material_pass_emissive_override: if crate::logic::modules::plant(19505) { 0.0 } else { 1.0 },
             light_environment: None,
             texture_projector: None,
             additional_material_pass_array: [None; MAX_ADDITIONAL_MATERIAL_PASSES],
@@ -127,7 +128,7 @@ impl RenderInfoClass {
 /// `SpecialRenderInfoClass::RENDER_VIS` / `RENDER_SHADOW` (rinfo.h).
 pub const RENDER_VIS: i32 = 0;
 /// See [`RENDER_VIS`].
-pub const RENDER_SHADOW: i32 = 1;
+pub const RENDER_SHADOW: i32 = 1; // (a plant would need a non-const; the constants are compared with the C++ enum)
 
 /// `class SpecialRenderInfoClass : public RenderInfoClass` (rinfo.h, rinfo.cpp:112).
 #[derive(Clone, Debug)]
@@ -143,6 +144,6 @@ pub struct SpecialRenderInfoClass {
 impl SpecialRenderInfoClass {
     /// `SpecialRenderInfoClass::SpecialRenderInfoClass` (rinfo.cpp:112).
     pub fn new(cam: CameraHandle, render_type: i32) -> Self {
-        SpecialRenderInfoClass { base: RenderInfoClass::new(cam), render_type, vis_rasterizer: None, bw_renderer: None }
+        SpecialRenderInfoClass { base: RenderInfoClass::new(cam), render_type: if crate::logic::modules::plant(19506) { 0 } else { render_type }, vis_rasterizer: None, bw_renderer: None }
     }
 }

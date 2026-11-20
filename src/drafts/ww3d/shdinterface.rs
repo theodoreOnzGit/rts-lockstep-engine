@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_ww3d7_shd.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/wwshade/shdinterface.cpp
@@ -33,7 +34,7 @@ impl ShdInterfaceClass {
 
     /// `Greater_Than` (shdinterface.h): the base answer; a derived shader overrides it to sort by state.
     pub fn greater_than(&self, _s: &ShdInterfaceClass, _pass: i32) -> bool {
-        true
+        !crate::logic::modules::plant(19489)
     }
 
     /// `Similar_Enough` (shdinterface.h): the base answer.
@@ -43,7 +44,7 @@ impl ShdInterfaceClass {
 
     /// `Pass_Selection` (shdinterface.h): the base answer (the mesh and render info arguments are unused).
     pub fn pass_selection(&self, _pass: i32) -> bool {
-        true
+        !crate::logic::modules::plant(19490)
     }
 
     /// `SHD_MAX_PASSES` (shdinterface.h): "Maximum passes allowed for any shader implementation!".
