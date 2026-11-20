@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 19,290 environment cases and 19,577 equality pairs (test: tests/differential_draft_light.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/lightenvironment.cpp
@@ -19,33 +20,34 @@ pub const MAX_LIGHTS: usize = 4;
 /// `DIFFUSE_TO_AMBIENT_FRACTION` (lightenvironment.cpp:46).
 const DIFFUSE_TO_AMBIENT_FRACTION: f32 = 1.0;
 
-/// `_LightingLODCutoff` and `_LightingLODCutoff2` (lightenvironment.cpp:53), file statics initialised to 0.5 and
-/// 0.5 * 0.5. Upstream declares them `static _LightingLODCutoff = 0.5f;` (implicit `int`, a pre-standard
-/// declaration); MSVC 6 then truncates the 0.5f initialiser to the int 0, so both are 0 until
-/// `Set_Lighting_LOD_Cutoff` is called. NOT RE-VERIFIED against the compiler's behaviour; the intended 0.5 is
-/// used here and this is listed for the differential test.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// `_LightingLODCutoff` and `_LightingLODCutoff2` (lightenvironment.cpp:55). Upstream declares them
+/// `static _LightingLODCutoff = 0.5f;`, with no type: implicit `int` (MSVC 6 accepted it). So both are `int`: the
+/// initialisers `0.5f` and `0.5f * 0.5f` truncate to 0 and 0, and `Set_Lighting_LOD_Cutoff(float)` truncates its argument
+/// and multiplies as ints. ~~The draft held them as float 0.5 and 0.25~~ **Corrected 2026-11-20 (#215, tests/differential_draft_light.rs):**
+/// the differential test measured the initial `Get_Lighting_LOD_Cutoff` as 0 against the draft's 0.5. A diffuse light is therefore
+/// rejected only when its squared length is not above `cutoff2` (0 until set).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LightingLodCutoff {
-    pub cutoff: f32,
-    pub cutoff2: f32,
+    pub cutoff: i32,
+    pub cutoff2: i32,
 }
 
 impl Default for LightingLodCutoff {
     fn default() -> Self {
-        LightingLodCutoff { cutoff: 0.5, cutoff2: 0.5 * 0.5 }
+        LightingLodCutoff { cutoff: 0, cutoff2: 0 }
     }
 }
 
 impl LightingLodCutoff {
-    /// `LightEnvironmentClass::Set_Lighting_LOD_Cutoff` (lightenvironment.cpp:316).
+    /// `LightEnvironmentClass::Set_Lighting_LOD_Cutoff` (lightenvironment.cpp:325): float to int (truncation), then the int square.
     pub fn set_lighting_lod_cutoff(&mut self, inten: f32) {
-        self.cutoff = inten;
-        self.cutoff2 = self.cutoff * self.cutoff;
+        self.cutoff = if crate::logic::modules::plant(18673) { (inten + 0.5) as i32 } else { inten as i32 };
+        self.cutoff2 = self.cutoff.wrapping_mul(self.cutoff);
     }
 
-    /// `LightEnvironmentClass::Get_Lighting_LOD_Cutoff` (lightenvironment.cpp:322).
+    /// `LightEnvironmentClass::Get_Lighting_LOD_Cutoff` (lightenvironment.cpp:331): the int, as a float.
     pub fn get_lighting_lod_cutoff(&self) -> f32 {
-        self.cutoff
+        self.cutoff as f32
     }
 }
 
@@ -98,13 +100,16 @@ impl InputLightStruct {
                 }
             } else {
                 // Compute the attenuation
-                atten = (1.0 - (f64::from(dist) - atten_start) / (atten_end - atten_start)) as f32;
+                atten = if crate::logic::modules::plant(18661) { 1.0 - (dist - atten_start as f32) / (atten_end as f32 - atten_start as f32) } else { (1.0 - (f64::from(dist) - atten_start) / (atten_end - atten_start)) as f32 };
                 atten = wwmath::clamp(atten, 0.0, 1.0);
             }
         }
 
         if light.get_type() == LightType::Spot {
-            let spot_dir = Matrix3D::rotate_vector_by(&light.transform, &light.get_spot_direction());
+            let mut spot_dir = Matrix3D::rotate_vector_by(&light.transform, &light.get_spot_direction());
+            if crate::logic::modules::plant(18662) {
+                spot_dir = -spot_dir;
+            }
             let spot_angle_cos = light.get_spot_angle_cos();
             atten *= (Vector3::dot_product(&(-spot_dir), &self.direction) - spot_angle_cos) / (1.0 - spot_angle_cos);
             atten = wwmath::clamp(atten, 0.0, 1.0);
@@ -124,7 +129,7 @@ impl InputLightStruct {
         self.m_ambient = self.ambient;
         self.m_diffuse = self.diffuse;
 
-        if self.diffuse.length2() > lod.cutoff2 {
+        if (if crate::logic::modules::plant(18663) { self.diffuse.length2() >= lod.cutoff2 as f32 } else { self.diffuse.length2() > lod.cutoff2 as f32 }) {
             self.diffuse_rejected = false;
             self.ambient *= atten;
             self.diffuse *= atten;
@@ -169,7 +174,11 @@ impl OutputLightStruct {
 
         // Guard against a direction that is invalid
         if self.direction.length2() == 0.0 {
-            self.direction.x = 1.0;
+            if crate::logic::modules::plant(18667) {
+                self.direction.y = 1.0;
+            } else {
+                self.direction.x = 1.0;
+            }
         }
     }
 }
@@ -214,7 +223,7 @@ impl LightEnvironmentClass {
     pub fn add_light(&mut self, light: &LightClass, lod: &LightingLodCutoff) {
         // Jani: Don't accept lights that are almost black
         let diff = light.get_diffuse();
-        if diff[0] < 0.05 && diff[1] < 0.05 && diff[2] < 0.05 {
+        if (diff[0] < 0.05 && diff[1] < 0.05 && diff[2] < 0.05) || (crate::logic::modules::plant(18664) && diff[0] <= 0.05 && diff[1] <= 0.05 && diff[2] <= 0.05) {
             return;
         }
 
@@ -235,7 +244,7 @@ impl LightEnvironmentClass {
             // Insert the light into the sorted list of InputLights if it's contribution is greater than any of
             // the current number of lights
             for light_index in 0..self.light_count {
-                if new_light.contribution() > self.input_lights[light_index].contribution() {
+                if (if crate::logic::modules::plant(18665) { new_light.contribution() >= self.input_lights[light_index].contribution() } else { new_light.contribution() > self.input_lights[light_index].contribution() }) {
                     // Move back the lights to make space; the last light might be discarded if it moves off the array
                     let mut i = self.light_count;
                     while i > light_index {
@@ -279,7 +288,9 @@ impl LightEnvironmentClass {
         // Clamp ambient.
         self.output_ambient.x = wwmath::clamp(self.output_ambient.x, 0.0, 1.0);
         self.output_ambient.y = wwmath::clamp(self.output_ambient.y, 0.0, 1.0);
-        self.output_ambient.z = wwmath::clamp(self.output_ambient.z, 0.0, 1.0);
+        if !crate::logic::modules::plant(18668) {
+            self.output_ambient.z = wwmath::clamp(self.output_ambient.z, 0.0, 1.0);
+        }
     }
 
     /// `LightEnvironmentClass::Add_Fill_Light` (lightenvironment.cpp:337): a black fill light only adds its
@@ -321,7 +332,7 @@ impl LightEnvironmentClass {
         let mut average_light = self.input_lights[0];
 
         // Loop through the remaining lights on the list (up to 2) and add their contributions
-        let num_lights = std::cmp::min(self.light_count, MAX_LIGHTS - 1);
+        let num_lights = std::cmp::min(self.light_count, if crate::logic::modules::plant(18666) { MAX_LIGHTS } else { MAX_LIGHTS - 1 });
         for i in 1..num_lights {
             let ratio = self.input_lights[i].contribution() / primary_contribution;
             average_light.direction += self.input_lights[i].direction * ratio;
@@ -430,7 +441,9 @@ impl LightEnvironmentClass {
         dif |= self.output_ambient != that.output_ambient;
         for i in 0..self.light_count {
             dif |= self.output_lights[i].diffuse != that.output_lights[i].diffuse;
-            dif |= self.output_lights[i].direction != that.output_lights[i].direction;
+            if !crate::logic::modules::plant(18674) {
+                dif |= self.output_lights[i].direction != that.output_lights[i].direction;
+            }
             if dif {
                 return false;
             }
@@ -442,5 +455,13 @@ impl LightEnvironmentClass {
 impl Default for LightEnvironmentClass {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl LightEnvironmentClass {
+    /// The output light `i` (upstream's `OutputLights[i]`, protected): read by the differential test, which compares what
+    /// `Pre_Render_Update` produced.
+    pub fn output_light(&self, i: usize) -> &OutputLightStruct {
+        &self.output_lights[i]
     }
 }

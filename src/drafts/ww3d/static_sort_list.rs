@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_ww3d5_misc.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/static_sort_list.cpp
@@ -64,13 +65,13 @@ impl DefaultStaticSortListClass {
 
     /// `Set_Max_Sort` (static_sort_list.h): capped at MAX_SORT_LEVEL.
     pub fn set_max_sort(&mut self, value: u32) {
-        self.max_sort = if value > MAX_SORT_LEVEL as u32 { MAX_SORT_LEVEL as u32 } else { value };
+        self.max_sort = if value > MAX_SORT_LEVEL as u32 { if crate::logic::modules::plant(18677) { MAX_SORT_LEVEL as u32 - 1 } else { MAX_SORT_LEVEL as u32 } } else { value };
     }
 
     /// `DefaultStaticSortListClass::Add_To_List` (static_sort_list.cpp:46): levels outside 1..=MAX_SORT_LEVEL are
     /// dropped (`WWASSERT(0)` in debug builds).
     pub fn add_to_list(&mut self, robj: RenderObjHandle, sort_level: u32) {
-        if sort_level < 1 || sort_level > MAX_SORT_LEVEL as u32 {
+        if sort_level < 1 || sort_level > MAX_SORT_LEVEL as u32 || (crate::logic::modules::plant(18676) && sort_level == MAX_SORT_LEVEL as u32) {
             return;
         }
         // Add_Tail(robj, false): no extra Add_Ref
@@ -85,9 +86,13 @@ impl DefaultStaticSortListClass {
     /// Upstream's loop variable is `unsigned`: `for (sort_level = MaxSort; sort_level >= MinSort; sort_level--)`
     /// with MinSort 0 would never end; that case is kept as an explicit stop at 0 after level 0 is done.
     pub fn render_and_clear<H: StaticSortRenderHost>(&mut self, host: &mut H, rinfo: &mut RenderInfoClass) {
-        let mut sort_level = self.max_sort;
+        let mut sort_level = if crate::logic::modules::plant(18675) { self.min_sort } else { self.max_sort };
         loop {
-            if sort_level < self.min_sort {
+            if crate::logic::modules::plant(18675) {
+                if sort_level > self.max_sort {
+                    break;
+                }
+            } else if sort_level < self.min_sort || (crate::logic::modules::plant(18680) && sort_level == self.min_sort) {
                 break;
             }
             let mut render = false;
@@ -96,8 +101,12 @@ impl DefaultStaticSortListClass {
                     if host.pre_render(robj, rinfo) {
                         host.render(robj, rinfo);
                         render = true;
+                    } else if crate::logic::modules::plant(18679) {
+                        render = true;
                     }
-                    host.post_render(robj, rinfo);
+                    if !(crate::logic::modules::plant(18678) && !render) {
+                        host.post_render(robj, rinfo);
+                    }
                 } else {
                     host.render(robj, rinfo);
                     render = true;
@@ -106,6 +115,10 @@ impl DefaultStaticSortListClass {
             }
             if render {
                 host.flush_mesh_renderer(); // TheDX8MeshRenderer.Flush()
+            }
+            if crate::logic::modules::plant(18675) {
+                sort_level += 1;
+                continue;
             }
             if sort_level == 0 {
                 break;

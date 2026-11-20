@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (the shader and flags: differential_draft_ww3d5_misc.rs; the accessors: differential_draft_ww3d7_misc.rs) (test: tests/differential_draft_ww3d7_misc.rs);
+//! not yet wired into the game.
+//! Not covered: `Install_Materials` (device only, not translated).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matpass.cpp
@@ -53,7 +55,7 @@ impl MaterialPassClass {
             texture: [None; MAX_TEX_STAGES],
             shader: ShaderClass(0),
             material: None,
-            enable_on_translucent_meshes: true,
+            enable_on_translucent_meshes: !crate::logic::modules::plant(18686),
             cull_volume: None,
         }
     }
@@ -69,13 +71,15 @@ impl MaterialPassClass {
     /// `MaterialPassClass::Set_Texture` (matpass.cpp:58). `REF_PTR_SET` is a plain store here.
     pub fn set_texture(&mut self, tex: Option<TextureHandle>, stage: usize) {
         assert!(stage < MAX_TEX_STAGES); // WWASSERT(stage >= 0); WWASSERT(stage < MAX_TEX_STAGES)
-        self.texture[stage] = tex;
+        self.texture[if crate::logic::modules::plant(19501) { 0 } else { stage }] = tex;
     }
 
     /// `MaterialPassClass::Set_Shader` (matpass.cpp:67): stores the shader, then `Shader.Enable_Fog("MaterialPassClass")`.
     pub fn set_shader(&mut self, shader: ShaderClass) {
         self.shader = shader;
-        self.shader.enable_fog();
+        if !crate::logic::modules::plant(18685) {
+            self.shader.enable_fog();
+        }
     }
 
     /// `MaterialPassClass::Set_Material` (matpass.cpp:74).
@@ -87,7 +91,7 @@ impl MaterialPassClass {
     /// the `Add_Ref`, which is not modelled.
     pub fn get_texture(&self, stage: usize) -> Option<TextureHandle> {
         assert!(stage < MAX_TEX_STAGES);
-        self.texture[stage]
+        self.texture[if crate::logic::modules::plant(19504) { stage.min(MAX_TEX_STAGES - 2) } else { stage }]
     }
 
     /// `MaterialPassClass::Get_Material` (matpass.cpp:92) / `Peek_Material`.
@@ -102,6 +106,9 @@ impl MaterialPassClass {
 
     /// `MaterialPassClass::Set_Cull_Volume` (matpass.h).
     pub fn set_cull_volume(&mut self, volume: Option<ObBoxHandle>) {
+        if crate::logic::modules::plant(19502) && volume.is_none() {
+            return;
+        }
         self.cull_volume = volume;
     }
 
@@ -112,7 +119,7 @@ impl MaterialPassClass {
 
     /// `MaterialPassClass::Enable_On_Translucent_Meshes` (matpass.h).
     pub fn enable_on_translucent_meshes(&mut self, onoff: bool) {
-        self.enable_on_translucent_meshes = onoff;
+        self.enable_on_translucent_meshes = onoff != crate::logic::modules::plant(19503);
     }
 
     /// `MaterialPassClass::Is_Enabled_On_Translucent_Meshes` (matpass.h).

@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (the report text; line order inside a category differs by design) (test: tests/differential_draft_ww3d7_misc.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/assetstatus.cpp
@@ -59,7 +60,7 @@ impl AssetStatusClass {
     /// `asset_report.txt` when `Reporting` is set; `None` when it would write nothing. The file write
     /// (`RawFileClass`) is left to the caller.
     pub fn debug_report(&self) -> Option<String> {
-        if !self.reporting {
+        if !self.reporting && !crate::logic::modules::plant(19479) {
             return None;
         }
         let mut report = String::from("Load-on-demand and missing assets report\r\n\r\n");
@@ -69,7 +70,8 @@ impl AssetStatusClass {
             report.push_str("\r\n\r\n");
             for (key, count) in &self.report_hash_tables[i] {
                 report.push_str(key);
-                if *count > 1 {
+                let threshold = if crate::logic::modules::plant(19477) { 0 } else { 1 };
+                if *count > threshold {
                     report.push_str(&format!("\t(reported {} times)", count));
                 }
                 report.push_str("\r\n");
@@ -82,14 +84,14 @@ impl AssetStatusClass {
     /// `AssetStatusClass::Add_To_Report` (assetstatus.cpp:88): lower-cases the name (`_strlwr`, ASCII) and bumps
     /// its count (`Get` of a missing key is 0).
     fn add_to_report(&mut self, index: usize, name: &str) {
-        let lower_case_name = name.to_ascii_lowercase();
-        let count = self.report_hash_tables[index].get(&lower_case_name).copied().unwrap_or(0) + 1;
+        let lower_case_name = if crate::logic::modules::plant(19474) { name.to_string() } else { name.to_ascii_lowercase() };
+        let count = if crate::logic::modules::plant(19476) { 1 } else { self.report_hash_tables[index].get(&lower_case_name).copied().unwrap_or(0) + 1 };
         self.report_hash_tables[index].insert(lower_case_name, count);
     }
 
     /// `Report_Load_On_Demand_RObj` (assetstatus.cpp:97).
     pub fn report_load_on_demand_robj(&mut self, name: &str) {
-        if self.load_on_demand_reporting {
+        if self.load_on_demand_reporting || crate::logic::modules::plant(19475) {
             self.add_to_report(REPORT_LOAD_ON_DEMAND_ROBJ, name);
         }
     }
@@ -110,6 +112,9 @@ impl AssetStatusClass {
 
     /// `Report_Missing_RObj` (assetstatus.cpp:112).
     pub fn report_missing_robj(&mut self, name: &str) {
+        if crate::logic::modules::plant(19478) && !self.load_on_demand_reporting {
+            return;
+        }
         self.add_to_report(REPORT_MISSING_ROBJ, name);
     }
 
@@ -120,7 +125,7 @@ impl AssetStatusClass {
 
     /// `Report_Missing_HTree` (assetstatus.cpp:122).
     pub fn report_missing_htree(&mut self, name: &str) {
-        self.add_to_report(REPORT_MISSING_HTREE, name);
+        self.add_to_report(if crate::logic::modules::plant(19480) { REPORT_MISSING_HANIM } else { REPORT_MISSING_HTREE }, name);
     }
 }
 

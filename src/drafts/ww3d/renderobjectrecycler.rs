@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_ww3d7_misc.rs);
+//! not yet wired into the game.
+//! `Insert_Inactive_Model` was corrected by this test: `RefRenderObjListClass::Add` links at the head and refuses a model already in the list.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/renderobjectrecycler.cpp
@@ -48,21 +50,28 @@ impl RenderObjectRecyclerClass {
     pub fn get_render_object<H: RecyclerHost>(&mut self, host: &mut H, name: &str, tm: &Matrix3D) -> Option<RenderObjHandle> {
         let mut found: Option<usize> = None;
         for (idx, obj) in self.inactive_models.iter().enumerate() {
-            if host.get_name(*obj).eq_ignore_ascii_case(name) {
+            let same = if crate::logic::modules::plant(19466) { host.get_name(*obj) == name } else { host.get_name(*obj).eq_ignore_ascii_case(name) };
+            if same {
                 found = Some(idx);
-                break;
+                if !crate::logic::modules::plant(19467) {
+                    break;
+                }
             }
         }
 
         if let Some(idx) = found {
-            let obj = self.inactive_models.remove(idx); // Add_Ref then InactiveModels.Remove
-            host.set_transform(obj, tm);
+            let obj = if crate::logic::modules::plant(19473) { self.inactive_models.pop().unwrap_or(0) } else { self.inactive_models.remove(idx) }; // Add_Ref then InactiveModels.Remove
+            if !crate::logic::modules::plant(19468) {
+                host.set_transform(obj, tm);
+            }
             Self::reset_model(host, obj);
             Some(obj)
         } else {
             let new_model = host.create_render_obj(name);
             if let Some(m) = new_model {
-                host.set_transform(m, tm);
+                if !crate::logic::modules::plant(19472) {
+                    host.set_transform(m, tm);
+                }
                 return Some(m);
             }
             None
@@ -75,14 +84,21 @@ impl RenderObjectRecyclerClass {
     }
 
     /// `RenderObjectRecyclerClass::Insert_Inactive_Model` (renderobjectrecycler.cpp:131).
+    ///
+    /// ~~Pushed at the end.~~ **CORRECTED 2026-11-20 (differential test #215, 5,469 of 20,000 cases differed):** `InactiveModels` is a
+    /// `RefRenderObjListClass`, whose `Add` is `Internal_Add(obj, onlyonce = true)` (multilist.cpp:97): it links the object at the HEAD of
+    /// the list (so the newest returned model is found first by `Get_Render_Object`) and REFUSES an object that is already in the list.
     fn insert_inactive_model(&mut self, obj: RenderObjHandle) {
-        self.inactive_models.push(obj);
+        if self.inactive_models.contains(&obj) {
+            return;
+        }
+        self.inactive_models.insert(0, obj);
     }
 
     /// `RenderObjectRecyclerClass::Reset_Model` (renderobjectrecycler.cpp:147): recursively resets the
     /// sub-objects, resets a particle emitter, and restarts an animation at frame 0 in ANIM_MODE_ONCE.
     fn reset_model<H: RecyclerHost>(host: &mut H, model: RenderObjHandle) {
-        let n = host.get_num_sub_objects(model);
+        let n = if crate::logic::modules::plant(19469) { 0 } else { host.get_num_sub_objects(model) };
         for i in 0..n {
             if let Some(robj) = host.get_sub_object(model, i) {
                 Self::reset_model(host, robj);
@@ -91,12 +107,12 @@ impl RenderObjectRecyclerClass {
         }
 
         // particle emitters must be reset (this should release their buffers)
-        if host.is_particle_emitter(model) {
+        if host.is_particle_emitter(model) && !crate::logic::modules::plant(19470) {
             host.reset_emitter(model);
         }
 
         // animated models must have their animation reset (if present)
-        if host.has_animation(model) {
+        if host.has_animation(model) && !crate::logic::modules::plant(19471) {
             host.restart_animation_once(model);
         }
     }

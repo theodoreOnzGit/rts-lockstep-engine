@@ -106,9 +106,9 @@ impl ShdCubeMapDefClass {
                 while cload.open_micro_chunk()? {
                     match cload.cur_micro_chunk_id() {
                         VARID_TEXTURE_NAME => self.texture_name = read_micro_wwstring(cload)?,
-                        VARID_AMBIENT_COLOR => self.ambient = read_micro_vector3(cload)?,
-                        VARID_DIFFUSE_COLOR => self.diffuse = read_micro_vector3(cload)?,
-                        VARID_SPECULAR_COLOR => self.specular = read_micro_vector3(cload)?,
+                        VARID_AMBIENT_COLOR => { read_micro_vector3(cload, &mut self.ambient)?; }
+                        VARID_DIFFUSE_COLOR => { read_micro_vector3(cload, &mut self.diffuse)?; }
+                        VARID_SPECULAR_COLOR => { read_micro_vector3(cload, &mut self.specular)?; }
                         _ => {}
                     }
                     cload.close_micro_chunk()?;

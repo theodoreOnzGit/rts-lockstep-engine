@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 programs (test: tests/differential_draft_ww3d7_shd.rs);
+//! not yet wired into the game.
+//! Not covered: `unregister_factory` with two registered factories of one class id (the draft identifies a factory by id), a `Load_Shader` of an unregistered id.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/wwshade/shddefmanager.cpp
@@ -42,19 +44,25 @@ impl<D> ShdDefManagerClass<D> {
 
     /// `ShdDefManagerClass::Find_Factory(name)` (shddefmanager.cpp:64): case-insensitive (`stricmp`).
     pub fn find_factory_by_name(&self, name: &str) -> Option<&ShdDefFactoryClass<D>> {
-        self.factories.iter().find(|f| f.get_name().eq_ignore_ascii_case(name))
+        self.factories.iter().find(|f| if crate::logic::modules::plant(19485) { f.get_name() == name } else { f.get_name().eq_ignore_ascii_case(name) })
     }
 
     /// `Register_Factory` / `Link_Factory` (shddefmanager.cpp:84, 125): links at the head of the list.
     pub fn register_factory(&mut self, factory: ShdDefFactoryClass<D>) {
-        self.factories.insert(0, factory);
+        if crate::logic::modules::plant(19484) {
+            self.factories.push(factory);
+        } else {
+            self.factories.insert(0, factory);
+        }
     }
 
     /// `Unregister_Factory` / `Unlink_Factory` (shddefmanager.cpp:95, 143): removes the factory with this
     /// class id (a factory is identified by identity upstream; ids are what distinguish them here).
     pub fn unregister_factory(&mut self, class_id: u32) {
         if let Some(pos) = self.factories.iter().position(|f| f.get_class_id() == class_id) {
-            self.factories.remove(pos);
+            if !crate::logic::modules::plant(19487) {
+                self.factories.remove(pos);
+            }
         }
     }
 
@@ -68,7 +76,7 @@ impl<D> ShdDefManagerClass<D> {
     pub fn get_next(&self, current: Option<usize>) -> Option<&ShdDefFactoryClass<D>> {
         match current {
             Some(i) => self.factories.get(i + 1),
-            None => self.factories.first(),
+            None => if crate::logic::modules::plant(19486) { None } else { self.factories.first() },
         }
     }
 
@@ -97,7 +105,9 @@ impl<D: ShdDefLoad> ShdDefManagerClass<D> {
         cload.open_chunk()?;
         debug_assert!(cload.cur_chunk_id()? == W3D_CHUNK_SHDSUBMESH_SHADER_DEF);
         if let Some(d) = shddef.as_mut() {
-            d.load(cload)?;
+            if !crate::logic::modules::plant(19488) {
+                d.load(cload)?;
+            }
         }
         cload.close_chunk()?;
         Ok(shddef)

@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_ww3d5_misc.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/w3dexclusionlist.cpp
@@ -36,11 +37,11 @@ impl W3DExclusionListClass {
     /// name. A munged name (containing '#') is never excluded; the sub-object name after the first '.' is cut off.
     pub fn is_excluded_prototype(&self, proto_name: &str) -> bool {
         // don't preserve munged prototypes
-        if proto_name.contains('#') {
+        if proto_name.contains('#') && !crate::logic::modules::plant(18681) {
             return false;
         }
         // chop off the sub-object name if present
-        let root_name = match proto_name.find('.') {
+        let root_name = match (if crate::logic::modules::plant(18682) { proto_name.rfind('.') } else { proto_name.find('.') }) {
             Some(p) => &proto_name[..p],
             None => proto_name,
         };
@@ -56,13 +57,17 @@ impl W3DExclusionListClass {
     /// trailing the '.'; no '.' is "should never happen" and not excluded.
     pub fn is_excluded_hanim(&self, hanim_name: &str) -> bool {
         match hanim_name.find('.') {
-            Some(p) => self.is_excluded(&hanim_name[p + 1..]),
+            Some(p) => if crate::logic::modules::plant(18683) { self.is_excluded(&hanim_name[..p]) } else { self.is_excluded(&hanim_name[p + 1..]) },
             None => false,
         }
     }
 
     /// `W3DExclusionListClass::Is_Excluded(const char *)` (w3dexclusionlist.cpp:91).
     pub fn is_excluded(&self, root_name: &str) -> bool {
-        self.name_hash.contains_key(root_name)
+        if crate::logic::modules::plant(18684) {
+            self.name_hash.keys().any(|k| k.to_ascii_lowercase() == root_name.to_ascii_lowercase())
+        } else {
+            self.name_hash.contains_key(root_name)
+        }
     }
 }

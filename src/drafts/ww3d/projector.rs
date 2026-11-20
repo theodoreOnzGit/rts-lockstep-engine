@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 programs (5.46 million floats) (test: tests/differential_draft_ww3d7_projector.rs);
+//! not yet wired into the game.
+//! Not covered: `zfar <= 0.1` (the draft's `assert!` in wwlib/matrix4.rs fires where upstream's compiled-out `WWASSERT` does not).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/projector.cpp
@@ -48,7 +50,9 @@ impl ProjectorClass {
     /// `ProjectorClass::Set_Transform` (projector.cpp:49).
     pub fn set_transform(&mut self, tm: &Matrix3D) {
         self.transform = *tm;
-        self.update_ws_bounding_volume();
+        if !crate::logic::modules::plant(19498) {
+            self.update_ws_bounding_volume();
+        }
     }
 
     /// `ProjectorClass::Get_Transform` (projector.cpp:55).
@@ -61,28 +65,45 @@ impl ProjectorClass {
     /// halved; not the tangent of the half angle), evaluated in double and narrowed to float.
     pub fn set_perspective_projection(&mut self, hfov: f32, vfov: f32, znear: f32, zfar: f32) {
         self.mapper.set_type(MappingType::PerspectiveProjection);
-        self.projection = { let mut m = Matrix4x4::identity(); m.init_perspective_fov(hfov, vfov, 0.1, zfar); m }; // don't use znear for the projection matrix
+        self.projection = { let mut m = Matrix4x4::identity(); if crate::logic::modules::plant(19491) { m.init_perspective_fov(vfov, hfov, 0.1, zfar) } else { m.init_perspective_fov(hfov, vfov, 0.1, zfar) }; m }; // don't use znear for the projection matrix
 
-        let tan_hfov2: f32 = (petir::Real::tan(f64::from(hfov)) * f64::from(0.5f32)) as f32;
-        let tan_vfov2: f32 = (petir::Real::tan(f64::from(vfov)) * f64::from(0.5f32)) as f32;
+        let (tan_hfov2, tan_vfov2): (f32, f32) = if crate::logic::modules::plant(19492) {
+            ((petir::Real::tan(f64::from(hfov) * 0.5) * f64::from(0.5f32)) as f32, (petir::Real::tan(f64::from(vfov) * 0.5) * f64::from(0.5f32)) as f32)
+        } else if crate::logic::modules::plant(19493) {
+            (petir::Real::tan(hfov) * 0.5f32, petir::Real::tan(vfov) * 0.5f32) // single-precision tan
+        } else {
+            ((petir::Real::tan(f64::from(hfov)) * f64::from(0.5f32)) as f32, (petir::Real::tan(f64::from(vfov)) * f64::from(0.5f32)) as f32)
+        };
 
-        self.local_bounding_volume.center.set(0.0, 0.0, -(zfar + znear) * 0.5); // note, zcenter is negative
+        let zc = -(zfar + znear) * 0.5;
+        self.local_bounding_volume.center.set(0.0, 0.0, if crate::logic::modules::plant(19494) { -zc } else { zc }); // note, zcenter is negative
         self.local_bounding_volume.extent.x = zfar * tan_hfov2;
         self.local_bounding_volume.extent.y = zfar * tan_vfov2;
-        self.local_bounding_volume.extent.z = (zfar - znear) * 0.5;
+        self.local_bounding_volume.extent.z = if crate::logic::modules::plant(19495) { zfar - znear } else { (zfar - znear) * 0.5 };
 
         self.update_ws_bounding_volume();
     }
 
     /// `ProjectorClass::Set_Ortho_Projection` (projector.cpp:78).
     pub fn set_ortho_projection(&mut self, xmin: f32, xmax: f32, ymin: f32, ymax: f32, znear: f32, zfar: f32) {
-        self.mapper.set_type(MappingType::OrthoProjection);
+        self.mapper.set_type(if crate::logic::modules::plant(19500) { MappingType::PerspectiveProjection } else { MappingType::OrthoProjection });
         self.projection = { let mut m = Matrix4x4::identity(); m.init_ortho(xmin, xmax, ymin, ymax, 0.1, zfar); m }; // don't use znear for the projection matrix
 
-        self.local_bounding_volume.center.set((xmax + xmin) * 0.5, (ymax + ymin) * 0.5, -(zfar + znear) * 0.5);
-        self.local_bounding_volume.extent.set((xmax - xmin) * 0.5, (ymax - ymin) * 0.5, (zfar - znear) * 0.5);
+        self.local_bounding_volume.center.set(if crate::logic::modules::plant(19496) { (xmax - xmin) * 0.5 } else { (xmax + xmin) * 0.5 }, (ymax + ymin) * 0.5, -(zfar + znear) * 0.5);
+        self.local_bounding_volume.extent.set((xmax - xmin) * 0.5, if crate::logic::modules::plant(19497) { (xmax - xmin) * 0.5 } else { (ymax - ymin) * 0.5 }, (zfar - znear) * 0.5);
 
         self.update_ws_bounding_volume();
+    }
+
+    /// The protected `Projection` member (projector.h), which the derived `TexProjectClass` and `DecalGeneratorClass` read; a public getter here so
+    /// that the differential test can (upstream has none; added by #215, group ww3d7).
+    pub fn get_projection(&self) -> &Matrix4x4 {
+        &self.projection
+    }
+
+    /// The protected `LocalBoundingVolume` member (projector.h), exposed like [`Self::get_projection`].
+    pub fn get_local_bounding_volume(&self) -> &AABox {
+        &self.local_bounding_volume
     }
 
     /// `Get_Bounding_Volume` (projector.h): the world-space box.
@@ -105,7 +126,7 @@ impl ProjectorClass {
     pub fn update_ws_bounding_volume(&mut self) {
         let localbox = ObBoxClass {
             center: self.local_bounding_volume.center,
-            extent: self.local_bounding_volume.extent,
+            extent: if crate::logic::modules::plant(19499) { Vector3::new(self.local_bounding_volume.extent.y, self.local_bounding_volume.extent.x, self.local_bounding_volume.extent.z) } else { self.local_bounding_volume.extent },
             basis: matrix3x3_identity(),
         };
         self.world_bounding_volume = ObBoxClass::transform(&self.transform, &localbox);
