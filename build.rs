@@ -14726,6 +14726,13 @@ mod differential {
             ("gc_text.inc", "GameEngine/Source/GameClient/GameClient.cpp", "void GameClient::addTextBearingDrawable", Some("GameMessage::Type GameClient::evaluateContextCommand")),
             ("gc_ray.inc", "GameEngine/Source/GameClient/GameClient.cpp", "void GameClient::removeFromRayEffects( Drawable *draw )", Some("/** frees all shadow resources")),
             ("lc3_ray_effect.inc", "GameEngine/Source/GameClient/System/RayEffect.cpp", "class RayEffectSystem *TheRayEffects = NULL;", None),
+            ("ime_comp_get.inc", "GameEngine/Source/GameClient/GUI/IMEManager.cpp", "void IMEManager::getCompositionString ( UnicodeString &string )", Some("//============================================================================\n// IMEManager::getCompositionCursorPosition\n")),
+            ("ime_comp.inc", "GameEngine/Source/GameClient/GUI/IMEManager.cpp", "void IMEManager::updateCompositionString( void )", Some("//============================================================================\n// IMEManager::openCandidateList\n")),
+            ("ime_open.inc", "GameEngine/Source/GameClient/GUI/IMEManager.cpp", "void IMEManager::openCandidateList( Int candidateFlags )", Some("//============================================================================\n// IMEManager::updateCandidateList\n")),
+            ("ime_cand.inc", "GameEngine/Source/GameClient/GUI/IMEManager.cpp", "void IMEManager::updateCandidateList( Int candidateFlags  )", Some("//============================================================================\n// IMEManager::getCandidateCount\n")),
+            ("ime_get.inc", "GameEngine/Source/GameClient/GUI/IMEManager.cpp", "UnicodeString* IMEManager::getCandidate( Int index )", Some("//============================================================================\n// IMEManager::getSelectedCandidateIndex\n")),
+            ("ime_page.inc", "GameEngine/Source/GameClient/GUI/IMEManager.cpp", "Int IMEManager::getCandidatePageStart()", Some("//============================================================================\n// IMEManager::openStatusWindow\n")),
+            ("ime_status.inc", "GameEngine/Source/GameClient/GUI/IMEManager.cpp", "void IMEManager::openStatusWindow( void )", Some("//============================================================================\n// IMEManager::updateStatusWindow\n")),
             ("display_views.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::deleteViews( void )", Some("/// Redraw the entire display")),
             ("display_stop.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::stopMovie( void )", Some("//============================================================================\n// Display::update\n")),
             ("display_logo.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::playLogoMovie(", Some("//============================================================================\n// Display::playMovie\n")),
@@ -14742,6 +14749,7 @@ mod differential {
             ("wrap_draft_selection_xlat.cpp", "draft_lc3_selection_xlat"),
             ("wrap_draft_display.cpp", "draft_lc3_display"),
             ("wrap_draft_game_client.cpp", "draft_lc3_game_client"),
+            ("wrap_draft_ime_manager.cpp", "draft_lc3_ime_manager"),
         ] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();
