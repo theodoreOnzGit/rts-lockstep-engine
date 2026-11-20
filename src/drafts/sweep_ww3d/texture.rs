@@ -1,4 +1,6 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#202, #215): `invalidate`, `invalidate_old_unused_textures`, `peek_d3d_base_texture`, `set_d3d_base_texture`, `is_missing_texture`, `get_reduction`, `set_hsv_shift` and the eight `get_total_*` match the upstream C++ (test: tests/differential_draft_texture.rs);
+//! `set_texture_name`, `apply_null`, `get_d3d_surface_level`, `get_texture_memory_usage` are not covered (device calls or one-line field copies).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/texture.cpp
@@ -9,6 +11,8 @@
 //! walk over `WW3DAssetManager::Texture_Hash()` is a slice of [`TextureBase`] the caller passes in.
 //! `Texture_Hash()` is a `HashTemplateIterator`, whose order is unspecified, and every statistic here is a sum or a
 //! count, so the slice order does not matter.
+
+use crate::logic::modules::plant;
 
 /// The fields of `TextureBaseClass` these functions read and write.
 #[derive(Clone, Debug, Default)]
@@ -72,7 +76,7 @@ impl TextureBase {
         if self.texture_load_task {
             return;
         }
-        if self.thumbnail_load_task {
+        if self.thumbnail_load_task && !plant(17880) {
             return;
         }
         if self.is_procedural {
@@ -82,6 +86,11 @@ impl TextureBase {
             host.d3d_release(t);
         }
         self.initialized = false;
+        // ~~(missing)~~ **Corrected 2026-11-20 (#215, group ww3d4):** upstream ends `Invalidate` with `LastAccessed=WW3D::Get_Sync_Time();`;
+        // the draft left it out. The differential test caught it.
+        if !plant(17902) {
+            self.last_accessed = host.ww3d_sync_time();
+        }
     }
 
     /// `TextureBaseClass::Invalidate_Old_Unused_Textures` (texture.cpp:142): each frame, invalidate initialised textures
@@ -95,13 +104,13 @@ impl TextureBase {
         let synctime = host.ww3d_sync_time();
         for tex in textures.iter_mut() {
             if tex.initialized && tex.inactivation_time != 0 {
-                let age = synctime.wrapping_sub(tex.last_accessed);
+                let age = if plant(17879) { synctime.saturating_sub(tex.last_accessed) } else { synctime.wrapping_sub(tex.last_accessed) };
                 if invalidation_time_override != 0 {
-                    if age > invalidation_time_override {
+                    if age > invalidation_time_override || (plant(17877) && age == invalidation_time_override) {
                         tex.invalidate(host);
                         tex.last_inactivation_sync_time = synctime;
                     }
-                } else if age > tex.inactivation_time.wrapping_add(tex.extended_inactivation_time) {
+                } else if age > tex.inactivation_time.wrapping_add(if plant(17878) { 0 } else { tex.extended_inactivation_time }) {
                     tex.invalidate(host);
                     tex.last_inactivation_sync_time = synctime;
                 }
@@ -111,7 +120,9 @@ impl TextureBase {
 
     /// `TextureBaseClass::Peek_D3D_Base_Texture` (texture.cpp:258): stamps `LastAccessed`.
     pub fn peek_d3d_base_texture<H: TextureHost>(&mut self, host: &H) -> Option<usize> {
-        self.last_accessed = host.ww3d_sync_time();
+        if !plant(17886) {
+            self.last_accessed = host.ww3d_sync_time();
+        }
         self.d3d_texture
     }
 
@@ -119,6 +130,16 @@ impl TextureBase {
     /// takes a reference on the new one.
     pub fn set_d3d_base_texture<H: TextureHost>(&mut self, host: &mut H, tex: Option<usize>) {
         self.last_accessed = host.ww3d_sync_time();
+        if plant(17881) {
+            if let Some(new) = tex {
+                host.d3d_add_ref(new);
+            }
+            if let Some(old) = self.d3d_texture {
+                host.d3d_release(old);
+            }
+            self.d3d_texture = tex;
+            return;
+        }
         if let Some(old) = self.d3d_texture {
             host.d3d_release(old);
         }
@@ -147,14 +168,16 @@ impl TextureBase {
         if self.mip_level_count == MIP_LEVELS_1 {
             return 0;
         }
-        if self.width <= 32 || self.height <= 32 {
+        if (if plant(17882) { self.width < 32 } else { self.width <= 32 }) || self.height <= 32 {
             return 0;
         }
         let mut reduction = host.ww3d_texture_reduction();
-        if host.ww3d_large_texture_extra_reduction_enabled() && (self.width > 256 || self.height > 256) {
+        if host.ww3d_large_texture_extra_reduction_enabled() && (if plant(17883) { self.width > 256 && self.height > 256 } else { self.width > 256 || self.height > 256 }) {
             reduction += 1;
         }
-        if self.mip_level_count != 0 && reduction > self.mip_level_count as i32 {
+        // ~~`reduction > self.mip_level_count as i32`~~ **Corrected 2026-11-20 (#215, group ww3d4):** upstream compares the `int` with the
+        // `unsigned` `MipLevelCount` as UNSIGNED, so a negative global reduction is capped to `MipLevelCount` (and returned as such).
+        if self.mip_level_count != 0 && (if plant(17903) { reduction > self.mip_level_count as i32 } else { (reduction as u32) > self.mip_level_count }) {
             reduction = self.mip_level_count as i32;
         }
         reduction as u32
@@ -167,7 +190,9 @@ impl TextureBase {
 
     /// `TextureBaseClass::Set_HSV_Shift` (texture.cpp:411): relative to the original texture, so invalidate and reload.
     pub fn set_hsv_shift<H: TextureHost>(&mut self, host: &mut H, hsv_shift: [f32; 3]) {
-        self.invalidate(host);
+        if !plant(17885) {
+            self.invalidate(host);
+        }
         self.hsv_shift = hsv_shift;
     }
 
@@ -195,22 +220,23 @@ impl TextureBase {
 
 /// `TextureBaseClass::_Get_Total_Locked_Surface_Size` (texture.cpp:421): the memory of every uninitialised texture.
 pub fn get_total_locked_surface_size(textures: &[TextureBase]) -> i32 {
-    textures.iter().filter(|t| !t.initialized).map(|t| t.memory_usage as i32).sum()
+    // `int += unsigned` wraps upstream; a plain `sum::<i32>()` would panic on overflow (release has overflow checks on).
+    textures.iter().filter(|t| if plant(17884) { t.initialized } else { !t.initialized }).fold(0i32, |a, t| a.wrapping_add(t.memory_usage as i32))
 }
 
 /// `TextureBaseClass::_Get_Total_Texture_Size` (texture.cpp:443).
 pub fn get_total_texture_size(textures: &[TextureBase]) -> i32 {
-    textures.iter().map(|t| t.memory_usage as i32).sum()
+    textures.iter().fold(0i32, |a, t| a.wrapping_add(t.memory_usage as i32))
 }
 
 /// `TextureBaseClass::_Get_Total_Lightmap_Texture_Size` (texture.cpp:465).
 pub fn get_total_lightmap_texture_size(textures: &[TextureBase]) -> i32 {
-    textures.iter().filter(|t| t.is_lightmap).map(|t| t.memory_usage as i32).sum()
+    textures.iter().filter(|t| t.is_lightmap).fold(0i32, |a, t| a.wrapping_add(t.memory_usage as i32))
 }
 
 /// `TextureBaseClass::_Get_Total_Procedural_Texture_Size` (texture.cpp:488).
 pub fn get_total_procedural_texture_size(textures: &[TextureBase]) -> i32 {
-    textures.iter().filter(|t| t.is_procedural).map(|t| t.memory_usage as i32).sum()
+    textures.iter().filter(|t| t.is_procedural).fold(0i32, |a, t| a.wrapping_add(t.memory_usage as i32))
 }
 
 /// `TextureBaseClass::_Get_Total_Texture_Count` (texture.cpp:510).
