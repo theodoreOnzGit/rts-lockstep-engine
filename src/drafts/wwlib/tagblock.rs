@@ -1,4 +1,7 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 random programs, 1.77 million program words (test: tests/differential_draft_tagblock.rs);
+//! not yet wired into the game. Every function is covered except `Get_Date_Time` (the file's time stamp is the operating system's) and the Drop-less
+//! `~TagBlockFile`. Corrected 2026-11-20 (#215): a tag name read back from a file is kept as bytes (the draft decoded it lossily, which changed the CRC and
+//! the data offset of a name that is not UTF-8). Excluded inputs (undefined upstream) are listed in the test.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/TagBlock.h
@@ -16,6 +19,7 @@
 //! and the header is repaired; `Create_Tag` writes the new block header with `Index = -1` (set when the write access
 //! ends); I/O results of the `RawFileClass` calls are not checked.
 
+use crate::logic::modules::plant;
 use crate::ww::realcrc::crc_stringi;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -83,8 +87,8 @@ struct TagBlockIndex {
 
 impl TagBlockIndex {
     /// `TagBlockIndex(tagname, blockoffset)`: `CRC_Stringi(tagname)`, `DataOffset = Calc_Data_Offset`.
-    fn new(tagname: &str, block_offset: i32) -> Self {
-        TagBlockIndex { crc: crc_stringi(tagname.as_bytes(), 0), block_offset, data_offset: TagBlockFile::calc_data_offset(block_offset, tagname) }
+    fn new(tagname: &[u8], block_offset: i32) -> Self {
+        TagBlockIndex { crc: crc_stringi(tagname, 0), block_offset, data_offset: TagBlockFile::calc_data_offset_bytes(block_offset, tagname) }
     }
     fn get_tag_offset(&self) -> i32 {
         TagBlockFile::calc_tag_offset(self.block_offset)
@@ -127,6 +131,11 @@ impl TagBlockFile {
 
     /// `Calc_Data_Offset(blockoffset, tagname)`: after the tag name and its NUL.
     pub fn calc_data_offset(blockoffset: i32, tagname: &str) -> i32 {
+        Self::calc_data_offset_bytes(blockoffset, tagname.as_bytes())
+    }
+
+    /// `Calc_Data_Offset` over the name's bytes (`strlen(tagname) + 1`): a name read back from a file need not be UTF-8.
+    fn calc_data_offset_bytes(blockoffset: i32, tagname: &[u8]) -> i32 {
         Self::calc_tag_offset(blockoffset) + tagname.len() as i32 + 1
     }
 
@@ -164,8 +173,8 @@ impl TagBlockFile {
                 if blockheader.index == block {
                     let mut tagname = vec![0u8; blockheader.tag_size.max(0) as usize];
                     let _ = f.file.read(&mut tagname);
-                    let name = String::from_utf8_lossy(&tagname[..tagname.iter().position(|&c| c == 0).unwrap_or(tagname.len())]).into_owned();
-                    f.create_index(&name, curpos);
+                    let name = &tagname[..tagname.iter().position(|&c| c == 0).unwrap_or(tagname.len())];
+                    f.create_index(name, curpos);
                     curpos = Self::calc_tag_offset(curpos) + blockheader.tag_size + blockheader.data_size;
                 } else {
                     break;
@@ -174,7 +183,7 @@ impl TagBlockFile {
             }
 
             // If the header does not agree with what was found, trust the blocks and repair it
-            if curpos != f.header.file_size || block != f.header.num_blocks {
+            if if plant(18268) { curpos != f.header.file_size && block != f.header.num_blocks } else { curpos != f.header.file_size || block != f.header.num_blocks } {
                 f.header.num_blocks = block;
                 f.header.file_size = curpos;
                 f.seek_set(0);
@@ -205,12 +214,12 @@ impl TagBlockFile {
 
     /// `Does_Tag_Exist(tagname)`.
     pub fn does_tag_exist(&mut self, tagname: &str) -> bool {
-        self.find_block(tagname).is_some()
+        self.find_block(tagname.as_bytes()).is_some()
     }
 
     /// `Open_Tag(tagname)`: a handle to read an existing block; `None` if the tag is not found.
     pub fn open_tag(&mut self, tagname: &str) -> Option<TagBlockHandle> {
-        let index = self.find_block(tagname)?;
+        let index = self.find_block(tagname.as_bytes())?;
         self.seek_set(index.block_offset);
         let mut bb = [0u8; BLOCK_HEADER_SIZE];
         let _ = self.file.read(&mut bb);
@@ -226,16 +235,16 @@ impl TagBlockFile {
     /// another handle already has it or the tag exists.
     pub fn create_tag(&mut self, tagname: &str) -> Option<TagBlockHandle> {
         // Only one handle may have write access
-        if self.create_handle.is_some() {
+        if self.create_handle.is_some() && !plant(18270) {
             return None;
         }
 
         // Create an index for the new block (fails if the tag already exists)
         let block_offset = self.header.file_size;
-        let index = self.create_index(tagname, block_offset)?;
+        let index = self.create_index(tagname.as_bytes(), block_offset)?;
 
         // Write the block header (Index = -1 until the write access ends) and the tag name
-        let blockheader = BlockHeader { index: -1, tag_size: index.get_tag_size(), data_size: 0 };
+        let blockheader = BlockHeader { index: -1, tag_size: if plant(18265) { index.get_tag_size() - 1 } else { index.get_tag_size() }, data_size: 0 };
         self.seek_set(index.block_offset);
         let _ = self.file.write_all(&blockheader.to_bytes());
         let mut name = tagname.as_bytes().to_vec();
@@ -274,7 +283,9 @@ impl TagBlockFile {
 
             let data_offset = self.index_list.iter().find(|i| i.block_offset == handle.block_offset).map_or(0, |i| i.data_offset);
             self.header.file_size = data_offset;
-            self.header.file_size += handle.block_header.data_size;
+            if !plant(18264) {
+                self.header.file_size += handle.block_header.data_size;
+            }
 
             // Rewrite the block header and the file header
             self.seek_set(handle.block_offset);
@@ -288,7 +299,7 @@ impl TagBlockFile {
     }
 
     /// `Create_Index(tagname, blockoffset)`: adds an index in descending crc order; `None` if the tag exists.
-    fn create_index(&mut self, tagname: &str, blockoffset: i32) -> Option<TagBlockIndex> {
+    fn create_index(&mut self, tagname: &[u8], blockoffset: i32) -> Option<TagBlockIndex> {
         if self.find_block(tagname).is_some() {
             return None;
         }
@@ -296,7 +307,7 @@ impl TagBlockFile {
         let index = TagBlockIndex::new(tagname, blockoffset);
 
         // Insert before the first node with a smaller crc, else at the tail
-        match self.index_list.iter().position(|cur| index.crc > cur.crc) {
+        match self.index_list.iter().position(|cur| if plant(18261) { index.crc < cur.crc } else { index.crc > cur.crc }) {
             Some(p) => self.index_list.insert(p, index),
             None => self.index_list.push(index),
         }
@@ -305,12 +316,12 @@ impl TagBlockFile {
 
     /// `Find_Block(tagname)`: walks the crc-ordered list (stopping once past the crc) and confirms the name by reading it
     /// from the file (`strcmpi`).
-    fn find_block(&mut self, tagname: &str) -> Option<TagBlockIndex> {
+    fn find_block(&mut self, tagname: &[u8]) -> Option<TagBlockIndex> {
         if self.index_list.is_empty() {
             return None;
         }
 
-        let crc = crc_stringi(tagname.as_bytes(), 0);
+        let crc = crc_stringi(tagname, 0);
         for k in 0..self.index_list.len() {
             let cur = self.index_list[k];
             if cur.crc == crc {
@@ -319,12 +330,12 @@ impl TagBlockFile {
                 let mut name = vec![0u8; cur.get_tag_size().max(0) as usize];
                 let _ = self.file.read(&mut name);
                 let n = name.iter().position(|&c| c == 0).unwrap_or(name.len());
-                if String::from_utf8_lossy(&name[..n]).eq_ignore_ascii_case(tagname) {
+                if if plant(18269) { name[..n] == *tagname } else { name[..n].eq_ignore_ascii_case(tagname) } {
                     return Some(cur);
                 }
             }
             // The list is in descending order: nothing further can match
-            if cur.crc < crc {
+            if if plant(18262) { cur.crc <= crc } else { cur.crc < crc } {
                 break;
             }
         }
@@ -349,7 +360,9 @@ impl TagBlockHandle {
         file.seek_set(data_offset + self.position);
         let nbytes = if file.file.write_all(buf).is_ok() { buf.len() as i32 } else { 0 };
         self.position += nbytes;
-        if self.position > self.block_header.data_size {
+        if plant(18267) {
+            self.block_header.data_size += nbytes;
+        } else if self.position > self.block_header.data_size {
             self.block_header.data_size = self.position;
         }
         nbytes
@@ -359,7 +372,7 @@ impl TagBlockHandle {
     pub fn read(&mut self, file: &mut TagBlockFile, buf: &mut [u8]) -> i32 {
         let mut nbytes = buf.len() as i32;
         if self.position + nbytes > self.block_header.data_size {
-            nbytes = self.block_header.data_size - self.position;
+            nbytes = if plant(18263) { self.block_header.data_size } else { self.block_header.data_size - self.position };
         }
 
         let data_offset = file.index_list.iter().find(|i| i.block_offset == self.block_offset).map_or(0, |i| i.data_offset);
@@ -374,7 +387,7 @@ impl TagBlockHandle {
         match dir {
             SeekDir::Cur => self.position += pos,
             SeekDir::Set => self.position = pos,
-            SeekDir::End => self.position = self.block_header.data_size + pos,
+            SeekDir::End => self.position = if plant(18266) { self.block_header.data_size - pos } else { self.block_header.data_size + pos },
         }
         self.position
     }
