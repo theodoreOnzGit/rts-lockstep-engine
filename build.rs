@@ -14744,6 +14744,12 @@ mod differential {
             ("igu_idle.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "Object *InGameUI::findIdleWorker( Object *obj)", Some("void InGameUI::selectNextIdleWorker( void )")),
             ("igu_idle2.inc", "GameEngine/Source/GameClient/InGameUI.cpp", "Int InGameUI::getIdleWorkerCount( void )", Some("void InGameUI::recreateControlBar( void )")),
             ("igu_color.inc", "GameEngine/Source/GameClient/Color.cpp", "void GameGetColorComponents( Color color,", Some("void GameGetColorComponentsReal")),
+            ("gs_dir.inc", "GameEngine/Source/Common/System/SaveGame/GameState.cpp", "AsciiString GameState::getSaveDirectory() const", Some("Bool GameState::isInSaveDirectory(const AsciiString& path) const")),
+            ("gs_exists.inc", "GameEngine/Source/Common/System/SaveGame/GameState.cpp", "Bool GameState::doesSaveGameExist( AsciiString filename )", Some("/** Get save game info from the filename specified */")),
+            ("xfer_load.inc", "GameEngine/Source/Common/System/XferLoad.cpp", "void XferLoad::open( AsciiString identifier )", Some("/** Read a block size descriptor from the file at the current position */")),
+            ("dr_region.inc", "GameEngine/Source/GameClient/Drawable.cpp", "static Bool computeHealthRegion( const Drawable *draw, IRegion2D& region )", Some("Bool Drawable::drawsAnyUIText( void )")),
+            ("dr_pips.inc", "GameEngine/Source/GameClient/Drawable.cpp", "void Drawable::drawAmmo( const IRegion2D *healthBarRegion )", Some("void Drawable::drawBattlePlans( const IRegion2D *healthBarRegion )")),
+            ("dr_construct.inc", "GameEngine/Source/GameClient/Drawable.cpp", "void Drawable::drawConstructPercent( const IRegion2D *healthBarRegion )", Some("void Drawable::clearAndSetModelConditionState( ModelConditionFlagType clr, ModelConditionFlagType set )")),
             ("display_views.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::deleteViews( void )", Some("/// Redraw the entire display")),
             ("display_stop.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::stopMovie( void )", Some("//============================================================================\n// Display::update\n")),
             ("display_logo.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::playLogoMovie(", Some("//============================================================================\n// Display::playMovie\n")),
@@ -14762,6 +14768,8 @@ mod differential {
             ("wrap_draft_game_client.cpp", "draft_lc3_game_client"),
             ("wrap_draft_ime_manager.cpp", "draft_lc3_ime_manager"),
             ("wrap_draft_in_game_ui.cpp", "draft_lc3_in_game_ui"),
+            ("wrap_draft_game_state.cpp", "draft_lc3_game_state"),
+            ("wrap_draft_drawable.cpp", "draft_lc3_drawable"),
         ] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();
