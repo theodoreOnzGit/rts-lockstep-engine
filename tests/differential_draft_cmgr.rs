@@ -19,7 +19,8 @@
 //! keep-alive command) and calls the accessors in a random order, 20 to 70 operations; the results and the fields are compared whole.
 //!
 //! `getNextPacketRouterSlot` with an id that is not among the first seven of the fallback plan reads `m_packetRouterFallback[8]` upstream (one past the array); the draft clamps it.
-//! The program only asks for ids that are in the plan. Not covered: everything else in `ConnectionManager` (the command relay and acks, `update`, `updateRunAhead`,
+//! The program only asks for ids that are in the plan. `isPlayerConnected` is asked for ids 0 to 7 or for the local slot (upstream indexes `m_connections` unchecked, so an
+//! out-of-range id other than the local slot is undefined; the draft returns false there). Not covered: everything else in `ConnectionManager` (the command relay and acks, `update`, `updateRunAhead`,
 //! `parseUserList`, the file transfer, the chat, `getMinimumCushion` and `getAverageFPS`, which use `FrameMetrics`) needs the frame data, the game logic, the transport and
 //! the menus: see the report of #215.
 
@@ -156,7 +157,8 @@ fn float_bits(g: &mut Gen) -> u32 {
 
 fn program(g: &mut Gen) -> Vec<u32> {
     let mut v = vec![];
-    v.push(slot_value(g)); // local slot
+    let mut local = slot_value(g);
+    v.push(local); // local slot
     v.push(slot_value(g)); // router slot
     let mut plan = [0u32; 8];
     for p in plan.iter_mut() {
@@ -198,10 +200,17 @@ fn program(g: &mut Gen) -> Vec<u32> {
                 v.push(g.below(50_000));
                 v.push(g.below(256));
             }
-            3 | 4 | 8 => v.push(slot_value(g)),
+            3 => {
+                local = slot_value(g);
+                v.push(local);
+            }
+            4 | 8 => v.push(slot_value(g)),
             5 => {
-                v.push(g.below(8));
-                v.push(slot_value(g));
+                let i = g.below(8);
+                let val = slot_value(g);
+                v.push(i);
+                v.push(val);
+                plan[i as usize] = val; // the plan as it now stands: getNextPacketRouterSlot is only asked for ids in its first seven entries
             }
             6 => {
                 v.push(g.below(8));
@@ -218,7 +227,8 @@ fn program(g: &mut Gen) -> Vec<u32> {
             10 => v.push(g.below(12).wrapping_sub(2)),
             17 => v.push(g.below(12).wrapping_sub(2)),
             18 => v.push(plan[g.below(7) as usize]),
-            20 => v.push(g.below(12).wrapping_sub(2)),
+            // isPlayerConnected indexes m_connections[playerID] with no range check (undefined outside 0..8) unless playerID is the local slot: ids 0..7, or the local slot itself
+            20 => v.push(if g.below(3) == 0 { local } else { g.below(8) }),
             _ => {}
         }
     }

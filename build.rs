@@ -13583,6 +13583,11 @@ mod differential {
             let n2 = out_dir.join("network2_gen");
             let mut b = cc::Build::new();
             base(&mut b);
+            // the network2 environment (wrap_draft_conn.cpp) is also linked into this test binary by its own build: the command message classes' methods would be defined
+            // twice, so this copy's names are renamed (every class of NetCommandMsg.h, then the free functions and globals the linker reported twice)
+            for n in ["NetCommandMsg", "NetGameCommandMsg", "NetAckBothCommandMsg", "NetAckStage1CommandMsg", "NetAckStage2CommandMsg", "NetFrameCommandMsg", "NetPlayerLeaveCommandMsg", "NetRunAheadMetricsCommandMsg", "NetRunAheadCommandMsg", "NetDestroyPlayerCommandMsg", "NetKeepAliveCommandMsg", "NetDisconnectKeepAliveCommandMsg", "NetDisconnectPlayerCommandMsg", "NetPacketRouterQueryCommandMsg", "NetPacketRouterAckCommandMsg", "NetDisconnectChatCommandMsg", "NetChatCommandMsg", "NetDisconnectVoteCommandMsg", "NetProgressCommandMsg", "NetWrapperCommandMsg", "NetFileCommandMsg", "NetFileAnnounceCommandMsg", "NetFileProgressCommandMsg", "NetDisconnectFrameCommandMsg", "NetDisconnectScreenOffCommandMsg", "NetFrameResendRequestCommandMsg", "DoesCommandRequireACommandID", "GenerateNextCommandID", "GetAsciiNetCommandType", "IsCommandSynchronized", "MAX_FRAMES_AHEAD", "MIN_RUNAHEAD", "NetCommandList", "NetCommandRef", "NpThePlayerList", "ResolveIP", "FRAMES_TO_KEEP", "FRAME_DATA_LENGTH", "NpGameMessageParser", "NpGameMessageParserArgumentType", "NpGameState", "NpNameKeyGenerator", "NpPlayer", "NpPlayerList", "NpTheGameState", "NpTheNameKeyGenerator"] {
+                b.define(n, Some(format!("N3Cm{n}").as_str()));
+            }
             b.include(&gen)
                 .include(&n2)
                 .include(out_dir.join("netpkt_gen"))
