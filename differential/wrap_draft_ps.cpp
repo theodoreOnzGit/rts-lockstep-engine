@@ -32,6 +32,9 @@ typedef bool Bool;
 #define NEW new
 #define DEBUG_LOG(x) ((void)0)
 #define _snprintf snprintf
+/* Renamed (#215, merge of net4): unrenamed, this global collides at link time with wrap_playertemplate.cpp's `ThePlayerTemplateStore`
+** in differential_player_template (rust-lld: duplicate symbol). The other wrappers rename it the same way (wrap_game_info.cpp, wrap_draft_ladder.cpp). */
+#define ThePlayerTemplateStore N4ThePlayerTemplateStore
 
 class MutexClass
 {
