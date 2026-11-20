@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 lines (test: tests/differential_draft_line3d.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/line3d.cpp
@@ -75,8 +76,10 @@ impl Line3DClass {
 
     /// `Line3DClass::Class_ID` (line3d.h): `CLASSID_LINE3D`.
     pub fn class_id(&self) -> i32 {
-        // CLASSID_LINE3D's value is defined by the RenderObjClass enum (rendobj.h), not in the verified port.
-        -1
+        // ~~returned -1: "CLASSID_LINE3D's value is defined by the RenderObjClass enum (rendobj.h), not in the verified port"~~
+        // **CORRECTED 2026-11-20 (#215)**: rendobj.h's enum counts CLASSID_MESH 0, HMODEL 1, DISTLOD 2, PREDLODGROUP 3, TILEMAP 4, IMAGE3D 5, LINE3D 6
+        // (checked by the differential test, which compiles the enum verbatim).
+        6
     }
 
     /// `Line3DClass::Render` (line3d.cpp:124), the data half. Upstream:

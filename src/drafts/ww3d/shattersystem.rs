@@ -1,5 +1,9 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential coverage (#215, tests/differential_draft_shattersystem6.rs, 20,000 cases per function, 0 mismatches after one fix): `VertexClass::{lerp, which_side,
+//! intersect_plane}`, `PolygonClass::{which_side, split, compute_plane, is_degenerate, salvage_degenerate}`, `BSPClass::{new, clip_polygon}`. NOT covered: `ShatterSystem::{init,
+//! shutdown, shatter_mesh_would_run}` (the asset manager and the empty pattern list).
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/shattersystem.cpp   (lines 1-600: the clipping geometry)
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/shattersystem.h
@@ -88,11 +92,31 @@ impl VertexClass {
         res
     }
 
+    /// `VertexClass::operator = (that)` (shattersystem.cpp:129): copies the position, the normal, the pass count and only the passes
+    /// below `that.PassCount`; the other passes keep their old value. (A plain Rust copy overwrites all of them: **Corrected 2026-11-20
+    /// (#215)**, found by the differential test, which compares the stale slot `Salvage_Degenerate` reads.)
+    pub fn assign_from(&mut self, that: &VertexClass) {
+        self.position = that.position;
+        self.normal = that.normal;
+        self.pass_count = that.pass_count;
+        for ipass in 0..that.pass_count {
+            self.dcg[ipass] = that.dcg[ipass];
+            self.dig[ipass] = that.dig[ipass];
+            for istage in 0..MAX_TEX_STAGES {
+                self.tex_coord[ipass][istage] = that.tex_coord[ipass][istage];
+            }
+        }
+    }
+
     /// `VertexClass::Which_Side(plane)`: `BPT_FRONT`/`BPT_BACK`/`BPT_ON` within `BPT_EPSILON`.
     pub fn which_side(&self, plane: &PlaneClass) -> i32 {
         let mut d = Vector3::dot_product(&plane.n, &self.position);
-        d -= plane.d;
-        if if plant(19081) { d >= BPT_EPSILON } else { d > BPT_EPSILON } {
+        if plant(19081) {
+            d += plane.d;
+        } else {
+            d -= plane.d;
+        }
+        if d > BPT_EPSILON {
             return BPT_FRONT;
         }
         if d < (if plant(19082) { -BPT_EPSILON * 10.0 } else { -BPT_EPSILON }) {
@@ -138,6 +162,19 @@ impl PolygonClass {
             p.verts[i] = points[i];
         }
         p
+    }
+
+    /// `PolygonClass::operator = (that)` (shattersystem.cpp:243): copies the material id, the vertex count, the plane and only the first
+    /// `that.NumVerts` vertices; the slots after them keep their old contents (`Salvage_Degenerate` reads one of them).
+    /// ~~`*front = self.clone()` copied all 24 slots, including `self`'s stale ones~~ **CORRECTED 2026-11-20 (#215)**: the differential test
+    /// found `Split` + `Salvage_Degenerate` giving 9 vertices where upstream gives 8, and `Clip_Polygon` pools 31 words apart.
+    pub fn assign_from(&mut self, that: &PolygonClass) {
+        self.material_id = that.material_id;
+        self.num_verts = that.num_verts;
+        self.plane = that.plane;
+        for i in 0..self.num_verts {
+            self.verts[i].assign_from(&that.verts[i]);
+        }
     }
 
     pub fn get_vertex_count(&self) -> usize {
@@ -194,8 +231,8 @@ impl PolygonClass {
     /// `PolygonClass::Split(plane, front, back)` (shattersystem.cpp:375): walks the loop from the first vertex not
     /// on the plane, emitting vertices into the front/back polygons and the plane intersections.
     pub fn split(&self, plane: &PlaneClass, front: &mut PolygonClass, back: &mut PolygonClass) {
-        *front = self.clone();
-        *back = self.clone();
+        front.assign_from(self);
+        back.assign_from(self);
         front.num_verts = 0;
         back.num_verts = 0;
         debug_assert!(self.which_side(plane) == BPT_BOTH);
@@ -422,8 +459,8 @@ impl BSPClass {
         back_poly.num_verts = 0;
 
         match polygon.which_side(&self.plane) {
-            BPT_FRONT | BPT_ON => front_poly = polygon.clone(),
-            BPT_BACK => back_poly = polygon.clone(),
+            BPT_FRONT | BPT_ON => front_poly.assign_from(polygon),
+            BPT_BACK => back_poly.assign_from(polygon),
             _ => polygon.split(&self.plane, &mut front_poly, &mut back_poly),
         }
 

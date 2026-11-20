@@ -27,9 +27,19 @@
 //! stale slot read by `Salvage_Degenerate` (`Verts[i+1]` at `i == NumVerts-1`) may differ; and `Compute_Intersection` writes `*set_t` before it
 //! range-checks, which the draft's `Option` may drop. Both are what I expect the run to show, otherwise 0.
 //!
-//! # Results
+//! # Results (2026-11-20)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **First run: 395 mismatches** (`Split` 1, `BSPClass` build + `Clip_Polygon` 394 of 20,000), **prediction held** (not 0). Cause: the draft copied whole polygons
+//! (`*front = self.clone()`) where upstream's `PolygonClass::operator =` copies the material id, count, plane and only the first `NumVerts` vertices, so the slot after the last
+//! vertex, which `Salvage_Degenerate` reads (`Verts[i+1]` at `i == NumVerts-1`), held the source's stale vertex instead of the destination's. Fixed in the draft
+//! (`PolygonClass::assign_from`, `VertexClass::assign_from`, used by `split` and `clip_polygon`). The `Compute_Intersection` write-before-range-check I also feared was
+//! already right in the verified `PlaneClass`. **After the fix: 0 mismatches**, 20,000 cases for each of the nine checks.
+//!
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching comparisons over all checks)
+//!   19081: 48,454; 19082: 71; 19083: 291; 19084: 1,036; 19085: 34,778; 19086: 1,286; 19087: 33,059; 19088: 764; 19089: 9,395; 19090: 445
+//!   (an earlier 19081, `d >= BPT_EPSILON`, was an equivalent mutant (0: a vertex exactly 1e-4 off the plane never occurs) and was replaced by a sign slip.)
+//!
+//! **10 of 10 caught.**
 
 mod support;
 mod support_sweep;
@@ -139,6 +149,15 @@ fn input_polygon(p: &PolygonClass) -> Vec<u32> {
     pwords(p, true)
 }
 
+/// `Check::eq` for word vectors, printing where the first differing word is (the inputs are too long to read): at most 6 prints per check.
+fn eqd(c: &mut Check, rust: Vec<u32>, cpp: Vec<u32>, what: impl FnOnce() -> String) {
+    if rust != cpp && c.mismatches < 6 {
+        let at = rust.iter().zip(&cpp).position(|(a, b)| a != b);
+        println!("DIFFAT {}: lengths rust {} c++ {}, first differing word {:?}: rust {:?} c++ {:?}", c.name, rust.len(), cpp.len(), at, at.map(|i| rust[i]), at.map(|i| cpp[i]));
+    }
+    c.eq(rust, cpp, what);
+}
+
 #[test]
 fn shattersystem_matches_upstream() {
     let _l = CPP.lock().unwrap_or_else(|e| e.into_inner());
@@ -175,7 +194,7 @@ fn shattersystem_matches_upstream() {
                     1 => vwords(&VertexClass::intersect_plane(&v0, &v1, &pl)),
                     _ => vwords(&VertexClass::lerp(&v0, &v1, alpha)),
                 };
-                c[op as usize].eq(rust, cpp, || format!("case {case} op {op} plane {pl:?} v0 {v0:?} v1 {v1:?} alpha {alpha}"));
+                eqd(&mut c[op as usize], rust, cpp, || format!("case {case} op {op} plane {pl:?} v0 {v0:?} v1 {v1:?} alpha {alpha}"));
             }
         }
         // --- polygon operations
@@ -224,7 +243,7 @@ fn shattersystem_matches_upstream() {
                         (r, cc)
                     }
                 };
-                c[3 + op as usize].eq(rust, cpp, || format!("case {case} op {op} plane {pl:?} polygon {poly:?}"));
+                eqd(&mut c[3 + op as usize], rust, cpp, || format!("case {case} op {op} plane {pl:?} polygon {poly:?}"));
             }
         }
         // --- BSP
@@ -284,12 +303,12 @@ fn shattersystem_matches_upstream() {
                 }
             }
             assert_eq!(pos, k, "bsp output length");
-            c[8].eq(rust, cpp, || format!("case {case} pivots {np} parents {parents:?} polys {polys:?}"));
+            eqd(&mut c[8], rust, cpp, || format!("case {case} pivots {np} parents {parents:?} polys {polys:?}"));
         }
     }
     for k in &c {
         for e in k.examples.iter().take(2) {
-            println!("EXAMPLE {}: {}", k.name, e.chars().take(3000).collect::<String>());
+            println!("EXAMPLE {}: {}", k.name, e.chars().take(300).collect::<String>());
         }
     }
     support_sweep::finish(c);

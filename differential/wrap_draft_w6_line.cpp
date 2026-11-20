@@ -12,8 +12,8 @@
 ** Entry point (extern "C", tests/differential_draft_line3d.rs), uint32 words, floats by bits:
 **   ref_w6_line_run(in, out) -> n    in = [start 3, end 3, width, r, g, b, opacity, nops, per op: kind + 7 words]
 **       kind 0 Scale(s)  1 Scale(x, y, z)  2 Reset(start, end)  3 Reset(start, end, width)  4 Re_Color(r, g, b)  5 Set_Opacity(o)  6 Set_Sort_Level(int)
-**   out = after the constructor and after every op: [shader id, sort level, Transform 12, vert 8x3, converted colour, sphere centre 3, radius,
-**         box centre 3, extent 3, Get_Num_Polys, Invalidate_Cached_Bounding_Volumes calls] */
+**   out = (class id, 36 indices of `Indices[]` at the end) after the constructor and after every op: [shader id, sort level, Transform 12, vert 8x3, converted colour, sphere centre 3, radius,
+**         box centre 3, extent 3, Get_Num_Polys, Invalidate_Cached_Bounding_Volumes calls], then the class id (Class_ID) and the 36 indices */
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -83,6 +83,11 @@ public:
 #include "line_recolor.inc"
 #include "line_opacity.inc"
 #include "line_polys.inc"
+#include "line_indices.inc"
+enum W6ClassIds {
+#include "line_classids.inc"
+	CLASSID_LAST = 0x0000FFFF
+};
 
 void dump(const Line3DClass & l, W *& o)
 {
@@ -100,6 +105,8 @@ void dump(const Line3DClass & l, W *& o)
 	*o++ = (W)l.Get_Num_Polys();
 	*o++ = (W)l.invalidates;
 }
+
+int class_id_of_line3d(void) { return CLASSID_LINE3D; } /* line3d.h: `virtual int Class_ID(void) const { return CLASSID_LINE3D; }` */
 
 }
 
@@ -127,5 +134,7 @@ extern "C" int ref_w6_line_run(const W *in, W *out)
 		}
 		dump(line, o);
 	}
+	*o++ = (W)class_id_of_line3d();
+	for (int k = 0; k < 36; k++) *o++ = (W)Indices[k];
 	return (int)(o - out);
 }

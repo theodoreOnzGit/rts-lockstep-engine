@@ -14249,6 +14249,16 @@ mod differential {
         cut(&ww3d, "line3d.cpp", "void Line3DClass::Re_Color(float r, float g, float b)", "line_recolor.inc");
         cut(&ww3d, "line3d.cpp", "void Line3DClass::Set_Opacity(float opacity)", "line_opacity.inc");
         cut(&ww3d, "line3d.cpp", "int Line3DClass::Get_Num_Polys(void) const", "line_polys.inc");
+        // the 12 triangles' indices (`Render` copies them into the index buffer), and the class-id enumerators of rendobj.h up to CLASSID_LINE3D's neighbours (the whole list, VERBATIM)
+        cut(&ww3d, "line3d.cpp", "const unsigned short Indices[]=", "line_indices.inc");
+        span(&ww3d, "rendobj.h", "CLASSID_UNKNOWN\t= 0xFFFFFFFF,", "CLASSID_LAST\t\t= 0x0000FFFF", "line_classids.inc");
+
+        // txt.cpp (see differential/wrap_draft_w6_txt.cpp): Is_Texture_Valid and Build_Texture, VERBATIM
+        cut(&ww3d, "txt.cpp", "bool TextTextureClass::Is_Texture_Valid(FontClass &font, const char *str, int fore, int back, ConvertClass &conv)", "txt_valid.inc");
+        cut(&ww3d, "txt.cpp", "bool TextTextureClass::Build_Texture(FontClass &font, const char *str, int fore, int back, ConvertClass &conv)", "txt_build.inc");
+
+        // decalmsh.cpp (see differential/wrap_draft_w6_decal.cpp): DecalPolyClass, VERBATIM
+        span(&ww3d, "decalmsh.cpp", "class DecalPolyClass\n{", "static DecalPolyClass _DecalPoly0;", "decal_poly.inc");
 
         // bwrender.cpp: WWMath::Float_To_Long is the MSVC x86 `fistp` branch in the shipped game (this g++/clang build takes the portable
         // `(long) f` branch), so the 10 calls name Ref_W6_Fistp, which the wrapper defines as the same two instructions
@@ -14274,7 +14284,7 @@ mod differential {
             .flag(wm_gen.join("vector_this.h").to_str().expect("UTF-8 path"))
             .flag("-include")
             .flag(wm_gen.join("simplevec_this.h").to_str().expect("UTF-8 path"));
-        for w in ["bw", "vis", "comp"] {
+        for w in ["bw", "vis", "comp", "txt", "decal"] {
             println!("cargo:rerun-if-changed=differential/wrap_draft_w6_{w}.cpp");
             b.file(dif.join(format!("wrap_draft_w6_{w}.cpp")));
         }

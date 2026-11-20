@@ -19,9 +19,16 @@
 //!
 //! 0 mismatches.
 //!
-//! # Results
+//! # Results (2026-11-20)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **0 mismatches** over 20,000 lines (each compared after the constructor and after every operation, plus the class id and the 36 indices). **Prediction held for the
+//! arithmetic;** one draft defect found beside it: `class_id()` returned a placeholder `-1` (a comment said the value was "not in the verified port"); `CLASSID_LINE3D` is 6 in
+//! `rendobj.h`'s enum (compiled verbatim into the wrapper). Fixed in the draft.
+//!
+//! # Planted bugs (`L9_PLANT=<id>`)
+//!   19111: 20,000; 19112: 20,000; 19113: 2,530; 19114: 1,043; 19115: 6,792; 19116: 5,227; 19117: 5,487; 19118: 19,977; 19119: 3,446
+//!
+//! **9 of 9 caught.**
 
 mod support;
 mod support_sweep;
@@ -134,9 +141,13 @@ fn line3d_matches_upstream() {
         // the C++ dump ends each state with the invalidation count, which the draft leaves to the owner: drop that word
         let per = 2 + 12 + 24 + 1 + 4 + 6 + 1;
         let mut cpp = Vec::new();
-        for st in out[..n].chunks(per + 1) {
+        for st in out[..n - 37].chunks(per + 1) {
             cpp.extend_from_slice(&st[..per]);
         }
+        // the class id and the 36 indices of `Indices[]` (the same for every line, compared with every case)
+        cpp.extend_from_slice(&out[n - 37..n]);
+        expect.push(line.class_id() as u32);
+        expect.extend(INDICES.iter().map(|x| u32::from(*x)));
         chk.eq(expect, cpp, || format!("case {case} start {start:?} end {end:?} width {width} colour {r} {gr} {bl} opacity {opacity} ops {nops}"));
     }
     support_sweep::finish(vec![chk]);

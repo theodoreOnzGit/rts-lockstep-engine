@@ -27,9 +27,15 @@
 //!
 //! 0 mismatches. The draft transcribes the scan converter line by line; the places to watch are `Clear` for tall buffers and `float_to_long` (default mode).
 //!
-//! # Results
+//! # Results (2026-11-20)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **0 mismatches** on the first run: 20,000 cases each of `IDBufferClass` alone, `Render_Triangles` through the clip path and through the no-clip path. **Prediction held.**
+//!
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching comparisons over the three checks)
+//!   19091: 12,657; 19092: 1,195; 19093: 14,151; 19094: 35,720; 19095: 390; 19096: 323; 19097: 3,661; 19098: 313; 19099: 9,691; 19100: 11,980
+//!   (two first versions of 19091 (`r <= 0` in `Is_Backfacing`) and 19093 (`middle_for_compare` 3 to 2, which `bottom > middle` cannot see) were equivalent mutants (0) and were replaced.)
+//!
+//! **10 of 10 caught.**
 
 mod support;
 mod support_sweep;
