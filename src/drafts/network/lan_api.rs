@@ -462,28 +462,29 @@ impl LANMessage {
     }
 }
 
+/// (`%d` of an `UnsignedInt`: every number is printed as a signed `int`.)
 /// `GetMessageTypeString` (LANAPI.cpp): a printable name for a message type (the "Map Availability" type has no
 /// entry upstream and reads "Unknown Message").
 pub fn get_message_type_string(ty: u32) -> String {
     use lan_message_type::*;
     let t = ty as i32;
     match t {
-        REQUEST_LOCATIONS => format!("Request Locations ({})", ty),
-        GAME_ANNOUNCE => format!("Game Announce ({})", ty),
-        LOBBY_ANNOUNCE => format!("Lobby Announce ({})", ty),
-        REQUEST_JOIN => format!("Request Join ({})", ty),
-        JOIN_ACCEPT => format!("Join Accept ({})", ty),
-        JOIN_DENY => format!("Join Deny ({})", ty),
-        REQUEST_GAME_LEAVE => format!("Request Game Leave ({})", ty),
-        REQUEST_LOBBY_LEAVE => format!("Request Lobby Leave ({})", ty),
-        SET_ACCEPT => format!("Set Accept({})", ty),
-        CHAT => format!("Chat ({})", ty),
-        GAME_START => format!("Game Start ({})", ty),
-        GAME_START_TIMER => format!("Game Start Timer ({})", ty),
-        GAME_OPTIONS => format!("Game Options ({})", ty),
-        REQUEST_GAME_INFO => format!("Request GameInfo ({})", ty),
-        INACTIVE => format!("Inactive ({})", ty),
-        _ => format!("Unknown Message ({})", ty),
+        REQUEST_LOCATIONS => format!("Request Locations ({})", ty as i32),
+        GAME_ANNOUNCE => format!("Game Announce ({})", ty as i32),
+        LOBBY_ANNOUNCE => format!("Lobby Announce ({})", ty as i32),
+        REQUEST_JOIN => format!("Request Join ({})", ty as i32),
+        JOIN_ACCEPT => format!("Join Accept ({})", ty as i32),
+        JOIN_DENY => format!("Join Deny ({})", ty as i32),
+        REQUEST_GAME_LEAVE => format!("Request Game Leave ({})", ty as i32),
+        REQUEST_LOBBY_LEAVE => format!("Request Lobby Leave ({})", ty as i32),
+        SET_ACCEPT => format!("Set Accept({})", ty as i32),
+        CHAT => format!("Chat ({})", ty as i32),
+        GAME_START => format!("Game Start ({})", ty as i32),
+        GAME_START_TIMER => format!("Game Start Timer ({})", ty as i32),
+        GAME_OPTIONS => format!("Game Options ({})", ty as i32),
+        REQUEST_GAME_INFO => format!("Request GameInfo ({})", ty as i32),
+        INACTIVE => format!("Inactive ({})", ty as i32),
+        _ => format!("Unknown Message ({})", ty as i32),
     }
 }
 

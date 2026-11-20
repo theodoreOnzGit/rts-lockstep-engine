@@ -27,6 +27,7 @@
 #include "Common/STLTypedefs.h"
 #include "Common/CriticalSection.h"
 #include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <vector>
 #include <map>
@@ -106,6 +107,7 @@ struct TransportStandIn
 {
 	void queueSend(UnsignedInt addr, UnsignedShort port, unsigned char *data, Int len)
 	{
+		if (getenv("LA_DUMP")) { fprintf(stderr, "CPP "); for (Int i = 0; i < len; ++i) fprintf(stderr, "%02x", data[i]); fprintf(stderr, "\n"); } /*TMPDBG*/
 		theLog.push_back(90); theLog.push_back(addr); theLog.push_back(port); theLog.push_back((unsigned)len); theLog.push_back(hashBytes(data, (unsigned)len));
 	}
 	void update() {}
@@ -329,7 +331,7 @@ int ref_la_run(const unsigned *in, int nin, unsigned *out, int cap)
 		case 15: a.m_expiration = r.next(); break;
 		case 20: a.RequestLocations(); break;
 		case 21: { int k = (int)r.next(); a.RequestGameJoin(k < 0 ? NULL : nth(a, k), r.next()); break; }
-		case 22: a.RequestGameJoinDirectConnect(r.next()); break;
+		case 22: { UnsignedInt ipv = r.next(); if (a.m_name.getLength() > g_lanPlayerNameLength) break; /* upstream copies the whole name into playerName[13]: an overflow (#210), not compared */ a.RequestGameJoinDirectConnect(ipv); break; }
 		case 23: a.RequestGameLeave(); break;
 		case 24: a.RequestAccept(); break;
 		case 25: a.RequestHasMap(); break;

@@ -24,6 +24,9 @@
 //! Not compared: `RequestGameAnnounce` (it builds the options with `GameInfoToAsciiString`, which the verified game-info port tests), `RequestGameCreate`,
 //! `init`, `reset`, `update`, `checkMOTD`, `SetLocalIP` (the transport binds a socket), `transport.update` (a socket write: not observable without
 //! a socket), the `On*` handlers of `LANAPIhandlers.cpp` (another draft file) and `getErrorStringFromReturnType` (GUI text).
+//! `RequestGameJoinDirectConnect` is skipped (by both sides) when the local name is longer than 12 characters: upstream's `wcsncpy(playerName, m_name.str(), m_name.getLength())`
+//! overflows the 13-character field (a defect, reported on #210); the draft clamps.
+//! `RequestChat` is given only the three real chat types (the draft's enum has no `LANCHAT_MAX`, which is a count, not a type).
 //! `RequestHasMap` with no local slot: upstream indexes slot -1 (undefined); the stand-in and the draft both say "no map" there.
 
 use rts_lockstep_engine::common::ascii_string::AsciiString;
@@ -371,7 +374,7 @@ fn program(g: &mut Gen) -> Vec<u32> {
             5 | 26 | 30 => {
                 push_units(v, &name_units(g.below(40)));
                 if op == 26 {
-                    v.push(g.below(4));
+                    v.push(g.below(3)); // LANCHAT_NORMAL..LANCHAT_SYSTEM; LANCHAT_MAX (3) is a count no caller passes, and the draft's enum cannot hold it
                 }
             }
             7 | 11 | 14 | 22 => v.push(ip(g)),
@@ -502,6 +505,7 @@ fn drain_sent(a: &mut LANAPI<Host>, o: &mut Vec<u32>) {
             image.extend_from_slice(&m.data[..n]);
             let total = image.len();
             decrypt_buf(&mut image, total);
+            if std::env::var("LA_DUMP").is_ok() { eprintln!("RUST {}", image[6..].iter().map(|b| format!("{b:02x}")).collect::<String>()); } /*TMPDBG*/
             o.extend([90, m.addr, u32::from(m.port), m.length as u32, hash_bytes(&image[6..])]);
             m.length = 0;
         }
@@ -643,7 +647,10 @@ fn rust_run(w: &[u32]) -> Vec<u32> {
             }
             22 => {
                 let ipv = rd.next();
-                a.request_game_join_direct_connect(ipv);
+                if a.name.get_length() <= 12 {
+                    // upstream copies the whole name into PlayerInfo.playerName[13] (an overflow for longer names, #210): not compared
+                    a.request_game_join_direct_connect(ipv);
+                }
             }
             23 => a.request_game_leave(),
             24 => a.request_accept(),
