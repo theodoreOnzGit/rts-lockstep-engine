@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_game_client.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GameClient.cpp   (`addTextBearingDrawable`,
@@ -24,21 +25,35 @@ impl TextBearingDrawables {
     /// `GameClient::addTextBearingDrawable(tbd)` (GameClient.cpp:989): NULL is ignored; else `push_back`.
     pub fn add_text_bearing_drawable(&mut self, tbd: Option<u32>) {
         if let Some(d) = tbd {
-            self.list.push(d);
+            if crate::logic::modules::plant(19881) {
+                self.list.insert(0, d);
+            } else if !(crate::logic::modules::plant(19885) && self.list.contains(&d)) {
+                self.list.push(d);
+            }
         }
     }
 
     /// `GameClient::flushTextBearingDrawables()` (GameClient.cpp:995): walk the list calling each drawable's
     /// `drawUIText()` (the closure; see `DrawableUi::draw_ui_text`), then clear it, so the group numbers draw last, in front.
     pub fn flush_text_bearing_drawables(&mut self, draw_ui_text: &mut dyn FnMut(u32)) {
-        for &d in self.list.iter() {
-            draw_ui_text(d);
+        if crate::logic::modules::plant(19883) {
+            for &d in self.list.iter().rev() {
+                draw_ui_text(d);
+            }
+        } else {
+            for &d in self.list.iter() {
+                draw_ui_text(d);
+            }
         }
-        self.list.clear();
+        if !crate::logic::modules::plant(19882) {
+            self.list.clear();
+        }
     }
 }
 
 /// `GameClient::removeFromRayEffects(draw)` (GameClient.cpp:1032): `TheRayEffects->deleteRayEffect(draw)`.
 pub fn remove_from_ray_effects(ray_effects: &mut RayEffectSystem, draw: Option<ObjectId>) {
-    ray_effects.delete_ray_effect(draw);
+    if !crate::logic::modules::plant(19884) {
+        ray_effects.delete_ray_effect(draw);
+    }
 }

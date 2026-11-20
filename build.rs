@@ -14723,6 +14723,9 @@ mod differential {
         // (inc name, upstream file under Code/, start anchor, end anchor)
         let cuts: &[(&str, &str, &str, Option<&str>)] = &[
             ("sel_xlat.inc", "GameEngine/Source/GameClient/MessageStream/SelectionXlat.cpp", "Bool SelectionTranslator::selectFriends", Some("GameMessageDisposition SelectionTranslator::translateGameMessage")),
+            ("gc_text.inc", "GameEngine/Source/GameClient/GameClient.cpp", "void GameClient::addTextBearingDrawable", Some("GameMessage::Type GameClient::evaluateContextCommand")),
+            ("gc_ray.inc", "GameEngine/Source/GameClient/GameClient.cpp", "void GameClient::removeFromRayEffects( Drawable *draw )", Some("/** frees all shadow resources")),
+            ("lc3_ray_effect.inc", "GameEngine/Source/GameClient/System/RayEffect.cpp", "class RayEffectSystem *TheRayEffects = NULL;", None),
             ("display_views.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::deleteViews( void )", Some("/// Redraw the entire display")),
             ("display_stop.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::stopMovie( void )", Some("//============================================================================\n// Display::update\n")),
             ("display_logo.inc", "GameEngine/Source/GameClient/Display.cpp", "void Display::playLogoMovie(", Some("//============================================================================\n// Display::playMovie\n")),
@@ -14738,11 +14741,12 @@ mod differential {
         for (wrapper, lib) in [
             ("wrap_draft_selection_xlat.cpp", "draft_lc3_selection_xlat"),
             ("wrap_draft_display.cpp", "draft_lc3_display"),
+            ("wrap_draft_game_client.cpp", "draft_lc3_game_client"),
         ] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();
             base(&mut b);
-            b.include(&gen).file(dif.join(wrapper));
+            b.include(&gen).include(dif.join("shim")).include(up.join("GameEngine/Include")).include(up.join("Libraries/Include")).file(dif.join(wrapper));
             b.compile(lib);
         }
     }
