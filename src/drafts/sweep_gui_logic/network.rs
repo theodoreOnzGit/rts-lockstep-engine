@@ -1,4 +1,14 @@
 //! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! (#215, group guilogic4, tests/differential_draft_network.rs: these match the upstream C++ for a `Network` with NO connection manager on 20,000 programs: `new`,
+//! `is_transfer_command`, `get_execution_frame`, `all_commands_ready`, `process_destroy_player_command`, `time_for_new_frame` (without the slug branch),
+//! `is_frame_data_ready`, the six statistics getters and `get_packet_arrival_cushion`, `quit_game` (after a draft fix: it acts without a manager too),
+//! `self_destruct_player`, `is_packet_router`, `vote_for_player_disconnect`, `update_load_progress`, `load_progress_complete`, `send_time_out_game_start`,
+//! `get_local_player_id`, `get_num_players`, `get_slot_average_fps`, `notify_others_of_current_frame`, `notify_others_of_new_frame`, and `frame_grouping_for`, the
+//! frame grouping `process_run_ahead_command` computes (after a draft fix: the product is `Int`, as upstream's). NOT tested, because each needs the first-pass
+//! `ConnectionManager` of `drafts/network`, whose state the C++ stand-in cannot mirror: `init`, `deinit`, `reset`, `parse_user_list`, `set_saw_crc_mismatch`,
+//! `process_command`, `get_commands_from_command_list`, `relay_commands_to_command_list`, `process_frame_synchronized_net_command`, `update`, `liteupdate`,
+//! `end_of_game_check`, `is_player_connected`, the getters and senders with a manager (`send_chat`, `send_file`, `get_player_name`, ...), the slug branch of
+//! `time_for_new_frame`, `set_local_address`, `init_transport`, `attach_transport`, `start_game` (empty), `toggle_network_on` (`_DEBUG` only).)
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameNetwork/Network.cpp (class Network: the constructor, deinit, reset, init,
@@ -24,6 +34,7 @@
 //! the frequency), `DEBUG_CRC` dumps (compiled out).
 
 use crate::common::game_common::LOGICFRAMES_PER_SECOND;
+use crate::logic::modules::plant;
 use crate::common::message_stream::{GameMessageArgument, MessageType};
 use crate::common::message_types::{
     MSG_BEGIN_NETWORK_MESSAGES, MSG_CLEAR_GAME_DATA, MSG_END_NETWORK_MESSAGES, MSG_SELF_DESTRUCT,
@@ -277,7 +288,7 @@ impl<H: NetworkHost, C: ConnectionManagerHost> Network<H, C> {
     /// `Network::isTransferCommand(msg)` (:458): a message strictly between `MSG_BEGIN_NETWORK_MESSAGES` and
     /// `MSG_END_NETWORK_MESSAGES`. `ty` is `None` for upstream's `NULL`.
     pub fn is_transfer_command(ty: Option<MessageType>) -> bool {
-        matches!(ty, Some(t) if t.0 > MSG_BEGIN_NETWORK_MESSAGES.0 && t.0 < MSG_END_NETWORK_MESSAGES.0)
+        matches!(ty, Some(t) if (if plant(15895) { t.0 >= MSG_BEGIN_NETWORK_MESSAGES.0 } else { t.0 > MSG_BEGIN_NETWORK_MESSAGES.0 }) && (if plant(15896) { t.0 <= MSG_END_NETWORK_MESSAGES.0 } else { t.0 < MSG_END_NETWORK_MESSAGES.0 }))
     }
 
     /// `Network::GetCommandsFromCommandList()` (:468): each message of `TheCommandList` that is a transfer command goes
@@ -315,6 +326,9 @@ impl<H: NetworkHost, C: ConnectionManagerHost> Network<H, C> {
         let logic_frame = self.host.game_logic_frame() as i32 + self.run_ahead;
         if logic_frame > self.last_execution_frame {
             self.last_execution_frame = logic_frame;
+            return logic_frame;
+        }
+        if plant(15894) {
             return logic_frame;
         }
         self.last_execution_frame
@@ -442,9 +456,24 @@ impl<H: NetworkHost, C: ConnectionManagerHost> Network<H, C> {
     pub fn process_run_ahead_command(&mut self, run_ahead: i32, frame_rate: i32) {
         self.run_ahead = run_ahead;
         self.frame_rate = frame_rate;
-        // time_t frameGrouping = (1000 * m_runAhead) / m_frameRate; (an Int division: m_frameRate is not 0 upstream)
-        let mut frame_grouping: i64 = if self.frame_rate != 0 { (1000 * self.run_ahead as i64) / self.frame_rate as i64 } else { 0 };
-        // since we only want the latency for one way to be a factor.
+        let frame_grouping = Self::frame_grouping_for(self.run_ahead, self.frame_rate);
+        if let Some(c) = self.con_mgr.as_mut() {
+            c.set_frame_grouping(frame_grouping);
+        }
+    }
+
+    /// The frame grouping `processRunAheadCommand` gives the connection manager (Network.cpp:644): `(1000 * runAhead) / frameRate` in `Int` arithmetic
+    /// (it wraps like MSVC's), halved ("since we only want the latency for one way to be a factor"), then clamped to `1..=500` ms. A `frameRate` of 0
+    /// divides by zero upstream (here: 0, then 1). Split out of `process_run_ahead_command` so that it can be tested.
+    pub fn frame_grouping_for(run_ahead: i32, frame_rate: i32) -> i64 {
+        let mut frame_grouping: i64 = if frame_rate == 0 {
+            0
+        } else if plant(15904) {
+            // the draft as first written: the product in i64 (no wrap)
+            (1000 * i64::from(run_ahead)) / i64::from(frame_rate)
+        } else {
+            i64::from(1000i32.wrapping_mul(run_ahead).wrapping_div(frame_rate))
+        };
         frame_grouping /= 2;
         if frame_grouping < 1 {
             frame_grouping = 1; // Having a value less than 1 doesn't make sense.
@@ -452,15 +481,13 @@ impl<H: NetworkHost, C: ConnectionManagerHost> Network<H, C> {
         if frame_grouping > 500 {
             frame_grouping = 500; // Max of a half a second.
         }
-        if let Some(c) = self.con_mgr.as_mut() {
-            c.set_frame_grouping(frame_grouping);
-        }
+        frame_grouping
     }
 
     /// `Network::processDestroyPlayerCommand(msg)` (:659): an out-of-range player index is refused; an existing
     /// `player<N>` gets a `MSG_SELF_DESTRUCT` (argument `FALSE`) on `TheCommandList`.
     pub fn process_destroy_player_command(&mut self, player_index: u32) {
-        if player_index >= MAX_SLOTS as u32 {
+        if player_index > if plant(15898) { MAX_SLOTS as u32 } else { MAX_SLOTS as u32 - 1 } {
             // DEBUG_ASSERTCRASH(playerIndex < MAX_SLOTS, ("Bad player index"));
             return;
         }
@@ -544,8 +571,8 @@ impl<H: NetworkHost, C: ConnectionManagerHost> Network<H, C> {
                 self.did_self_slug = true;
             }
         }
-        if cur_time >= self.next_frame_time {
-            if self.next_frame_time + (2 * frame_delay) < cur_time {
+        if if plant(15900) { cur_time > self.next_frame_time } else { cur_time >= self.next_frame_time } {
+            if self.next_frame_time + (if plant(15899) { frame_delay } else { 2 * frame_delay }) < cur_time {
                 self.next_frame_time = cur_time;
             } else {
                 self.next_frame_time += frame_delay;
@@ -557,7 +584,7 @@ impl<H: NetworkHost, C: ConnectionManagerHost> Network<H, C> {
 
     /// `Network::isFrameDataReady()` (:807).
     pub fn is_frame_data_ready(&self) -> bool {
-        self.frame_data_ready || self.local_status == NetLocalStatus::Left
+        if plant(15903) { self.frame_data_ready && self.local_status == NetLocalStatus::Left } else { self.frame_data_ready || self.local_status == NetLocalStatus::Left }
     }
 
     /// `Network::getIncomingBytesPerSecond()` (:814) and the five like it: the manager's, 0 without one.
@@ -618,10 +645,15 @@ impl<H: NetworkHost, C: ConnectionManagerHost> Network<H, C> {
 
     /// `Network::quitGame()` (:928): "quit the game now. This should only be called from the disconnect screen."
     pub fn quit_game(&mut self) {
+        // ~~the three effects below were inside `if let Some(c) = self.con_mgr` (as if upstream's `if (m_conMgr != NULL)` guarded all of them)~~
+        // **Corrected 2026-11-20 (#215, batch guilogic4):** only `m_conMgr->quitGame()` is guarded; the self destruct, the clear game data message and
+        // `NETLOCALSTATUS_POSTGAME` happen without a manager too (9,586 of 20,000 programs differed).
         if let Some(c) = self.con_mgr.as_mut() {
             c.quit_game();
-            self.host.message_stream_append_self_destruct(true);
-            self.host.message_stream_append(MSG_CLEAR_GAME_DATA);
+        }
+        self.host.message_stream_append_self_destruct(true);
+        self.host.message_stream_append(MSG_CLEAR_GAME_DATA);
+        if !plant(15897) {
             self.local_status = NetLocalStatus::PostGame;
         }
     }
@@ -660,7 +692,7 @@ impl<H: NetworkHost, C: ConnectionManagerHost> Network<H, C> {
     }
     /// `Network::getLocalPlayerID()` (:984): 49 without a manager.
     pub fn get_local_player_id(&self) -> u32 {
-        self.con_mgr.as_ref().map_or(49, |c| c.get_local_player_id())
+        self.con_mgr.as_ref().map_or(if plant(15901) { 0 } else { 49 }, |c| c.get_local_player_id())
     }
     /// `Network::getPlayerName(playerNum)` (:991): the local player's name only while in the game (upstream
     /// dereferences `m_conMgr` for the comparison before it checks it); empty without a manager.
@@ -675,7 +707,7 @@ impl<H: NetworkHost, C: ConnectionManagerHost> Network<H, C> {
     }
     /// `Network::getNumPlayers()` (:1003): -1 without a manager.
     pub fn get_num_players(&self) -> i32 {
-        self.con_mgr.as_ref().map_or(-1, |c| c.get_num_players())
+        self.con_mgr.as_ref().map_or(if plant(15902) { 0 } else { -1 }, |c| c.get_num_players())
     }
     /// `Network::getSlotAverageFPS(slot)` (:1011): -1 without a manager.
     pub fn get_slot_average_fps(&self, slot: i32) -> i32 {

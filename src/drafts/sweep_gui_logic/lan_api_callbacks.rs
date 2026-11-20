@@ -1,4 +1,8 @@
 //! UNTESTED DRAFT (#202, #213, #214): compiles; not yet tested against the upstream C++.
+//! (#215: `LANAPI::OnInActive` has an empty body upstream and here. `LANAPI::OnSlotList` is NOT TESTABLE: ~~it is translated as one of the file's callbacks~~
+//! **Corrected 2026-11-20 (#215, batch guilogic4):** it is inside a `/* ... */` comment in LANAPICallbacks.cpp (lines 471-496) and its only caller, LANAPI.cpp:1032,
+//! is inside a comment too, so upstream does not compile it and there is no C++ to compare with; this draft translates dead code. Checked by reading the file's
+//! comment markers: `/*` at lines 1 and 471, `*/` at lines 17 and 496.)
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameNetwork/LANAPICallbacks.cpp (LANAPI::OnSlotList, LANAPI::OnInActive)
