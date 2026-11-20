@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 79,282 results (test: tests/differential_draft_txt.rs), except the two deliberate deviations the test excludes
+//! (the string compared by content, not by pointer; `has_texture` set by the owner after a build);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/txt.cpp

@@ -22,6 +22,7 @@
 //! - `Render` (the plain-line entry) is an empty `return;` upstream.
 
 use super::dynamesh::convert_color_clamp;
+use crate::logic::modules::plant;
 use crate::formats::w3d::seglinerenderer::{SegLineChunk, SegLineVertex, MAX_SEGLINE_SUBDIV_LEVELS, SEGLINE_CHUNK_SIZE};
 use crate::formats::w3d::shader::{ShaderClass, DSTBLEND_ZERO, GRADIENT_MODULATE, PRESET_ADDITIVE_SPRITE_SHADER};
 use crate::formats::w3d::mesh::shader_bits::{MASK_PRIGRADIENT, MASK_TEXTURING, SHIFT_PRIGRADIENT, SHIFT_TEXTURING};
@@ -300,8 +301,8 @@ impl StreakRendererClass {
         }
         // upstream: DX8Wrapper::Get_Transform/Set_Transform(D3DTS_WORLD/VIEW, identity) — device-only, not translated
 
-        let parallel_factor = 0.9f32;
-        let mut chunk_size = (STREAK_CHUNK_SIZE >> self.subdivision_level) + 1;
+        let parallel_factor = if plant(19146) { 0.99f32 } else { 0.9f32 };
+        let mut chunk_size = (STREAK_CHUNK_SIZE >> self.subdivision_level) + if plant(19147) { 0 } else { 1 };
         if chunk_size > num_points {
             chunk_size = num_points;
         }
@@ -333,10 +334,10 @@ impl StreakRendererClass {
 
             for sidx in 1..pc {
                 // upstream: radius = widths[segmentIndex] (TODO: wrong when subdivision != 0)
-                radius = widths[sidx];
+                radius = widths[if plant(19141) { sidx - 1 } else { sidx }];
                 let curr_point = pts[sidx - 1];
                 if equal_within_epsilon(&curr_point, &pts[sidx], 0.0001f32) {
-                    pts[sidx].x += 0.001f32;
+                    if plant(19142) { pts[sidx].y += 0.001f32 } else { pts[sidx].x += 0.001f32 };
                 }
                 let next_point = pts[sidx];
 
@@ -348,7 +349,7 @@ impl StreakRendererClass {
                 let mut offset = Vector3::cross_product(&segdir, &nearest);
                 offset.normalize();
                 let top = curr_point + offset * radius;
-                let bottom = curr_point + offset * -radius;
+                let bottom = curr_point + offset * (if plant(19143) { radius } else { -radius });
 
                 let mut top_normal = Vector3::cross_product(&top, &segdir);
                 top_normal.normalize();
@@ -362,7 +363,7 @@ impl StreakRendererClass {
                     prev_plane.normalize();
                     let mut curr_plane = Vector3::cross_product(&curr_point, &next_point);
                     curr_plane.normalize();
-                    if Vector3::dot_product(&prev_plane, &curr_plane) < 0.0f32 {
+                    if if plant(19144) { Vector3::dot_product(&prev_plane, &curr_plane) > 0.0f32 } else { Vector3::dot_product(&prev_plane, &curr_plane) < 0.0f32 } {
                         switch_edges = !switch_edges;
                         intersection[sidx][TOP_EDGE].fold = true;
                         intersection[sidx][BOTTOM_EDGE].fold = true;
@@ -450,7 +451,7 @@ impl StreakRendererClass {
                     intersection[ii][e].next_segment_id = ii as u32;
                     intersection[ii][e].point = midpoint;
                     // upstream: `personalities[intersectionIndex]&1` // LORENZEN
-                    intersection[ii][e].tex_v = (personalities[ii] & 1) as f32;
+                    intersection[ii][e].tex_v = (personalities[if plant(19145) { ii - 1 } else { ii }] & 1) as f32;
                 }
                 for e in 0..2 {
                     let a = segment[ii - 1].edge_plane[e];
@@ -698,7 +699,7 @@ impl StreakRendererClass {
             // Set color, opacity, vertex flags
             let sorting = !self.is_sorting_disabled()
                 && self.shader.get_dst_blend_func() != DSTBLEND_ZERO
-                && self.shader.get_alpha_test() == 0; // ALPHATEST_DISABLE
+                && (self.shader.get_alpha_test() == 0) != plant(19148); // ALPHATEST_DISABLE
             let mut shader = self.shader;
             shader.set_cull_mode(0); // CULL_MODE_DISABLE
             shader = ShaderClass((shader.0 & !MASK_PRIGRADIENT) | (GRADIENT_MODULATE << SHIFT_PRIGRADIENT));
@@ -708,7 +709,7 @@ impl StreakRendererClass {
             // Copy into the (dynamic) vertex buffer: colour per vertex is colors[MIN(i/2, point_cnt)]
             let mut vertices = Vec::with_capacity(vnum);
             for (i, v) in vertex_array.iter().enumerate() {
-                let ci = (i / 2).min(point_cnt as usize).min(colors.len().saturating_sub(1)); // clamp: upstream may read past the end
+                let ci = (i / 2 + if plant(19149) { 1 } else { 0 }).min(point_cnt as usize).min(colors.len().saturating_sub(1)); // clamp: upstream may read past the end
                 vertices.push(SegLineVertex { position: v.0, diffuse: convert_color_clamp(&colors[ci]), u: v.1, v: v.2 });
             }
             chunks.push(SegLineChunk {

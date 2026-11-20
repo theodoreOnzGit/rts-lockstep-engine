@@ -1,5 +1,8 @@
 //! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential coverage (#215, tests/differential_draft_decalpoly.rs, 20,000 cases, 0 mismatches): `DecalPolyClass::{reset, add_vertex, clip}` only. NOT covered:
+//! `DecalMeshClass` and `MultiFixed...` (`create_decal`, `render`, `delete_decal`, `destroyed_decal_ids`, the run/range helpers): they need `MeshClass`, `MeshModelClass` and the DX8 buffers.
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/decalmsh.cpp
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/decalmsh.h

@@ -14290,6 +14290,49 @@ mod differential {
         }
         b.compile("upstream_draft_ww3d6");
 
+        // streakRender.cpp (see differential/wrap_draft_w6_streak.cpp, differential/shim_draft_ww3d6/streak_prelude.h): compiled whole over the recording device, with
+        // two named edits (each asserted): the undefined read of `new_direction` (as seglinerenderer.cpp's, GitHub #185) starts from zero, the draft's documented value, and
+        // flags the render that ran it. Convert_Color_Clamp is cut VERBATIM from dx8wrapper.h.
+        {
+            copy(&ww3d, "streakRender.h", &[]);
+            std::fs::write(gen.join("streakrender.h"), read_upstream(ww3d.join("streakRender.h"))).expect("write streakrender.h");
+            copy(
+                &ww3d,
+                "streakRender.cpp",
+                &[
+                    ("Vector3 new_direction;", "Vector3 new_direction(0,0,0); /* ww3d6 edit 1: upstream leaves it uninitialised */", 1),
+                    (
+                        "new_direction = new_direction - pl * Vector3::Dot_Product(pl, new_direction);",
+                        "{ extern int g_w6_streak_undefined; g_w6_streak_undefined = 1; } /* ww3d6 edit 2: this branch reads new_direction before it is written */ new_direction = new_direction - pl * Vector3::Dot_Product(pl, new_direction);",
+                        1,
+                    ),
+                ],
+            );
+            cut(&ww3d, "dx8wrapper.h", "WWINLINE unsigned int DX8Wrapper::Convert_Color_Clamp(const Vector4& color)", "convert_clamp.inc");
+            let shim_streak = dif.join("shim_draft_ww3d6");
+            println!("cargo:rerun-if-changed=differential/shim_draft_ww3d6");
+            println!("cargo:rerun-if-changed=differential/wrap_draft_w6_streak.cpp");
+            std::fs::write(gen.join("vector3i.h"), read_upstream(ww.join("WWMath/Vector3i.h"))).expect("write vector3i.h");
+            let mut sb = cc::Build::new();
+            base(&mut sb);
+            sb.compiler("clang++")
+                .flag("-fms-extensions")
+                .flag("-fdelayed-template-parsing")
+                .include(&shim_w3d)
+                .include(&gen)
+                .include(&wm_gen)
+                .include(&wwlib)
+                .include(ww.join("WWMath"))
+                .include(&ww3d)
+                .include(ww.join("WWDebug"))
+                .flag("-include")
+                .flag(shim_w3d.join("w3d_prelude.h").to_str().expect("UTF-8 path"))
+                .flag("-include")
+                .flag(shim_streak.join("streak_prelude.h").to_str().expect("UTF-8 path"));
+            sb.file(dif.join("wrap_draft_w6_streak.cpp")).file(gen.join("streakRender.cpp"));
+            sb.compile("upstream_draft_ww3d6_streak");
+        }
+
         // the wrappers that need the Direct3D / DX8Wrapper stand-ins of shim_w3d/mesh_prelude.h (the mesh loaders' build), linked before
         // upstream_w3d_mesh, which defines DX8Wrapper::Convert_Color and ww3dformat.cpp's functions they call
         {

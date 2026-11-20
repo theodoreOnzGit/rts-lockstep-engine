@@ -31,9 +31,17 @@
 //! The draft takes `sqrt` in `f32` of `fw*fh` converted to float where upstream calls `sqrt(int)` (double) and converts the result to float; I expect the same bits for
 //! the sizes tested (the product is below 2^24, the f32 square root is correctly rounded, and double-then-float rounding of a square root is innocuous). So 0 mismatches.
 //!
-//! # Results
+//! # Results (2026-11-20)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **First run: 56 mismatches** (`Is_Texture_Valid` 20 of 33,931, `Build_Texture` 36 of 45,351), all from my generator passing a pool string equal in content to the stored
+//! copy (valid for the draft, a different address and so invalid upstream: the documented pointer-identity deviation, which the generator promised never to produce).
+//! The generator was corrected; **after that, 0 mismatches** (33,931 validity results, 45,351 builds with their strip blits). The arithmetic (`sqrt` in `f32`
+//! against upstream's `double`, `Find_POT`, the strip loop) agrees to the bit, as predicted. No draft change.
+//!
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching comparisons over both checks)
+//!   19121: 75; 19122: 261; 19123: 486; 19124: 30,814; 19125: 31,300; 19126: 92; 19127: 14,051; 19128: 9,772
+//!
+//! **8 of 8 caught.**
 
 mod support;
 mod support_sweep;

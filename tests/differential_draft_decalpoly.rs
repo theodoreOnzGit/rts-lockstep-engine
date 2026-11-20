@@ -20,9 +20,14 @@
 //!
 //! 0 mismatches: the draft's `lerp` is the same expression as `Vector3::Lerp`.
 //!
-//! # Results
+//! # Results (2026-11-20)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **0 mismatches** over 20,000 polygons clipped by chains of 1 to 4 planes. **Prediction held.**
+//!
+//! # Planted bugs (`L9_PLANT=<id>`)
+//!   19131: 1,006; 19132: 1,291; 19133: 8,537; 19134: 12,943; 19135: 12,996; 19136: 12,991
+//!
+//! **6 of 6 caught.**
 
 mod support;
 mod support_sweep;
