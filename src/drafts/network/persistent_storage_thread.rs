@@ -30,6 +30,7 @@
 //!   default constructors) and sets `lastGeneral`, `builtNuke`, ... to 0, so the `>= 0` tests in
 //!   `formatPlayerKVPairs` are always true for a fresh record.
 
+use crate::logic::modules::plant;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, RwLock};
 
@@ -93,7 +94,7 @@ pub struct PsPlayerStats {
 /// `INCORPORATE_MAP(x)`: copies only the entries of `other` that are greater than 0.
 fn incorporate_map(dst: &mut PerGeneralMap, src: &PerGeneralMap) {
     for (k, v) in src.iter() {
-        if *v > 0 {
+        if *v > 0 || plant(20263) {
             dst.insert(*k, *v);
         }
     }
@@ -151,7 +152,9 @@ impl PsPlayerStats {
 
         // GS  Clear all disconnects so that we don't retain any that were previously reported as 1 by
         // updateAdditionalGameSpyDisconnections
-        self.discons.clear();
+        if !plant(20262) {
+            self.discons.clear();
+        }
         incorporate_map(&mut self.discons, &other.discons);
 
         incorporate_map(&mut self.desyncs, &other.desyncs);
@@ -182,7 +185,11 @@ impl PsPlayerStats {
             self.last_fps = other.last_fps;
         }
         if other.battle_honors > 0 {
-            self.battle_honors |= other.battle_honors;
+            if plant(20269) {
+                self.battle_honors = other.battle_honors;
+            } else {
+                self.battle_honors |= other.battle_honors;
+            }
         }
         if other.challenge_medals > 0 {
             self.challenge_medals |= other.challenge_medals;
@@ -267,7 +274,12 @@ impl PsPlayerStats {
     }
 }
 
-/// C `atoi`: leading whitespace, optional sign, digits; 0 if none. Overflow wraps (undefined in C).
+/// C `atoi` is `(int)strtol(s, NULL, 10)`: leading white space, optional sign, digits; 0 if none. `strtol` saturates at
+/// `LONG_MAX`/`LONG_MIN` (64-bit `long`) and `atoi` then truncates to `int`, so a run of 19 or more digits that overflows a
+/// `long` reads as -1 (positive) or 0 (negative), and one that fits a `long` wraps modulo 2^32.
+///
+/// ~~Overflow wraps in 32 bits.~~ **Corrected 2026-11-20 (#215, group net4):** the differential test against glibc's `atoi` found the
+/// difference on digit runs longer than a `long`.
 pub fn atoi(s: &[u8]) -> i32 {
     let mut i = 0;
     while i < s.len() && (s[i] == b' ' || (9..=13).contains(&s[i])) {
@@ -278,43 +290,156 @@ pub fn atoi(s: &[u8]) -> i32 {
         neg = s[i] == b'-';
         i += 1;
     }
-    let mut v: i32 = 0;
+    let mut v: i64 = 0;
+    let mut overflow = false;
     while i < s.len() && s[i].is_ascii_digit() {
-        v = v.wrapping_mul(10).wrapping_add((s[i] - b'0') as i32);
-        i += 1;
-    }
-    if neg {
-        v.wrapping_neg()
-    } else {
-        v
-    }
-}
-
-/// C `atof` for the plain decimal/exponent forms the stats use: the longest numeric prefix, 0 if none.
-pub fn atof(s: &[u8]) -> f64 {
-    let t: Vec<u8> = {
-        let mut i = 0;
-        while i < s.len() && (s[i] == b' ' || (9..=13).contains(&s[i])) {
-            i += 1;
-        }
-        s[i..].to_vec()
-    };
-    let mut end = 0;
-    let mut best = 0.0;
-    let text = String::from_utf8_lossy(&t).into_owned();
-    for e in 1..=text.len() {
-        if !text.is_char_boundary(e) {
-            continue;
-        }
-        if let Ok(v) = text[..e].parse::<f64>() {
-            if text.as_bytes()[e - 1].is_ascii_digit() || text.as_bytes()[e - 1] == b'.' {
-                best = v;
-                end = e;
+        let d = (s[i] - b'0') as i64;
+        if !overflow {
+            // magnitude up to 2^63 for a negative number, 2^63 - 1 for a positive one
+            let limit_ok = if neg {
+                v.checked_mul(10).and_then(|x| x.checked_sub(d))
+            } else {
+                v.checked_mul(10).and_then(|x| x.checked_add(d))
+            };
+            match limit_ok {
+                Some(x) => v = x,
+                None => overflow = true,
             }
         }
+        i += 1;
     }
-    let _ = end;
-    best
+    let long = if overflow {
+        if neg {
+            i64::MIN
+        } else {
+            i64::MAX
+        }
+    } else {
+        v
+    };
+    long as i32
+}
+
+/// C `atof` (`strtod(s, NULL)`): leading white space, optional sign, then `inf`/`infinity`, `nan`, a hexadecimal float
+/// (`0x1.8p3`) or a decimal one (`12`, `.5`, `1.5e-3`); the longest valid prefix; 0 if none. A decimal prefix is converted by
+/// Rust's correctly rounded parser, as glibc's is; `nan(...)` payloads are not read (the sign is).
+///
+/// ~~Only plain decimal and exponent forms.~~ **Corrected 2026-11-20 (#215, group net4):** the draft took `nan`, `inf` and `0x..` as 0.
+pub fn atof(s: &[u8]) -> f64 {
+    let mut i = 0;
+    while i < s.len() && (s[i] == b' ' || (9..=13).contains(&s[i])) {
+        i += 1;
+    }
+    let mut neg = false;
+    if i < s.len() && (s[i] == b'-' || s[i] == b'+') {
+        neg = s[i] == b'-';
+        i += 1;
+    }
+    let rest = &s[i..];
+    let lower: Vec<u8> = rest.iter().map(|c| c.to_ascii_lowercase()).collect();
+    let signed = |v: f64| if neg { -v } else { v };
+    if lower.starts_with(b"infinity") || lower.starts_with(b"inf") {
+        return signed(f64::INFINITY);
+    }
+    if lower.starts_with(b"nan") {
+        let sign = if neg { 1u64 << 63 } else { 0 };
+        return f64::from_bits(0x7ff8_0000_0000_0000 | sign);
+    }
+    if lower.len() >= 2 && lower[0] == b'0' && lower[1] == b'x' {
+        // hexadecimal float: hex digits with an optional point, at least one digit, an optional binary exponent
+        let mut j = 2;
+        let mut mant: u64 = 0;
+        let mut digits = 0;
+        let mut exp: i32 = 0;
+        let mut seen_point = false;
+        while j < lower.len() {
+            let c = lower[j];
+            if c == b'.' && !seen_point {
+                seen_point = true;
+            } else if let Some(d) = (c as char).to_digit(16) {
+                digits += 1;
+                if mant >> 60 == 0 {
+                    mant = (mant << 4) | d as u64;
+                    if seen_point {
+                        exp -= 4;
+                    }
+                } else if !seen_point {
+                    exp += 4;
+                }
+            } else {
+                break;
+            }
+            j += 1;
+        }
+        if digits > 0 {
+            if j < lower.len() && lower[j] == b'p' {
+                let mut k = j + 1;
+                let mut eneg = false;
+                if k < lower.len() && (lower[k] == b'+' || lower[k] == b'-') {
+                    eneg = lower[k] == b'-';
+                    k += 1;
+                }
+                let start = k;
+                let mut e: i32 = 0;
+                while k < lower.len() && lower[k].is_ascii_digit() {
+                    e = e.saturating_mul(10).saturating_add((lower[k] - b'0') as i32);
+                    k += 1;
+                }
+                if k > start {
+                    exp = exp.saturating_add(if eneg { -e } else { e });
+                }
+            }
+            let mut v = mant as f64;
+            let mut e = exp;
+            while e > 0 && v.is_finite() {
+                let step = e.min(1000);
+                v *= f64::from_bits(((1023 + step) as u64) << 52);
+                e -= step;
+            }
+            while e < 0 && v != 0.0 {
+                let step = (-e).min(1000);
+                v *= f64::from_bits(((1023 - step) as u64) << 52);
+                e += step;
+            }
+            return signed(v);
+        }
+        // "0x" with no digits: strtod reads the "0"
+        return signed(0.0);
+    }
+    // decimal: digits [. digits] [e [sign] digits], at least one digit in the mantissa
+    let mut j = 0;
+    let mut mant_digits = 0;
+    while j < rest.len() && rest[j].is_ascii_digit() {
+        j += 1;
+        mant_digits += 1;
+    }
+    if j < rest.len() && rest[j] == b'.' {
+        j += 1;
+        while j < rest.len() && rest[j].is_ascii_digit() {
+            j += 1;
+            mant_digits += 1;
+        }
+    }
+    if mant_digits == 0 {
+        return 0.0;
+    }
+    let mut end = j;
+    if j < rest.len() && (rest[j] == b'e' || rest[j] == b'E') {
+        let mut k = j + 1;
+        if k < rest.len() && (rest[k] == b'+' || rest[k] == b'-') {
+            k += 1;
+        }
+        let start = k;
+        while k < rest.len() && rest[k].is_ascii_digit() {
+            k += 1;
+        }
+        if k > start {
+            end = k;
+        }
+    }
+    let text = std::str::from_utf8(&rest[..end]).unwrap_or("0");
+    // Rust's parser wants a digit before or after the point; "5." and ".5" are accepted
+    signed(text.parse::<f64>().unwrap_or(0.0))
 }
 
 /// C `printf("%g", v)` (six significant digits, trailing zeros dropped, exponent form outside 1e-4..1e6).
@@ -419,7 +544,7 @@ pub fn parse_player_kv_pairs(kv_pairs: &[u8]) -> PsPlayerStats {
             }
         }
         let v = &kv[second_marker + 1..third_marker];
-        offset = third_marker - 1;
+        offset = if plant(20264) { third_marker } else { third_marker - 1 };
 
         if general_marker >= 0 {
             let gm = general_marker;
@@ -459,7 +584,13 @@ pub fn parse_player_kv_pairs(kv_pairs: &[u8]) -> PsPlayerStats {
         if general_marker < 0 {
             match &k[..] {
                 b"locale" => s.locale = atoi(v),
-                b"random" => s.games_as_random = atoi(v),
+                b"random" => {
+                    if plant(20270) {
+                        s.locale = atoi(v)
+                    } else {
+                        s.games_as_random = atoi(v)
+                    }
+                }
                 b"options" => s.options = v.to_vec(),
                 b"systemSpec" => s.system_spec = v.to_vec(),
                 b"fps" => s.last_fps = atof(v) as f32,
@@ -497,14 +628,14 @@ pub fn format_player_kv_pairs(stats: &PsPlayerStats, player_template_count: i32)
     let iterate = |s: &mut Vec<u8>, name: &str, m: &PerGeneralMap| {
         for (k, v) in m.iter() {
             if *v > 0 {
-                s.extend_from_slice(format!("\\{}{}\\{}", name, k, v).as_bytes());
+                s.extend_from_slice(format!("\\{}{}\\{}", name, k, *v as i32).as_bytes());
             }
         }
     };
     let text_capped = |s: &mut Vec<u8>, prefix: &str, val: &[u8]| {
         let mut line = prefix.as_bytes().to_vec();
         line.extend_from_slice(val);
-        line.truncate(255);
+        line.truncate(if plant(20266) { 256 } else { 255 });
         s.extend_from_slice(&line);
     };
 
@@ -524,7 +655,10 @@ pub fn format_player_kv_pairs(stats: &PsPlayerStats, player_template_count: i32)
     // GS  Report all disconnects, even if zero (stats.discons[ptIdx] reads 0 for a missing entry)
     for pt_idx in 0..player_template_count {
         let v = stats.discons.get(&pt_idx).copied().unwrap_or(0);
-        s.extend_from_slice(format!("\\discons{}\\{}", pt_idx, v).as_bytes());
+        if plant(20261) && v == 0 {
+            continue;
+        }
+        s.extend_from_slice(format!("\\discons{}\\{}", pt_idx, v as i32).as_bytes());
     }
 
     iterate(&mut s, "desyncs", &stats.desyncs);
@@ -577,7 +711,7 @@ pub fn format_player_kv_pairs(stats: &PsPlayerStats, player_template_count: i32)
     }
 
     s.extend_from_slice(format!("\\WinRow\\{}", stats.wins_in_a_row).as_bytes());
-    if stats.max_wins_in_a_row > 0 {
+    if stats.max_wins_in_a_row > 0 || (plant(20267) && stats.max_wins_in_a_row == 0) {
         s.extend_from_slice(format!("\\WinRowMax\\{}", stats.max_wins_in_a_row).as_bytes());
     }
     s.extend_from_slice(format!("\\LossRow\\{}", stats.losses_in_a_row).as_bytes());
@@ -592,7 +726,7 @@ pub fn format_player_kv_pairs(stats: &PsPlayerStats, player_template_count: i32)
     if stats.max_desyncs_in_a_row > 0 {
         s.extend_from_slice(format!("\\DSRowMax\\{}", stats.max_desyncs_in_a_row).as_bytes());
     }
-    if stats.last_ladder_port > 0 {
+    if stats.last_ladder_port > 0 || (plant(20265) && stats.last_ladder_port == 0) {
         s.extend_from_slice(format!("\\ladderPort\\{}", stats.last_ladder_port).as_bytes());
     }
     if !stats.last_ladder_host.is_empty() {
@@ -747,6 +881,9 @@ impl PsMessageQueue {
     /// `addRequest`.
     pub fn add_request(&self, req: PsRequest) {
         if let Ok(mut q) = self.inner.write() {
+            // `m_requests.push(req)` copies through PSRequest's implicit copy constructor, so `player` goes through PSPlayerStats' (zero map entries dropped)
+            let mut req = req;
+            req.player = PsPlayerStats::copy_constructed(&req.player);
             q.requests.push_back(req);
         }
     }
@@ -757,6 +894,8 @@ impl PsMessageQueue {
     /// `addResponse`.
     pub fn add_response(&self, resp: PsResponse) {
         if let Ok(mut q) = self.inner.write() {
+            let mut resp = resp;
+            resp.player = PsPlayerStats::copy_constructed(&resp.player);
             q.responses.push_back(resp);
         }
     }
@@ -764,16 +903,23 @@ impl PsMessageQueue {
     pub fn get_response(&self) -> Option<PsResponse> {
         self.inner.write().ok().and_then(|mut q| q.responses.pop_front())
     }
-    /// `trackPlayerStats` (PersistentStorageThread.cpp): a known id has its record copied by value (the copy
-    /// constructor, see the module doc), the new stats incorporated, and stored back; an unknown id stores `stats`.
+    /// `trackPlayerStats` (PersistentStorageThread.cpp): a known id has its record assigned (`newStats = it->second`, the
+    /// implicit member-wise assignment: zero entries of the maps stay), the new stats incorporated, and stored back; an unknown
+    /// id stores `stats`.
+    ///
+    /// ~~Copied through the copy constructor (which drops zero entries).~~ **Corrected 2026-11-20 (#215, group net4):** upstream assigns.
     pub fn track_player_stats(&self, stats: PsPlayerStats) {
         if let Ok(mut q) = self.inner.write() {
-            if let Some(existing) = q.player_stats.get(&stats.id) {
-                let mut new_stats = PsPlayerStats::copy_constructed(existing);
+            if plant(20268) {
+                q.player_stats.insert(stats.id, stats);
+            } else if let Some(existing) = q.player_stats.get(&stats.id) {
+                // `newStats = it->second` is the implicit assignment (every member, zero map entries included), not the copy constructor
+                let mut new_stats = existing.clone();
                 new_stats.incorporate(&stats);
                 q.player_stats.insert(stats.id, new_stats);
             } else {
-                q.player_stats.insert(stats.id, stats);
+                // `m_playerStats[stats.id] = stats`: `stats` was itself copy-constructed (by-value parameter) and is then assigned
+                q.player_stats.insert(stats.id, PsPlayerStats::copy_constructed(&stats));
             }
         }
     }

@@ -18,6 +18,7 @@
 //!   `WSAEINVAL` or `WSAEALREADY` (a socket leak); the host call here owns its socket, so the leak is not
 //!   reproduced.
 
+use crate::logic::modules::plant;
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
@@ -65,7 +66,9 @@ impl GameResultsQueue {
     /// `GameResultsQueue::GameResultsQueue()`: counts 0 and `startThreads()`.
     pub fn new() -> GameResultsQueue {
         let q = GameResultsQueue::default();
-        q.start_threads();
+        if !plant(20281) {
+            q.start_threads();
+        }
         q
     }
     /// `startThreads`.
@@ -78,7 +81,9 @@ impl GameResultsQueue {
     /// `endThreads`.
     pub fn end_threads(&self) {
         if let Ok(mut s) = self.inner.write() {
-            s.threads_running = false;
+            if !plant(20286) {
+                s.threads_running = false;
+            }
         }
     }
     /// `areThreadsRunning`.
@@ -94,7 +99,16 @@ impl GameResultsQueue {
     }
     /// `getRequest`.
     pub fn get_request(&self) -> Option<GameResultsRequest> {
-        self.inner.write().ok().and_then(|mut s| s.requests.pop_front())
+        self.inner.write().ok().and_then(|mut s| {
+            if plant(20283) {
+                s.requests.pop_back()
+            } else if plant(20285) {
+                s.request_count -= 1;
+                s.requests.pop_front()
+            } else {
+                s.requests.pop_front()
+            }
+        })
     }
     /// `addResponse`: counts and queues.
     pub fn add_response(&self, resp: GameResultsResponse) {
@@ -105,11 +119,11 @@ impl GameResultsQueue {
     }
     /// `getResponse`.
     pub fn get_response(&self) -> Option<GameResultsResponse> {
-        self.inner.write().ok().and_then(|mut s| s.responses.pop_front())
+        self.inner.write().ok().and_then(|mut s| if plant(20284) { s.responses.pop_back() } else { s.responses.pop_front() })
     }
     /// `areGameResultsBeingSent`: `m_requestCount > 0` (true if the lock is busy).
     pub fn are_game_results_being_sent(&self) -> bool {
-        self.inner.read().map(|s| s.request_count > 0).unwrap_or(true)
+        self.inner.read().map(|s| if plant(20282) { s.request_count > 1 } else { s.request_count > 0 }).unwrap_or(true)
     }
 }
 

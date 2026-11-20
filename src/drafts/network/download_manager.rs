@@ -15,6 +15,7 @@
 use std::collections::VecDeque;
 
 use crate::common::ascii_string::AsciiString;
+use crate::logic::modules::plant;
 
 /// `class QueuedDownload` (DownloadManager.h).
 #[derive(Clone, Debug, Default)]
@@ -160,9 +161,9 @@ impl DownloadManager {
     /// `downloadNextQueuedFile`: pops the front, clears the error/end flags and starts it; `S_OK` (with a
     /// `DEBUG_CRASH("Starting non-existent download!")`) if the queue is empty.
     pub fn download_next_queued_file<H: DownloadHost>(&mut self, host: &mut H) -> HResult {
-        if let Some(q) = self.queued_downloads.pop_front() {
+        if let Some(q) = if plant(20305) { self.queued_downloads.pop_back() } else { self.queued_downloads.pop_front() } {
             self.was_error = false;
-            self.saw_end = false;
+            self.saw_end = plant(20306) && self.saw_end;
             self.download_file(host, &q)
         } else {
             S_OK
@@ -176,7 +177,11 @@ impl DownloadManager {
 
     /// `isDone`: the end was seen or an error happened.
     pub fn is_done(&self) -> bool {
-        self.saw_end || self.was_error
+        if plant(20307) {
+            self.saw_end && self.was_error
+        } else {
+            self.saw_end || self.was_error
+        }
     }
     /// `isOk`.
     pub fn is_ok(&self) -> bool {
@@ -197,31 +202,33 @@ impl DownloadManager {
 
     /// `OnError`: flags the error and fetches the matching `FTP:` text (`FTP:UnknownError` for any other code).
     pub fn on_error<H: DownloadHost>(&mut self, host: &H, error: DownloadError) -> HResult {
-        self.was_error = true;
+        self.was_error = !plant(20301);
         let s: &[u8] = match error {
             DownloadError::NoSuchServer => b"FTP:NoSuchServer",
             DownloadError::CouldNotConnect => b"FTP:CouldNotConnect",
             DownloadError::LoginFailed => b"FTP:LoginFailed",
             DownloadError::NoSuchFile => b"FTP:NoSuchFile",
             DownloadError::LocalFileOpenFailed => b"FTP:LocalFileOpenFailed",
-            DownloadError::TcpError => b"FTP:TCPError",
-            DownloadError::DisconnectError => b"FTP:DisconnectError",
+            DownloadError::TcpError => if plant(20302) { &b"FTP:DisconnectError"[..] } else { &b"FTP:TCPError"[..] },
+            DownloadError::DisconnectError => if plant(20302) { &b"FTP:TCPError"[..] } else { &b"FTP:DisconnectError"[..] },
             DownloadError::Unknown => b"FTP:UnknownError",
         };
-        self.error_string = host.game_text_fetch(s);
+        if !plant(20303) {
+            self.error_string = host.game_text_fetch(s);
+        }
         S_OK
     }
 
     /// `OnEnd`: the download finished.
     pub fn on_end(&mut self) -> HResult {
-        self.saw_end = true;
+        self.saw_end = !plant(20304);
         S_OK
     }
 
     /// `OnQueryResume`: answers `DOWNLOADEVENT_RESUME` (the do-not-resume return is commented out upstream);
     /// returns true for "resume".
     pub fn on_query_resume(&self) -> bool {
-        true
+        !plant(20308)
     }
 
     /// `OnProgressUpdate`: only debug logging upstream.

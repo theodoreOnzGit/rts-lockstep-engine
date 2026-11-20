@@ -23,6 +23,7 @@
 //! * `getPingString` divides by `timeout`; with `timeout == 0` C++ traps. Here a zero timeout gives 0 for every
 //!   entry (the choice where C++ is undefined).
 
+use crate::logic::modules::plant;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, RwLock};
 
@@ -99,12 +100,14 @@ impl Pinger {
     }
     /// `getRequest`.
     pub fn get_request(&self) -> Option<PingRequest> {
-        self.inner.write().ok().and_then(|mut s| s.requests.pop_front())
+        self.inner.write().ok().and_then(|mut s| if plant(20276) { s.requests.pop_back() } else { s.requests.pop_front() })
     }
     /// `addResponse`: records the ping under the host name, then counts and queues the response.
     pub fn add_response(&self, resp: PingResponse) {
         if let Ok(mut s) = self.inner.write() {
-            s.ping_map.insert(resp.hostname.clone(), resp.avg_ping);
+            if !plant(20278) {
+                s.ping_map.insert(resp.hostname.clone(), resp.avg_ping);
+            }
             s.response_count += 1;
             s.responses.push_back(resp);
         }
@@ -115,16 +118,20 @@ impl Pinger {
     }
     /// `arePingsInProgress`: more requests than responses so far.
     pub fn are_pings_in_progress(&self) -> bool {
-        self.inner.read().map(|s| s.request_count != s.response_count).unwrap_or(false)
+        self.inner.read().map(|s| if plant(20274) { s.request_count > s.response_count } else { s.request_count != s.response_count }).unwrap_or(false)
     }
     /// `getPing`: the last average for the host, -1 if none.
     pub fn get_ping(&self, hostname: &[u8]) -> i32 {
-        self.inner.read().ok().and_then(|s| s.ping_map.get(hostname).copied()).unwrap_or(-1)
+        self.inner.read().ok().and_then(|s| s.ping_map.get(hostname).copied()).unwrap_or(if plant(20275) { 0 } else { -1 })
     }
     /// `clearPingMap`.
     pub fn clear_ping_map(&self) {
         if let Ok(mut s) = self.inner.write() {
             s.ping_map.clear();
+            if plant(20277) {
+                s.request_count = 0;
+                s.response_count = 0;
+            }
         }
     }
     /// `getPingString`: for each map entry in host-name order, the ping (a failed or over-`timeout` ping counts as
@@ -134,11 +141,15 @@ impl Pinger {
         if let Ok(s) = self.inner.read() {
             for (_, &ping) in s.ping_map.iter() {
                 let mut p = ping;
-                if p < 0 || p > timeout {
+                if (if plant(20273) { p <= 0 } else { p < 0 }) || p > timeout {
                     p = timeout;
                 }
-                p = if timeout == 0 { 0 } else { p.wrapping_mul(255) / timeout };
-                ping_string.extend_from_slice(format!("{:02X}", p).as_bytes());
+                p = if timeout == 0 { 0 } else if plant(20271) { p.wrapping_mul(256) / timeout } else { p.wrapping_mul(255) / timeout };
+                if plant(20272) {
+                    ping_string.extend_from_slice(format!("{:02x}", p).as_bytes());
+                } else {
+                    ping_string.extend_from_slice(format!("{:02X}", p).as_bytes());
+                }
             }
         }
         ping_string

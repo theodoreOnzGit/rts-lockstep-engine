@@ -28,6 +28,7 @@
 //! * `asyncGethostbyname` starts its thread once; the DNS name passed to the thread is a string literal.
 
 use crate::common::ascii_string::AsciiString;
+use crate::logic::modules::plant;
 
 use super::download_manager::QueuedDownload;
 use super::persistent_storage_thread::atoi;
@@ -202,11 +203,54 @@ impl MainMenuUtils {
         }
     }
 
+    /// The file-level state as words, in the order of the differential test's dump (#215, tests/differential_draft_mmu.rs): the flags, the counters,
+    /// the queued downloads, the MOTD and config buffers as C strings (up to the first NUL), the cancel window, the lookup flag and `isHttpOk`.
+    pub fn state_words(&self) -> Vec<u32> {
+        fn put(w: &mut Vec<u32>, s: &[u8]) {
+            w.push(s.len() as u32);
+            w.extend(s.iter().map(|&b| b as u32));
+        }
+        fn c_string(b: &[u8]) -> &[u8] {
+            match b.iter().position(|&c| c == 0) {
+                Some(p) => &b[..p],
+                None => b,
+            }
+        }
+        let mut w = vec![
+            0xD0D0D0D0,
+            self.checking_for_patch_before_game_spy as u32,
+            self.checks_left_before_online as u32,
+            self.time_through_online as u32,
+            self.must_download_patch as u32,
+            self.cant_connect_before_online as u32,
+            self.queued_downloads.len() as u32,
+        ];
+        for q in &self.queued_downloads {
+            put(&mut w, q.server.str());
+            put(&mut w, q.user_name.str());
+            put(&mut w, q.password.str());
+            put(&mut w, q.file.str());
+            put(&mut w, q.local_file.str());
+            put(&mut w, q.reg_key.str());
+            w.push(q.try_resume as u32);
+        }
+        for b in [&self.motd_buffer, &self.config_buffer] {
+            w.push(b.is_some() as u32);
+            if let Some(b) = b {
+                put(&mut w, c_string(b));
+            }
+        }
+        w.push(self.online_cancel_window as u32);
+        w.push(self.async_dns_lookup_in_progress as u32);
+        w.push(self.is_http_ok as u32);
+        w
+    }
+
     /// `StartDownloadingPatches`: with nothing queued, cancels; otherwise opens the download menu, hands every
     /// queued download to the download manager (emptying the queue) and starts the first.
     pub fn start_downloading_patches<H: MainMenuHost>(&mut self, host: &mut H) {
         if self.queued_downloads.is_empty() {
-            host.handle_canceled_download(true);
+            host.handle_canceled_download(!plant(20316));
             return;
         }
         host.show_download_menu();
@@ -236,7 +280,7 @@ impl MainMenuUtils {
     /// goes back to normal, otherwise goes online anyway.
     fn no_patch_before_online_callback<H: MainMenuHost>(&mut self, host: &mut H) {
         self.queued_downloads.clear();
-        if self.must_download_patch || self.cant_connect_before_online {
+        if (if plant(20320) { self.must_download_patch && self.cant_connect_before_online } else { self.must_download_patch || self.cant_connect_before_online }) {
             // go back to normal
             host.handle_canceled_download(true);
         } else {
@@ -345,7 +389,7 @@ impl MainMenuUtils {
         if let Some(pos) = file_path.reverse_find(b'/') {
             file_str = AsciiString::try_from_bytes(&file_path.str()[pos + 1..]).unwrap_or_default();
         }
-        let mut file_name = AsciiString::try_from_bytes(b"patches\\").unwrap_or_default();
+        let mut file_name = AsciiString::try_from_bytes(if plant(20312) { b"patches/" } else { b"patches\\" }).unwrap_or_default();
         let _ = file_name.concat(file_str.str());
 
         if !success {
@@ -363,7 +407,7 @@ impl MainMenuUtils {
         };
 
         for e in self.queued_downloads.iter() {
-            if e.local_file == q.local_file {
+            if (if plant(20311) { e.file == q.file } else { e.local_file == q.local_file }) {
                 return; // don't add it if it exists already (because we can check multiple times)
             }
         }
@@ -377,7 +421,9 @@ impl MainMenuUtils {
             return; // Old callback being called!
         }
         let mut b = buffer.to_vec();
-        b.pop(); // MOTDBuffer[bufferLen-1] = 0
+        if !plant(20319) {
+            b.pop(); // MOTDBuffer[bufferLen-1] = 0
+        }
         self.motd_buffer = Some(b);
 
         self.checks_left_before_online -= 1;
@@ -398,7 +444,7 @@ impl MainMenuUtils {
         }
         self.config_buffer = None;
 
-        if !success || buffer.len() < 100 {
+        if !success || (if plant(20314) { buffer.len() <= 100 } else { buffer.len() < 100 }) {
             if !self.checking_for_patch_before_game_spy {
                 return;
             }
@@ -452,7 +498,7 @@ impl MainMenuUtils {
                     let server_len = atoi(val.str());
                     let file_len = host.read_config_file().map(|f| f.len() as i32).unwrap_or(0);
 
-                    if server_len == file_len {
+                    if (if plant(20315) { server_len <= file_len } else { server_len == file_len }) {
                         // we don't need to download the MOTD again
                         self.checks_left_before_online -= 1;
                         if self.online_cancel_window && self.checks_left_before_online == 0 {
@@ -517,7 +563,7 @@ impl MainMenuUtils {
             ok &= line.next_token(&mut url, Some(b" ")).unwrap_or(false);
             if ok && ty.str() == b"patch" {
                 self.queue_patch(atoi(req.str()) != 0, &url);
-                if atoi(req.str()) != 0 {
+                if (if plant(20313) { atoi(req.str()) > 0 } else { atoi(req.str()) != 0 }) {
                     self.must_download_patch = true;
                 }
             }
@@ -566,7 +612,7 @@ impl MainMenuUtils {
             None => return,
         };
         let mut s = &message.str()[pos..];
-        if !s.is_empty() && s[0] == b'\\' {
+        if !plant(20317) && !s.is_empty() && s[0] == b'\\' {
             s = &s[1..];
         }
         host.handle_num_players_online(atoi(s));
@@ -619,7 +665,9 @@ impl MainMenuUtils {
     pub fn start_patch_check<H: MainMenuHost>(&mut self, host: &mut H) {
         self.checking_for_patch_before_game_spy = true;
         self.cant_connect_before_online = false;
-        self.time_through_online += 1;
+        if !plant(20318) {
+            self.time_through_online += 1;
+        }
         self.checks_left_before_online = 0;
 
         host.message_box_cancel(
