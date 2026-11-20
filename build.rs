@@ -13824,6 +13824,23 @@ mod differential {
             b.include(&gen).file(dif.join("wrap_draft_systimer.cpp"));
             b.compile("draft_wwlib3_systimer");
         }
+        // ini.cpp's typed getters and putters (see differential/wrap_draft_ini.cpp), verbatim cuts, and trim.cpp's strtrim
+        let ini_cpp = read_upstream(wl.join("ini.cpp"));
+        write("ini_enum.inc", piece(&ini_cpp, "ini.cpp", "unsigned INIClass::Enumerate_Entries(", Some("bool INIClass::Put_UUBlock(char const * section, void const * block, int len)")));
+        write("ini_text_to_double.inc", piece(&ini_cpp, "ini.cpp", "bool INIClass::Put_TextBlock(", Some("bool INIClass::Put_String(char const * section, char const * entry, char const * string)")));
+        write(
+            "ini_get_string.inc",
+            piece(&ini_cpp, "ini.cpp", "int INIClass::Get_String(char const * section, char const * entry, char const * defvalue, char * buffer, int size) const", Some("const StringClass& INIClass::Get_String(StringClass& new_string")),
+        );
+        write("ini_alloc_to_points.inc", piece(&ini_cpp, "ini.cpp", "char *INIClass::Get_Alloc_String(", Some("INIEntry * INISection::Find_Entry(char const * entry) const")));
+        write("ini_strtrim.inc", piece(&read_upstream(wl.join("trim.cpp")), "trim.cpp", "char* strtrim(char* buffer)", Some("wchar_t* wcstrim(wchar_t* buffer)")));
+        {
+            println!("cargo:rerun-if-changed=differential/wrap_draft_ini.cpp");
+            let mut b = cc::Build::new();
+            base(&mut b);
+            b.include(&gen).include(&shim3).include(&shim_always).include(&wl).file(dif.join("wrap_draft_ini.cpp"));
+            b.compile("draft_wwlib3_ini");
+        }
         // WWSaveLoad: the definition factory registry, unchanged (copied so that the quoted includes find wwdebug.h's stand-in)
         let sl = ww.join("WWSaveLoad");
         for f in ["definitionfactory.h", "definitionfactory.cpp", "definitionfactorymgr.h", "definitionfactorymgr.cpp", "definitionclassids.h"] {

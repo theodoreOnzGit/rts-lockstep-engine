@@ -1,4 +1,10 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 random programs (test: tests/differential_draft_ini.rs); not yet
+//! wired into the game. Covered: `Enumerate_Entries`, `Put_TextBlock`, `Get_TextBlock`, `Put_Int`, `Get_Int`, `Put_Rect`, `Get_Rect`, `Put_Hex`,
+//! `Get_Hex`, `Get_Float`, `Put_Float`, `Put_Double`, `Get_Alloc_String`, `Get_List_Index`, `Get_Int_Bitfield`, `Get_Alloc_Int_Array`, `Put_Bool`,
+//! `Get_Bool`, all `Put_Point`/`Get_Point` and the buffer `Get_String`. NOT covered: `Put_UUBlock`, `Get_UUBlock` (both forms), `Get_Wide_String`,
+//! `Put_Wide_String` (streams and the wide string class), and `Get_Double` (upstream scans `%lf` into a 4-byte `float`: the C++ aborts with stack
+//! smashing, no defined result exists). Corrected 2026-11-20 (#215): `Get_Float` and the float points rounded the text to `double` and then to
+//! `float`; `sscanf("%f")` rounds once (`1.00000005960464477539062501` differs by one ulp).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/ini.cpp (the `INIClass` members below)
@@ -32,6 +38,7 @@
 //! characters). `Get_Int_Bitfield` and `Get_List_Index` have `assert(lp < 1000)` only. `Put_TextBlock` looks for the
 //! break from `buffer[count]`, which at `count == 75` is the terminator, so the scan really starts at 74.
 
+use crate::logic::modules::plant;
 use crate::drafts::wwlib::base64::{base64_decode, base64_encode};
 use crate::ww::ini::IniClass;
 use crate::ww::trim::{c_str, strtrim};
@@ -280,7 +287,7 @@ pub fn put_text_block<T: IniWrite>(ini: &mut T, section: &[u8], text: &[u8]) -> 
         let mut buffer: Vec<u8> = text[..text.len().min(75)].to_vec();
         let mut count = buffer.len();
         if count > 0 {
-            if count >= 75 {
+            if if plant(17422) { count > 75 } else { count >= 75 } {
                 while count > 0 {
                     // buffer[count] is the terminator at count == 75
                     let c = if count < buffer.len() { buffer[count] } else { 0 };
@@ -327,7 +334,7 @@ pub fn get_text_block<T: IniRead>(ini: &T, section: &[u8], len: i32) -> (Vec<u8>
         out.extend_from_slice(&s);
         total += partial;
         len -= partial;
-        if len <= 1 {
+        if if plant(17419) { len < 1 } else { len <= 1 } {
             break;
         }
     }
@@ -338,8 +345,8 @@ pub fn get_text_block<T: IniRead>(ini: &T, section: &[u8], len: i32) -> (Vec<u8>
 /// else `%d`.
 pub fn put_int<T: IniWrite>(ini: &mut T, section: &[u8], entry: &[u8], number: i32, format: i32) -> bool {
     let buffer = match format {
-        1 => format!("{:X}h", number as u32),
-        2 => format!("${:X}", number as u32),
+        1 => if plant(17411) { format!("{:x}h", number as u32) } else { format!("{:X}h", number as u32) },
+        2 => if plant(17412) { format!("{:X}", number as u32) } else { format!("${:X}", number as u32) },
         _ => format!("{}", number),
     };
     ini.put_string(section, entry, buffer.as_bytes())
@@ -355,7 +362,7 @@ pub fn get_int<T: IniRead>(ini: &T, section: &[u8], entry: &[u8], defvalue: i32)
             let v = c_str(&v);
             if v.first() == Some(&b'$') {
                 scan_hex(&v[1..]).map(|(n, _)| n).unwrap_or(defvalue)
-            } else if v.last().map(|c| c.to_ascii_lowercase()) == Some(b'h') {
+            } else if v.last().map(|c| if plant(17413) { *c } else { c.to_ascii_lowercase() }) == Some(b'h') {
                 // sscanf("%xh")
                 match scan_hex(v) {
                     Some((n, rest)) if rest.first() == Some(&b'h') => n,
@@ -372,7 +379,7 @@ pub fn get_int<T: IniRead>(ini: &T, section: &[u8], entry: &[u8], defvalue: i32)
 
 /// `INIClass::Put_Rect(section, entry, value)` (ini.cpp:1359): `"%d,%d,%d,%d"`.
 pub fn put_rect<T: IniWrite>(ini: &mut T, section: &[u8], entry: &[u8], value: Rect) -> bool {
-    let buffer = format!("{},{},{},{}", value.x, value.y, value.width, value.height);
+    let buffer = if plant(17414) { format!("{},{},{},{}", value.x, value.y, value.height, value.width) } else { format!("{},{},{},{}", value.x, value.y, value.width, value.height) };
     ini.put_string(section, entry, buffer.as_bytes())
 }
 
@@ -390,7 +397,7 @@ pub fn get_rect<T: IniRead>(ini: &T, section: &[u8], entry: &[u8], defvalue: Rec
             retval.y = n;
         }
         if let Some(&n) = nums.get(2) {
-            retval.width = n;
+            retval.width = if plant(17415) { retval.width } else { n };
         }
         if let Some(&n) = nums.get(3) {
             retval.height = n;
@@ -402,7 +409,7 @@ pub fn get_rect<T: IniRead>(ini: &T, section: &[u8], entry: &[u8], defvalue: Rec
 
 /// `INIClass::Put_Hex(section, entry, number)` (ini.cpp:1422): `"%X"`.
 pub fn put_hex<T: IniWrite>(ini: &mut T, section: &[u8], entry: &[u8], number: i32) -> bool {
-    let buffer = format!("{:X}", number as u32);
+    let buffer = if plant(17416) { format!("{:x}", number as u32) } else { format!("{:X}", number as u32) };
     ini.put_string(section, entry, buffer.as_bytes())
 }
 
@@ -426,10 +433,10 @@ pub fn get_float<T: IniRead>(ini: &T, section: &[u8], entry: &[u8], defvalue: f3
         Some(v) => {
             let v = c_str(&v);
             let mut d = defvalue;
-            if let Some((x, _)) = scan_float(v) {
-                d = x as f32;
+            if let Some((x64, x32, _)) = scan_float(v) {
+                d = if plant(17421) { x64 as f32 } else { x32 };
             }
-            if v.contains(&b'%') {
+            if v.contains(&b'%') && !plant(17418) {
                 d /= 100.0f32;
             }
             d
@@ -454,7 +461,7 @@ pub fn get_double<T: IniRead>(ini: &T, section: &[u8], entry: &[u8], defvalue: f
         Some(v) => {
             let v = c_str(&v);
             let mut val = defvalue as f32;
-            if let Some((x, _)) = scan_float(v) {
+            if let Some((x, _, _)) = scan_float(v) {
                 val = x as f32;
             }
             let mut d = val as f64;
@@ -530,7 +537,7 @@ pub fn get_int_bitfield<T: IniRead>(ini: &T, section: &[u8], entry: &[u8], defva
 pub fn get_alloc_int_array<T: IniRead>(ini: &T, section: &[u8], entry: &[u8], listend: i32) -> Vec<i32> {
     let mut retval = Vec::new();
     if let Some(v) = ini.find_value(section, entry) {
-        for token in c_str(&v).split(|&c| c == b' ').filter(|t| !t.is_empty()) {
+        for token in c_str(&v).split(|&c| c == b' ').filter(|t| plant(17420) || !t.is_empty()) {
             retval.push(atoi(token));
         }
     }
@@ -551,7 +558,7 @@ pub fn get_bool<T: IniRead>(ini: &T, section: &[u8], entry: &[u8], defvalue: boo
     if let Some(v) = ini.find_value(section, entry) {
         match v.first().map(|c| c.to_ascii_uppercase()) {
             Some(b'Y') | Some(b'T') | Some(b'1') => return true,
-            Some(b'N') | Some(b'F') | Some(b'0') => return false,
+            Some(b'N') | Some(b'F') | Some(b'0') => return plant(17417),
             _ => {}
         }
     }
@@ -572,7 +579,7 @@ pub fn put_point_3d_int<T: IniWrite>(ini: &mut T, section: &[u8], entry: &[u8], 
 
 /// `INIClass::Put_Point(section, entry, TPoint3D<float>)` (ini.cpp:2111): `"%f,%f,%f"`.
 pub fn put_point_3d_float<T: IniWrite>(ini: &mut T, section: &[u8], entry: &[u8], value: TPoint3DFloat) -> bool {
-    let buffer = format!("{:.6},{:.6},{:.6}", value.x, value.y, value.z);
+    let buffer = if plant(17423) { format!("{:.5},{:.5},{:.5}", value.x, value.y, value.z) } else { format!("{:.6},{:.6},{:.6}", value.x, value.y, value.z) };
     ini.put_string(section, entry, buffer.as_bytes())
 }
 
@@ -677,7 +684,9 @@ fn scan_hex(s: &[u8]) -> Option<(i32, &[u8])> {
 }
 
 /// `%f`/`%lf`: the longest prefix that is a decimal float (sign, digits, `.`, exponent).
-fn scan_float(s: &[u8]) -> Option<(f64, &[u8])> {
+/// `sscanf("%f")` / `("%lf")` of the leading number: the value rounded once to `f64`, the value rounded once to `f32` (`%f` stores a `float`
+/// directly: narrowing the `double` would round twice and differ for a decimal text just above a halfway point), and the rest.
+fn scan_float(s: &[u8]) -> Option<(f64, f32, &[u8])> {
     let s = skip_ws(s);
     let mut i = 0;
     if i < s.len() && (s[i] == b'-' || s[i] == b'+') {
@@ -714,7 +723,8 @@ fn scan_float(s: &[u8]) -> Option<(f64, &[u8])> {
     }
     let text = std::str::from_utf8(&s[..i]).ok()?;
     let v: f64 = text.parse().ok()?;
-    Some((v, &s[i..]))
+    let v32: f32 = text.parse().ok()?;
+    Some((v, v32, &s[i..]))
 }
 
 /// `sscanf(s, "%d,%d,...")` for up to `n` numbers: stops at the first failure (or missing comma).
@@ -751,8 +761,8 @@ fn scan_floats_comma(s: &[u8], n: usize) -> Vec<f32> {
             rest = &rest[1..];
         }
         match scan_float(rest) {
-            Some((v, r)) => {
-                out.push(v as f32);
+            Some((_, v, r)) => {
+                out.push(v);
                 rest = r;
             }
             None => break,
