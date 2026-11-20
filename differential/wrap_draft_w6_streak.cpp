@@ -99,7 +99,12 @@ void DX8Wrapper::Clamp_Color(Vector4 &color)
 		memcpy(&color[i], &v, 4);
 	}
 }
+/* the cut is declared WWINLINE (inline) upstream; this translation unit must export it for streakRender.cpp, so the keyword is emptied for the include */
+#undef WWINLINE
+#define WWINLINE
 #include "convert_clamp.inc"
+#undef WWINLINE
+#define WWINLINE inline
 
 void DX8Wrapper::Set_Index_Buffer(const DynamicIBAccessClass &, unsigned short) {}
 void DX8Wrapper::Set_Vertex_Buffer(const DynamicVBAccessClass &) {}

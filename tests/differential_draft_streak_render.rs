@@ -27,9 +27,18 @@
 //! Not 0. `Set_Current_Subdivision_Level` in `streakRender.h` stores the level and then `SubdivisionLevel = 0` ("Streak renderer does not work for non-zero subdivisions"), where
 //! the draft's `set_current_subdivision_level` keeps the level: I expect every sequence that `Init`s with a non-zero level to differ. Everything else: 0.
 //!
-//! # Results
+//! # Results (2026-11-20)
 //!
-//! See the `DIFF` lines of the run and the comment on #215.
+//! **First run: the draft panicked** (`index out of bounds` at `radius = widths[sidx]`): with a non-zero subdivision level the draft subdivides the points and then indexes `widths`
+//! (one per input point) with the subdivided segment index, which upstream never does because `Set_Current_Subdivision_Level` forces the level to 0. **Prediction held** (a
+//! failure for every sequence that `Init`s with a non-zero level). Fixed in the draft: `set_current_subdivision_level` stores 0. **After the fix: 0 mismatching sequences of
+//! 20,000**: 49,949 renders, 51,733 chunks; 11,347 sequences contain a render that ran the undefined `new_direction` read (compared with zero on both sides). The
+//! packed colours go through `DX8Wrapper::Convert_Color_Clamp` (verbatim), so `dynamesh.rs`'s `convert_color_clamp` is compared too, on colours in -0.2..1.2.
+//!
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching sequences of 20,000)
+//!   19141: 19,885; 19142: 16,589; 19143: 19,885; 19144: 19,758; 19145: 19,626; 19146: 18,869; 19147: 2,273; 19148: 14,661; 19149: 19,885
+//!
+//! **9 of 9 caught.**
 
 mod support;
 mod support_sweep;

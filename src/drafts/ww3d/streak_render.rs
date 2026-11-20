@@ -1,4 +1,6 @@
-//! UNTESTED DRAFT (#202, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 sequences (test: tests/differential_draft_streak_render.rs; the getters and the texture accessors
+//! are not compared directly, the state words that follow every operation cover the stored values);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/streakRender.cpp
@@ -192,8 +194,12 @@ impl StreakRendererClass {
     pub fn get_current_subdivision_level(&self) -> u32 {
         self.subdivision_level
     }
+    /// `Set_Current_Subdivision_Level(lv)` (streakRender.h): `DEBUG_ASSERTCRASH(lv == 0, "Streak renderer does not work for non-zero subdivisions"); SubdivisionLevel = lv;
+    /// SubdivisionLevel = 0;`. ~~stored the level~~ **CORRECTED 2026-11-20 (#215)**: the streak renderer always runs at level 0 (the differential test found `render_streak` indexing
+    /// `widths` past its end for a non-zero level, which upstream never reaches).
     pub fn set_current_subdivision_level(&mut self, lvl: u32) {
-        self.subdivision_level = lvl;
+        let _ = lvl;
+        self.subdivision_level = 0;
     }
 
     /// `StreakRendererClass::Reset_Line` (streakRender.h): the streak renderer keeps no UV animation state.
