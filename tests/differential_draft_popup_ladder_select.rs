@@ -29,11 +29,34 @@
 //!
 //! # Planted bugs (`L9_PLANT=<id>`)
 //!
-//! see the draft's `plant(...)` calls (22741..22758).
+//! | id | planted bug |
+//! |---|---|
+//! | 22741 | `PASS_NONE` leaves OK disabled |
+//! | 22742 | `PASS_ENTRY` does not clear the password entry |
+//! | 22743 | `PASS_ERROR` gives the focus to nothing |
+//! | 22744 | Init does not make the popup modal |
+//! | 22745 | Init shows the host popup instead of hiding it |
+//! | 22746 | Escape in the password mode closes the overlay |
+//! | 22747 | `GWM_DESTROY` does not show the host popup again |
+//! | 22748 | OK asks for a password when the ladder has none |
+//! | 22749 | the password check is inverted |
+//! | 22750 | OK does not save the selected ladder's index |
+//! | 22751 | any list box double-click presses OK |
+//! | 22752 | `GLM_SELECTED` of an item with data 0 updates the details |
+//! | 22753 | the details' minimum wins show the maximum |
+//! | 22754 | random and listed factions swap their captions |
+//! | 22755 | the custom handler runs before the quick match one |
+//! | 22756 | the overlay closes before the combo boxes are populated |
+//! | 22757 | an empty location is added as a line |
+//! | 22758 | any control's edit-done presses the password OK |
 //!
 //! # Results
 //!
-//! see the issue comment on #215.
+//! 2026-11-21, `DRAFT_CASES=3000` (the default, about 15 s a run), max ULP 0. The first run had **1,680 mismatches of 107,734 outputs**, all one defect in the draft that I had introduced
+//! while adding the plants (`Init` hid the host popup with `plant(22745)` instead of `!plant(22745)`); fixed: **0 mismatches over 3,000 sequences, 129,937 outputs compared**. The prediction
+//! (the password's `translate`) was fixed on reading before the first run. Planted bugs (mismatches of 3,000 sequences): 22741 1,113; 22742 90; 22743 662; 22744 1,285; 22745 1,680; 22746 471;
+//! 22747 170; 22748 335; 22749 85; 22750 650; 22751 46; 22752 18; 22753 145; 22754 200; 22755 1,256; 22756 1,256; 22757 74; 22758 89. **18 of 18 caught** (an earlier 22750, an empty
+//! password passed on to the comparison, is an equivalent mutant: the encrypted empty string never equals a stored password; replaced).
 
 mod support;
 mod ui4_common;

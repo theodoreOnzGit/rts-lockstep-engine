@@ -15261,6 +15261,8 @@ mod differential {
                     ("line.format(TheGameText->fetch(\"GUI:LadderURL\"), info->homepageURL.str());", "ui5_fmt_text(line, TheGameText->fetch(\"GUI:LadderURL\"), info->homepageURL);"),
                     ("line.format(TheGameText->fetch(\"GUI:LadderMinWins\"), info->minWins);", "ui5_fmt_int(line, TheGameText->fetch(\"GUI:LadderMinWins\"), info->minWins);"),
                     ("line.format(TheGameText->fetch(\"GUI:LadderMaxWins\"), info->maxWins);", "ui5_fmt_int(line, TheGameText->fetch(\"GUI:LadderMaxWins\"), info->maxWins);"),
+                    // (MSVC 6's `for` scope: the `it` of the earlier loop)
+                    ("for (it = validMaps.begin(); it != validMaps.end(); ++it)", "for (AsciiStringListIterator it = validMaps.begin(); it != validMaps.end(); ++it)"),
                 ],
             ),
             (

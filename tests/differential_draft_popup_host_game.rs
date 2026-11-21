@@ -28,11 +28,35 @@
 //!
 //! # Planted bugs (`L9_PLANT=<id>`)
 //!
-//! see the draft's `plant(...)` calls (22701..).
+//! | id | planted bug |
+//! |---|---|
+//! | 22701 | `HandleCustomLadderSelection` stores the port plus one |
+//! | 22702 | the list box selects row 0, not the last ladder's row |
+//! | 22703 | the recent ladders take the special colour |
+//! | 22704 | the local ladders take the special colour |
+//! | 22705 | the combo box has no "choose a ladder" entry |
+//! | 22706 | that entry's item data is 0, not -1 |
+//! | 22707 | the combo box adds a last ladder that is not valid for custom games |
+//! | 22708 | Init enables "limit armies" even when stats are used |
+//! | 22709 | Init does not clear "limit armies" when stats are used |
+//! | 22710 | Update does not disable "limit armies" when stats are used |
+//! | 22711 | Escape acts on the key-down |
+//! | 22712 | `GWM_DESTROY` leaves the parent set |
+//! | 22713 | the game name's leading tab and line breaks are kept |
+//! | 22714 | the "no ladder" entry opens the ladder overlay |
+//! | 22715 | Cancel leaves the lobby join flag |
+//! | 22716 | an empty game name is not replaced by the local name |
+//! | 22717 | the default ladder address is `local` |
+//! | 22718 | the staging room's group is 1 |
+//! | 22719 | the password keeps a unit whose low byte is 0 as a NUL |
 //!
 //! # Results
 //!
-//! see the issue comment on #215.
+//! 2026-11-21, `DRAFT_CASES=3000` (the default, about 15 s a run), max ULP 0. The first run had **157 mismatches of 121,325 outputs, all in my generator** (two ladders with the same index,
+//! which the draft keys by; a Rust `true` written where the C++ reads `1`); with those fixed, **0 mismatches over 3,000 sequences, 125,345 outputs compared**. The prediction (the password's
+//! `translate`) was fixed on reading before the first run; plant 22719 shows the test would have caught it. Planted bugs (mismatches of 3,000 sequences): 22701 53; 22702 12; 22703 10;
+//! 22704 58; 22705 298; 22706 11; 22707 21; 22708 369; 22709 177; 22710 4; 22711 353; 22712 16; 22713 19; 22714 17; 22715 149; 22716 26; 22717 372; 22718 395; 22719 12. **19 of 19 caught**
+//! (an earlier 22703, the recent ladders' `continue` on the last ladder, is an equivalent mutant in the list variant: the last ladder is already used; replaced).
 
 mod support;
 mod ui4_common;

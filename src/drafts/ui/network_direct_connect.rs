@@ -1,4 +1,10 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 3,000 cases (test: tests/differential_draft_network_direct_connect.rs);
+//! not yet wired into the game.
+//!
+//! Corrected 2026-11-21 (#215, group ui5): `TheLAN->init()` after the second `NEW LANAPI()` of `NetworkDirectConnectInit` is [`NetworkDirectConnectHost::lan_init`] (the draft asked the host
+//! for a second `new` and `init`); `nextToken` skips leading separators; `%d.%d.%d.%d` is the C library's (white space, a sign); `translate` drops a unit whose low byte is 0; the packed
+//! address wraps; the places where upstream is undefined (a NULL control or combo box, an unread `scanf` field, a `strcpy` overrun, `TheLAN` NULL) report through
+//! [`NetworkDirectConnectHost::undefined`]. Functions not covered: none.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/NetworkDirectConnect.cpp
@@ -91,7 +97,7 @@ fn scan_ip(s: &[u16]) -> (Vec<i32>, bool) {
     let mut overflow = false;
     let mut p = 0;
     for n in 0..4 {
-        while p < s.len() && is_space(s[p]) && !plant(22674) {
+        while p < s.len() && is_space(s[p]) {
             p += 1;
         }
         let mut neg = false;
@@ -127,7 +133,7 @@ fn scan_ip(s: &[u16]) -> (Vec<i32>, bool) {
 /// `nextToken(&tok, seps)` of `AsciiString` / `UnicodeString` (AsciiString.cpp:368, UnicodeString.cpp:330): leading separators skipped, then the run up to the next separator (the
 /// token stays empty when there is none).
 fn next_token<T: Copy + PartialEq>(s: &[T], seps: &[T]) -> Vec<T> {
-    let start = if plant(22673) { 0 } else { s.iter().position(|c| !seps.contains(c)).unwrap_or(s.len()) };
+    let start = s.iter().position(|c| !seps.contains(c)).unwrap_or(s.len());
     let end = s[start..].iter().position(|c| seps.contains(c)).map_or(s.len(), |p| start + p);
     s[start..end].to_vec()
 }

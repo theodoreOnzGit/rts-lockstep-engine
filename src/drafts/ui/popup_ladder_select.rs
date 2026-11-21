@@ -1,4 +1,9 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! UNTESTED DRAFT (#202, #203, #214): compiles; PARTLY tested against the upstream C++ (#215, group ui5): `populateLadderComboBox`, `populateLadderListBox`, `handleLadderSelection`,
+//! `setPasswordMode`, `PopupLadderSelectInit/Input/System`, `ladderSelectedCallback` and `updateLadderDetails` match it on 3,000 cases (test:
+//! tests/differential_draft_popup_ladder_select.rs). NOT covered, so the file keeps this banner: `RCGameDetailsMenuInit`, `RCGameDetailsMenuSystem` and `closeRightClickMenu` (they need
+//! layouts made from WND files, the lone window and the GameSpy staging rooms).
+//! Corrected 2026-11-21 (#215, group ui5): the password's `translate` drops a unit whose low byte is 0; the places where upstream is undefined (the ladder list box missing, a NULL control)
+//! report through [`PopupLadderSelectHost::undefined`].
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/PopupLadderSelect.cpp
@@ -263,7 +268,7 @@ pub fn popup_ladder_select_init<H: PopupLadderSelectHost>(wm: &mut GameWindowMan
 
     set_password_mode(wm, h, PasswordMode::PassNone);
 
-    h.custom_match_hide_host_popup(wm, plant(22745));
+    h.custom_match_hide_host_popup(wm, !plant(22745));
 
     populate_ladder_list_box(wm, h);
 }
@@ -337,7 +342,9 @@ pub fn popup_ladder_select_system<H: PopupLadderSelectHost>(wm: &mut GameWindowM
                     return MsgHandled::Handled;
                 }
                 let ladder_index = lb::get_item_data(wm, h, p.listbox_ladder_select.expect("pos implies list"), select_pos, 0) as i32;
-                h.popup_ladder_select().ladder_index = ladder_index;
+                if !plant(22750) {
+                    h.popup_ladder_select().ladder_index = ladder_index;
+                }
                 let li = h.ladder_find_by_index(ladder_index);
                 if li.is_some_and(|l| l.crypted_password.is_empty() == plant(22748)) {
                     set_password_mode(wm, h, PasswordMode::PassEntry);
@@ -355,7 +362,7 @@ pub fn popup_ladder_select_system<H: PopupLadderSelectHost>(wm: &mut GameWindowM
                 };
                 let pass_w = te::get_text(wm, h, p.text_entry_password);
                 let pass: Vec<u8> = pass_w.iter().map(|&c| c as u8).filter(|&c| c != 0).collect(); // pass.translate(...): a 0 byte appends nothing
-                if !pass.is_empty() || plant(22750) {
+                if !pass.is_empty() {
                     // password ok
                     let crypt_pass = h.encrypt_string(&pass);
                     if (crypt_pass == li.crypted_password) != plant(22749) {

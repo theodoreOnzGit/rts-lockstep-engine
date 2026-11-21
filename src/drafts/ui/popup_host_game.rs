@@ -1,4 +1,8 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 3,000 cases (test: tests/differential_draft_popup_host_game.rs);
+//! not yet wired into the game.
+//!
+//! Corrected 2026-11-21 (#215, group ui5): the password's `translate` drops a unit whose low byte is 0 (it kept a NUL byte); the places where upstream is undefined (a missing check box,
+//! a NULL control) report through [`PopupHostGameHost::undefined`]. Functions not covered: none.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/PopupHostGame.cpp

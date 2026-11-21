@@ -52,10 +52,20 @@
 //! | 22670 | an immediate shutdown still animates |
 //! | 22671 | Update completes when EITHER the animation or the transition is finished |
 //! | 22672 | Join packs the first field at bit 16 |
+//! | 22675 | `translate` keeps a unit whose low byte is 0 as a NUL |
 //!
 //! # Results
 //!
-//! see the `RESULTS` block at the end of this comment, filled in after the runs.
+//! 2026-11-21, `DRAFT_CASES=3000` (the default, about 15 s a run), max ULP 0 (the comparison is of text). Before the fixes, the first run had **2,069 mismatches of 69,406 outputs**: the
+//! draft asked its host for a second `new` and `init` of `TheLAN` (prediction (1): fixed with `lan_init`). Then 416 of 81,762 (the C++ program crashed at Escape with `buttonBack` NULL:
+//! upstream's undefined behaviour, now reported through `undefined`), 8 and 4 (two stand-in defects of mine: `Shell::pop` detaches the IME; `QuotedPrintableToUnicodeString` leaves stale
+//! units after an odd-length result: excluded, see above), then **0 of 87,445** once `shutdownComplete` no longer ended the sequence (the host's pending push answers with the menu's layout),
+//! and a last mismatch **found by the combo composites, in the verified-looking `lan_lobby_menu::get_remote_ip_entry`** (a byte above 0x7F zero-extended where `(WideChar)char` sign-extends;
+//! fixed there): **0 mismatches over 3,000 sequences, 92,399 outputs compared**. Prediction (2) to (5) (`nextToken`, `scanf`, `translate`, wrapping) were fixed on reading, before a run:
+//! each of those inputs made the draft report `undefined` (so they were excluded, not mismatched), which is also why no plant on `nextToken` or the `scanf` white space can be caught (two
+//! such plants were dropped). Planted bugs (mismatches of 3,000 sequences): 22661 552; 22662 31; 22663 318; 22664 373; 22665 82; 22666 19; 22667 290; 22668 740; 22669 1,815; 22670 684;
+//! 22671 162; 22672 441; 22675 4. **13 of 13 caught.** Not covered by the C++ reference: `reverseAnimatewindow` and the transition group's state are models of the verified Rust (the
+//! wrapper's header).
 
 mod support;
 mod ui4_common;
