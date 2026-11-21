@@ -36,6 +36,58 @@
 //! `Init` with a list box must mismatch (the list's rows); nothing else was expected to. (A second expectation, written from a misreading
 //! of `WOLQMScoreScreenShutdown` as calling `shutdownComplete` twice, was wrong: upstream calls it once, and the run agreed with that.)
 //!
+//! # Planted bugs (`L9_PLANT=<id>`, the draft's `plant(id)`; mismatching cases of 4,000, the run of the final build)
+//!
+//! | id | screen | planted bug | cases |
+//! |---|---|---|---|
+//! | 20661 | message window | Escape acts on the key press, not the release | 333 |
+//! | 20662 | message window | `Init` does not set the keyboard focus | 494 |
+//! | 20663 | message window | `Shutdown` shows the layout instead of hiding it | 504 |
+//! | 20664 | message window | `GWM_INPUT_FOCUS` is answered for any non-zero `mData1` | 73 |
+//! | 20665 | message window | the key is tested as the whole word, not its low byte | 112 |
+//! | 20666 | status | Escape sends the parent's id instead of *Disconnect*'s | 171 |
+//! | 20667 | status | the progress list is looked up with *Disconnect*'s key | 622 |
+//! | 20668 | status | `Shutdown` does not hide the layout | 449 |
+//! | 20669 | status | `GBM_SELECTED` is not handled | 304 |
+//! | 20670 | custom score | *Lobby* is looked up with *Disconnect*'s key | 610 |
+//! | 20671 | custom score | Escape presses *Lobby* instead of *Disconnect* | 171 |
+//! | 20672 | custom score | Escape's press (not its release) is not handled | 198 |
+//! | 20673 | custom score | `Shutdown` shows the layout | 446 |
+//! | 20674 | QM score | *QuickMatch* is looked up with the parent's key | 614 |
+//! | 20675 | QM score | Escape acts on the key press | 296 |
+//! | 20676 | QM score | `GWM_INPUT_FOCUS` is not handled | 475 |
+//! | 20677 | QM score | `Shutdown` never calls `shutdownComplete` | 461 |
+//! | 20678 | ladder | `Init` does not call `showShellMap` | 665 |
+//! | 20679 | ladder | `showShellMap(FALSE)` | 665 |
+//! | 20680 | ladder | the browser window is made even with no browser | 205 |
+//! | 20681 | ladder | `Shutdown` closes *Back*'s window, not the ladder's | 330 |
+//! | 20682 | ladder | `GBM_SELECTED` compares with the parent's id | 223 |
+//! | 20683 | ladder | *Back* does not pop the shell | 197 |
+//! | 20684 | ladder | Escape sends id 0 | 188 |
+//! | 20685 | locale | the rows' colour is 0, not `GameSpyColor[GSCOLOR_DEFAULT]` | 608 |
+//! | 20686 | locale | the first row selected is row 1 | 608 |
+//! | 20687 | locale | the locale sent is the row, not the row plus `LOC_MIN` | 129 |
+//! | 20688 | locale | the overlay is closed before the request is queued | 129 |
+//! | 20689 | locale | the stats are tracked when their id is 0, not when it is the local id | 54 |
+//! | 20690 | locale | the cached-stats and the response branches are swapped | 129 |
+//! | 20691 | locale | the popup is not made modal | 569 |
+//! | 20692 | locale | *OK* on row 0 is refused | 129 |
+//!
+//! 32 of 32 caught. (20665 was first an equivalent mutant, `d1 as u8`, a truncation like the draft's `& 0xFF`; it now compares the whole word. 20667,
+//! 20670, 20674 were first missed because the screens' statics were not compared: the test now prints them, by the name of each key and window.)
+//!
+//! # Results (2026-11-21, `DRAFT_CASES` 20,000, the default)
+//!
+//! **First run with the harness working: 2,921 of 20,000 cases mismatched, every one on the locale popup (the first mismatching line in each is the
+//! list's row count, 20 against 37)**; every other screen matched. The cause is the draft's `LOC_MAX`: 20, where `PersistentStorageDefs.h` has
+//! `LOC_MAX = 37`. Fixed (draft `wol_locale_select_popup.rs`, struck through there). After the fix: 20,000 cases (269,694 operations; 3,476 of the message
+//! window, 3,310 status, 3,217 custom score, 3,289 QM score, 3,331 ladder, 3,377 locale), **0 mismatches**.
+//!
+//! Misses and corrections along the way (recorded, not hidden): the prediction above also listed a second expectation, a double `shutdownComplete`
+//! in the QM screen, from a misreading of the upstream file; the run proved it wrong (upstream calls it once). Three harness faults were mine and
+//! fixed before the figures above: the first op of a case must be `Init` (a callback on the cut's stale statics dereferenced a freed window); a
+//! `GWM_INPUT_FOCUS` sent by hand needs a pointer to the answer in C++; the log line buffer was 2 KiB, which cut a 37-row list.
+
 mod support_ui3a;
 
 use rts_lockstep_engine::client::gadget_list_box as lb;

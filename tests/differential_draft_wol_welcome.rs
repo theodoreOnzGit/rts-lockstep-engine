@@ -28,9 +28,28 @@
 //! the vertical tab (0x0B) that C's `isspace` strips; (2) the draft's `atof` does not read an exponent or a leading `+`, which C's `atof` does. All
 //! else expected to match.
 //!
-//! # Results (2026-11-21)
+//! # Planted bugs (`L9_PLANT=<id>`; mismatching cases of 4,000, the run of the final build)
 //!
-//! (filled in below)
+//! | id | planted bug | cases |
+//! |---|---|---|
+//! | 20694 | `HandleNumPlayersOnline` clamps below 0, not below 1 | 593 |
+//! | 20695 | `grabUByte` reads one hex digit | 676 |
+//! | 20696 | the MOTD colour's red and blue swapped | 575 |
+//! | 20697 | a colour-coded line is one of 10 or more characters, not 9 or more | 355 |
+//! | 20698 | the percentage divides by the total with no `max(1, .)` | 412 |
+//! | 20699 | `updateOverallStats` rounds instead of truncating | 111 |
+//! | 20700 | the zero total is not replaced by 1 | 1,821 |
+//! | 20701 | `enableControls` leaves the lobby button alone | 692 |
+//! | 20702 | `updateServerDisplay` keeps the name only when the window exists | 130 |
+//! | 20703 | a `\\` escape drops two characters, not one | 481 |
+//!
+//! 10 of 10 caught (20697 was missed at first: no generated colour line had exactly nine characters; the generator now makes some).
+//!
+//! # Results (2026-11-21, `DRAFT_CASES` 20,000, the default)
+//!
+//! **First run: 474 of 3,000 cases mismatched**, as predicted: the trim of the message's lines (the vertical tab). After fixing the draft's trim
+//! (C's `isspace`): **110 of 3,000**, the second prediction, the exponent of `atof` (`5e1`). After fixing `atof`: 20,000 cases (90,121 operations,
+//! 10,619 with list rows), **0 mismatches**. Two draft fixes, both struck through in `wol_welcome_menu.rs`.
 
 mod support_ui3a;
 
