@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_disconnect.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/DisconnectMenu/DisconnectMenu.cpp
@@ -8,6 +9,7 @@
 
 use crate::client::gadget_list_box;
 use crate::client::window_manager::{GameWindowManager, GuiHost};
+use crate::logic::modules::plant;
 
 /// `DisconnectMenu::m_playerNameTextControlNames` (the NULL terminator is the slice's end).
 pub const PLAYER_NAME_TEXT_CONTROL_NAMES: [&str; 7] = [
@@ -121,7 +123,7 @@ fn static_text<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h: &mut H, w: 
 pub fn init<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h: &mut H) {
     h.disconnect_menu().disconnect_manager_attached = false;
     h.hide_disconnect_window(wm);
-    h.disconnect_menu().menu_state = DisconnectMenuStateType::ScreenOff;
+    h.disconnect_menu().menu_state = if plant(21468) { DisconnectMenuStateType::ScreenOn } else { DisconnectMenuStateType::ScreenOff };
 }
 
 /// `DisconnectMenu::attachDisconnectManager(disconnectManager)`.
@@ -133,7 +135,9 @@ pub fn attach_disconnect_manager<H: DisconnectMenuHost>(h: &mut H, attached: boo
 pub fn show_screen<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h: &mut H) {
     h.hide_diplomacy(wm);
     h.hide_in_game_chat(wm);
-    h.hide_quit_menu(wm);
+    if !plant(21467) {
+        h.hide_quit_menu(wm);
+    }
     h.show_disconnect_window(wm);
     h.disconnect_menu().menu_state = DisconnectMenuStateType::ScreenOn;
 }
@@ -156,12 +160,12 @@ pub fn set_player_name<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h: &mu
 
     let control = win_by_name(wm, h, PLAYER_TIMEOUT_TEXT_CONTROL_NAMES[player_num]);
     if let Some(c) = control {
-        if !name.is_empty() {
+        if !name.is_empty() || plant(21463) {
             static_text(wm, h, c, &[]);
         }
     }
 
-    if !name.is_empty() {
+    if !name.is_empty() != plant(21464) {
         show_player_controls(wm, h, player_num);
     } else {
         hide_player_controls(wm, h, player_num);
@@ -189,7 +193,7 @@ pub fn show_player_controls<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h
         wm.win_enable(c, true);
     }
     if let Some(c) = win_by_name(wm, h, PLAYER_VOTE_COUNT_CONTROL_NAMES[slot]) {
-        wm.win_hide(c, false);
+        wm.win_hide(c, plant(21462));
     }
 }
 
@@ -203,7 +207,9 @@ pub fn hide_player_controls<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h
     }
     if let Some(c) = win_by_name(wm, h, PLAYER_VOTE_BUTTON_CONTROL_NAMES[slot]) {
         wm.win_hide(c, true);
-        wm.win_enable(c, true);
+        if !plant(21461) {
+            wm.win_enable(c, true);
+        }
     }
     if let Some(c) = win_by_name(wm, h, PLAYER_VOTE_COUNT_CONTROL_NAMES[slot]) {
         wm.win_hide(c, true);
@@ -216,7 +222,9 @@ pub fn show_packet_router_timeout<H: DisconnectMenuHost>(wm: &mut GameWindowMana
         wm.win_hide(c, false);
     }
     if let Some(c) = win_by_name(wm, h, PACKET_ROUTER_TIMEOUT_CONTROL_NAME) {
-        static_text(wm, h, c, &[]); // start it off with a blank string.
+        if !plant(21470) {
+            static_text(wm, h, c, &[]); // start it off with a blank string.
+        }
         wm.win_hide(c, false);
     }
 }
@@ -233,7 +241,7 @@ pub fn hide_packet_router_timeout<H: DisconnectMenuHost>(wm: &mut GameWindowMana
 
 /// `DisconnectMenu::setPacketRouterTimeoutTime(newTime)`.
 pub fn set_packet_router_timeout_time<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h: &mut H, new_time: i64) {
-    if let Some(c) = win_by_name(wm, h, PACKET_ROUTER_TIMEOUT_CONTROL_NAME) {
+    if let Some(c) = win_by_name(wm, h, if plant(21469) { PACKET_ROUTER_TIMEOUT_LABEL_CONTROL_NAME } else { PACKET_ROUTER_TIMEOUT_CONTROL_NAME }) {
         static_text(wm, h, c, &utf16(&new_time.to_string()));
     }
 }
@@ -246,7 +254,7 @@ pub fn send_chat<H: DisconnectMenuHost>(h: &mut H, text: &[u16]) {
 /// `DisconnectMenu::showChat(text)`.
 pub fn show_chat<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h: &mut H, text: &[u16]) {
     if let Some(display) = win_by_name(wm, h, TEXT_DISPLAY_CONTROL_NAME) {
-        gadget_list_box::add_entry_text(wm, h, display, text, CHAT_NORMAL_COLOR, -1, -1, false);
+        gadget_list_box::add_entry_text(wm, h, display, text, CHAT_NORMAL_COLOR, -1, -1, true);
     }
 }
 
@@ -264,7 +272,7 @@ pub fn remove_player<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h: &mut 
     let text = h.format_with_name(&fmt, player_name);
 
     if let Some(d) = display {
-        gadget_list_box::add_entry_text(wm, h, d, &text, CHAT_NORMAL_COLOR, -1, -1, false);
+        gadget_list_box::add_entry_text(wm, h, d, &text, if plant(21466) { 0xFFFF_FFFFu32 as i32 } else { CHAT_NORMAL_COLOR }, -1, -1, true);
     }
 }
 
@@ -275,7 +283,7 @@ pub fn vote_for_player<H: DisconnectMenuHost>(h: &mut H, slot: i32) {
 
 /// `DisconnectMenu::updateVotes(slot, votes)`.
 pub fn update_votes<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h: &mut H, slot: usize, votes: i32) {
-    if let Some(c) = win_by_name(wm, h, PLAYER_VOTE_COUNT_CONTROL_NAMES[slot]) {
+    if let Some(c) = win_by_name(wm, h, if plant(21465) { PLAYER_TIMEOUT_TEXT_CONTROL_NAMES[slot] } else { PLAYER_VOTE_COUNT_CONTROL_NAMES[slot] }) {
         static_text(wm, h, c, &utf16(&votes.to_string()));
     }
 }

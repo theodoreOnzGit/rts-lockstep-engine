@@ -367,6 +367,7 @@ mod differential {
         drafts_net4(&up, &shim, &dif); // #215 (group net4): the GameSpy persistent-storage, IP enumeration, download manager, ... drafts' references (fn drafts_net4, the end of this module)
         drafts_ui3a(&up, &dif); // #215 (group ui3a): the WOL (GameSpy online) menu drafts' references (fn drafts_ui3a, the end of this module)
         drafts_ui3b(root); // #215 (group ui3b): the GUI callbacks and control-bar drafts of src/drafts/ui (fn drafts_ui3b, the end of this module)
+        drafts_ui4(root); // #215 (group ui4): the list box / text entry / combo box / static text menus of src/drafts/ui, on upstream's own window manager and gadgets (fn drafts_ui4, the end of this module)
 
         // The W3D readers, compiled first so that their references to
         // matrix3d.cpp (upstream_wwmath) and to the RAMFile of
@@ -15057,5 +15058,159 @@ mod differential {
             b.compile(&format!("draft_ui3b_{}", wrapper.trim_start_matches("wrap_draft_").trim_end_matches(".cpp")));
         }
         println!("cargo:rerun-if-changed=differential/shim_ui3b");
+    }
+
+    /// #215 (group ui4): the PROGRAMS (`ui4_<menu>`, one per wrapper) for the menu drafts of `src/drafts/ui` that drive the list box, text entry, combo box and static
+    /// text gadgets (disconnect_window, disconnect_menu, ...). It is #70's window manager program (`wm_ref`: upstream's GameWindowManager.cpp, GameWindow.cpp,
+    /// WinInstanceData.cpp, GameWindowGlobal.cpp and the eleven Gadget*.cpp, cut and edited exactly as there) built with `differential/wrap_wm.cpp`'s
+    /// stand-ins (its text is included, with four asserted edits: its `main` renamed, and its three aborting stand-ins for `WindowLayout::addWindow`,
+    /// `removeWindow` and `GameWindowManager::winCreateLayout` removed, since this program has the real WindowLayout.cpp and its own `winCreateLayout`),
+    /// plus the menus' own files, cut VERBATIM (each anchor asserted once) into OUT_DIR/draft_ui4_gen. Its entry point is stdin/stdout (the
+    /// operations of tests/ui4_common/mod.rs); `UI4_<MENU>_EXE` is each program's path. Everything the menus call outside the cuts is a stand-in listed in
+    /// `differential/ui4_host.h` and the wrappers `differential/wrap_draft_ui4_<menu>.cpp`.
+    fn drafts_ui4(root: &Path) {
+        let up = root.join("upstream/GeneralsMD/Code");
+        let dif = root.join("differential");
+        let shim = dif.join("shim");
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let gen = out_dir.join("draft_ui4_gen");
+        std::fs::create_dir_all(&gen).expect("create draft_ui4_gen");
+        let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+            assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+            let i = text.find(from).expect("from");
+            match to {
+                Some(to) => {
+                    assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                    let j = text.find(to).expect("to");
+                    assert!(i < j, "{file}: a cut must end after it starts");
+                    text[i..j].to_string()
+                }
+                None => text[i..].to_string(),
+            }
+        };
+        let gui = up.join("GameEngine/Source/GameClient/GUI");
+        // the window manager and the gadgets: the same files and the same five MSVC-only edits as `wm_ref` (see the #70 block of `build`)
+        let edits: &[(&str, &[(&str, &str)])] = &[
+            (
+                "Gadget/GadgetListBox.cpp",
+                &[
+                    ("for(j = 0; j < TheKeyboard->MAX_KEY_STATES; ++j)", "for(Int j = 0; j < TheKeyboard->MAX_KEY_STATES; ++j)"),
+                    ("tAndC->string = UnicodeString.TheEmptyString;", "tAndC->string = UnicodeString::TheEmptyString;"),
+                    ("for (Int i=0; i<selectCount && i<list->endPos; ++i)", "Int i;\n\t\t\t\tfor (i=0; i<selectCount && i<list->endPos; ++i)"),
+                    ("\t\t\tfor(i = 0; i < (Int)mData1; i ++)", "\t\t\tfor(Int i = 0; i < (Int)mData1; i ++)"),
+                ],
+            ),
+            ("Gadget/GadgetComboBox.cpp", &[("UnicodeString.TheEmptyString", "UnicodeString::TheEmptyString")]),
+        ];
+        let files = [
+            "GameWindowManager.cpp",
+            "GameWindow.cpp",
+            "WinInstanceData.cpp",
+            "GameWindowGlobal.cpp",
+            "Gadget/GadgetCheckBox.cpp",
+            "Gadget/GadgetComboBox.cpp",
+            "Gadget/GadgetHorizontalSlider.cpp",
+            "Gadget/GadgetListBox.cpp",
+            "Gadget/GadgetProgressBar.cpp",
+            "Gadget/GadgetPushButton.cpp",
+            "Gadget/GadgetRadioButton.cpp",
+            "Gadget/GadgetStaticText.cpp",
+            "Gadget/GadgetTabControl.cpp",
+            "Gadget/GadgetTextEntry.cpp",
+            "Gadget/GadgetVerticalSlider.cpp",
+        ];
+        let mut sources = Vec::new();
+        for f in files {
+            let path = gui.join(f);
+            println!("cargo:rerun-if-changed={}", path.display());
+            let mut text = read_upstream(&path);
+            let marker = "#include \"PreRTS.h\"";
+            assert_eq!(text.matches(marker).count(), 1, "{f}: {marker:?} must occur once");
+            text = text[text.find(marker).expect("marker")..].to_string();
+            for (file, list) in edits {
+                if *file == f {
+                    for (from, to) in *list {
+                        assert_eq!(text.matches(from).count(), 1, "{f}: {from:?} must occur once");
+                        text = text.replace(from, to);
+                    }
+                }
+            }
+            let name = f.replace("Gadget/", "");
+            std::fs::write(gen.join(&name), format!("/* generated by build.rs (drafts_ui4): verbatim from GameEngine/Source/GameClient/GUI/{f} (see build.rs) */\n{text}")).expect("write ui4 wm source");
+            sources.push(gen.join(&name));
+        }
+        // wrap_wm.cpp's text, edited (see the doc comment)
+        println!("cargo:rerun-if-changed=differential/wrap_wm.cpp");
+        let mut base_text = std::fs::read_to_string(dif.join("wrap_wm.cpp")).expect("read wrap_wm.cpp");
+        for (from, to) in [
+            ("int main(void)\n", "int wm_ref_main(void)\n"),
+            ("void WindowLayout::addWindow(GameWindow *) { abort(); }\n", ""),
+            ("void WindowLayout::removeWindow(GameWindow *) { abort(); }\n", ""),
+            ("WindowLayout *GameWindowManager::winCreateLayout(AsciiString) { abort(); }\n", ""),
+            // the Gameinfo images (GameInfoWindow.cpp's random and observer icons) are found as the `Img*` ones are
+            ("\tif (strncasecmp(n, \"img\", 3) != 0) return NULL;\n", "\tif (strncasecmp(n, \"img\", 3) != 0 && strncasecmp(n, \"Gameinfo\", 8) != 0) return NULL;\n"),
+        ] {
+            assert_eq!(base_text.matches(from).count(), 1, "wrap_wm.cpp: {from:?} must occur once");
+            base_text = base_text.replace(from, to);
+        }
+        std::fs::write(gen.join("ui4_wm_base.inc"), format!("/* generated by build.rs (drafts_ui4): differential/wrap_wm.cpp with its main renamed and three aborting stand-ins removed */\n{base_text}")).expect("write ui4_wm_base.inc");
+        // the menus' own files, verbatim
+        let menus = "GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/";
+        let gui_rel = "GameEngine/Source/GameClient/GUI/";
+        let head = "/* generated by build.rs (drafts_ui4): verbatim from upstream (see differential/ui4_host.h and the wrapper that includes it) */\n";
+        let cuts: Vec<(&str, String, &str, Option<&str>, Vec<(&str, &str)>)> = vec![
+            ("wl_cpp.inc", format!("{gui_rel}WindowLayout.cpp"), "WindowLayout::WindowLayout( void )", None, vec![]),
+            ("disconnect_window.inc", format!("{menus}DisconnectWindow.cpp"), "// Private Data -----", None, vec![]),
+            // the one edit: `text.format(fmt, playerName.str())` goes through the shim's glibc vswprintf, whose `%ls` reads 32-bit units
+            ("game_info_window.inc", format!("{menus}GameInfoWindow.cpp"), "static GameWindow *parent = NULL;", None, vec![("staticTextGameName,UnicodeString.TheEmptyString", "staticTextGameName,UnicodeString::TheEmptyString"), ("staticTextMapName,UnicodeString.TheEmptyString", "staticTextMapName,UnicodeString::TheEmptyString")]),
+            ("popup_join_game.inc", format!("{menus}PopupJoinGame.cpp"), "static NameKeyType parentPopupID", None, vec![("munkee.translate(txtInput);", "ui4_translate(munkee, txtInput);")]),
+            ("disconnect_menu.inc", format!("{gui_rel}DisconnectMenu/DisconnectMenu.cpp"), "char *DisconnectMenu::m_playerNameTextControlNames[] = {", None, vec![("text.format(TheGameText->fetch(\"Network:PlayerLeftGame\"), playerName.str());", "ui4_format_ls(text, TheGameText->fetch(\"Network:PlayerLeftGame\"), playerName);")]),
+        ];
+        for (name, path, from, to, edits) in &cuts {
+            println!("cargo:rerun-if-changed={}", up.join(path).display());
+            let text = read_upstream(up.join(path));
+            let mut cut = piece(&text, path, from, *to);
+            for (a, b) in edits {
+                assert_eq!(cut.matches(a).count(), 1, "{path}: edit {a:?} must occur once");
+                cut = cut.replace(a, b);
+            }
+            std::fs::write(gen.join(name), format!("{head}{cut}")).expect("write a ui4 cut");
+        }
+        println!("cargo:rerun-if-changed=differential/ui4_host.h");
+        println!("cargo:rerun-if-changed=differential/ui4_main.h");
+        println!("cargo:rerun-if-changed=differential/shim_ui4");
+        let obj = out_dir.join("ui4_obj");
+        std::fs::create_dir_all(&obj).expect("create ui4_obj");
+        let configure = |b: &mut cc::Build| {
+            base(b);
+            b.out_dir(&obj)
+                .pic(false)
+                .flag("-fpermissive")
+                .flag("-fno-pie")
+                .include(&gen)
+                .include(dif.join("shim_ui4"))
+                .include(dif.join("shim_wm"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(gui.join("Gadget"))
+                .include(&dif);
+        };
+        let mut b = cc::Build::new();
+        configure(&mut b);
+        let wm_objs = b.files(&sources).compile_intermediates();
+        // one program per wrapper, each with its own menus' cuts and stand-ins, over the same window manager objects
+        for (wrapper, env) in [("wrap_draft_ui4_disconnect.cpp", "UI4_DISCONNECT_EXE"), ("wrap_draft_ui4_join.cpp", "UI4_JOIN_EXE"), ("wrap_draft_ui4_gameinfo.cpp", "UI4_GAMEINFO_EXE")] {
+            println!("cargo:rerun-if-changed=differential/{wrapper}");
+            let mut b = cc::Build::new();
+            configure(&mut b);
+            let objs = b.file(dif.join(wrapper)).compile_intermediates();
+            let exe = out_dir.join(wrapper.trim_start_matches("wrap_draft_").trim_end_matches(".cpp"));
+            let mut link = b.get_compiler().to_command();
+            link.arg("-no-pie").arg("-o").arg(&exe).args(&wm_objs).args(&objs);
+            let st = link.status().expect("link a ui4 program");
+            assert!(st.success(), "linking {wrapper} failed");
+            println!("cargo:rustc-env={env}={}", exe.display());
+        }
     }
 }
