@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_disconnect.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/DisconnectWindow.cpp
@@ -10,6 +11,7 @@ use crate::client::gadget_text_entry;
 use crate::client::shell::ShellHost;
 use crate::client::window_manager::{data_win, ggm, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
+use crate::logic::modules::plant;
 
 /// The file's statics (`NAMEKEY_INVALID` is 0, windows `NULL`). `disconnectMenuLayout` is a layout index.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -50,7 +52,9 @@ fn init_disconnect_window<H: DisconnectWindowHost>(wm: &mut GameWindowManager, h
 
     if let Some(w) = text_entry_window {
         gadget_text_entry::set_text(wm, h, Some(w), &[]);
-        wm.win_set_focus(h, Some(w));
+        if !plant(21478) {
+            wm.win_set_focus(h, Some(w));
+        }
     }
 
     let button_quit_id = ShellHost::name_to_key(h, b"DisconnectScreen.wnd:ButtonQuitGame") as i32;
@@ -86,13 +90,15 @@ pub fn show_disconnect_window<H: DisconnectWindowHost>(wm: &mut GameWindowManage
     wm.layout_hide(layout, false);
 
     let d = h.disconnect_window().clone();
-    for w in d.button_vote_player_window.iter().flatten() {
+    for w in d.button_vote_player_window.iter().take(if plant(21471) { 6 } else { 7 }).flatten() {
         wm.win_enable(*w, true);
     }
     if let Some(w) = d.button_quit_window {
         wm.win_enable(w, true);
     }
-    wm.layout_bring_forward(layout);
+    if !plant(21472) {
+        wm.layout_bring_forward(layout);
+    }
 
     if let Some(display) = d.text_display_window {
         gadget_list_box::reset(wm, h, display);
@@ -104,7 +110,7 @@ pub fn show_disconnect_window<H: DisconnectWindowHost>(wm: &mut GameWindowManage
 /// `HideDisconnectWindow()` (DisconnectWindow.cpp:140): loads the layout if needed (and inits), then hides it.
 pub fn hide_disconnect_window<H: DisconnectWindowHost>(wm: &mut GameWindowManager, h: &mut H) {
     let Some(layout) = ensure_layout(wm, h) else { return };
-    wm.layout_hide(layout, true);
+    wm.layout_hide(layout, plant(21477) != true);
 }
 
 /// `DisconnectControlInput(window, msg, mData1, mData2)`.
@@ -123,12 +129,12 @@ pub fn disconnect_control_system<H: DisconnectWindowHost>(wm: &mut GameWindowMan
             if control_id == d.button_quit_id {
                 crate::drafts::ui::disconnect_menu::quit_game(h);
                 if let Some(w) = d.button_quit_window {
-                    wm.win_enable(w, false);
+                    wm.win_enable(w, plant(21473));
                 }
             } else {
                 for i in 0..7 {
                     if control_id == d.button_vote_player_id[i] {
-                        crate::drafts::ui::disconnect_menu::vote_for_player(h, i as i32);
+                        crate::drafts::ui::disconnect_menu::vote_for_player(h, i as i32 + i32::from(plant(21474)));
                         if let Some(w) = d.button_vote_player_window[i] {
                             wm.win_enable(w, false);
                         }
@@ -147,11 +153,13 @@ pub fn disconnect_control_system<H: DisconnectWindowHost>(wm: &mut GameWindowMan
                 // read the user's input
                 let input = gadget_text_entry::get_text(wm, h, d.text_entry_window);
                 // Clear the text entry line
-                gadget_text_entry::set_text(wm, h, d.text_entry_window, &[]);
+                if !plant(21476) {
+                    gadget_text_entry::set_text(wm, h, d.text_entry_window, &[]);
+                }
                 // Clean up the text (remove leading/trailing chars, etc)
-                let input = crate::client::replay_menu::trim(&input);
+                let input = if plant(21475) { input } else { crate::client::replay_menu::trim(&input) };
                 // Echo the user's input to the chat window
-                if !input.is_empty() {
+                if !input.is_empty() || plant(21479) {
                     crate::drafts::ui::disconnect_menu::send_chat(h, &input);
                 }
             }
