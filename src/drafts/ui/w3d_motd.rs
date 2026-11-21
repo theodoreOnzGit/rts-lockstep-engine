@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_motd.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp
@@ -7,6 +8,7 @@
 use crate::client::shell::ShellHost;
 use crate::client::window_manager::{data_win, ggm, gwm, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
+use crate::logic::modules::plant;
 
 /// `static NameKeyType closeButtonID`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -23,19 +25,30 @@ pub fn motd_system<H: MotdHost>(wm: &mut GameWindowManager, h: &mut H, window: W
     match msg {
         gwm::CREATE => {
             // load id's needed
-            let id = h.name_to_key(b"MOTD.wnd:CloseMOTD") as i32;
-            h.motd().close_button_id = id;
+            let id = h.name_to_key(if plant(21093) { b"MOTD.wnd:CloseMotd" } else { b"MOTD.wnd:CloseMOTD" }) as i32;
+            if !plant(21091) {
+                h.motd().close_button_id = id;
+            }
         }
-        gwm::DESTROY => {}
+        gwm::DESTROY => {
+            if plant(21095) {
+                return MsgHandled::Ignored;
+            }
+        }
         ggm::GBM_SELECTED => {
             let Some(control) = data_win(d1) else { return MsgHandled::Handled };
             let control_id = wm.win(control).id;
-            if control_id == h.motd().close_button_id {
+            if (control_id == h.motd().close_button_id) != plant(21097) {
                 let hidden = wm.is_hidden(Some(window));
-                wm.win_hide(window, !hidden);
+                let target = if plant(21094) { control } else { window };
+                wm.win_hide(target, if plant(21092) { true } else { !hidden });
             }
         }
-        _ => return MsgHandled::Ignored,
+        _ => {
+            if !plant(21096) {
+                return MsgHandled::Ignored;
+            }
+        }
     }
     MsgHandled::Handled
 }

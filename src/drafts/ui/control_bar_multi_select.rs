@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_multi_select.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarMultiSelect.cpp
@@ -7,6 +8,7 @@
 use crate::client::control_bar_command::{opt, CommandAvailability};
 use crate::client::window_manager::{GameWindowManager, GuiHost};
 use crate::client::window_script::win_status;
+use crate::logic::modules::plant;
 
 pub use super::control_bar_structure_inventory::MAX_COMMANDS_PER_SET;
 
@@ -50,7 +52,9 @@ pub trait MultiSelectHost: GuiHost {
 /// `ControlBar::resetCommonCommandData()` (ControlBarMultiSelect.cpp:55).
 pub fn reset_common_command_data<H: MultiSelectHost>(wm: &mut GameWindowManager, h: &mut H) {
     for i in 0..MAX_COMMANDS_PER_SET {
-        h.set_common_command(i, None);
+        if !plant(21131) {
+            h.set_common_command(i, None);
+        }
         // Clear out any remnant overlays.
         if let Some(w) = h.command_window(i) {
             h.gadget_button_clear_overlay(wm, w);
@@ -74,7 +78,9 @@ pub fn add_common_commands<H: MultiSelectHost>(wm: &mut GameWindowManager, h: &m
         for i in 0..MAX_COMMANDS_PER_SET {
             h.set_common_command(i, None);
             if let Some(w) = h.command_window(i) {
-                wm.win_hide(w, true);
+                if !plant(21134) {
+                    wm.win_hide(w, true);
+                }
             }
         }
         return;
@@ -91,13 +97,15 @@ pub fn add_common_commands<H: MultiSelectHost>(wm: &mut GameWindowManager, h: &m
 
             // add if present and can be used in a multi select
             if let Some(c) = command {
-                if h.command_options(c) & OK_FOR_MULTI_SELECT != 0 {
+                if h.command_options(c) & (if plant(21133) { opt::CHECK_LIKE } else { OK_FOR_MULTI_SELECT }) != 0 {
                     // put it in the common command set
                     h.set_common_command(i, Some(c));
 
                     // show and enable this control
                     wm.win_hide(w, false);
-                    wm.win_enable(w, true);
+                    if !plant(21132) {
+                        wm.win_enable(w, true);
+                    }
 
                     // set the command into the control
                     h.set_control_command(wm, w, Some(c));
@@ -112,7 +120,11 @@ pub fn add_common_commands<H: MultiSelectHost>(wm: &mut GameWindowManager, h: &m
             let command = command_set.get(i).copied().flatten();
             let common = h.common_command(i);
 
-            let attack_move = command.map_or(false, |c| h.command_is_attack_move(c)) || common.map_or(false, |c| h.command_is_attack_move(c));
+            let attack_move = if plant(21135) {
+                command.map_or(false, |c| h.command_is_attack_move(c)) && common.map_or(false, |c| h.command_is_attack_move(c))
+            } else {
+                command.map_or(false, |c| h.command_is_attack_move(c)) || common.map_or(false, |c| h.command_is_attack_move(c))
+            };
 
             // Kris: When any units have attack move, they all get it.
             if attack_move && common.is_none() {
@@ -125,7 +137,7 @@ pub fn add_common_commands<H: MultiSelectHost>(wm: &mut GameWindowManager, h: &m
 
                 // set the command into the control
                 h.set_control_command(wm, w, command);
-            } else if command != common && !attack_move {
+            } else if command != common && (!attack_move || plant(21136)) {
                 // if this command does not match the command that is in the common command set then *neither* this
                 // command OR the command in the common command set are really common commands: remove the one
                 // that has been stored in the common set
@@ -166,7 +178,7 @@ pub fn populate_multi_select<H: MultiSelectHost>(wm: &mut GameWindowManager, h: 
 
         // add command for this drawable; we're not considering objects that are currently in the process of being
         // sold as those objects can't be issued anymore commands
-        if !h.is_sold(obj0) {
+        if !h.is_sold(obj0) || plant(21137) {
             // add the common commands of this drawable to the common command set
             add_common_commands(wm, h, draw, first_drawable);
 
@@ -175,6 +187,9 @@ pub fn populate_multi_select<H: MultiSelectHost>(wm: &mut GameWindowManager, h: 
 
             // keep track of the portrait images, if all units selected have the same portrait we will display it in
             // the right HUD, otherwise we won't
+            if plant(21138) {
+                portrait_obj = Some(obj0);
+            }
             if !portrait_set {
                 portrait = h.drawable_portrait_image(draw);
                 portrait_obj = Some(obj0);
@@ -232,7 +247,7 @@ pub fn update_context_multi_select<H: MultiSelectHost>(wm: &mut GameWindowManage
                 }
                 CommandAvailability::CantAfford => {
                     wm.win_enable(win, false);
-                    wm.win_set_status(win, win_status::ALWAYS_COLOR);
+                    wm.win_set_status(win, if plant(21139) { win_status::NOT_READY } else { win_status::ALWAYS_COLOR });
                 }
                 _ => wm.win_enable(win, true),
             }
@@ -263,6 +278,6 @@ pub fn update_context_multi_select<H: MultiSelectHost>(wm: &mut GameWindowManage
         }
 
         // check the count of objects that can do the command and enable/disable the control
-        wm.win_enable(w, objects_that_can_do_command[i] > 0);
+        wm.win_enable(w, objects_that_can_do_command[i] > if plant(21140) { 1 } else { 0 });
     }
 }
