@@ -189,12 +189,12 @@ pub fn populate_custom_ladder_list_box<H: PopupHostGameHost>(wm: &mut GameWindow
 
     let recent = h.ladder_pref_recent_ladders();
     for (addr, port) in recent {
-        if addr == last_addr && port == last_port && !plant(22703) {
+        if addr == last_addr && port == last_port {
             continue;
         }
         if let Some(info) = h.ladder_find(&addr, port) {
             if info.index > 0 && info.valid_custom && !used.contains(&info.index) {
-                list_add_ladder(wm, h, win, &mut used, &info, favorite_color);
+                list_add_ladder(wm, h, win, &mut used, &info, if plant(22703) { special_color } else { favorite_color });
             }
         }
     }
@@ -494,7 +494,7 @@ pub fn create_game<H: PopupHostGameHost>(wm: &mut GameWindowManager, h: &mut H) 
     h.game_spy_game_set_game_name(&game_name);
 
     let passwd_w = te::get_text(wm, h, p.text_entry_game_password);
-    let passwd: Vec<u8> = passwd_w.iter().map(|&c| c as u8).filter(|&c| c != 0).collect(); // passwd.translate(...): a 0 byte appends nothing
+    let passwd: Vec<u8> = passwd_w.iter().map(|&c| c as u8).filter(|&c| c != 0 || plant(22719)).collect(); // passwd.translate(...): a 0 byte appends nothing
 
     let mut checked = |c: Option<WinId>, h: &mut H| match c {
         Some(c) => gadget::check_box_is_checked(wm, c),

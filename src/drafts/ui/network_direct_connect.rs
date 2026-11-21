@@ -91,7 +91,7 @@ fn scan_ip(s: &[u16]) -> (Vec<i32>, bool) {
     let mut overflow = false;
     let mut p = 0;
     for n in 0..4 {
-        while p < s.len() && is_space(s[p]) {
+        while p < s.len() && is_space(s[p]) && !plant(22674) {
             p += 1;
         }
         let mut neg = false;
@@ -127,14 +127,14 @@ fn scan_ip(s: &[u16]) -> (Vec<i32>, bool) {
 /// `nextToken(&tok, seps)` of `AsciiString` / `UnicodeString` (AsciiString.cpp:368, UnicodeString.cpp:330): leading separators skipped, then the run up to the next separator (the
 /// token stays empty when there is none).
 fn next_token<T: Copy + PartialEq>(s: &[T], seps: &[T]) -> Vec<T> {
-    let start = s.iter().position(|c| !seps.contains(c)).unwrap_or(s.len());
+    let start = if plant(22673) { 0 } else { s.iter().position(|c| !seps.contains(c)).unwrap_or(s.len()) };
     let end = s[start..].iter().position(|c| seps.contains(c)).map_or(s.len(), |p| start + p);
     s[start..end].to_vec()
 }
 
 /// `AsciiString::translate(UnicodeString)`: each unit's low byte, a 0 appending nothing (`concat((char)c)`).
 fn translate(s: &[u16]) -> Vec<u8> {
-    s.iter().map(|&c| c as u8).filter(|&c| c != 0).collect()
+    s.iter().map(|&c| c as u8).filter(|&c| c != 0 || plant(22675)).collect()
 }
 
 /// `"%d.%d.%d.%d"` of a packed address.

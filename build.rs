@@ -15250,6 +15250,19 @@ mod differential {
             ("qp_from.inc", qp.clone(), "// Convert ascii quoted-printable strings into unicode strings", Some("// Convert ascii quoted-printable strings into ascii strings"), vec![]),
             ("lan_user.inc", lan.clone(), "UnicodeString LANPreferences::getUserName(void)", Some("Int LANPreferences::getPreferredColor(void)"), vec![]),
             ("lan_ips.inc", lan.clone(), "Int LANPreferences::getNumRemoteIPs(void)", Some("static const char superweaponRestrictionKey[]"), vec![]),
+            ("host_game.inc", format!("{menus}PopupHostGame.cpp"), "static NameKeyType parentPopupID", None, vec![]),
+            (
+                "ladder_select.inc",
+                format!("{menus}PopupLadderSelect.cpp"),
+                "static NameKeyType parentID",
+                None,
+                vec![
+                    ("line.format(TheGameText->fetch(\"GUI:LadderNameAndSize\"), info->name.str(), info->playersPerTeam, info->playersPerTeam);", "ui5_fmt_name(line, TheGameText->fetch(\"GUI:LadderNameAndSize\"), info->name, info->playersPerTeam, info->playersPerTeam);"),
+                    ("line.format(TheGameText->fetch(\"GUI:LadderURL\"), info->homepageURL.str());", "ui5_fmt_text(line, TheGameText->fetch(\"GUI:LadderURL\"), info->homepageURL);"),
+                    ("line.format(TheGameText->fetch(\"GUI:LadderMinWins\"), info->minWins);", "ui5_fmt_int(line, TheGameText->fetch(\"GUI:LadderMinWins\"), info->minWins);"),
+                    ("line.format(TheGameText->fetch(\"GUI:LadderMaxWins\"), info->maxWins);", "ui5_fmt_int(line, TheGameText->fetch(\"GUI:LadderMaxWins\"), info->maxWins);"),
+                ],
+            ),
             (
                 "ndc.inc",
                 format!("{menus}NetworkDirectConnect.cpp"),
@@ -15296,7 +15309,7 @@ mod differential {
         let mut b = cc::Build::new();
         configure(&mut b);
         let wm_objs = b.files(&sources).compile_intermediates();
-        for (wrapper, env) in [("wrap_draft_ui5_ndc.cpp", "UI5_NDC_EXE")] {
+        for (wrapper, env) in [("wrap_draft_ui5_ndc.cpp", "UI5_NDC_EXE"), ("wrap_draft_ui5_host.cpp", "UI5_HOST_EXE"), ("wrap_draft_ui5_ladder.cpp", "UI5_LADDER_EXE")] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();
             configure(&mut b);

@@ -146,6 +146,7 @@ impl ShellHost for Host {
             b"Menus/BlankWindow.wnd" => self.log.push_str("shell map 0\n"),
             b"pushed" => {
                 let _ = writeln!(self.log, "shell complete {}", self.layout);
+                return Some(self.layout);
             }
             _ => panic!("an unexpected layout"),
         }
@@ -339,7 +340,7 @@ fn hx(s: &str) -> String {
 /// combo texts: well-formed, malformed and odd ones, as units in hex
 fn combo_texts() -> Vec<String> {
     let mut v: Vec<String> = [
-        "1.2.3.4", "10.0.0.1:Bob", "192.168.0.1(bob)", "1.2.3.4(x)", "999.1.1.1", "1.2", "", "abc", " 5.6.7.8", "5. 6.7.8", "+1.2.3.4", "(1.2.3.4)", ":1.2.3.4", "1.2.3.4:", "::1.2.3.4:5", "1.2.3.4(",
+        "1.2.3.4", "1.2.3.5", "1.2.3.5:b", "1.2.3.4:b", "10.0.0.1:Bob", "192.168.0.1(bob)", "1.2.3.4(x)", "999.1.1.1", "1.2", "", "abc", " 5.6.7.8", "5. 6.7.8", "+1.2.3.4", "(1.2.3.4)", ":1.2.3.4", "1.2.3.4:", "::1.2.3.4:5", "1.2.3.4(",
         "12.34.56.78:abcdef", "((1.2.3.4", "1.2.3.4:b(c)", "10.0.0.1", "10.0.0.1:Al", "-1.2.3.4", "1.2.3.4.5", "1 .2.3.4", "255.255.255.255", "8.8.8.8:Al(1)", "(:1.2.3.4", "1.2.3.4 (z)",
     ]
     .iter()
@@ -363,6 +364,7 @@ fn name_texts() -> Vec<String> {
 
 struct Scene {
     ops: Vec<String>,
+    named: Vec<(usize, String)>,
     /// (index, kind, x, y, w, h): 0 top-level, 1 back, 2 host, 3 join, 4 name entry, 5 static, 6 combo
     wins: Vec<(usize, u8, i32, i32, i32, i32)>,
 }
@@ -457,7 +459,7 @@ fn gen_scene(g: &mut Gen) -> Scene {
     }
     ops.push(l);
     ops.push(format!("@ nd online {}", pick(g, &IPS)));
-    Scene { ops, wins }
+    Scene { ops, named, wins }
 }
 
 fn gen_op(g: &mut Gen, s: &Scene) -> String {
@@ -466,6 +468,20 @@ fn gen_op(g: &mut Gen, s: &Scene) -> String {
     let buttons: Vec<(usize, u8, i32, i32, i32, i32)> = s.wins.iter().filter(|w| (1..=3).contains(&w.1)).cloned().collect();
     let any = |g: &mut Gen| pick(g, &s.wins).0;
     let menu_win = |g: &mut Gen| pick(g, &s.wins.iter().filter(|w| w.1 == 0).map(|w| w.0).collect::<Vec<_>>());
+    let by_name = |n: &str| s.named.iter().find(|(_, k)| k == n).map(|(i, _)| *i);
+    if g.below(100) < 14 && !combo.is_empty() {
+        // composites: the combo's entries and text set, then the press that reads them
+        let win = menu_win(g);
+        let texts = ["1.2.3.4", "1.2.3.5", "1.2.3.5:b", "1.2.3.4:b", "10.0.0.1(bob)", "10.0.0.1", "(1.2.3.4)", "5. 6.7.8", "+1.2.3.4", "1.2.3.4(", "300.4.5.6", "7.7.7.7:a"];
+        let (a, b, c) = (hx(pick(g, &texts)), hx(pick(g, &texts)), hx(pick(g, &texts)));
+        if let Some(join) = by_name("ButtonJoin") {
+            return match g.below(3) {
+                0 => format!("@ nd cbadd {} {a} 16777215\n@ nd cbadd {} {b} 16777215\n@ nd cbtext {} {c}\n@ sys 0 {win} {} 1 {join} 0", combo[0], combo[0], combo[0], ggm::GBM_SELECTED),
+                1 => format!("@ nd cbadd {} {a} 16777215\n@ nd cbadd {} {b} 16777215\ns {} {} 0\n@ sys 0 {win} {} 1 {join} 0", combo[0], combo[0], combo[0], g.below(3), ggm::GBM_SELECTED),
+                _ => format!("@ nd cbtext {} {c}\n@ sys 0 {win} {} 1 {join} 0", combo[0], ggm::GBM_SELECTED),
+            };
+        }
+    }
     match g.below(100) {
         0..=11 => "@ nd init".into(),
         12..=17 => format!("@ nd shutdown {}", g.below(2)),
@@ -648,7 +664,8 @@ fn network_direct_connect_matches_upstream() {
         let steps = 4 + g.below(19);
         let mut ops = scene.ops.clone();
         for _ in 0..steps {
-            ops.push(gen_op(&mut g, &scene));
+            let o = gen_op(&mut g, &scene);
+            ops.extend(o.split('\n').map(str::to_string));
         }
         let mut wm = GameWindowManager::new((800, 600));
         wm.transitions.groups.push(TransitionGroup { name: GROUP.to_vec(), ..Default::default() });
@@ -657,6 +674,9 @@ fn network_direct_connect_matches_upstream() {
         let mut run = ops.len();
         for (i, op) in ops.iter().enumerate() {
             h.shell.pending_push = true;
+            if !h.shell.screen_stack.is_empty() {
+                h.shell.screen_stack = vec![h.layout];
+            }
             h.shell.pending_push_name = b"pushed".to_vec();
             if op.starts_with("@ nd") || op.starts_with("@ sys") || op.starts_with("@ inp") {
                 menu_op(&mut wm, &mut h, op);

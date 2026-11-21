@@ -314,6 +314,8 @@ fn name_texts() -> Vec<String> {
 
 struct Scene {
     ops: Vec<String>,
+    /// the first window of each name
+    named: Vec<(usize, String)>,
     /// (index, kind, x, y, w, h): 0 top-level, 1 name entry, 2 other entry, 3 create, 4 cancel, 5 check box, 6 combo, 7 list box
     wins: Vec<(usize, u8, i32, i32, i32, i32)>,
 }
@@ -323,6 +325,7 @@ fn pick<T: Clone>(g: &mut Gen, v: &[T]) -> T {
 }
 
 fn gen_scene(g: &mut Gen) -> Scene {
+    NEXT_INDEX.store(1, std::sync::atomic::Ordering::Relaxed);
     let mut ops = Vec::new();
     let mut wins: Vec<(usize, u8, i32, i32, i32, i32)> = Vec::new();
     let en = win_status::ENABLED;
@@ -406,16 +409,21 @@ fn gen_scene(g: &mut Gen) -> Scene {
         ops.push("@ nm 0 PopupHostGame.wnd:ParentHostPopUp".to_string());
     }
     scene_state(g, &mut ops);
-    Scene { ops, wins }
+    let named: Vec<(usize, String)> = named.into_iter().rev().collect::<Vec<_>>().into_iter().rev().collect();
+    Scene { ops, named, wins }
 }
+
+static NEXT_INDEX: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(1);
 
 const ADDRS: [&str; 3] = ["a.b", "c.d", "e.f"];
 
 fn scene_state(g: &mut Gen, ops: &mut Vec<String>) {
     for _ in 0..g.below(7) {
         let kind = g.below(3);
-        let idx = if kind == 2 { -(1 + g.below(3) as i32) } else { 1 + g.below(4) as i32 };
-        ops.push(format!("@ hg ladder {kind} {idx} {} {} {} {}", g.below(3), pick(g, &ADDRS), g.below(4) != 0, hx(&format!("L{}", g.below(100)))));
+        // (the draft keys a ladder by its index, as upstream's pointers: unique within a case)
+        let n = NEXT_INDEX.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let idx = if kind == 2 { -n } else { n };
+        ops.push(format!("@ hg ladder {kind} {idx} {} {} {} {}", g.below(3), pick(g, &ADDRS), u8::from(g.below(4) != 0), hx(&format!("L{}", g.below(100)))));
     }
     for _ in 0..g.below(4) {
         ops.push(format!("@ hg recent {} {}", pick(g, &ADDRS), g.below(3)));
@@ -434,6 +442,20 @@ fn gen_op(g: &mut Gen, s: &Scene) -> String {
     let clickable: Vec<(usize, u8, i32, i32, i32, i32)> = s.wins.iter().filter(|w| (3..=5).contains(&w.1)).cloned().collect();
     let any = |g: &mut Gen| pick(g, &s.wins).0;
     let menu_win = |g: &mut Gen| pick(g, &s.wins.iter().filter(|w| w.1 == 0).map(|w| w.0).collect::<Vec<_>>());
+    let by_name = |n: &str| s.named.iter().find(|(_, k)| k == n).map(|(i, _)| *i);
+    if g.below(100) < 14 {
+        // composites: a text set, then the message that reads it
+        let t = pick(g, &name_texts());
+        let t2 = pick(g, &name_texts());
+        let win = menu_win(g);
+        if let (Some(name), Some(pw), Some(create)) = (by_name("TextEntryGameName"), by_name("TextEntryGamePassword"), by_name("ButtonCreateGame")) {
+            return match g.below(3) {
+                0 => format!("@ tx {name} {t}\n@ tx {pw} {t2}\n@ sys 0 {win} {} 1 {create} 0", ggm::GBM_SELECTED),
+                1 => format!("@ tx {name} {t}\n@ sys 0 {win} {} 1 {name} 0", rts_lockstep_engine::client::gadget_text_entry::gem::UPDATE_TEXT),
+                _ => format!("@ tx {name} {t}\n@ hg init\n@ sys 0 {win} {} 1 {create} 0", ggm::GBM_SELECTED),
+            };
+        }
+    }
     match g.below(100) {
         0..=11 => "@ hg init".into(),
         12..=19 => "@ hg update".into(),
@@ -614,7 +636,8 @@ fn popup_host_game_matches_upstream() {
         let steps = 4 + g.below(19);
         let mut ops = scene.ops.clone();
         for _ in 0..steps {
-            ops.push(gen_op(&mut g, &scene));
+            let o = gen_op(&mut g, &scene);
+            ops.extend(o.split('\n').map(str::to_string));
         }
         let mut wm = GameWindowManager::new((800, 600));
         let mut h = Host { cp: CPref { ao: true, us: true, ..Default::default() }, ..Default::default() };
