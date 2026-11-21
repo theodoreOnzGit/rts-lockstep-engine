@@ -35,14 +35,13 @@ void u3aLog(const char *fmt, ...)
 	g_log += "\n";
 }
 
-/* a copy shares the text (upstream's AsciiString is reference counted: `getLocalEmail().str()` stays valid while the owner keeps its copy) */
+class UnicodeString;
 class AsciiString
 {
 public:
-	std::shared_ptr<std::string> p;
-	std::string s;   /* the text for the stand-ins' own reads */
-	AsciiString() : p(new std::string()) {}
-	AsciiString(const char *c) : p(new std::string(c)), s(c) {}
+	std::string s;
+	AsciiString() {}
+	AsciiString(const char *c) : s(c) {}
 	void format(const char *fmt, ...)
 	{
 		char b[1024];
@@ -50,11 +49,43 @@ public:
 		va_start(a, fmt);
 		vsnprintf(b, sizeof b, fmt, a);
 		va_end(a);
-		p.reset(new std::string(b));
 		s = b;
 	}
-	const char *str() const { return p->c_str(); }
+	const char *str() const { return s.c_str(); }
+	/* (the members below follow AsciiString.cpp: set copies through a temporary, so `a = a.str() + 1` shifts the text left) */
+	AsciiString &operator=(const char *c) { std::string t(c); s = t; return *this; }
+	Bool isEmpty() const { return s.empty(); }
+	Int getLength() const { return (Int)s.size(); }
+	char getCharAt(Int i) const { return s[i]; }
+	void removeLastChar() { if (!s.empty()) s.erase(s.size() - 1); }
+	void clear() { s.clear(); }
+	Bool startsWith(const char *p) const { return s.compare(0, strlen(p), p) == 0 && s.size() >= strlen(p); }
+	Int compare(const char *o) const { return strcmp(s.c_str(), o); }
+	void trim()   /* AsciiString::trim: isspace at both ends */
+	{
+		size_t b = 0;
+		while (b < s.size() && isspace((unsigned char)s[b])) ++b;
+		s.erase(0, b);
+		while (!s.empty() && isspace((unsigned char)s[s.size() - 1])) s.erase(s.size() - 1);
+	}
+	Bool nextToken(AsciiString *tok, const char *seps)   /* AsciiString::nextToken */
+	{
+		if (isEmpty() || tok == this) return false;
+		if (seps == NULL) seps = " \n\r\t";
+		size_t start = 0;
+		while (start < s.size() && strchr(seps, s[start])) ++start;
+		size_t end = start;
+		while (end < s.size() && !strchr(seps, s[end])) ++end;
+		if (end > start) { tok->s = s.substr(start, end - start); s = s.substr(end); return true; }
+		s.clear();
+		tok->s.clear();
+		return false;
+	}
 };
+inline Bool operator==(const AsciiString &a, const char *b) { return a.s == b; }
+inline Bool operator==(const AsciiString &a, const AsciiString &b) { return a.s == b.s; }
+inline Bool operator<(const AsciiString &a, const AsciiString &b) { return strcmp(a.s.c_str(), b.s.c_str()) < 0; }
+static size_t wlen(const WideChar *p) { size_t n = 0; while (p[n]) ++n; return n; }
 class UnicodeString
 {
 public:
@@ -62,9 +93,48 @@ public:
 	static const UnicodeString TheEmptyString;
 	UnicodeString() {}
 	UnicodeString(const WideChar *w) : s(w) {}
+	UnicodeString(const wchar_t *w) { for (; *w; ++w) s += (WideChar)*w; }   /* the L"..." literals: 16-bit units, as MSVC's */
+	/* UnicodeString::format(fmt, ...): the case's formats are ASCII with `%d` and `%%` only (what _vsnwprintf does with them) */
+	void formatv(const UnicodeString &fmt, va_list args)
+	{
+		std::string f;
+		for (size_t i = 0; i < fmt.s.size(); ++i) f += (char)fmt.s[i];
+		char b[4096];
+		vsnprintf(b, sizeof b, f.c_str(), args);
+		s.clear();
+		for (const char *c = b; *c; ++c) s += (WideChar)(unsigned char)*c;
+	}
+	void format(UnicodeString fmt, ...) { va_list a; va_start(a, fmt); formatv(fmt, a); va_end(a); }
 	Bool isEmpty() const { return s.empty(); }
+	Int getLength() const { return (Int)s.size(); }
+	WideChar getCharAt(Int i) const { return s[i]; }
+	void removeLastChar() { if (!s.empty()) s.erase(s.size() - 1); }
+	void clear() { s.clear(); }
 	void translate(const AsciiString &a) { s.clear(); for (size_t i = 0; i < a.s.size(); ++i) s += (WideChar)(unsigned char)a.s[i]; }
+	/* UnicodeString::trim: iswspace (the C locale's: space and \t \n \v \f \r) at both ends */
+	static Bool isWSpace(WideChar c) { return c == 0x20 || (c >= 9 && c <= 13); }
+	void trim()
+	{
+		size_t b = 0;
+		while (b < s.size() && isWSpace(s[b])) ++b;
+		s.erase(0, b);
+		while (!s.empty() && isWSpace(s[s.size() - 1])) s.erase(s.size() - 1);
+	}
+	Bool nextToken(UnicodeString *tok, UnicodeString delimiters)   /* UnicodeString::nextToken */
+	{
+		if (isEmpty() || tok == this) return false;
+		if (delimiters.isEmpty()) { static const WideChar d[] = { ' ', '\t', '\n', '\r', 0 }; delimiters = UnicodeString(d); }
+		size_t start = 0;
+		while (start < s.size() && delimiters.s.find(s[start]) != std::basic_string<WideChar>::npos) ++start;
+		size_t end = start;
+		while (end < s.size() && delimiters.s.find(s[end]) == std::basic_string<WideChar>::npos) ++end;
+		if (end > start) { tok->s = s.substr(start, end - start); s = s.substr(end); return true; }
+		s.clear();
+		tok->s.clear();
+		return false;
+	}
 };
+inline Bool operator==(const UnicodeString &a, const UnicodeString &b) { return a.s == b.s; }
 const UnicodeString UnicodeString::TheEmptyString;
 std::string narrow(const UnicodeString &u)
 {
@@ -102,6 +172,7 @@ public:
 	Bool winIsHidden() { return BitTest( m_status, WIN_STATUS_HIDDEN ); }
 	void freeImages() {}
 	Int winHide( Bool hide );
+	Int winEnable( Bool enable );
 };
 
 struct ModalWindow
@@ -153,6 +224,7 @@ std::map<Int, std::string> g_keyNames;
 class NameKeyGenerator
 {
 public:
+	NameKeyType nameToKey(const char *c) { return nameToKey(AsciiString(c)); }
 	NameKeyType nameToKey(const AsciiString &n)
 	{
 		std::map<std::string, Int>::iterator it = g_keys.find(n.s);
@@ -167,13 +239,15 @@ NameKeyGenerator g_nameKeys;
 NameKeyGenerator *TheNameKeyGenerator = &g_nameKeys;
 
 /* ---- the game text ---- */
+std::map<std::string, std::string> g_gameTexts;   /* the case's table (ASCII), else `T:` and the label */
 class GameText
 {
 public:
 	UnicodeString fetch(const char *l)
 	{
 		UnicodeString u;
-		AsciiString a((std::string("T:") + l).c_str());
+		std::map<std::string, std::string>::iterator it = g_gameTexts.find(l);
+		AsciiString a(it != g_gameTexts.end() ? it->second.c_str() : (std::string("T:") + l).c_str());
 		u.translate(a);
 		return u;
 	}
@@ -238,6 +312,7 @@ void resetWindows()
 	g_layout.m_hidden = FALSE;
 	g_keys.clear();
 	g_keyNames.clear();
+	g_gameTexts.clear();
 	g_log.clear();
 }
 const char *msgName(UnsignedInt m)

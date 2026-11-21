@@ -1,4 +1,8 @@
 //! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! Of this file, `update_server_display`, `enable_controls`, `grab_ubyte`, `handle_num_players_online` (with `update_num_players_online`), `handle_overall_stats` (with
+//! `find_next_number` and `atof`) and `update_overall_stats` are DIFFERENTIAL-TESTED (#215, 20,000 cases, tests/differential_draft_wol_welcome.rs);
+//! `shutdown_complete`, `update_local_player_stats` and `WOLWelcomeMenuInit/Shutdown/Update/Input/System` are still untested (the GameSpy peer, buddy and
+//! overlay layer they run on is the host's).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLWelcomeMenu.cpp
@@ -10,6 +14,7 @@
 //! the peer and buddy queues, `TheFirewallHelper` and the overlays are the host's; the peer response loop in
 //! `Update` keeps upstream's structure over [`WolWelcomeMenuHost::peer_next_response`].
 
+use crate::logic::modules::plant;
 use crate::client::gadget;
 use crate::client::gadget_list_box as lb;
 use crate::client::shell::{self, ShellHost};
@@ -151,17 +156,21 @@ pub fn update_server_display<H: WolWelcomeMenuHost>(wm: &mut GameWindowManager, 
     if w.is_some() {
         gadget::static_text_set_text(wm, h, w, server_name);
     }
-    h.wol_welcome_menu().g_server_name = server_name.to_vec();
+    if w.is_some() || !plant(20702) {
+        h.wol_welcome_menu().g_server_name = server_name.to_vec();
+    }
 }
 
 /// `enableControls(state)`.
-fn enable_controls<H: WolWelcomeMenuHost>(wm: &mut GameWindowManager, h: &mut H, state: bool) {
+pub fn enable_controls<H: WolWelcomeMenuHost>(wm: &mut GameWindowManager, h: &mut H, state: bool) {
     let m = h.wol_welcome_menu().clone();
     if let Some(b) = m.button_quick_match {
         wm.win_enable(b, state);
     }
     if let Some(b) = m.button_lobby {
-        wm.win_enable(b, state);
+        if !plant(20701) {
+            wm.win_enable(b, state);
+        }
     }
 }
 
@@ -184,7 +193,7 @@ fn shutdown_complete<H: WolWelcomeMenuHost>(wm: &mut GameWindowManager, h: &mut 
 /// `grabUByte(s)`: two hex digits (`strtol("0x" + s[0..2], 16)`; a bad digit stops the parse).
 fn grab_ubyte(s: &[u8]) -> u8 {
     let mut v: u32 = 0;
-    for &c in s.iter().take(2) {
+    for &c in s.iter().take(if plant(20695) { 1 } else { 2 }) {
         match (c as char).to_digit(16) {
             Some(d) => v = v * 16 + d,
             None => break,
@@ -232,11 +241,13 @@ fn update_num_players_online<H: WolWelcomeMenuHost>(wm: &mut GameWindowManager, 
             if a_line.last() == Some(&b'\r') {
                 a_line.pop(); // there is a trailing '\r'
             }
-            // aLine.trim()
-            while a_line.last().is_some_and(|c| c.is_ascii_whitespace()) {
+            // aLine.trim(): C's isspace (space and \t \n \v \f \r)
+            // ~~`is_ascii_whitespace`, which leaves the vertical tab~~ **Corrected 2026-11-21 (#215, group ui3a):** `isspace` strips 0x0B too
+            let c_isspace = |c: &u8| matches!(*c, b' ' | 0x09..=0x0D);
+            while a_line.last().is_some_and(c_isspace) {
                 a_line.pop();
             }
-            let lead = a_line.iter().take_while(|c| c.is_ascii_whitespace()).count();
+            let lead = a_line.iter().take_while(|c| c_isspace(c)).count();
             a_line.drain(..lead);
             if a_line.is_empty() {
                 a_line = b" ".to_vec();
@@ -244,13 +255,13 @@ fn update_num_players_online<H: WolWelcomeMenuHost>(wm: &mut GameWindowManager, 
 
             let mut c = h.gamespy_color_motd();
             if a_line.starts_with(b"\\\\") {
-                a_line = a_line[1..].to_vec();
-            } else if a_line.starts_with(b"\\") && a_line.len() > 9 {
+                a_line = a_line[if plant(20703) { 2 } else { 1 }..].to_vec();
+            } else if a_line.starts_with(b"\\") && (a_line.len() > 9 || (plant(20697) && a_line.len() == 9)) {
                 let a = grab_ubyte(&a_line[1..]);
                 let r = grab_ubyte(&a_line[3..]);
                 let g = grab_ubyte(&a_line[5..]);
                 let b = grab_ubyte(&a_line[7..]);
-                c = crate::client::window_transitions::game_make_color(r, g, b, a);
+                c = if plant(20696) { crate::client::window_transitions::game_make_color(b, g, r, a) } else { crate::client::window_transitions::game_make_color(r, g, b, a) };
                 a_line = a_line[9..].to_vec();
             }
             let line = h.multi_byte_to_wide_char(&a_line);
@@ -261,7 +272,7 @@ fn update_num_players_online<H: WolWelcomeMenuHost>(wm: &mut GameWindowManager, 
 
 /// `HandleNumPlayersOnline(numPlayersOnline)`.
 pub fn handle_num_players_online<H: WolWelcomeMenuHost>(wm: &mut GameWindowManager, h: &mut H, num_players_online: i32) {
-    let n = if num_players_online < 1 { 1 } else { num_players_online };
+    let n = if num_players_online < (if plant(20694) { 0 } else { 1 }) { 1 } else { num_players_online };
     h.wol_welcome_menu().last_num_players_online = n;
     update_num_players_online(wm, h);
 }
@@ -277,10 +288,43 @@ fn find_next_number(s: &[u8], start: usize) -> usize {
     p
 }
 
-/// `atof` of the number at `s[p..]`.
+/// `atof` of the number at `s[p..]`: C's decimal grammar, the longest prefix of `[space] [sign] digits [. digits] [(e|E) [sign] digits]` (`FindNextNumber`
+/// leaves `p` on a digit, so only that part of the grammar is reached; hex floats, `inf` and `nan` are not read).
+/// ~~The first draft read only digits, `.` and `-`, so `5e1` was 5~~ **Corrected 2026-11-21 (#215, group ui3a):** the exponent is read, as `atof` does.
 fn atof(s: &[u8], p: usize) -> f64 {
-    let end = s[p..].iter().position(|c| !(c.is_ascii_digit() || *c == b'.' || *c == b'-')).map_or(s.len(), |e| p + e);
-    std::str::from_utf8(&s[p..end]).ok().and_then(|t| t.parse::<f64>().ok()).unwrap_or(0.0)
+    let mut i = p;
+    while i < s.len() && matches!(s[i], b' ' | 0x09..=0x0D) {
+        i += 1;
+    }
+    let start = i;
+    if i < s.len() && matches!(s[i], b'+' | b'-') {
+        i += 1;
+    }
+    let digits = |i: &mut usize| {
+        let b = *i;
+        while *i < s.len() && s[*i].is_ascii_digit() {
+            *i += 1;
+        }
+        *i - b
+    };
+    let mut n = digits(&mut i);
+    if i < s.len() && s[i] == b'.' {
+        i += 1;
+        n += digits(&mut i);
+    }
+    if n == 0 {
+        return 0.0;
+    }
+    if i < s.len() && matches!(s[i], b'e' | b'E') {
+        let mut j = i + 1;
+        if j < s.len() && matches!(s[j], b'+' | b'-') {
+            j += 1;
+        }
+        if digits(&mut j) > 0 {
+            i = j;
+        }
+    }
+    std::str::from_utf8(&s[start..i]).ok().and_then(|t| t.parse::<f64>().ok()).unwrap_or(0.0)
 }
 
 /// `HandleOverallStats(szHTTPStats, len)` (WOLWelcomeMenu.cpp:318).
@@ -307,7 +351,7 @@ pub fn handle_overall_stats<H: WolWelcomeMenuHost>(h: &mut H, sz_http_stats: &[u
         };
         let p_total = find_next_number(sz_http_stats, p_side);
         let p_wins = find_next_number(sz_http_stats, p_total);
-        let percent = (atof(sz_http_stats, p_wins) / atof(sz_http_stats, p_total).max(1.0)) as f32; // max prevents divide by zero
+        let percent = (atof(sz_http_stats, p_wins) / if plant(20698) { atof(sz_http_stats, p_total) } else { atof(sz_http_stats, p_total).max(1.0) }) as f32; // max prevents divide by zero
         total += percent;
         // std::map::insert keeps the first of a duplicate key and orders by key
         if !stats.iter().any(|(s, _)| *s == side) {
@@ -321,13 +365,13 @@ pub fn handle_overall_stats<H: WolWelcomeMenuHost>(h: &mut H, sz_http_stats: &[u
 }
 
 /// `updateOverallStats()`.
-fn update_overall_stats<H: WolWelcomeMenuHost>(wm: &mut GameWindowManager, h: &mut H) {
-    if h.wol_welcome_menu().total_win_percent <= 0.0 {
+pub fn update_overall_stats<H: WolWelcomeMenuHost>(wm: &mut GameWindowManager, h: &mut H) {
+    if (h.wol_welcome_menu().total_win_percent <= 0.0 && !plant(20700)) || (h.wol_welcome_menu().total_win_percent < 0.0 && plant(20700)) {
         h.wol_welcome_menu().total_win_percent = 1.0; // prevent divide by zero
     }
     let m = h.wol_welcome_menu().clone();
     for (side, frac) in &m.win_stats {
-        let percent = (100.0f32 * (frac / m.total_win_percent)) as i32; // REAL_TO_INT
+        let percent = if plant(20699) { (100.0f32 * (frac / m.total_win_percent)).round() as i32 } else { (100.0f32 * (frac / m.total_win_percent)) as i32 }; // REAL_TO_INT
         let fmt = h.fetch_text(b"GUI:WinPercent");
         let perc_str = h.format_int(&fmt, percent);
         let id = ShellHost::name_to_key(h, format!("WOLWelcomeMenu.wnd:Percent{}", String::from_utf8_lossy(side)).as_bytes()) as i32;

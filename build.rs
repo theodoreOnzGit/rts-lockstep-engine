@@ -14917,6 +14917,13 @@ mod differential {
             ("wl_hide.inc", "GameEngine/Source/GameClient/GUI/WindowLayout.cpp", "void WindowLayout::hide( Bool hide )", Some("/** Add window to this layout */")),
             ("sm_loc.inc", "GameEngine/Include/GameNetwork/GameSpy/PersistentStorageDefs.h", "enum LocaleType", Some("void HandlePersistentStorageResponses")),
             ("sm_gscolor.inc", "GameEngine/Include/GameNetwork/GameSpy/PeerDefs.h", "enum GameSpyColors {", Some("\tGSCOLOR_MAX\n}")),
+            // the welcome menu's statistics and message of the day (differential/wrap_draft_wol_welcome.cpp)
+            ("ws_statics.inc", "GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLWelcomeMenu.cpp", "static Bool isShuttingDown = FALSE;", Some("static UnicodeString gServerName;")),
+            ("ws_server.inc", "GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLWelcomeMenu.cpp", "static UnicodeString gServerName;", Some("/*\nvoid updateLocalPlayerScores")),
+            ("ws_enable.inc", "GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLWelcomeMenu.cpp", "static void enableControls( Bool state )", Some("/** This is called when a shutdown is complete for this menu */")),
+            ("ws_stats.inc", "GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLWelcomeMenu.cpp", "static Int lastNumPlayersOnline = 0;", Some("/** Handle player stats */")),
+            ("ws_color.inc", "GameEngine/Include/GameClient/Color.h", "inline Color GameMakeColor(", Some("extern void GameGetColorComponents( Color color,")),
+            ("gw_enable.inc", "GameEngine/Source/GameClient/GUI/GameWindow.cpp", "Int GameWindow::winEnable( Bool enable )", Some("// GameWindow::winGetEnabled ===")),
         ];
         for (name, path, from, to) in cuts {
             println!("cargo:rerun-if-changed={}", up.join(path).display());
@@ -14941,7 +14948,7 @@ mod differential {
             std::fs::write(gen.join(name), format!("{head}{}", piece(&text, &path, from, None))).expect("write a ui3a menu cut");
         }
         println!("cargo:rerun-if-changed=differential/ui3a_host.h");
-        for (wrapper, lib) in [("wrap_draft_wol_small.cpp", "draft_ui3a_wol_small")] {
+        for (wrapper, lib) in [("wrap_draft_wol_small.cpp", "draft_ui3a_wol_small"), ("wrap_draft_wol_welcome.cpp", "draft_ui3a_wol_welcome")] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();
             base(&mut b);

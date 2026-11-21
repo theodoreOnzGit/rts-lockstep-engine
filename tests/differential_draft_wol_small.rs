@@ -548,6 +548,17 @@ fn rust_run(c: &Case, k: usize) -> (String, bool, String) {
             out += &format!("list {rows} sel {sel}{cells}\n");
             // (the list's GLM_SELECTED traffic reached the log above)
         }
+        // the screen's statics, the ids by the name they were asked for ("?0": never asked)
+        let id = |h: &Host, i: i32| h.names.get(&(i as u32)).map_or(format!("?{i}"), |n| short(n.as_bytes()));
+        let w = |w: Option<WinId>| win_short(&wm, w);
+        out += &match c.menu {
+            0 => format!("state {} {} {} {}\n", id(&h, h.msgw.parent_wol_message_window_id), w(h.msgw.parent_wol_message_window), id(&h, h.msgw.button_cancel_id), w(h.msgw.button_cancel)),
+            1 => format!("state {} {} {} {} {}\n", id(&h, h.stat.parent_wol_status_id), id(&h, h.stat.button_disconnect_id), w(h.stat.parent_wol_status), w(h.stat.button_disconnect), w(h.stat.progress_text_window)),
+            2 => format!("state {} {} {} {} {} {}\n", id(&h, h.cust.parent_wol_custom_score_id), id(&h, h.cust.button_disconnect_id), id(&h, h.cust.button_lobby_id), w(h.cust.parent_wol_custom_score), w(h.cust.button_disconnect), w(h.cust.button_lobby)),
+            3 => format!("state {} {} {} {} {} {}\n", id(&h, h.qm.parent_wol_qm_score_id), id(&h, h.qm.button_disconnect_id), id(&h, h.qm.button_quickmatch_id), w(h.qm.parent_wol_qm_score), w(h.qm.button_disconnect), w(h.qm.button_quickmatch)),
+            4 => format!("state {} {} {} {} {} {}\n", id(&h, h.lad.parent_window_id), id(&h, h.lad.button_back_id), id(&h, h.lad.window_ladder_id), w(h.lad.parent_window), w(h.lad.button_back), w(h.lad.window_ladder)),
+            _ => format!("state {} {} {} {} {} {}\n", id(&h, h.loc.parent_locale_select_id), id(&h, h.loc.button_ok_id), id(&h, h.loc.listbox_locale_id), w(h.loc.parent_locale_select), w(h.loc.button_ok), w(h.loc.listbox_locale)),
+        };
         let _ = h.menu;
     }
     (out, layout_hidden0, String::new())

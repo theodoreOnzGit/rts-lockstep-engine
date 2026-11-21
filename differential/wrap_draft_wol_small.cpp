@@ -30,7 +30,7 @@
 #include <string>
 #include <vector>
 #include <map>
-#include <memory>
+#include <ctype.h>
 #include "Lib/BaseType.h"
 #include "GameClient/KeyDefs.h"
 #define DEBUG_LOG(x)
@@ -91,9 +91,10 @@ class GameSpyInfo
 public:
 	AsciiString m_email, m_nick, m_password;
 	GameSpyInfo() : m_email("me@example.org"), m_nick("Nick"), m_password("pw") {}
-	AsciiString getLocalEmail() { return m_email; }
-	AsciiString getLocalBaseName() { return m_nick; }
-	AsciiString getLocalPassword() { return m_password; }
+	/* (by value upstream; a reference here so that `.str()` of the result stays valid as upstream's shared buffer does) */
+	const AsciiString &getLocalEmail() { return m_email; }
+	const AsciiString &getLocalBaseName() { return m_nick; }
+	const AsciiString &getLocalPassword() { return m_password; }
 	Int getLocalProfileID() { return g_localId; }
 	PSPlayerStats getCachedLocalPlayerStats() { return g_cached; }
 	void setCachedLocalPlayerStats(PSPlayerStats s) { u3aLog("cached.set %d %d", s.id, s.locale); g_cached = s; }
@@ -216,6 +217,34 @@ void callUpdate(int menu, WindowLayout *l)
 	}
 }
 
+/* the screen's statics (this file's own: the cut is in this translation unit), the ids by the name they were asked for */
+void dumpStatics(int menu)
+{
+	std::string st;
+	switch (menu)
+	{
+	case 0:
+		st = idText(c_msg::parentWOLMessageWindowID) + " " + winText(c_msg::parentWOLMessageWindow) + " " + idText(c_msg::buttonCancelID) + " " + winText(c_msg::buttonCancel);
+		break;
+	case 1:
+		st = idText(c_status::parentWOLStatusID) + " " + idText(c_status::buttonDisconnectID) + " " + winText(c_status::parentWOLStatus) + " " + winText(c_status::buttonDisconnect) + " " + winText(c_status::progressTextWindow);
+		break;
+	case 2:
+		st = idText(c_custom::parentWOLCustomScoreID) + " " + idText(c_custom::buttonDisconnectID) + " " + idText(c_custom::buttonLobbyID) + " " + winText(c_custom::parentWOLCustomScore) + " " + winText(c_custom::buttonDisconnect) + " " + winText(c_custom::buttonLobby);
+		break;
+	case 3:
+		st = idText(c_qm::parentWOLQMScoreID) + " " + idText(c_qm::buttonDisconnectID) + " " + idText(c_qm::buttonQuickmatchID) + " " + winText(c_qm::parentWOLQMScore) + " " + winText(c_qm::buttonDisconnect) + " " + winText(c_qm::buttonQuickmatch);
+		break;
+	case 4:
+		st = idText(c_ladder::parentWindowID) + " " + idText(c_ladder::buttonBackID) + " " + idText(c_ladder::windowLadderID) + " " + winText(c_ladder::parentWindow) + " " + winText(c_ladder::buttonBack) + " " + winText(c_ladder::windowLadder);
+		break;
+	default:
+		st = idText(c_locale::parentLocaleSelectID) + " " + idText(c_locale::buttonOkID) + " " + idText(c_locale::listboxLocaleID) + " " + winText(c_locale::parentLocaleSelect) + " " + winText(c_locale::buttonOk) + " " + winText(c_locale::listboxLocale);
+		break;
+	}
+	u3aLog("state %s", st.c_str());
+}
+
 void dumpCase(const MenuSpec &m, bool list)
 {
 	const char *names[3] = { m.win[0], m.win[1], m.win[2] };
@@ -312,6 +341,7 @@ extern "C" int ref_u3a_small_run(const int *in, int n, char *out, int cap)
 			g_wm.winSetFocus(op[2] < 0 ? NULL : parent);
 		}
 		dumpCase(m, menu == 5);
+		dumpStatics(menu);
 	}
 	int len = (int)g_log.size();
 	if (len > cap) len = cap;
