@@ -14924,6 +14924,28 @@ mod differential {
             ("wvm_class.inc", format!("{gj}/WindowVideoManager.h"), "class WindowVideo\n{", Some("class WindowVideoManager : public SubsystemInterface")),
             ("wvm_inline.inc", format!("{gj}/WindowVideoManager.h"), "inline VideoStreamInterface *WindowVideo::getVideoStream", Some("// EXTERNALS ///")),
             ("wvm_cpp.inc", format!("{gui}/WindowVideoManager.cpp"), "WindowVideo::WindowVideo( void )", None),
+            ("ui3b_status.inc", format!("{gj}/GameWindow.h"), "// Window status flags ---", Some("// Message Box Button flags")),
+            ("ui3b_winerr.inc", format!("{gj}/GameWindow.h"), "// Errors returned by window functions", Some("// Input capture/release flags")),
+            ("wm_winhide.inc", format!("{gui}/GameWindow.cpp"), "Int GameWindow::winHide( Bool hide )", Some("// GameWindow::winIsHidden ====")),
+            ("wm_winenable.inc", format!("{gui}/GameWindow.cpp"), "Int GameWindow::winEnable( Bool enable )", Some("// GameWindow::winGetEnabled ====")),
+            ("wm_hiding.inc", format!("{gui}/GameWindowManager.cpp"), "void GameWindowManager::windowHiding( GameWindow *window )", Some("/** Hide all windows in a certain range of id's (inclusive) */")),
+            ("wm_sendsys.inc", format!("{gui}/GameWindowManager.cpp"), "WindowMsgHandledType GameWindowManager::winSendSystemMsg", Some("WindowMsgHandledType GameWindowManager::winSendInputMsg")),
+            ("wm_setfocus.inc", format!("{gui}/GameWindowManager.cpp"), "Int GameWindowManager::winSetFocus", Some("/** Process key press through the GUI. */")),
+            ("wm_setmodal.inc", format!("{gui}/GameWindowManager.cpp"), "Int GameWindowManager::winSetModal", Some("Int GameWindowManager::winUnsetModal")),
+            ("wm_unsetmodal.inc", format!("{gui}/GameWindowManager.cpp"), "Int GameWindowManager::winUnsetModal", Some("/** Get the grabbed window */")),
+            ("popup_communicator.inc", format!("{gui}/GUICallbacks/Menus/PopupCommunicator.cpp"), "static NameKeyType buttonOkID", None),
+            ("credits_menu.inc", format!("{gui}/GUICallbacks/Menus/CreditsMenu.cpp"), "static NameKeyType parentMainMenuID", None),
+            ("ecw.inc", format!("{gui}/GUICallbacks/Menus/EstablishConnectionsWindow.cpp"), "static WindowLayout *establishConnectionsLayout", None),
+            ("ecm_cpp.inc", format!("{gui}/EstablishConnectionsMenu/EstablishConnectionsMenu.cpp"), "char *EstablishConnectionsMenu::m_playerReadyControlNames[]", None),
+            ("ecm_nat.inc", "GameEngine/Include/GameNetwork/NAT.h".to_string(), "enum NATConnectionState {", Some("struct ConnectionNodeType {")),
+            ("observer.inc", format!("{gui}/ControlBar/ControlBarObserver.cpp"), "enum { MAX_BUTTONS = 8};", None),
+            ("obs_maxplayer.inc", "GameEngine/Include/Common/GameCommon.h".to_string(), "MAX_PLAYER_COUNT = 16", Some("///< max number of Players.")),
+            ("obs_maxslots.inc", "GameEngine/Include/GameNetwork/NetworkDefs.h".to_string(), "MAX_PLAYER = 7,", Some("// The index of the highest possible player number.")),
+            ("mm_statics.inc", "GameEngineDevice/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMainMenu.cpp".to_string(), "static Color BrownishColor", Some("// PUBLIC FUNCTIONS ///")),
+            ("mm_a.inc", "GameEngineDevice/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMainMenu.cpp".to_string(), "static void advancePosition", Some("void W3DMetalBarMenuDraw")),
+            ("mm_border.inc", "GameEngineDevice/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMainMenu.cpp".to_string(), "void W3DMainMenuMapBorder", Some("//Specialized drawing function for the buttons with the weird drop shadow")),
+            ("mm_thin.inc", "GameEngineDevice/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMainMenu.cpp".to_string(), "void W3DThinBorderDraw", Some("void W3DMainMenuInit")),
+            ("mm_screenpos.inc", format!("{gui}/GameWindow.cpp"), "Int GameWindow::winGetScreenPosition", Some("// GameWindow::winGetRegion ====")),
             ("print_positions.inc", format!("{gui}/ControlBar/ControlBarPrintPositions.cpp"), "void PrintInfoRecursive", None),
             ("replay_controls.inc", format!("{gui}/GUICallbacks/ReplayControls.cpp"), "WindowMsgHandledType ReplayControlInput(", None),
             ("motd.inc", "GameEngineDevice/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp".to_string(), "static NameKeyType closeButtonID", None),
@@ -14935,7 +14957,7 @@ mod differential {
             std::fs::write(gen.join(name), format!("{head}{cut}")).expect("write a ui3b cut");
         }
         // KeyDefs.h is upstream's own; its <dinput.h> is differential/shim_ui3b/dinput.h
-        for wrapper in ["wrap_draft_exp_points.cpp", "wrap_draft_beacon.cpp", "wrap_draft_replay_controls.cpp", "wrap_draft_motd.cpp", "wrap_draft_print_positions.cpp", "wrap_draft_structure_inventory.cpp", "wrap_draft_multi_select.cpp", "wrap_draft_video_manager.cpp"] {
+        for wrapper in ["wrap_draft_exp_points.cpp", "wrap_draft_beacon.cpp", "wrap_draft_replay_controls.cpp", "wrap_draft_motd.cpp", "wrap_draft_print_positions.cpp", "wrap_draft_structure_inventory.cpp", "wrap_draft_multi_select.cpp", "wrap_draft_video_manager.cpp", "wrap_draft_popup_communicator.cpp", "wrap_draft_credits_menu.cpp", "wrap_draft_establish_connections_window.cpp", "wrap_draft_establish_connections_menu.cpp", "wrap_draft_observer.cpp", "wrap_draft_w3d_main_menu.cpp"] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();
             base(&mut b);

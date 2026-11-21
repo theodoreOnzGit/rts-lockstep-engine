@@ -7,7 +7,7 @@
 
 use crate::client::shell::ShellHost;
 use crate::client::window_manager::{data_win, ggm, gwm, GameWindowManager, MsgHandled, WindowMsgData};
-use crate::client::window_script::WinId;
+use crate::client::window_script::{win_status, WinId};
 use crate::logic::modules::plant;
 
 /// `static NameKeyType closeButtonID`.
@@ -39,7 +39,8 @@ pub fn motd_system<H: MotdHost>(wm: &mut GameWindowManager, h: &mut H, window: W
             let Some(control) = data_win(d1) else { return MsgHandled::Handled };
             let control_id = wm.win(control).id;
             if (control_id == h.motd().close_button_id) != plant(21097) {
-                let hidden = wm.is_hidden(Some(window));
+                // `window->winIsHidden()`: the window's own bit (`GameWindowManager::isHidden` would count its ancestors too)
+                let hidden = if plant(21098) { wm.is_hidden(Some(window)) } else { wm.tree.windows[window].status & win_status::HIDDEN != 0 };
                 let target = if plant(21094) { control } else { window };
                 wm.win_hide(target, if plant(21092) { true } else { !hidden });
             }

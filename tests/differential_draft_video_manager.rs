@@ -6,13 +6,13 @@
 //!
 //! # Method
 //!
-//! 20,000 sequences (fixed seed, `DRAFT_CASES` overrides). 1 to 4 windows (random hidden bit), 1 to 4 movies (each opens or not, gets a video buffer or not,
+//! 20,000 sequences (fixed seed, `DRAFT_CASES` overrides). 1 to 4 windows (random hidden bit; a third the child of an earlier one, so a window can be shown under a hidden parent), 1 to 4 movies (each opens or not, gets a video buffer or not,
 //! allocates or not, 1 to 4 frames long, with a random frame-ready mask), 1 to 20 steps of `playMovie`, `pauseMovie`, `hideMovie`, `resumeMovie`, `stopMovie`,
 //! `stopAndRemoveMovie`, `stopAllMovies`, `pauseAllMovies`, `resumeAllMovies`, `update` (the most frequent), `reset`, `init`, a window shown or hidden, `getWinState`.
 //! Every call on the stand-ins (open, createVideoBuffer, allocate, frame ready / decompress / render / next, close, delete of the buffer, `setVideoBuffer` on the
 //! window) is logged on both sides, in order; after every step the window states, the number of playing videos, the two all-movies flags, and each window's hidden bit are
 //! compared. The draft runs on the verified `GameWindowManager` with the same windows. Upstream's `std::hash_map` of windows iterates in an unspecified order, the draft in
-//! window-id order: the C++ stand-in map is ordered by pointer, descending (the same order, as the scene creates its windows in reverse of the table), so what is compared is the draft's translation and not that order.
+//! window-id order: the C++ stand-in map is ordered by pointer, ascending (the same order: a window's id is its index in the scene's array), so what is compared is the draft's translation and not that order.
 //!
 //! # Prediction (before the first run, 2026-11-21)
 //!
@@ -32,11 +32,13 @@
 //! | 21158 | `stopAllMovies` sets the pause flag, not the stop flag |
 //! | 21159 | `resumeMovie` leaves the all-movies flags |
 //! | 21160 | releasing a movie does not clear the window's buffer |
+//! | 21161 | `update` reads the hidden state of a hidden-state movie's window as `isHidden` (the window or an ancestor) |
+//! | 21162 | `update` reads the hidden state of a playing movie's window as `isHidden` |
 //!
 //! # Results
 //!
-//! 2026-11-21, `DRAFT_CASES=20000` (the default): **0 mismatches over 20,000 sequences**, max ULP 0 (nothing is floating point here). The first run showed 2,410 mismatches, all in the order of the calls on different windows: the wrapper's map ordered the windows by ascending pointer, the draft by ascending window id, which is the reverse here (the scene creates its windows in reverse of the table). Upstream's `std::hash_map` order is unspecified, so the stand-in now orders by descending pointer (a harness fix), then **0 mismatches**. One draft doc claim was wrong and corrected in place (the draft said upstream's map is a `std::map` in pointer order; it is a `std::hash_map`).
-//! Planted bugs (of 20,000): 21151 6,334; 21152 1,993; 21153 751; 21154 765; 21155 3,764; 21156 4,251; 21157 2,086; 21158 6,304; 21159 1,170; 21160 8,434. **10 of 10 caught.**
+//! 2026-11-21, `DRAFT_CASES=20000` (the default): **0 mismatches over 20,000 sequences**, max ULP 0 (the comparison is of integer words). The first version of this test used flat scenes and a window map ordered the other way (2,410 mismatches that were the stand-in's order, then 0; 10 of 10 plants). The observer test then showed the drafts read `winIsHidden()` as `GameWindowManager::isHidden` (ancestors included); in `update` (two places) **the draft was fixed** and the scene made a tree (plants 21161 and 21162 reinstate the two defects and are caught); the stand-in's map order is now ascending pointer, the Rust order, as the scene's windows are indexed in creation order. One draft doc claim was also wrong and corrected in place (the draft said upstream's map is a `std::map` in pointer order; it is a `std::hash_map`). Re-run: **0 mismatches**.
+//! Planted bugs (of 20,000): 21151 6,304; 21152 2,032; 21153 799; 21154 814; 21155 3,830; 21156 4,216; 21157 2,106; 21158 6,416; 21159 1,250; 21160 8,373; 21161 19; 21162 457. **12 of 12 caught.**
 //! The `DIFF` line is printed by the run.
 
 mod support;
@@ -148,10 +150,12 @@ fn window_video_manager_matches_upstream() {
     let mut chk = Check::new("WindowVideoManager");
     for _ in 0..cases(20_000) {
         let nwin = 1 + g.below(4) as usize;
-        let specs: Vec<WinSpec> = (0..nwin).map(|i| WinSpec { id: 10 + i as i32, hidden: g.below(3) == 0, enabled: true, no_focus: false, extra: 0 }).collect();
-        let (mut wm, order) = make_scene(&specs);
-        let mut input = Vec::new();
-        put_scene(&mut wm, &order, &specs, 0, &mut input);
+        let ts: Vec<TreeSpec> = (0..nwin)
+            .map(|i| TreeSpec { spec: WinSpec { id: 10 + i as i32, hidden: g.below(3) == 0, enabled: true, no_focus: false, extra: 0 }, parent: if i > 0 && g.below(3) == 0 { Some(g.below(i as u32) as usize) } else { None }, unit_system: false })
+            .collect();
+        let (mut wm, scene) = make_tree_scene(&ts, b"unused");
+        let order: Vec<usize> = (0..nwin).collect();
+        let mut input = scene;
         let nm = 1 + g.below(4) as usize;
         input.push(nm as u32);
         let mut movies = Vec::new();
@@ -222,7 +226,7 @@ fn window_video_manager_matches_upstream() {
                 rust.push(s);
             }
             rust.push(100);
-            put_state(&wm, &order, &mut rust);
+            put_state_tree(&wm, nwin, &mut rust);
             for &ww in &order {
                 rust.push(state_word(mgr.get_win_state(ww)));
             }

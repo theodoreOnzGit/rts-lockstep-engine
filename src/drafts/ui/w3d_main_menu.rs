@@ -1,4 +1,7 @@
 //! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! PARTLY differential-tested (#215): `advance_position`, `w3d_shell_menu_scheme_draw`, `w3d_main_menu_draw`, `w3d_main_menu_four_draw`, `w3d_main_menu_map_border` and
+//! `w3d_thin_border_draw` match the upstream C++ on 20,000 cases (tests/differential_draft_w3d_main_menu.rs). NOT covered, still untested: `w3d_metal_bar_menu_draw`, `w3d_clock_draw`,
+//! `w3d_main_menu_button_drop_shadow_draw` (with `draw_text`), `w3d_main_menu_random_text_draw`, `w3d_main_menu_init`, `w3d_credits_menu_draw`.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMainMenu.cpp
@@ -12,6 +15,7 @@
 
 use crate::client::window_manager::{DrawItem, GameWindowManager, GuiHost, UserData, WIN_STATE_HILITED, WIN_STATE_SELECTED};
 use crate::client::window_script::{win_status, WinId, WIN_COLOR_UNDEFINED};
+use crate::logic::modules::plant;
 
 /// `BrownishColor = GameMakeColor(167,134,94,255)` (ARGB).
 pub const BROWNISH_COLOR: i32 = 0xFFA7_865Eu32 as i32;
@@ -70,7 +74,7 @@ fn advance_position<H: W3DMainMenuHost>(wm: &GameWindowManager, h: &mut H, image
     let st = h.advance_position_state();
     let init = st.init.get_or_insert_with(|| AdvanceInit { width: size.0 + iw, x: -800, y: pos.1 - (ih / 2), start_time: now });
     let time = now.wrapping_sub(init.start_time) as i32;
-    let percent_done = time as f32 / 10000.0;
+    let percent_done = time as f32 / if plant(21266) { 1000.0 } else { 10000.0 };
 
     if st.going_forward {
         if percent_done >= 1.0 {
@@ -79,7 +83,8 @@ fn advance_position<H: W3DMainMenuHost>(wm: &GameWindowManager, h: &mut H, image
             st.going_forward = false;
         } else {
             init.y = pos.1 - (ih / 2);
-            init.x = (percent_done * init.width as f32) as i32 - iw;
+            // `x = (percentDone * Width) - image->getImageWidth()`: a float expression truncated on the store (the draft first truncated the product, then subtracted)
+            init.x = if plant(21272) { (percent_done * init.width as f32) as i32 - iw } else { (percent_done * init.width as f32 - iw as f32) as i32 };
         }
     } else if percent_done >= 1.0 {
         init.y = pos.1 - (ih / 2);
@@ -87,7 +92,7 @@ fn advance_position<H: W3DMainMenuHost>(wm: &GameWindowManager, h: &mut H, image
         st.going_forward = true;
     } else {
         init.y = pos.1 + size.1 - (ih / 2);
-        init.x = size.0 - (percent_done * init.width as f32) as i32;
+        init.x = if plant(21265) { (percent_done * init.width as f32 - iw as f32) as i32 } else if plant(21271) { size.0 - (percent_done * init.width as f32) as i32 } else { (size.0 as f32 - percent_done * init.width as f32) as i32 };
     }
     let (x, y) = (init.x, init.y);
     out.push(DrawItem::Image { image: image.to_vec(), x0: x, y0: y, x1: x + iw, y1: y + ih, color: 0xFFFF_FFFF, grayscale: false, clip: wm.clip });
@@ -104,23 +109,25 @@ fn line(out: &mut Vec<DrawItem>, x0: i32, y0: i32, x1: i32, y1: i32, _width: i32
 
 /// The frame both `W3DMainMenuDraw` and `W3DMainMenuFourDraw` draw; `verticals` are the fractions of the width that
 /// get a 3-wide vertical line from `pos.y` to the display height.
-fn main_menu_frame<H: W3DMainMenuHost>(wm: &GameWindowManager, h: &mut H, window: WinId, verticals: &[f32], out: &mut Vec<DrawItem>) {
+fn main_menu_frame<H: W3DMainMenuHost>(wm: &GameWindowManager, h: &mut H, window: WinId, verticals: &[f64], out: &mut Vec<DrawItem>) {
     let color = BROWNISH_COLOR;
     let color_drop = COLOR_DROP;
     let height = h.display_height();
 
     let (px, py) = wm.tree.screen_position(window);
     let (sx, sy) = wm.tree.windows[window].size;
-    let f = |v: f32, k: f32| (v * k) as i32; // `pos.y + (size.y * .1)`: the product is a double, truncated on the store
+    // `pos.y + (size.y * .1)`: `Int + (Int * double)` is a double, truncated when it is stored in the region's `Int`. ~~The draft first truncated the product in `f32` and then added the position~~
+    // **Corrected 2026-11-21 (#215, group ui3b):** the sum is made in `f64` and truncated once (the planted bug 21261 is the old `f32` product truncated first).
+    let f = |pos: i32, size: i32, k: f64| if plant(21261) { pos + (size as f32 * k as f32) as i32 } else { (f64::from(pos) + f64::from(size) * k) as i32 };
 
     let top1 = (px, py, px + sx, py);
     let top1_drop = (px, py + 1, px + sx, py + 1);
-    let top2 = (px, py + f(sy as f32, 0.1), px + sx, py + f(sy as f32, 0.1));
-    let top2_drop = (px, py + f(sy as f32, 0.12), px + sx, py + f(sy as f32, 0.12));
-    let bottom1 = (px, py + f(sy as f32, 0.9), px + sx, py + f(sy as f32, 0.9));
-    let bottom1_drop = (px, py + f(sy as f32, 0.92), px + sx, py + f(sy as f32, 0.92));
+    let top2 = (px, f(py, sy, 0.1), px + sx, f(py, sy, 0.1));
+    let top2_drop = (px, f(py, sy, 0.12), px + sx, f(py, sy, 0.12));
+    let bottom1 = (px, f(py, sy, 0.9), px + sx, f(py, sy, 0.9));
+    let bottom1_drop = (px, f(py, sy, 0.92), px + sx, f(py, sy, 0.92));
     let bottom2 = (px, py + sy, px + sx, py + sy);
-    let bottom2_drop = (px, py + sy + 1, px + sx, py + sy + 1);
+    let bottom2_drop = (px, py + sy + if plant(21263) { 2 } else { 1 }, px + sx, py + sy + if plant(21263) { 2 } else { 1 });
 
     line(out, top1.0, top1.1, top1.2, top1.3, 2, color);
     line(out, top1_drop.0, top1_drop.1, top1_drop.2, top1_drop.3, 2, color_drop);
@@ -132,7 +139,7 @@ fn main_menu_frame<H: W3DMainMenuHost>(wm: &GameWindowManager, h: &mut H, window
     line(out, bottom2_drop.0, bottom2_drop.1, bottom2_drop.2, bottom2_drop.3, 2, color_drop);
 
     for v in verticals {
-        let x = px + f(sx as f32, *v);
+        let x = if plant(21262) { f(px, sy, *v) } else { f(px, sx, *v) };
         line(out, x, py, x, height, 3, color);
     }
 
@@ -146,7 +153,7 @@ pub fn w3d_main_menu_draw<H: W3DMainMenuHost>(wm: &GameWindowManager, h: &mut H,
 
 /// `W3DMainMenuFourDraw(window, instData)` (W3DMainMenu.cpp:193): three verticals (`.295`, `.59`, `.885`).
 pub fn w3d_main_menu_four_draw<H: W3DMainMenuHost>(wm: &GameWindowManager, h: &mut H, window: WinId, out: &mut Vec<DrawItem>) {
-    main_menu_frame(wm, h, window, &[0.295, 0.59, 0.885], out);
+    main_menu_frame(wm, h, window, if plant(21264) { &[0.295, 0.59, 0.6662] } else { &[0.295, 0.59, 0.885] }, out);
 }
 
 /// `W3DMetalBarMenuDraw(window, instData)`: `window->winDrawBorder()`.
@@ -215,15 +222,16 @@ pub fn w3d_main_menu_map_border<H: GuiHost>(wm: &GameWindowManager, h: &H, windo
         // x == place to draw remainder if any
         if (x2 - x) >= (BORDER_LINE_SIZE / 2) {
             // Blit Half piece
-            draw(out, img, x, y, x + half_size, y + size);
-            draw(out, img, x, y2, x + half_size, y2 + size);
+            let half_end = if plant(21267) { size } else { half_size };
+            draw(out, img, x, y, x + half_end, y + size);
+            draw(out, img, x, y2, x + half_end, y2 + size);
             x += BORDER_LINE_SIZE / 2;
         }
 
         // x2 - x must now be less than a half piece; border pieces have a two pixel repeat so we blit one pixel over
         // if necessary to line up the art, but we'll cover-up the overlap with the corners
         if x < x2 {
-            x -= (BORDER_LINE_SIZE / 2) - (((x2 - x) + 1) & !1);
+            x -= (BORDER_LINE_SIZE / 2) - (((x2 - x) + if plant(21268) { 0 } else { 1 }) & !1);
             draw(out, img, x, y, x + half_size, y + size);
             draw(out, img, x, y2, x + half_size, y2 + size);
         }
@@ -263,7 +271,7 @@ pub fn w3d_main_menu_map_border<H: GuiHost>(wm: &GameWindowManager, h: &H, windo
     draw(out, b"FrameCornerUL", original_x - BORDER_CORNER_SIZE, original_y - BORDER_CORNER_SIZE, original_x - BORDER_CORNER_SIZE + size, original_y - BORDER_CORNER_SIZE + size);
     draw(out, b"FrameCornerUR", max_x - BORDER_CORNER_SIZE, original_y - BORDER_CORNER_SIZE, max_x - BORDER_CORNER_SIZE + size, original_y - BORDER_CORNER_SIZE + size);
     draw(out, b"FrameCornerLL", original_x - BORDER_CORNER_SIZE, max_y - BORDER_CORNER_SIZE, original_x - BORDER_CORNER_SIZE + size, max_y - BORDER_CORNER_SIZE + size);
-    draw(out, b"FrameCornerLR", max_x - BORDER_CORNER_SIZE, max_y - BORDER_CORNER_SIZE, max_x - BORDER_CORNER_SIZE + size, max_y - BORDER_CORNER_SIZE + size);
+    draw(out, if plant(21269) { b"FrameCornerLL" } else { b"FrameCornerLR" }, max_x - BORDER_CORNER_SIZE, max_y - BORDER_CORNER_SIZE, max_x - BORDER_CORNER_SIZE + size, max_y - BORDER_CORNER_SIZE + size);
 
     // TheDisplay->enableClipping(FALSE): the clip is the caller's to clear
 }
@@ -425,7 +433,7 @@ pub fn w3d_thin_border_draw(wm: &GameWindowManager, window: WinId, out: &mut Vec
     let win = &wm.tree.windows[window];
     let (sx, sy) = win.size;
     if let Some(image) = win.inst.enabled_draw_data[0].image.clone() {
-        let begin = (sx_pos + win.inst.image_offset.0, sy_pos + win.inst.image_offset.1);
+        let begin = if plant(21270) { (sx_pos, sy_pos) } else { (sx_pos + win.inst.image_offset.0, sy_pos + win.inst.image_offset.1) };
         let end = (begin.0 + sx, begin.1 + sy);
         out.push(DrawItem::Image { image, x0: begin.0, y0: begin.1, x1: end.0, y1: end.1, color: 0xFFFF_FFFF, grayscale: false, clip: wm.clip });
     }

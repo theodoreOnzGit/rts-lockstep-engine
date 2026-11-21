@@ -3,16 +3,15 @@
 **   wvm_enums.inc     GameClient/WindowVideoManager.h: the enums WindowVideoPlayType and WindowVideoStates;
 **   wvm_class.inc     the same header's `class WindowVideo`, and wvm_inline.inc its inline accessors;
 **   wvm_cpp.inc       GameClient/GUI/WindowVideoManager.cpp, from `WindowVideo::WindowVideo( void )` to the end (the WindowVideo and WindowVideoManager members).
-** Stand-ins (the shared ones in differential/shim_ui3b/ui3b_stubs.h: the windows, whose status word holds the hidden bit, and WinInstanceData::setVideoBuffer, logged
+** Stand-ins (the mini window manager of differential/shim_ui3b/ui3b_wm.h: windows in a tree, `winIsHidden` the window's OWN bit, and WinInstanceData::setVideoBuffer, logged
 **   [30, window id, buffer token or 0]):
-**   class WindowVideoManager: the header's class, but m_playingVideos is a std::map keyed by the window pointer, in DESCENDING pointer order (upstream's is a std::hash_map
-**     on the pointer, whose iteration order is unspecified; the Rust draft iterates in ascending WinId, and the test's scene creates its windows in reverse of the table, so
-**     WinId ascends as the table index descends) and the accessors the test reads;
+**   class WindowVideoManager: the header's class, but m_playingVideos is a std::map keyed by the window pointer, in ascending pointer order (upstream's is a std::hash_map
+**     on the pointer, whose iteration order is unspecified; the Rust draft iterates in ascending WinId, which is the window's index in the scene's array here) and the accessors the test reads;
 **   AsciiString (a movie index, with clear()), VideoStreamInterface (a token; a length; a ready-mask consumed one bit per isFrameReady call [1, stream]: frameDecompress,
 **     frameRender(buffer) and frameNext are logged [2, stream], [3, stream, buffer], [4, stream]; frameIndex() is the frame, 0 after the last; close() logs [21, stream]),
 **   VideoBuffer (a token; allocate(w, h) answers the movie's script and logs [12, buffer]; its destructor, `delete`, logs [20, buffer]), TheVideoPlayer->open(name)
 **   (logs [10, movie]; NULL when the movie's script says so), TheDisplay->createVideoBuffer() (logs [11]; NULL when the script says so).
-** Entry point ref_ui3b_wvm_run(in, n, out, cap): `in` = [scene block, nmovies, nmovies x [open ok, create buffer ok, allocate ok, length, ready mask], nsteps,
+** Entry point ref_ui3b_wvm_run(in, n, out, cap): `in` = [tree scene block, nmovies, nmovies x [open ok, create buffer ok, allocate ok, length, ready mask], nsteps,
 ** nsteps x [kind, a, b, c]]: kinds 0 playMovie(window a, movie b, play type c), 1 pauseMovie(a), 2 hideMovie(a), 3 resumeMovie(a), 4 stopMovie(a), 5 stopAndRemoveMovie(a),
 ** 6 stopAllMovies, 7 pauseAllMovies, 8 resumeAllMovies, 9 update, 10 reset, 11 init, 12 the window a hidden (b = 1) or shown, 13 getWinState(a).
 ** Output per step: the calls logged, then [100, the scene's dump, every window's getWinState, the number of playing videos, m_stopAllMovies, m_pauseAllMovies]. */
@@ -28,7 +27,11 @@
 
 namespace ui3bwvm {
 
-#include "ui3b_stubs.h"
+#include "ui3b_msgs.inc"
+#include "ui3b_gwm.inc"
+#include "ui3b_status.inc"
+#include "ui3b_winerr.inc"
+#include "ui3b_wm.h"
 #include "wvm_enums.inc"
 
 #define NEW new
@@ -102,7 +105,7 @@ public:
 	bool stopAll() const { return m_stopAllMovies; }
 	bool pauseAll() const { return m_pauseAllMovies; }
 private:
-	typedef std::map<const GameWindow *, WindowVideo *, std::greater<const GameWindow *> > WindowVideoMap;
+	typedef std::map<const GameWindow *, WindowVideo *> WindowVideoMap;
 	WindowVideoMap m_playingVideos;
 	Bool m_stopAllMovies;
 	Bool m_pauseAllMovies;
@@ -145,7 +148,7 @@ extern "C" int ref_ui3b_wvm_run(const unsigned *in, int n, unsigned *out, int ca
 		case 9: mgr->update(); break;
 		case 10: mgr->reset(); break;
 		case 11: mgr->init(); break;
-		case 12: if (b) w->status |= 0x10; else w->status &= ~0x10u; break;
+		case 12: if (b) w->m_status |= WIN_STATUS_HIDDEN; else w->m_status &= ~(unsigned)WIN_STATUS_HIDDEN; break;
 		default: break;
 		}
 		unsigned st13 = (unsigned)mgr->getWinState(w);

@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use crate::client::window_manager::GameWindowManager;
-use crate::client::window_script::WinId;
+use crate::client::window_script::{win_status, WinId};
 use crate::logic::modules::plant;
 
 /// `enum WindowVideoPlayType`.
@@ -118,6 +118,15 @@ impl Default for WindowVideo {
     }
 }
 
+/// `win->winIsHidden()`: the window's own hidden bit (`GameWindowManager::isHidden` counts its ancestors too: the planted bug `plant_id`).
+fn win_is_hidden(wm: &GameWindowManager, w: WinId, plant_id: u32) -> bool {
+    if plant(plant_id) {
+        wm.is_hidden(Some(w))
+    } else {
+        wm.tree.windows[w].status & win_status::HIDDEN != 0
+    }
+}
+
 /// `class WindowVideoManager`. ~~Upstream's `std::map<GameWindow *, WindowVideo *>` iterates in pointer order; the window index order stands in for it.~~
 /// **Corrected 2026-11-21 (#215, group ui3b):** upstream's map is a `std::hash_map<ConstGameWindowPtr, WindowVideo *, hashConstGameWindowPtr>`
 /// (WindowVideoManager.h), whose iteration order is unspecified (bucket order); the draft iterates in window-index order, which the differential test's
@@ -164,12 +173,12 @@ impl WindowVideoManager {
             let Some(win) = win_vid.win else { continue };
             let state = win_vid.state;
 
-            if state == WindowVideoStates::Hidden && (wm.is_hidden(Some(win)) == plant(21157)) {
+            if state == WindowVideoStates::Hidden && (win_is_hidden(wm, win, 21161) == plant(21157)) {
                 self.resume_movie(wm, v, win);
             }
 
             let state = self.playing_videos.get(&key).map_or(state, |w| w.state);
-            if state == WindowVideoStates::Play && wm.is_hidden(Some(win)) {
+            if state == WindowVideoStates::Play && win_is_hidden(wm, win, 21162) {
                 self.hide_movie(wm, v, win);
             }
 

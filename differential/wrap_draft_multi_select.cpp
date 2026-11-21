@@ -4,7 +4,7 @@
 **                     addCommonCommands, populateMultiSelect, updateContextMultiSelect);
 **   ms_options.inc, ms_avail.inc   GameClient/ControlBar.h: the enums CommandOption (OK_FOR_MULTI_SELECT, CHECK_LIKE, ...) and CommandAvailability;
 **   sinv_max_cmds.inc              ControlBar.h's MAX_COMMANDS_PER_SET (18).
-** Stand-ins (shared ones in differential/shim_ui3b/ui3b_stubs.h: the windows, their status words and button data):
+** Stand-ins (the mini window manager of differential/shim_ui3b/ui3b_wm.h: windows in a tree, with upstream's own winHide / winEnable cut verbatim; `winIsHidden` is the window's OWN bit):
 **   ControlBar: the members the cuts use (m_commandWindows, m_commonCommands); setControlCommand(w, command) logs [6, window id, command token] and stores the token as the
 **     window's button data; getCommandAvailability(command, obj, w) logs [3, command token, object index, window id] and answers by a fixed hash of the three (the Rust test's
 **     function); setPortraitByObject(obj) logs [7, object index or 0xFFFFFFFF];
@@ -14,7 +14,7 @@
 **     the command set, the sold bit), Drawable (its object, its template's selected portrait image), TheInGameUI->getAllSelectedDrawables() (the case's list).
 ** Not covered (upstream dereferences NULL): a selected drawable without an object. The draft skips it.
 **
-** Entry point ref_ui3b_msel_run(in, n, out, cap): `in` = [scene block of 18 windows (the status words; the window slots present: bit k of the mask), mask, per window button data
+** Entry point ref_ui3b_msel_run(in, n, out, cap): `in` = [tree scene block of 18 windows (the window slots present: bit k of the mask), mask, per window button data
 ** token, per slot initial common command token, ncmd, ncmd x [options, attack move], nset, nset x [18 command tokens], nobj, nobj x [ignored, sold, command set (0 none, else index + 1),
 ** portrait token], nsel, nsel x [object index], nsteps, nsteps x [kind (0 populateMultiSelect, 1 updateContextMultiSelect, 2 addCommonCommands(drawable a, first b),
 ** 3 resetCommonCommandData, 4 the selection becomes the b objects starting at a (a, a+1, ..) mod nobj), a, b]]. Output per step: the calls logged, then [100, the scene's
@@ -30,12 +30,15 @@
 
 namespace ui3bmsel {
 
-#include "ui3b_stubs.h"
+#include "ui3b_msgs.inc"
+#include "ui3b_gwm.inc"
+#include "ui3b_status.inc"
+#include "ui3b_winerr.inc"
+#include "ui3b_wm.h"
 #include "sinv_max_cmds.inc"
 #include "ms_options.inc"
 #include "ms_avail.inc"
 
-enum { WIN_STATUS_NOT_READY = 0x00400000, WIN_STATUS_ALWAYS_COLOR = 0x01000000 };
 enum { KINDOF_IGNORED_IN_GUI = 1 };
 enum { OBJECT_STATUS_SOLD = 2 };
 enum { GUI_COMMAND_ATTACK_MOVE = 7, GUI_COMMAND_OTHER = 3 };
@@ -75,9 +78,9 @@ struct InGameUI { const DrawableList *getAllSelectedDrawables() { return &g_sele
 static InGameUI g_ui;
 static InGameUI *TheInGameUI = &g_ui;
 
-static void GadgetButtonDrawOverlayImage(GameWindow *g, const Image *) { if (g == NULL) return; lg(5); lg((unsigned)g->id); }
+static void GadgetButtonDrawOverlayImage(GameWindow *g, const Image *) { if (g == NULL) return; lg(5); lg((unsigned)g->m_id); }
 static const CommandButton *GadgetButtonGetData(GameWindow *g) { return g->gdata ? &g_cmds[g->gdata - 1] : NULL; }
-static void GadgetCheckLikeButtonSetVisualCheck(GameWindow *g, Bool b) { lg(4); lg((unsigned)g->id); lg(b ? 1 : 0); }
+static void GadgetCheckLikeButtonSetVisualCheck(GameWindow *g, Bool b) { lg(4); lg((unsigned)g->m_id); lg(b ? 1 : 0); }
 
 static unsigned availHash(unsigned cmd, unsigned obj, unsigned win)
 {
@@ -95,12 +98,12 @@ public:
 	void addCommonCommands(Drawable *draw, Bool firstDrawable);
 	void populateMultiSelect(void);
 	void updateContextMultiSelect(void);
-	void setControlCommand(GameWindow *w, const CommandButton *c) { lg(6); lg((unsigned)w->id); lg(c ? c->token : 0); w->gdata = c ? c->token : 0; }
+	void setControlCommand(GameWindow *w, const CommandButton *c) { lg(6); lg((unsigned)w->m_id); lg(c ? c->token : 0); w->gdata = c ? c->token : 0; }
 	CommandAvailability getCommandAvailability(const CommandButton *c, Object *o, GameWindow *w)
 	{
-		lg(3); lg(c->token); lg(o->index); lg((unsigned)w->id);
+		lg(3); lg(c->token); lg(o->index); lg((unsigned)w->m_id);
 		static const CommandAvailability map[6] = { COMMAND_RESTRICTED, COMMAND_AVAILABLE, COMMAND_ACTIVE, COMMAND_HIDDEN, COMMAND_NOT_READY, COMMAND_CANT_AFFORD };
-		return map[availHash(c->token, o->index, (unsigned)w->id)];
+		return map[availHash(c->token, o->index, (unsigned)w->m_id)];
 	}
 	void setPortraitByObject(Object *o) { lg(7); lg(o ? o->index : 0xFFFFFFFFu); }
 };

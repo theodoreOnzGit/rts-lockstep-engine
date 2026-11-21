@@ -3,10 +3,11 @@
 **   motd.inc   GameEngineDevice/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp, from `static NameKeyType closeButtonID` to the end
 **              (the static `closeButtonID`, MOTDSystem);
 **   ui3b_msgs.inc, ui3b_gwm.inc, ui3b_gadget.inc   GameWindow.h's WindowMsgHandledType and GameWindowMessage, Gadget.h's GadgetGameMessage.
-** Stand-ins: the shared ones (differential/shim_ui3b/ui3b_stubs.h: name keys, windows). The static is reset to NAMEKEY_INVALID at the start of a sequence
+** Stand-ins: the mini window manager of differential/shim_ui3b/ui3b_wm.h (windows in a tree, with upstream's own winHide / winEnable / windowHiding cut verbatim: `window->winHide(!window->winIsHidden())`
+** tests the window's OWN hidden bit). The static is reset to NAMEKEY_INVALID at the start of a sequence
 ** (the game starts it so).
 ** Not covered: GBM_SELECTED with a NULL control (upstream dereferences NULL).
-** Entry point ref_ui3b_motd_run(in, n, out, cap): `in` = [scene block, nsteps, nsteps x [window index, msg, d1 (for GBM_SELECTED: control index + 1), d2]];
+** Entry point ref_ui3b_motd_run(in, n, out, cap): `in` = [tree scene block, nsteps, nsteps x [window index, msg, d1 (for GBM_SELECTED: control index + 1), d2]];
 ** output per step: [100, result (0 ignored, 1 handled), the scene's dump, the static id]. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,10 +19,12 @@
 
 namespace ui3bmotd {
 
-#include "ui3b_stubs.h"
 #include "ui3b_msgs.inc"
 #include "ui3b_gwm.inc"
 #include "ui3b_gadget.inc"
+#include "ui3b_status.inc"
+#include "ui3b_winerr.inc"
+#include "ui3b_wm.h"
 #include "motd.inc"
 
 }

@@ -5,8 +5,8 @@
 //!
 //! # Method
 //!
-//! 20,000 sequences (fixed seed, `DRAFT_CASES` overrides). A scene of 1 to 5 top-level windows (the close button's id, as the C++ computes it with
-//! NAMEKEY, or decoys; duplicates included; each hidden or not) and 1 to 12 messages to a random window: `GWM_CREATE`, `GWM_DESTROY`, `GBM_SELECTED`
+//! 20,000 sequences (fixed seed, `DRAFT_CASES` overrides). A tree of 1 to 5 windows (the close button's id, as the C++ computes it with
+//! NAMEKEY, or decoys; duplicates included; each hidden or not; a third are the child of an earlier window, so a window can be shown with a hidden parent) and 1 to 12 messages to a random window: `GWM_CREATE`, `GWM_DESTROY`, `GBM_SELECTED`
 //! with a random window of the scene as the control (so `window->winHide(!window->winIsHidden())` is toggled only when the control's id is the
 //! close button's, and only after a `GWM_CREATE` has set the static), any other message code. After every message the return value, every
 //! window's hidden and enabled bits and the static id are compared. EXCLUDED: `GBM_SELECTED` with a NULL control (upstream dereferences NULL).
@@ -26,11 +26,12 @@
 //! | 21095 | `GWM_DESTROY` is reported ignored |
 //! | 21096 | an unknown message is reported handled |
 //! | 21097 | the id comparison is inverted |
+//! | 21098 | `winIsHidden` is read as `GameWindowManager::isHidden` (the window or an ancestor hidden) |
 //!
 //! # Results
 //!
-//! 2026-11-21, `DRAFT_CASES=20000` (the default): **0 mismatches over 20,000 sequences**, max ULP 0 (nothing is floating point here). No draft change was needed. Prediction held.
-//! Planted bugs (of 20,000): 21091 13,873; 21092 3,760; 21093 13,873; 21094 4,315; 21095 13,819; 21096 13,619; 21097 17,456. **7 of 7 caught.**
+//! 2026-11-21, `DRAFT_CASES=20000` (the default): **0 mismatches over 20,000 sequences**, max ULP 0 (the comparison is of integer words). The first version of this test used flat scenes (0 mismatches, 7 of 7 plants caught). Reading `win->winIsHidden()` against the draft afterwards showed the draft used `GameWindowManager::isHidden` (the window or an ancestor hidden), a difference a flat scene cannot show; **the draft was fixed** (the window's own bit) and the scene made a tree (plant 21098 reinstates the defect and is caught). Re-run: **0 mismatches**.
+//! Planted bugs (of 20,000): 21091 13,827; 21092 3,420; 21093 13,827; 21094 4,290; 21095 13,899; 21096 13,582; 21097 17,503; 21098 512. **8 of 8 caught.**
 //! The `DIFF` line is printed by the run.
 
 mod support;
@@ -94,13 +95,12 @@ fn motd_system_matches_upstream() {
     let ids = [key_of(b"MOTD.wnd:CloseMOTD"), key_of(b"MOTD.wnd:CloseMOTD"), 4001, 4002];
     for _ in 0..cases(20_000) {
         let nwin = 1 + g.below(5) as usize;
-        let mut specs = random_specs(&mut g, nwin, &ids);
-        for s in &mut specs {
-            s.no_focus = false;
+        let mut ts = random_tree(&mut g, nwin, &ids, 0);
+        for t in &mut ts {
+            t.spec.no_focus = false;
         }
-        let (mut wm, order) = make_scene(&specs);
-        let mut input = Vec::new();
-        put_scene(&mut wm, &order, &specs, 0, &mut input);
+        let (mut wm, scene) = make_tree_scene(&ts, b"unused");
+        let mut input = scene;
         let mut host = Host { shell: Shell::new(), motd: Motd::default() };
         let steps = 1 + g.below(12);
         input.push(steps);
@@ -115,15 +115,15 @@ fn motd_system_matches_upstream() {
             };
             let (d1, d1c) = if msg == 16392 {
                 let c = g.below(nwin as u32);
-                (win_data(Some(order[c as usize])), c + 1)
+                (win_data(Some(c as usize)), c + 1)
             } else {
                 let d = g.below(5);
                 (d, d)
             };
             input.extend([wi, msg, d1c, 0]);
-            let r = motd_system(&mut wm, &mut host, order[wi as usize], msg, d1, 0);
+            let r = motd_system(&mut wm, &mut host, wi as usize, msg, d1, 0);
             rust.extend([100, u32::from(r == MsgHandled::Handled)]);
-            put_state(&wm, &order, &mut rust);
+            put_state_tree(&wm, nwin, &mut rust);
             rust.push(host.motd.close_button_id as u32);
         }
         let mut buf = vec![0u32; 1 << 14];

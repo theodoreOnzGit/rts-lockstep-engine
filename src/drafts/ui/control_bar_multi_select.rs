@@ -49,6 +49,15 @@ pub trait MultiSelectHost: GuiHost {
     fn gadget_check_like_button_set_visual_check(&mut self, wm: &mut GameWindowManager, w: usize, checked: bool);
 }
 
+/// `win->winIsHidden()`: the window's own hidden bit (`GameWindowManager::isHidden`, `is_hidden`, counts its ancestors too: it was used here first, the planted bug `plant_id`).
+fn win_is_hidden(wm: &GameWindowManager, w: usize, plant_id: u32) -> bool {
+    if plant(plant_id) {
+        wm.is_hidden(Some(w))
+    } else {
+        wm.tree.windows[w].status & win_status::HIDDEN != 0
+    }
+}
+
 /// `ControlBar::resetCommonCommandData()` (ControlBarMultiSelect.cpp:55).
 pub fn reset_common_command_data<H: MultiSelectHost>(wm: &mut GameWindowManager, h: &mut H) {
     for i in 0..MAX_COMMANDS_PER_SET {
@@ -224,7 +233,7 @@ pub fn update_context_multi_select<H: MultiSelectHost>(wm: &mut GameWindowManage
             let Some(win) = h.command_window(i) else { continue };
 
             // don't consider hidden windows
-            if wm.is_hidden(Some(win)) {
+            if win_is_hidden(wm, win, 21141) {
                 continue;
             }
 
@@ -268,7 +277,7 @@ pub fn update_context_multi_select<H: MultiSelectHost>(wm: &mut GameWindowManage
         let Some(w) = h.command_window(i) else { continue };
 
         // don't consider hidden commands
-        if wm.is_hidden(Some(w)) {
+        if win_is_hidden(wm, w, 21142) {
             continue;
         }
 

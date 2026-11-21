@@ -9,7 +9,7 @@
 //! # Method
 //!
 //! 20,000 sequences (fixed seed, `DRAFT_CASES` overrides). 18 command windows (a random status word each: hidden, enabled, `NOT_READY`,
-//! `ALWAYS_COLOR`; present or not; a random button command or none), 2 to 6 command buttons (options drawn from OK_FOR_MULTI_SELECT, CHECK_LIKE,
+//! `ALWAYS_COLOR`; a third the child of an earlier one, so a window can be shown under a hidden parent; present or not; a random button command or none), 2 to 6 command buttons (options drawn from OK_FOR_MULTI_SELECT, CHECK_LIKE,
 //! others; attack move or not), 1 to 4 command sets of 18 slots (mostly filled, a few empty), 1 to 6 objects (ignored in the GUI or not, sold or not, a
 //! command set or none, a portrait image or none), a random selection (1 to 6 objects, repeats included), a random initial common command per slot;
 //! 1 to 10 steps of `populateMultiSelect`, `updateContextMultiSelect`, `addCommonCommands(drawable, first)`, `resetCommonCommandData` and a new selection.
@@ -36,11 +36,13 @@
 //! | 21138 | the portrait object is the last selected, not the first |
 //! | 21139 | a command that cannot be afforded is marked NOT_READY |
 //! | 21140 | a command is enabled when 2 or more objects can do it (`> 1`) |
+//! | 21141 | the update's per-object loop reads a window's hidden state as `isHidden` (the window or an ancestor), not `winIsHidden` |
+//! | 21142 | the final enable loop reads it the same way |
 //!
 //! # Results
 //!
-//! 2026-11-21, `DRAFT_CASES=20000` (the default): **0 mismatches over 20,000 sequences**, max ULP 0 (nothing is floating point here). No draft change was needed. Prediction held.
-//! Planted bugs (of 20,000): 21131 13,778; 21132 6,820; 21133 7,277; 21134 1,923; 21135 4,483; 21136 2,320; 21137 2,763; 21138 3,892; 21139 7,650; 21140 5,402. **10 of 10 caught.**
+//! 2026-11-21, `DRAFT_CASES=20000` (the default): **0 mismatches over 20,000 sequences**, max ULP 0 (the comparison is of integer words). The first version of this test used flat scenes (0 mismatches, 10 of 10 plants caught). The observer test then showed the drafts read `winIsHidden()` as `GameWindowManager::isHidden` (ancestors included); in `updateContextMultiSelect` (two places) **the draft was fixed** (the window's own bit) and the scene made a tree (plants 21141 and 21142 reinstate the two defects and are caught). Re-run: **0 mismatches**.
+//! Planted bugs (of 20,000): 21131 13,891; 21132 6,839; 21133 7,273; 21134 1,851; 21135 4,525; 21136 2,303; 21137 2,830; 21138 3,851; 21139 7,448; 21140 5,427; 21141 8,713; 21142 2,722. **12 of 12 caught.**
 //! The `DIFF` line is printed by the run.
 
 mod support;
@@ -177,7 +179,7 @@ fn multi_select_matches_upstream() {
     let extras = [0x0040_0000u32, 0x0100_0000, 0x80];
     let option_bits = [0x100u32, 0x400, 0x40, 0x2000, 0x1_0000];
     for _ in 0..cases(20_000) {
-        let specs: Vec<WinSpec> = (0..18)
+        let ts: Vec<TreeSpec> = (0..18usize)
             .map(|i| {
                 let mut extra = 0;
                 for &e in &extras {
@@ -185,12 +187,12 @@ fn multi_select_matches_upstream() {
                         extra |= e;
                     }
                 }
-                WinSpec { id: i + 1, hidden: g.below(3) == 0, enabled: g.below(2) == 0, no_focus: false, extra }
+                TreeSpec { spec: WinSpec { id: i as i32 + 1, hidden: g.below(3) == 0, enabled: g.below(2) == 0, no_focus: false, extra }, parent: if i > 0 && g.below(3) == 0 { Some(g.below(i as u32) as usize) } else { None }, unit_system: false }
             })
             .collect();
-        let (mut wm, order) = make_scene(&specs);
-        let mut input = Vec::new();
-        put_scene(&mut wm, &order, &specs, 0, &mut input);
+        let (mut wm, scene) = make_tree_scene(&ts, b"unused");
+        let order: Vec<usize> = (0..18).collect();
+        let mut input = scene;
         let mask = if g.below(3) == 0 { g.below(1 << 18) } else { (1 << 18) - 1 };
         input.push(mask);
         let ncmd = 2 + g.below(5) as usize;
@@ -265,7 +267,7 @@ fn multi_select_matches_upstream() {
             }
             rust.extend(host.log.iter().copied());
             rust.push(100);
-            put_state(&wm, &order, &mut rust);
+            put_state_tree(&wm, 18, &mut rust);
             rust.extend(host.gdata.iter().copied());
             rust.extend(host.common.iter().map(|c| c.map_or(0, |t| t as u32)));
         }
