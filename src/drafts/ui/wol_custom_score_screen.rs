@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_wol_small.rs);
+//! not yet wired into the game. Callbacks before `Init` (the cut's statics left over from the previous case) are not compared.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLCustomScoreScreen.cpp
@@ -7,6 +8,7 @@
 //! The GameSpy/WOL service is gone: the *Disconnect* button's body is commented out upstream (it reset the WOL API),
 //! so the buttons do nothing here either (the commented-out `getState() == WOLAPI_FATAL_ERROR` check in `Init` hid *Lobby*).
 
+use crate::logic::modules::plant;
 use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
@@ -34,7 +36,7 @@ pub fn wol_custom_score_screen_init<H: WolCustomScoreScreenHost>(wm: &mut GameWi
     let lobby_id = ShellHost::name_to_key(h, b"WOLCustomScoreScreen.wnd:ButtonLobby") as i32;
     let parent = wm.win_get_window_from_id(None, parent_id);
     let button = wm.win_get_window_from_id(None, button_id);
-    let lobby = wm.win_get_window_from_id(None, lobby_id);
+    let lobby = wm.win_get_window_from_id(None, if plant(20670) { button_id } else { lobby_id });
     {
         let s = h.wol_custom_score_screen();
         s.parent_wol_custom_score_id = parent_id;
@@ -50,7 +52,7 @@ pub fn wol_custom_score_screen_init<H: WolCustomScoreScreenHost>(wm: &mut GameWi
 
 /// `WOLCustomScoreScreenShutdown(layout, userData)`.
 pub fn wol_custom_score_screen_shutdown<H: WolCustomScoreScreenHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
-    wm.layout_hide(layout, true);
+    wm.layout_hide(layout, !plant(20673));
     shell::shutdown_complete(wm, h, Some(layout), false);
 }
 
@@ -62,9 +64,14 @@ pub fn wol_custom_score_screen_input<H: WolCustomScoreScreenHost>(wm: &mut GameW
     if msg == gwm::CHAR && (d1 & 0xFF) as u8 == key::ESC {
         if (d2 & 0xFF) & key::STATE_UP != 0 {
             let s = h.wol_custom_score_screen().clone();
-            wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(s.button_disconnect), s.button_disconnect_id as u32);
+            if plant(20671) {
+                wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(s.button_lobby), s.button_lobby_id as u32);
+            } else {
+                wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(s.button_disconnect), s.button_disconnect_id as u32);
+            }
+            return MsgHandled::Handled;
         }
-        return MsgHandled::Handled;
+        return if plant(20672) { MsgHandled::Ignored } else { MsgHandled::Handled };
     }
     MsgHandled::Ignored
 }

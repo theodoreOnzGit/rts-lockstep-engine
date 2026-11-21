@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_wol_small.rs);
+//! not yet wired into the game. Callbacks before `Init` (the cut's statics left over from the previous case) are not compared.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLStatusMenu.cpp
@@ -7,6 +8,7 @@
 //! The GameSpy/WOL service is gone: the *Disconnect* button's body is commented out upstream (it reset the WOL API),
 //! so the button does nothing here either.
 
+use crate::logic::modules::plant;
 use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
@@ -33,7 +35,7 @@ pub fn wol_status_menu_init<H: WolStatusMenuHost>(wm: &mut GameWindowManager, h:
     let list_id = ShellHost::name_to_key(h, b"WOLStatusMenu.wnd:ListboxStatus") as i32;
     let parent = wm.win_get_window_from_id(None, parent_id);
     let button = wm.win_get_window_from_id(None, button_id);
-    let progress = wm.win_get_window_from_id(None, list_id);
+    let progress = wm.win_get_window_from_id(None, if plant(20667) { button_id } else { list_id });
     {
         let s = h.wol_status_menu();
         s.parent_wol_status_id = parent_id;
@@ -48,7 +50,9 @@ pub fn wol_status_menu_init<H: WolStatusMenuHost>(wm: &mut GameWindowManager, h:
 
 /// `WOLStatusMenuShutdown(layout, userData)`.
 pub fn wol_status_menu_shutdown<H: WolStatusMenuHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
-    wm.layout_hide(layout, true);
+    if !plant(20668) {
+        wm.layout_hide(layout, true);
+    }
     shell::shutdown_complete(wm, h, Some(layout), false);
 }
 
@@ -60,7 +64,7 @@ pub fn wol_status_menu_input<H: WolStatusMenuHost>(wm: &mut GameWindowManager, h
     if msg == gwm::CHAR && (d1 & 0xFF) as u8 == key::ESC {
         if (d2 & 0xFF) & key::STATE_UP != 0 {
             let s = h.wol_status_menu().clone();
-            wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(s.button_disconnect), s.button_disconnect_id as u32);
+            wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(s.button_disconnect), if plant(20666) { s.parent_wol_status_id } else { s.button_disconnect_id } as u32);
         }
         return MsgHandled::Handled;
     }
@@ -79,6 +83,7 @@ pub fn wol_status_menu_system<H: WolStatusMenuHost>(wm: &mut GameWindowManager, 
             return MsgHandled::Handled;
         }
         // GBM_SELECTED: the body (reset the WOL API on *Disconnect*) is commented out upstream
+        ggm::GBM_SELECTED if plant(20669) => return MsgHandled::Ignored,
         ggm::GBM_SELECTED | ggm::GEM_EDIT_DONE => {}
         _ => return MsgHandled::Ignored,
     }

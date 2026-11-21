@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_wol_small.rs);
+//! not yet wired into the game. Callbacks before `Init` (the cut's statics left over from the previous case) are not compared.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLMessageWindow.cpp
@@ -7,6 +8,7 @@
 //! The GameSpy/WOL service is gone. `WOLMessageWindowUpdate`'s body (`WOL::TheWOL->update()`) is commented out
 //! upstream; *Cancel* has no handler upstream.
 
+use crate::logic::modules::plant;
 use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
@@ -39,12 +41,14 @@ pub fn wol_message_window_init<H: WolMessageWindowHost>(wm: &mut GameWindowManag
         s.button_cancel = cancel;
     }
     wm.layout_hide(layout, false);
-    wm.win_set_focus(h, parent);
+    if !plant(20662) {
+        wm.win_set_focus(h, parent);
+    }
 }
 
 /// `WOLMessageWindowShutdown(layout, userData)`.
 pub fn wol_message_window_shutdown<H: WolMessageWindowHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
-    wm.layout_hide(layout, true);
+    wm.layout_hide(layout, !plant(20663));
     shell::shutdown_complete(wm, h, Some(layout), false);
 }
 
@@ -53,8 +57,8 @@ pub fn wol_message_window_update<H: WolMessageWindowHost>(_wm: &mut GameWindowMa
 
 /// `WOLMessageWindowInput(window, msg, mData1, mData2)`: Escape's release presses *Cancel*.
 pub fn wol_message_window_input<H: WolMessageWindowHost>(wm: &mut GameWindowManager, h: &mut H, window: WinId, msg: u32, d1: WindowMsgData, d2: WindowMsgData) -> MsgHandled {
-    if msg == gwm::CHAR && (d1 & 0xFF) as u8 == key::ESC {
-        if (d2 & 0xFF) & key::STATE_UP != 0 {
+    if msg == gwm::CHAR && (if plant(20665) { d1 == u32::from(key::ESC) } else { (d1 & 0xFF) as u8 == key::ESC }) {
+        if ((d2 & 0xFF) & key::STATE_UP != 0) != plant(20661) {
             let s = h.wol_message_window().clone();
             wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(s.button_cancel), s.button_cancel_id as u32);
         }
@@ -68,7 +72,7 @@ pub fn wol_message_window_system<H: WolMessageWindowHost>(wm: &mut GameWindowMan
     match msg {
         gwm::CREATE | gwm::DESTROY => {}
         gwm::INPUT_FOCUS => {
-            if d1 == 1 {
+            if (d1 == 1 && !plant(20664)) || (d1 != 0 && plant(20664)) {
                 wm.focus_reply = true;
             }
             return MsgHandled::Handled;

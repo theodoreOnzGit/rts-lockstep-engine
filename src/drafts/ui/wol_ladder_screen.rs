@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_wol_small.rs);
+//! not yet wired into the game. (Excluded inputs: a missing *Back* button with Escape or `GBM_SELECTED` of a NULL control, which upstream dereferences.) Callbacks before `Init` (the cut's statics left over from the previous case) are not compared.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLLadderScreen.cpp
@@ -6,6 +7,7 @@
 //!
 //! The ladder page was an embedded web browser (`TheWebBrowser`, the in-game IE control), which is the host's.
 
+use crate::logic::modules::plant;
 use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
@@ -34,7 +36,9 @@ pub trait WolLadderScreenHost: ShellHost {
 
 /// `WOLLadderScreenInit(layout, userData)`.
 pub fn wol_ladder_screen_init<H: WolLadderScreenHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
-    shell::show_shell_map(wm, h, true);
+    if !plant(20678) {
+        shell::show_shell_map(wm, h, !plant(20679));
+    }
 
     let ids = [
         ShellHost::name_to_key(h, b"WOLLadderScreen.wnd:LadderParent") as i32,
@@ -54,7 +58,7 @@ pub fn wol_ladder_screen_init<H: WolLadderScreenHost>(wm: &mut GameWindowManager
         s.window_ladder = ladder;
     }
 
-    if h.has_web_browser() {
+    if h.has_web_browser() || plant(20680) {
         h.web_browser_create_window(b"MessageBoard", ladder);
     }
 
@@ -65,7 +69,7 @@ pub fn wol_ladder_screen_init<H: WolLadderScreenHost>(wm: &mut GameWindowManager
 /// `WOLLadderScreenShutdown(layout, userData)`.
 pub fn wol_ladder_screen_shutdown<H: WolLadderScreenHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
     if h.has_web_browser() {
-        let w = h.wol_ladder_screen().window_ladder;
+        let w = if plant(20681) { h.wol_ladder_screen().button_back } else { h.wol_ladder_screen().window_ladder };
         h.web_browser_close_window(w);
     }
 
@@ -81,7 +85,7 @@ pub fn wol_ladder_screen_input<H: WolLadderScreenHost>(wm: &mut GameWindowManage
     if msg == gwm::CHAR && (d1 & 0xFF) as u8 == key::ESC {
         if (d2 & 0xFF) & key::STATE_UP != 0 {
             let s = h.wol_ladder_screen().clone();
-            wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(s.button_back), s.button_back_id as u32);
+            wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(s.button_back), if plant(20684) { 0 } else { s.button_back_id } as u32);
         }
         return MsgHandled::Handled;
     }
@@ -100,8 +104,10 @@ pub fn wol_ladder_screen_system<H: WolLadderScreenHost>(wm: &mut GameWindowManag
         }
         ggm::GBM_SELECTED => {
             let Some(control) = data_win(d1) else { return MsgHandled::Handled };
-            if wm.tree.windows[control].id == h.wol_ladder_screen().button_back_id {
-                shell::pop(wm, h);
+            if wm.tree.windows[control].id == (if plant(20682) { h.wol_ladder_screen().parent_window_id } else { h.wol_ladder_screen().button_back_id }) {
+                if !plant(20683) {
+                    shell::pop(wm, h);
+                }
             }
         }
         _ => return MsgHandled::Ignored,

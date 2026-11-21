@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_wol_small.rs);
+//! not yet wired into the game. (Excluded inputs: OK pressed with no list box, where upstream's `int selected` is unset.) Callbacks before `Init` (the cut's statics left over from the previous case) are not compared.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLLocaleSelectPopup.cpp
@@ -7,14 +8,16 @@
 //! The GameSpy service is gone: `TheGameSpyInfo`, `TheGameSpyPSMessageQueue` (the persistent-storage queue) and
 //! `GameSpyMiscPreferences` are the host's. The *OK* handler's body is translated step by step against that host.
 
+use crate::logic::modules::plant;
 use crate::client::gadget_list_box as lb;
 use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{data_win, ggm, gwm, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
 
-/// `LOC_MIN`, `LOC_MAX` (GameSpy locale ids, PersistentStorageThread.h).
+/// `LOC_MIN`, `LOC_MAX` (GameSpy locale ids, PersistentStorageDefs.h `enum LocaleType`: `LOC_MIN = 1`, `LOC_MAX = 37`).
+/// ~~`LOC_MAX` was 20~~ **Corrected 2026-11-21 (#215, group ui3a):** 37 (the draft's 20 left `WOL:Locale21` to `37` out of the list).
 pub const LOC_MIN: i32 = 1;
-pub const LOC_MAX: i32 = 20;
+pub const LOC_MAX: i32 = 37;
 
 /// The file's statics (`NAMEKEY_INVALID` is 0, `NULL` is `None`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -83,18 +86,20 @@ pub fn wol_locale_select_init<H: WolLocaleSelectHost>(wm: &mut GameWindowManager
     }
 
     if let Some(l) = list {
-        let color = h.gamespy_color_default();
+        let color = if plant(20685) { 0 } else { h.gamespy_color_default() };
         for i in LOC_MIN..=LOC_MAX {
             let id = format!("WOL:Locale{i:02}"); // "%2.2d"
             let text = h.fetch_text(id.as_bytes());
             lb::add_entry_text(wm, h, l, &text, color, -1, -1, false);
         }
-        lb::set_selected(wm, h, l, &[0]);
+        lb::set_selected(wm, h, l, &[i32::from(plant(20686))]);
     }
 
     wm.layout_hide(layout, false);
     wm.win_set_focus(h, parent);
-    h.win_set_modal(wm, parent);
+    if !plant(20691) {
+        h.win_set_modal(wm, parent);
+    }
 }
 
 /// `WOLLocaleSelectShutdown(layout, userData)`.
@@ -133,14 +138,19 @@ pub fn wol_locale_select_system<H: WolLocaleSelectHost>(wm: &mut GameWindowManag
                     Some(l) => lb::get_selected(wm, h, l).first().copied().unwrap_or(-1),
                     None => -1,
                 };
-                if selected < 0 {
+                if selected < i32::from(plant(20692)) {
                     return MsgHandled::Handled; // can't select nothing!
                 }
 
-                let locale = selected + LOC_MIN;
-                h.ps_add_update_player_locale_request(locale);
+                let locale = if plant(20687) { selected } else { selected + LOC_MIN };
+                if plant(20688) {
+                    h.gamespy_close_overlay_locale_select(wm);
+                    h.ps_add_update_player_locale_request(locale);
+                } else {
+                    h.ps_add_update_player_locale_request(locale);
 
-                h.gamespy_close_overlay_locale_select(wm);
+                    h.gamespy_close_overlay_locale_select(wm);
+                }
 
                 h.misc_prefs_set_locale_and_write(locale);
 
@@ -148,11 +158,11 @@ pub fn wol_locale_select_system<H: WolLocaleSelectHost>(wm: &mut GameWindowManag
                 let local_id = h.local_profile_id();
                 let mut stats = h.ps_find_player_stats_by_id(local_id);
                 stats.locale = locale;
-                if stats.id == local_id {
+                if (stats.id == local_id && !plant(20689)) || (stats.id == 0 && plant(20689)) {
                     h.ps_track_player_stats_locale(&stats);
                 }
 
-                if stats.id == 0 {
+                if (stats.id == 0) != plant(20690) {
                     h.gamespy_set_cached_local_player_stats_locale(locale);
                 } else {
                     h.ps_add_player_stats_response_for_local_player();

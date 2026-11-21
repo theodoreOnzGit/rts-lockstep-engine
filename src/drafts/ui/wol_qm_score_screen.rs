@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_wol_small.rs);
+//! not yet wired into the game. Callbacks before `Init` (the cut's statics left over from the previous case) are not compared.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLQMScoreScreen.cpp
@@ -7,6 +8,7 @@
 //! The GameSpy/WOL service is gone: the *Disconnect* button's body is commented out upstream (it reset the WOL API),
 //! so the buttons do nothing here either (the commented-out `getState() == WOLAPI_FATAL_ERROR` check in `Init` hid *QuickMatch*).
 
+use crate::logic::modules::plant;
 use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
@@ -34,7 +36,7 @@ pub fn wol_qm_score_screen_init<H: WolQmScoreScreenHost>(wm: &mut GameWindowMana
     let lobby_id = ShellHost::name_to_key(h, b"WOLQMScoreScreen.wnd:ButtonQuickMatch") as i32;
     let parent = wm.win_get_window_from_id(None, parent_id);
     let button = wm.win_get_window_from_id(None, button_id);
-    let lobby = wm.win_get_window_from_id(None, lobby_id);
+    let lobby = wm.win_get_window_from_id(None, if plant(20674) { parent_id } else { lobby_id });
     {
         let s = h.wol_qm_score_screen();
         s.parent_wol_qm_score_id = parent_id;
@@ -51,7 +53,9 @@ pub fn wol_qm_score_screen_init<H: WolQmScoreScreenHost>(wm: &mut GameWindowMana
 /// `WOLQMScoreScreenShutdown(layout, userData)`.
 pub fn wol_qm_score_screen_shutdown<H: WolQmScoreScreenHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
     wm.layout_hide(layout, true);
-    shell::shutdown_complete(wm, h, Some(layout), false);
+    if !plant(20677) {
+        shell::shutdown_complete(wm, h, Some(layout), false);
+    }
 }
 
 /// `WOLQMScoreScreenUpdate(layout, userData)`: empty.
@@ -60,7 +64,7 @@ pub fn wol_qm_score_screen_update<H: WolQmScoreScreenHost>(_wm: &mut GameWindowM
 /// `WOLQMScoreScreenInput(window, msg, mData1, mData2)`: Escape's release presses *Disconnect*.
 pub fn wol_qm_score_screen_input<H: WolQmScoreScreenHost>(wm: &mut GameWindowManager, h: &mut H, window: WinId, msg: u32, d1: WindowMsgData, d2: WindowMsgData) -> MsgHandled {
     if msg == gwm::CHAR && (d1 & 0xFF) as u8 == key::ESC {
-        if (d2 & 0xFF) & key::STATE_UP != 0 {
+        if ((d2 & 0xFF) & key::STATE_UP != 0) != plant(20675) {
             let s = h.wol_qm_score_screen().clone();
             wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(s.button_disconnect), s.button_disconnect_id as u32);
         }
@@ -78,7 +82,7 @@ pub fn wol_qm_score_screen_system<H: WolQmScoreScreenHost>(wm: &mut GameWindowMa
             if d1 == 1 {
                 wm.focus_reply = true;
             }
-            return MsgHandled::Handled;
+            return if plant(20676) { MsgHandled::Ignored } else { MsgHandled::Handled };
         }
         // GBM_SELECTED: the body (reset the WOL API on *Disconnect*) is commented out upstream
         ggm::GBM_SELECTED | ggm::GEM_EDIT_DONE => {}
