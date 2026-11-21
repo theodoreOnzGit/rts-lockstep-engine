@@ -2444,7 +2444,17 @@ END\n";
         assert!(h.sys[n..].iter().all(|m| m.2 != ggm::GBM_SELECTED));
         gadget::radio_set_selection(&mut wm, &mut h, ids.r[0], true);
         assert_eq!([sel(&wm, ids.r[0]), sel(&wm, ids.r[1]), sel(&wm, ids.r[2])], [true, false, false]);
-        assert!(h.sys[n..].iter().all(|m| m.2 != ggm::GBM_SELECTED));
+        // ~~`GadgetRadioSetSelection` never sends `GBM_SELECTED`~~ **Corrected 2026-11-21 (#228):** it passes `&sendMsg`, a
+        // non-zero address, and `(Bool)mData1 == TRUE` is true for it (GadgetRadioButton.cpp:331, 439): the owner gets one
+        // `GBM_SELECTED` for the radio button, whatever `sendMsg` is
+        let sent: Vec<_> = h.sys[n..].iter().filter(|m| m.2 == ggm::GBM_SELECTED).map(|m| m.3).collect();
+        assert_eq!(sent, vec![win_data(Some(ids.r[0]))]);
+        // selecting it again (already selected) sends nothing, and `sendMsg` FALSE sends the same as TRUE
+        let n2 = h.sys.len();
+        gadget::radio_set_selection(&mut wm, &mut h, ids.r[0], false);
+        assert!(h.sys[n2..].iter().all(|m| m.2 != ggm::GBM_SELECTED));
+        gadget::radio_set_selection(&mut wm, &mut h, ids.r[1], false);
+        assert_eq!(h.sys[n2..].iter().filter(|m| m.2 == ggm::GBM_SELECTED).count(), 1);
         assert!(sel(&wm, other), "another screen's group is left alone");
     }
 
