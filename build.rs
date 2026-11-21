@@ -15359,6 +15359,7 @@ mod differential {
             ("lobby_slash.inc", format!("{menus}WOLLobbyMenu.cpp"), qr2, Some("static Bool s_tryingToHostOrJoin = FALSE;")),
             ("lobby_refresh.inc", format!("{menus}WOLLobbyMenu.cpp"), "static void refreshGameList( Bool forceRefresh )", Some("/** WOL Lobby Menu update method */")),
             ("gs_slash.inc", format!("{menus}WOLGameSetupMenu.cpp"), qr2, Some("static Int getNextSelectablePlayer(Int start)")),
+            ("lobby_rank.inc", format!("{menus}WOLLobbyMenu.cpp"), "static const char *rankNames[] = {", Some("static Int insertPlayerInListbox(const PlayerInfo& info, Color color)")),
         ];
         for (name, path, from, to) in &cuts {
             println!("cargo:rerun-if-changed={}", up.join(path).display());
@@ -15367,7 +15368,7 @@ mod differential {
             std::fs::write(gen.join(name), format!("{head}{cut}")).expect("write a wol6 cut");
         }
         println!("cargo:rerun-if-changed=differential/wol6_slash_host.h");
-        for (wrapper, lib) in [("wrap_draft_wol_slash.cpp", "draft_wol6_slash")] {
+        for (wrapper, lib) in [("wrap_draft_wol_slash.cpp", "draft_wol6_slash"), ("wrap_draft_wol_rank.cpp", "draft_wol6_rank")] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();
             base(&mut b);

@@ -472,7 +472,7 @@ pub fn set_lobby_attempt_host_join<H: WolLobbyMenuHost>(h: &mut H, start: bool) 
 /// The rank for `rankPoints`: `while (rankPoints >= m_ranks[i + 1]) ++i`.
 fn rank_for_points<H: WolLobbyMenuHost>(h: &H, rank_points: i32) -> i32 {
     let mut i: usize = 0;
-    while rank_points >= h.rank_point_value(i + 1) {
+    while if plant(23482) { rank_points > h.rank_point_value(i + 1) } else { rank_points >= h.rank_point_value(i + 1) } {
         i += 1;
     }
     i as i32
@@ -593,24 +593,28 @@ fn populate_group_room_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, 
 
 /// `LookupSmallRankImage(side, rankPoints)`: the mapped image's name.
 pub fn lookup_small_rank_image<H: WolLobbyMenuHost>(h: &H, side: i32, rank_points: i32) -> Option<Vec<u8>> {
-    if rank_points == 0 {
+    if rank_points == 0 || (plant(23481) && rank_points < 0) {
         return None;
     }
 
     let rank = rank_for_points(h, rank_points);
 
-    if !(0..10).contains(&rank) {
+    if !(0..if plant(23483) { 9 } else { 10 }).contains(&rank) {
         return None;
     }
 
     let side_str = match side {
+        5 if plant(23484) => "CHA",
+        13 if plant(23485) => "N",
+        10 if plant(23486) => "N",
         2 | 5 | 6 | 7 => "USA",  // USA, Super Weapon, Laser, Air Force
         3 | 8 | 9 | 10 => "CHA", // China, Tank, Infantry, Nuke
         4 | 11 | 12 | 13 => "GLA", // GLA, Toxin, Demolition, Stealth
         _ => "N",
     };
 
-    let full_image_name = format!("{}-{}", RANK_NAMES[rank as usize], side_str);
+    let name_at = if plant(23487) { (rank as usize).saturating_sub(1) } else { rank as usize };
+    let full_image_name = if plant(23488) { format!("{}-{}", side_str, RANK_NAMES[name_at]) } else { format!("{}-{}", RANK_NAMES[name_at], side_str) };
     h.find_image_by_name(full_image_name.as_bytes())
 }
 

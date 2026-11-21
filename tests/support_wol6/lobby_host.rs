@@ -19,11 +19,13 @@ pub struct LobbyHost {
     pub thread: i32,
     pub changed: bool,
     pub now: u32,
+    pub rank_values: [i32; 14],
+    pub images: Vec<Vec<u8>>,
 }
 
 impl LobbyHost {
     pub fn new() -> Self {
-        LobbyHost { shell: Shell::new(), menu: WolLobbyMenu::new(), log: RefCell::new(String::new()), color_default: 0, qr2: 0, thread: 0, changed: false, now: 0 }
+        LobbyHost { shell: Shell::new(), menu: WolLobbyMenu::new(), log: RefCell::new(String::new()), color_default: 0, qr2: 0, thread: 0, changed: false, now: 0, rank_values: [0; 14], images: Vec::new() }
     }
     pub fn line(&self, s: String) {
         let mut l = self.log.borrow_mut();
@@ -81,6 +83,13 @@ impl WolLobbyMenuHost for LobbyHost {
     fn refresh_game_list_boxes(&mut self, wm: &mut GameWindowManager) {
         self.line("RefreshGameListBoxes".to_string());
     }
+    fn rank_point_value(&self, i: usize) -> i32 {
+        self.rank_values[i]
+    }
+    fn find_image_by_name(&self, name: &[u8]) -> Option<Vec<u8>> {
+        self.line(format!("find {}", String::from_utf8_lossy(name)));
+        self.images.iter().find(|i| i.as_slice() == name).cloned()
+    }
     fn qr2_hosting_status(&self) -> i32 {
         self.qr2
     }
@@ -116,12 +125,6 @@ impl WolLobbyMenuHost for LobbyHost {
     }
     fn image_width(&self, image: &[u8]) -> i32 {
         unreachable!("image_width")
-    }
-    fn find_image_by_name(&self, name: &[u8]) -> Option<Vec<u8>> {
-        unreachable!("find_image_by_name")
-    }
-    fn rank_point_value(&self, i: usize) -> i32 {
-        unreachable!("rank_point_value")
     }
     fn player_template_side(&self, n: i32) -> Option<Vec<u8>> {
         unreachable!("player_template_side")
