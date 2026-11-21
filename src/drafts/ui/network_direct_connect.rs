@@ -14,6 +14,7 @@ use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
 use crate::client::window_transitions as wt;
+use crate::logic::modules::plant;
 
 /// `g_lanPlayerNameLength` (LANAPI.h).
 pub const G_LAN_PLAYER_NAME_LENGTH: usize = 12;
@@ -58,6 +59,8 @@ pub trait NetworkDirectConnectHost: ShellHost {
     fn lan_exists(&self) -> bool;
     /// `TheLAN = NEW LANAPI(); TheLAN->init()` (init only when `init`); `delete TheLAN; TheLAN = NULL`.
     fn lan_create(&mut self, init: bool);
+    /// `TheLAN->init()`.
+    fn lan_init(&mut self);
     fn lan_delete(&mut self);
     fn lan_reset(&mut self);
     fn lan_get_local_ip(&self) -> u32;
@@ -69,6 +72,8 @@ pub trait NetworkDirectConnectHost: ShellHost {
     /// `OptionPreferences::getOnlineIPAddress()`; the enumerated local addresses (`IPEnumeration::getAddresses()`).
     fn option_prefs_online_ip_address(&mut self) -> u32;
     fn enumerated_ip_addresses(&mut self) -> Vec<u32>;
+    /// Upstream does something undefined here (a NULL dereference, an uninitialised read, a buffer overrun): `what` says what. The draft carries on with its own reading; a test excludes the input.
+    fn undefined(&mut self, _what: &str) {}
 }
 
 fn utf16(s: &str) -> Vec<u16> {
@@ -121,7 +126,7 @@ pub fn populate_remote_ip_combo_box<H: NetworkDirectConnectHost>(wm: &mut GameWi
     }
     if num_remote_ips > 0 {
         if let Some(c) = combo {
-            cb::set_selected_pos(wm, h, c, 0, true);
+            cb::set_selected_pos(wm, h, c, i32::from(plant(22661)), true);
         }
     }
     h.lan_prefs_write();
@@ -129,7 +134,10 @@ pub fn populate_remote_ip_combo_box<H: NetworkDirectConnectHost>(wm: &mut GameWi
 
 /// `UpdateRemoteIPList()` (NetworkDirectConnect.cpp:113).
 pub fn update_remote_ip_list<H: NetworkDirectConnectHost>(wm: &mut GameWindowManager, h: &mut H) {
-    let Some(combo) = h.network_direct_connect().combobox_remote_ip else { return };
+    let Some(combo) = h.network_direct_connect().combobox_remote_ip else {
+        h.undefined("UpdateRemoteIPList: GadgetComboBoxGetLength(NULL) dereferences it");
+        return;
+    };
     let mut num_entries = cb::get_length(wm, combo);
     let current_selection = cb::get_selected_pos(wm, h, combo, -1);
     let unisel = cb::get_text(wm, h, combo);
@@ -143,7 +151,7 @@ pub fn update_remote_ip_list<H: NetworkDirectConnectHost>(wm: &mut GameWindowMan
 
     h.lan_prefs_set(b"RemoteIP0", &sel);
 
-    let mut current_ini_entry = 1;
+    let mut current_ini_entry = i32::from(!plant(22663));
     let mut i = 0;
     while i < num_entries {
         if i != current_selection {
@@ -155,7 +163,12 @@ pub fn update_remote_ip_list<H: NetworkDirectConnectHost>(wm: &mut GameWindowMan
                 let old_ip: Vec<u16> = uni.iter().copied().take_while(|&c| c != ':' as u16).collect();
                 let n2 = scan_ip(&old_ip);
                 // swscanf's result is not checked upstream; unread fields keep the stack's garbage — modelled as 0
-                let is_equal = (0..4).all(|k| n1[k] == n2.get(k).copied().unwrap_or(0));
+                let is_equal = (0..if plant(22662) { 3 } else { 4 }).all(|k| {
+                    if k >= n2.len() {
+                        h.undefined("UpdateRemoteIPList: n2 read before swscanf set it");
+                    }
+                    n1[k] == n2.get(k).copied().unwrap_or(0)
+                });
                 if is_equal {
                     num_entries -= 1;
                     i += 1;
@@ -170,7 +183,7 @@ pub fn update_remote_ip_list<H: NetworkDirectConnectHost>(wm: &mut GameWindowMan
         i += 1;
     }
 
-    if current_selection == -1 {
+    if current_selection == -1 && !plant(22664) {
         num_entries += 1;
     }
     h.lan_prefs_set(b"NumRemoteIPs", format!("{num_entries}").as_bytes());
@@ -188,7 +201,7 @@ fn save_name_and_trim<H: NetworkDirectConnectHost>(wm: &mut GameWindowManager, h
         update_remote_ip_list(wm, h);
         populate_remote_ip_combo_box(wm, h);
     }
-    while name.len() > G_LAN_PLAYER_NAME_LENGTH {
+    while name.len() > G_LAN_PLAYER_NAME_LENGTH - usize::from(plant(22666)) {
         name.pop();
     }
     name
@@ -208,7 +221,7 @@ pub fn host_direct_connect_game<H: NetworkDirectConnectHost>(wm: &mut GameWindow
     let name = save_name_and_trim(wm, h, None);
 
     h.lan_request_set_name(&name);
-    h.lan_request_game_create(&local_ip_string, true);
+    h.lan_request_game_create(&local_ip_string, !plant(22665));
 }
 
 /// `JoinDirectConnectGame()` (NetworkDirectConnect.cpp:245).
@@ -228,8 +241,11 @@ pub fn join_direct_connect_game<H: NetworkDirectConnectHost>(wm: &mut GameWindow
     // (`char ipstr[16]; strcpy(ipstr, ...)` overflows upstream for a longer string; not modelled)
     let ip_w: Vec<u16> = ipstring.iter().map(|&c| c as u16).collect();
     let f = scan_ip(&ip_w);
+    if f.len() < 4 || ipstring.len() >= 16 {
+        h.undefined("JoinDirectConnectGame: ip1..ip4 unread by sscanf, or the text overruns char ipstr[16]");
+    }
     let g = |k: usize| f.get(k).copied().unwrap_or(0);
-    let ipaddress = ((g(0) << 24) + (g(1) << 16) + (g(2) << 8) + g(3)) as u32;
+    let ipaddress = ((g(0) << if plant(22672) { 16 } else { 24 }) + (g(1) << 16) + (g(2) << 8) + g(3)) as u32;
 
     // get our name
     let name = save_name_and_trim(wm, h, Some(true));
@@ -302,7 +318,7 @@ pub fn network_direct_connect_init<H: NetworkDirectConnectHost>(wm: &mut GameWin
     crate::client::gadget::static_text_set_text(wm, h, wins[5], &ipstr);
 
     // Clear the lobby of any games / players
-    h.lan_request_lobby_leave(true);
+    h.lan_request_lobby_leave(!plant(22669));
 
     // Show Menu
     wm.layout_hide(layout, false);
@@ -326,7 +342,7 @@ pub fn network_direct_connect_shutdown<H: NetworkDirectConnectHost>(wm: &mut Gam
     h.network_direct_connect().is_shutting_down = true;
 
     // if we are doing an immediate pop, just do it
-    if pop_immediate {
+    if pop_immediate && !plant(22670) {
         shutdown_complete(wm, h, layout);
         return;
     }
@@ -337,7 +353,8 @@ pub fn network_direct_connect_shutdown<H: NetworkDirectConnectHost>(wm: &mut Gam
 
 /// `NetworkDirectConnectUpdate(layout, userData)`.
 pub fn network_direct_connect_update<H: NetworkDirectConnectHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
-    if h.network_direct_connect().is_shutting_down && shell::is_anim_finished(wm, h) && crate::client::window_transitions::is_finished(wm) {
+    let fin = (shell::is_anim_finished(wm, h), crate::client::window_transitions::is_finished(wm));
+    if h.network_direct_connect().is_shutting_down && if plant(22671) { fin.0 || fin.1 } else { fin.0 && fin.1 } {
         shutdown_complete(wm, h, layout);
     }
 }
@@ -353,7 +370,7 @@ pub fn network_direct_connect_input<H: NetworkDirectConnectHost>(wm: &mut GameWi
         }
         if k == key::ESC {
             // send a simulated selected event to the parent window of the back/exit button
-            if state & key::STATE_UP != 0 {
+            if (state & key::STATE_UP != 0) != plant(22668) {
                 let d = h.network_direct_connect().clone();
                 wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(d.button_back), d.button_back_id as u32);
             }
@@ -386,7 +403,7 @@ pub fn network_direct_connect_system<H: NetworkDirectConnectHost>(wm: &mut GameW
                 let name = save_name_and_trim(wm, h, None);
                 h.lan_request_set_name(&name);
 
-                h.network_direct_connect().button_pushed = true;
+                h.network_direct_connect().button_pushed = !plant(22667);
                 h.set_lan_button_pushed(true);
                 shell::pop(wm, h);
             } else if control_id == d.button_host_id {
