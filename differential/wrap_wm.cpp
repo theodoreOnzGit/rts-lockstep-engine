@@ -741,6 +741,9 @@ static void run_op(TestWindowManager *wm, std::istringstream &in, char op)
 	case 'j': in >> a >> b >> c; GadgetComboBoxSetItemData(win(a), b, (void *)(uintptr_t)(unsigned int)c); break;
 	case 'J': { in >> a >> b; void *r = GadgetComboBoxGetItemData(win(a), b); g_log << "cdata " << (unsigned int)(uintptr_t)r << "\n"; break; }
 	case 'n': in >> a >> b; GadgetTabControlShowSubPane(win(a), b); break;
+	/* #228: GadgetRadioSetSelection(g, sendMsg) (upstream passes &sendMsg as mData1), and a raw GBM_SET_SELECTION with mData1 = b */
+	case '%': in >> a >> b; GadgetRadioSetSelection(win(a), b ? TRUE : FALSE); break;
+	case '$': in >> a >> b; wm->winSendSystemMsg(win(a), GBM_SET_SELECTION, (WindowMsgData)(unsigned int)b, 0); break;
 	case 'q': in >> a; GadgetTabControlCreateSubPanes(win(a)); break;
 	case 'u': in >> a; GadgetTabControlFixupSubPaneList(win(a)); break;
 	case 'l':

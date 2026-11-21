@@ -53,8 +53,11 @@
 //! - The check box's `GWM_LEFT_UP` toggles only when it is hilited, which needs `GWS_MOUSE_TRACK` (or the focus):
 //!   a check box without mouse tracking ignores the mouse.
 //! - The check box's `GWM_RIGHT_UP` sends `GBM_SELECTED_RIGHT` and **unchecks** a checked box.
-//! - `GadgetRadioSetSelection(g, sendMsg)` passes `&sendMsg`, a pointer, and the system tests `(Bool)mData1 == TRUE`:
-//!   never true, so it never sends `GBM_SELECTED` (modelled as `mData1 = 2`).
+//! - ~~`GadgetRadioSetSelection(g, sendMsg)` passes `&sendMsg`, a pointer, and the system tests `(Bool)mData1 == TRUE`:
+//!   never true, so it never sends `GBM_SELECTED` (modelled as `mData1 = 2`).~~ **Corrected 2026-11-21 (#228):**
+//!   `GadgetRadioSetSelection(g, sendMsg)` passes `&sendMsg` (GadgetRadioButton.cpp:439), a non-zero address, and
+//!   `(Bool)mData1 == TRUE` (GadgetRadioButton.cpp:331) with `typedef bool Bool` is true for any non-zero `mData1`: it
+//!   sends `GBM_SELECTED` to the owner on every selection of an unselected radio button, whatever `sendMsg` is.
 //! - The radio button and static text call `GameWindow::winNextTab`, which is empty.
 //! - The radio button's `GWM_INPUT_FOCUS` only clears the hilite and always says it wants the focus.
 //! - The push button's `GWM_MOUSE_ENTERING` / `LEAVING` hilites a horizontal slider parent (the slider's thumb).
@@ -409,10 +412,13 @@ pub fn check_box_is_checked(wm: &GameWindowManager, w: WinId) -> bool {
 fn do_radio_unselect(wm: &mut GameWindowManager, w: WinId, group: i32, screen: i32, except: WinId) {
     if w != except && style(wm, w) & gws::RADIO_BUTTON != 0 {
         if let UserData::Radio(r) = wm.ext[w].user {
-            if r.group == group && r.screen == screen {
+            if (if crate::logic::modules::plant(21_867) { r.group <= group } else { r.group == group }) && r.screen == screen {
                 set_state(wm, w, WIN_STATE_SELECTED, false);
             }
         }
+    }
+    if crate::logic::modules::plant(21_863) {
+        return;
     }
     for c in wm.tree.windows[w].children.clone() {
         do_radio_unselect(wm, c, group, screen, except);
@@ -436,11 +442,12 @@ fn radio_data(wm: &GameWindowManager, w: WinId) -> RadioButtonData {
 /// The radio button's selection: `GBM_SELECTED` (when `send`), the group unselected, this one selected.
 fn radio_select<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, send: Option<WindowMsgData>) {
     if let Some(d) = send {
-        let owner = wm.ext[w].owner;
-        wm.win_send_system_msg(h, owner, ggm::GBM_SELECTED, win_data(Some(w)), d);
+        let owner = if crate::logic::modules::plant(21_866) { Some(w) } else { wm.ext[w].owner };
+        let who = if crate::logic::modules::plant(21_865) { owner } else { Some(w) };
+        wm.win_send_system_msg(h, owner, ggm::GBM_SELECTED, win_data(who), d);
     }
     let r = radio_data(wm, w);
-    if r.group != 0 {
+    if r.group != if crate::logic::modules::plant(21_864) { 1 } else { 0 } {
         unselect_other_radio_of_group(wm, r.group, r.screen, w);
     }
     set_state(wm, w, WIN_STATE_SELECTED, true);
@@ -489,14 +496,16 @@ pub fn radio_button_input<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: 
     Handled
 }
 
-/// `GadgetRadioButtonSystem`. `GBM_SET_SELECTION`'s `mData1` is the `Bool` itself (as `GadgetRadioSetSelection`
-/// should have passed it); see [`radio_set_selection`] for what upstream passes.
+/// `GadgetRadioButtonSystem`. `GBM_SET_SELECTION`'s `mData1` is tested as `(Bool)mData1 == TRUE`
+/// (GadgetRadioButton.cpp:331): `Bool` is `bool` (BaseType.h:132), so any non-zero `mData1` sends `GBM_SELECTED`.
+/// ~~`mData1` is the `Bool` itself, tested as `d1 == 1`.~~ **Corrected 2026-11-21 (#228):** `d1 != 0`. See
+/// [`radio_set_selection`] for what upstream passes.
 pub fn radio_button_system<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, msg: u32, d1: WindowMsgData, _d2: WindowMsgData) -> MsgHandled {
     match msg {
         ggm::GBM_SET_SELECTION => {
-            if state(wm, w) & WIN_STATE_SELECTED == 0 {
-                // `(Bool)mData1 == TRUE`
-                radio_select(wm, h, w, (d1 == 1).then_some(0));
+            if state(wm, w) & WIN_STATE_SELECTED == 0 || crate::logic::modules::plant(21_868) {
+                // `(Bool)mData1 == TRUE`: a `bool` conversion, true for any non-zero `mData1` (#228)
+                radio_select(wm, h, w, if crate::logic::modules::plant(21_862) { (d1 == 1).then_some(0) } else { (d1 != 0).then_some(0) });
             }
         }
         ggm::SET_LABEL => {
@@ -524,11 +533,16 @@ pub fn radio_set_group(wm: &mut GameWindowManager, w: WinId, group: i32, screen:
     wm.ext[w].user = UserData::Radio(RadioButtonData { screen, group });
 }
 
-/// `GadgetRadioSetSelection(g, sendMsg)`: upstream passes `&sendMsg`, a pointer, as `mData1`, which is never `TRUE`:
-/// the selection never sends `GBM_SELECTED`, whatever `send` is.
+/// `GadgetRadioSetSelection(g, sendMsg)` (GadgetRadioButton.cpp:439): sends `GBM_SET_SELECTION` with
+/// `mData1 = (WindowMsgData)&sendMsg`, the address of the parameter, which is never 0.
+/// ~~Upstream passes a pointer, which is never `TRUE`: the selection never sends `GBM_SELECTED`, whatever `send` is.~~
+/// **Corrected 2026-11-21 (#228):** the system tests `(Bool)mData1 == TRUE` (GadgetRadioButton.cpp:331), a `bool`
+/// conversion, true for that non-zero address, so an unselected radio button's owner gets `GBM_SELECTED` whatever
+/// `send` is (`send` is unused, as upstream's `sendMsg` is). The address is modelled as `2` (any non-zero value does).
 pub fn radio_set_selection<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, send: bool) {
     let _ = send;
-    wm.win_send_system_msg(h, Some(w), ggm::GBM_SET_SELECTION, 2, 0);
+    let address = if crate::logic::modules::plant(21_861) { 0 } else { 2 };
+    wm.win_send_system_msg(h, Some(w), ggm::GBM_SET_SELECTION, address, 0);
 }
 
 /// `GadgetStaticTextInput`: tab and arrows (into the empty `winNextTab`), nothing else.

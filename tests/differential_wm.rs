@@ -140,6 +140,7 @@
 
 #![cfg(feature = "differential")]
 
+use rts_lockstep_engine::client::gadget;
 use rts_lockstep_engine::client::gadget_combo_box::{self as cbx, combo_rt};
 use rts_lockstep_engine::client::gadget_list_box::{self as lbx, glm, listbox_rt, CellData, ListboxRt, LISTBOX_IMAGE, LISTBOX_TEXT};
 use rts_lockstep_engine::client::gadget_slider::{slider_rt, slider_set_position};
@@ -621,6 +622,16 @@ fn run_op(wm: &mut GameWindowManager, h: &mut Host, op: &str) {
             let x = n(&mut v) as usize;
             tbx::show_sub_pane(wm, x, n(&mut v));
         }
+        // (#228) `GadgetRadioSetSelection(g, sendMsg)`, and a raw `GBM_SET_SELECTION` with mData1 as given
+        "%" => {
+            let x = n(&mut v) as usize;
+            gadget::radio_set_selection(wm, h, x, n(&mut v) != 0);
+        }
+        "$" => {
+            let x = n(&mut v) as usize;
+            let d1 = v.remove(0).parse::<u32>().expect("number");
+            wm.win_send_system_msg(h, Some(x), ggm::GBM_SET_SELECTION, d1, 0);
+        }
         "q" => tbx::create_sub_panes(wm, h, n(&mut v) as usize),
         "u" => tbx::fixup_sub_pane_list(wm, n(&mut v) as usize),
         _ => panic!("unknown op {op}"),
@@ -895,17 +906,61 @@ fn gen_language(case: u64) -> String {
     format!("l 1 {name} {} {}", r.range(6, 20), r.below(2))
 }
 
-fn run_rust(r: &mut Rng, len: u64, case: u64) -> Case {
+/// (#228) A radio-only case's windows: one or two user windows (the owners, whose system callback logs every message)
+/// and two to six radio buttons in them, in groups 0 to 2.
+fn gen_radio_tree(r: &mut Rng) -> Vec<String> {
+    let mut ops = Vec::new();
+    let roots = 1 + r.below(2) as i32;
+    for i in 0..roots {
+        let (x, y) = if i == 0 { (0, 0) } else { (r.range(200, 400), r.range(100, 300)) };
+        ops.push(format!("W -1 0 {x} {y} 400 300 {} {} 0", win_status::ENABLED, gws::USER_WINDOW));
+    }
+    for _ in 0..2 + r.below(5) {
+        let p = r.below(roots as u64);
+        let mut status = win_status::ENABLED;
+        if r.chance(1, 10) {
+            status |= win_status::HIDDEN;
+        }
+        let track = if r.chance(1, 2) { gws::MOUSE_TRACK } else { 0 };
+        ops.push(format!("W {p} 3 {} {} {} {} {status} {} {} {}", r.range(0, 250), r.range(0, 200), r.range(20, 100), r.range(10, 40), gws::RADIO_BUTTON | track, u8::from(r.chance(1, 3)), r.range(0, 2)));
+    }
+    ops
+}
+
+/// (#228) The next operation of a radio-only case: mostly `GadgetRadioSetSelection` (sendMsg TRUE or FALSE), a raw
+/// `GBM_SET_SELECTION` (mData1 0, 1, 2, ...), a click or a key, and otherwise the general generator.
+fn gen_radio_op(r: &mut Rng, wm: &GameWindowManager) -> String {
+    let radios = live(wm, |_, u| matches!(u, UserData::Radio(_)));
+    if radios.is_empty() {
+        return gen_op(r, wm);
+    }
+    let x = radios[r.below(radios.len() as u64) as usize];
+    match r.below(20) {
+        0..=8 => format!("% {x} {}", r.below(2)),
+        9..=10 => {
+            let d1: [u32; 8] = [0, 1, 2, 3, 0x100, 0x1_0000, 0x8000_0000, 0xFFFF_FFFF];
+            format!("$ {x} {}", d1[r.below(8) as usize])
+        }
+        11..=14 => {
+            let (px, py) = wm.tree.screen_position(x);
+            let (sx, sy) = wm.tree.windows[x].size;
+            format!("M {} {} {} 0 0", if r.chance(1, 2) { gwm::LEFT_DOWN } else { gwm::LEFT_UP }, px + r.range(0, sx.max(1) - 1), py + r.range(0, sy.max(1) - 1))
+        }
+        _ => gen_op(r, wm),
+    }
+}
+
+fn run_rust(r: &mut Rng, len: u64, case: u64, radio: bool) -> Case {
     let mut wm = GameWindowManager::new((800, 600));
     let mut h = Host::default();
     let mut ops = vec![gen_language(case)];
-    ops.extend(gen_tree(r));
+    ops.extend(if radio { gen_radio_tree(r) } else { gen_tree(r) });
     let mut dumps = Vec::new();
     let mut i = 0;
     let total = ops.len() as u64 + len;
     while (i as u64) < total {
         if i >= ops.len() {
-            let op = gen_op(r, &wm);
+            let op = if radio { gen_radio_op(r, &wm) } else { gen_op(r, &wm) };
             ops.push(op);
         }
         let before = wm.tree.windows.len();
@@ -955,7 +1010,18 @@ fn run_cpp(ops: &[String]) -> (String, Option<i32>) {
 #[test]
 fn window_manager_and_gadgets_match_upstream() {
     let cases: u64 = std::env::var("WM_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(2000);
-    let mut r = Rng(0x2545_F491_4F6C_DD1D);
+    drive(cases, false);
+}
+
+/// (#228) `GadgetRadioSetSelection` and `GBM_SET_SELECTION` on random radio groups: see the module's "#228" section.
+#[test]
+fn radio_set_selection_matches_upstream() {
+    let cases: u64 = std::env::var("WM_RADIO_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
+    drive(cases, true);
+}
+
+fn drive(cases: u64, radio: bool) {
+    let mut r = Rng(if radio { 0x2288_5A17_C0DE_0228 } else { 0x2545_F491_4F6C_DD1D });
     let (mut ops_compared, mut equal_cases, mut mismatched_cases, mut crashed) = (0u64, 0u64, 0u64, 0u64);
     let mut undefined: BTreeMap<String, u64> = BTreeMap::new();
     // what was exercised: the operations compared, by kind, and the gadgets made (`W` by type), over the compared ones
@@ -963,7 +1029,7 @@ fn window_manager_and_gadgets_match_upstream() {
     let mut first_bad: Option<String> = None;
     for case in 0..cases {
         let len = 10 + r.below(61);
-        let c = run_rust(&mut r, len, case);
+        let c = run_rust(&mut r, len, case, radio);
         if let Some(u) = c.undefined {
             *undefined.entry(format!("{u} (at `{}`)", c.undefined_op)).or_default() += 1;
         }
@@ -1009,7 +1075,8 @@ fn window_manager_and_gadgets_match_upstream() {
             }
         }
     }
-    eprintln!("wm differential: {cases} cases, {ops_compared} operations compared, {equal_cases} cases identical, {mismatched_cases} with a mismatch ({crashed} where the C++ stopped)");
+    eprintln!("{} {cases} cases, {ops_compared} operations compared, {equal_cases} cases identical, {mismatched_cases} with a mismatch ({crashed} where the C++ stopped)", if radio { "DIFF radio_set_selection" } else { "wm differential:" });
+    eprintln!("DIFF {} compared {cases} mismatches {mismatched_cases}", if radio { "radio_set_selection" } else { "wm" });
     eprintln!("  compared, by operation (W by gadget type): {by_op:?}");
     for (u, n) in &undefined {
         eprintln!("  stopped where upstream is undefined: {n} x {u}");
