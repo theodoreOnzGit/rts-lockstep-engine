@@ -26,7 +26,8 @@
 //! where `sscanf` reads fewer than 4 fields (`ip1..ip4` uninitialised) or the text before `(` is 16 bytes or longer (`strcpy` into `char ipstr[16]`); `UpdateRemoteIPList` comparing an
 //! entry whose `swscanf` read too few fields (`n2` uninitialised); a NULL control as `GBM_SELECTED`'s `mData1`; `GWM_INPUT_FOCUS` sent directly with `mData1` TRUE; field values
 //! beyond `int` (`scanf` overflow differs between C libraries). `getRemoteIPEntry` of an entry with no `:` reads one byte past the string: defined as 0 in the shim (see
-//! differential/shim_ui5/Common/AsciiString.h), as the verified Rust takes it.
+//! differential/shim_ui5/Common/AsciiString.h), as the verified Rust takes it. `QuotedPrintableToUnicodeString` of a string that decodes to an odd number of bytes leaves its `static` buffer's
+//! stale units after the result (it writes one zero byte, not a zero unit): the Rust host reports it through `undefined` (see `qp_odd`) and the input is excluded.
 //!
 //! # Prediction (before the first run, 2026-11-21)
 //!
@@ -176,6 +177,26 @@ fn prefs(h: &Host) -> UserPreferences {
     UserPreferences { map: h.ini.clone(), ..Default::default() }
 }
 
+/// Whether `QuotedPrintableToUnicodeString` of `s` decodes to an odd number of bytes: upstream then writes ONE zero byte after the last unit, not the terminating zero unit, so the
+/// units after it are whatever an earlier call left in its `static` buffer (undefined; the verified Rust takes them as 0).
+fn qp_odd(s: &[u8]) -> bool {
+    let (mut i, mut n) = (0usize, 0usize);
+    while i < s.len() && n < 1023 {
+        if s[i] == b'_' {
+            if i + 1 >= s.len() {
+                break;
+            }
+            i += 1;
+            if i + 1 < s.len() {
+                i += 1;
+            }
+        }
+        i += 1;
+        n += 1;
+    }
+    n % 2 == 1
+}
+
 fn c_string(mut v: Vec<u8>) -> Vec<u8> {
     if let Some(p) = v.iter().position(|&b| b == 0) {
         v.truncate(p);
@@ -201,6 +222,9 @@ impl NetworkDirectConnectHost for Host {
     fn lan_prefs_get_user_name(&mut self) -> Vec<u16> {
         let machine: Vec<u16> = "MACHINE".encode_utf16().collect();
         let Some(v) = self.ini.get(&b"UserName"[..]).cloned() else { return machine };
+        if qp_odd(&v) {
+            self.ub = true;
+        }
         let mut r = quoted_printable_to_unicode_string(&v);
         let ws = |c: &u16| *c == 0x20 || (9..=13).contains(c);
         while r.first().is_some_and(ws) {
@@ -215,6 +239,13 @@ impl NetworkDirectConnectHost for Host {
         get_num_remote_ips(&mut prefs(self))
     }
     fn lan_prefs_get_remote_ip_entry(&mut self, i: i32) -> Vec<u16> {
+        if let Some(e) = self.ini.get(format!("RemoteIP{i}").as_bytes()) {
+            let start = e.iter().position(|&c| c != b':').unwrap_or(e.len());
+            let end = e[start..].iter().position(|&c| c == b':').map_or(e.len(), |p| start + p);
+            if end < e.len() && qp_odd(&e[end + 1..]) {
+                self.ub = true;
+            }
+        }
         get_remote_ip_entry(&prefs(self), i)
     }
     fn lan_prefs_set(&mut self, key: &[u8], value: &[u8]) {

@@ -18,7 +18,7 @@
 **   - LANPreferences / OptionPreferences / UserPreferences: the std::map<AsciiString, AsciiString> of UserPreferences.h (PreferenceMap) loaded from, and written to, an in-memory
 **     "Network.ini" (the case's `@ nd prefs`); `write()` logs `prefs write`; getUserName, getNumRemoteIPs and getRemoteIPEntry are upstream's (cut). File I/O: nothing else.
 **     OptionPreferences::getOnlineIPAddress answers the case's value. IPEnumeration: the case's address list and the machine name `MACHINE`.
-**   - TheShell: showShellMap(b), pop(), shutdownComplete(layout) log `shell map <b>`, `shell pop`, `shell complete <layout>`; reverseAnimatewindow() and isAnimFinished() model
+**   - TheShell: showShellMap(b), pop() (and detatches the IME as Shell::pop does), shutdownComplete(layout) log `shell map <b>`, `shell pop`, `shell complete <layout>`; reverseAnimatewindow() and isAnimFinished() model
 **     the verified Shell's animate manager (src/client/shell.rs, which matches Shell.cpp:731-757 with m_animateWindows on): `needsUpdate` (the case's `@ nd anim`), `reverse`;
 **     reverse sets both, shutdownComplete's reset clears both; isAnimFinished is transitions-finished AND NOT needsUpdate.
 **   - TheTransitionHandler: setGroup(name) and reverse(name) of the ONE group `NetworkDirectConnectFade`, modelled as the verified Rust handler does (src/client/window_transitions.rs
@@ -100,7 +100,7 @@ class Shell
 {
 public:
 	void showShellMap(Bool b) { g_log << "shell map " << (int)b << "\n"; }
-	void pop(void) { g_log << "shell pop\n"; }
+	void pop(void) { g_log << "shell pop\n"; TheIMEManager->detatch(); /* Shell.cpp:360 */ }
 	void shutdownComplete(WindowLayout *l, Bool impendingPush = FALSE)
 	{
 		g_log << "shell complete " << u4_lay_index(l) << "\n";

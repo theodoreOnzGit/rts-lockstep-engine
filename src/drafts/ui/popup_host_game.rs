@@ -17,6 +17,7 @@ use crate::client::gadget_text_entry as te;
 use crate::client::shell::ShellHost;
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
+use crate::logic::modules::plant;
 
 /// `LadderInfo` as this file reads it (LadderDefs.h).
 #[derive(Clone, Debug, Default)]
@@ -102,6 +103,8 @@ pub trait PopupHostGameHost: ShellHost {
     fn game_spy_game_set_ladder(&mut self, ip: &[u8], port: u16);
     /// `PeerRequest` of `PEERREQUEST_CREATESTAGINGROOM` queued with `TheGameSpyPeerMessageQueue->addRequest`.
     fn peer_request_create_staging_room(&mut self, req: &CreateStagingRoomRequest);
+    /// Upstream does something undefined here (a NULL dereference): `what` says what. The draft carries on with its own reading; a test excludes the input.
+    fn undefined(&mut self, _what: &str) {}
 }
 
 /// The fields of the `PeerRequest` `createGame` fills.
@@ -141,7 +144,7 @@ pub fn handle_custom_ladder_selection<H: PopupHostGameHost>(h: &mut H, ladder_id
     }
     match h.ladder_find_by_index(ladder_id) {
         None => h.custom_pref_set_last_ladder_and_write(&[], 0),
-        Some(info) => h.custom_pref_set_last_ladder_and_write(&info.address, info.port),
+        Some(info) => h.custom_pref_set_last_ladder_and_write(&info.address, info.port.wrapping_add(u16::from(plant(22701)))),
     }
 }
 
@@ -186,7 +189,7 @@ pub fn populate_custom_ladder_list_box<H: PopupHostGameHost>(wm: &mut GameWindow
 
     let recent = h.ladder_pref_recent_ladders();
     for (addr, port) in recent {
-        if addr == last_addr && port == last_port {
+        if addr == last_addr && port == last_port && !plant(22703) {
             continue;
         }
         if let Some(info) = h.ladder_find(&addr, port) {
@@ -198,7 +201,7 @@ pub fn populate_custom_ladder_list_box<H: PopupHostGameHost>(wm: &mut GameWindow
 
     for info in h.ladder_local() {
         if info.index < 0 && info.valid_custom && !used.contains(&info.index) {
-            list_add_ladder(wm, h, win, &mut used, &info, local_color);
+            list_add_ladder(wm, h, win, &mut used, &info, if plant(22704) { special_color } else { local_color });
         }
     }
     for info in h.ladder_special() {
@@ -212,7 +215,7 @@ pub fn populate_custom_ladder_list_box<H: PopupHostGameHost>(wm: &mut GameWindow
         }
     }
 
-    lb::set_selected(wm, h, win, &[selected_pos]);
+    lb::set_selected(wm, h, win, &[if plant(22702) { 0 } else { selected_pos }]);
     h.popup_host_game().is_populating_ladder_box = false;
 }
 
@@ -248,7 +251,7 @@ pub fn populate_custom_ladder_combo_box<H: PopupHostGameHost>(wm: &mut GameWindo
     let last_addr = h.custom_pref_last_ladder_addr();
     let last_port = h.custom_pref_last_ladder_port();
     if let Some(info) = h.ladder_find(&last_addr, last_port) {
-        if info.valid_custom {
+        if info.valid_custom || plant(22707) {
             used.push(info.index);
             selected_pos = combo_add_ladder(wm, h, combo, &info, special_color);
         }
@@ -267,9 +270,11 @@ pub fn populate_custom_ladder_combo_box<H: PopupHostGameHost>(wm: &mut GameWindo
         }
     }
 
-    let t = h.fetch_text(b"GUI:ChooseLadder");
-    let index = cb::add_entry(wm, h, combo, &t, normal_color);
-    cb::set_item_data(wm, h, combo, index, -1i32 as u32);
+    if !plant(22705) {
+        let t = h.fetch_text(b"GUI:ChooseLadder");
+        let index = cb::add_entry(wm, h, combo, &t, normal_color);
+        cb::set_item_data(wm, h, combo, index, if plant(22706) { 0 } else { -1i32 as u32 });
+    }
 
     cb::set_selected_pos(wm, h, combo, selected_pos, false);
     h.popup_host_game().is_populating_ladder_box = false;
@@ -306,8 +311,9 @@ pub fn popup_host_game_init<H: PopupHostGameHost>(wm: &mut GameWindowManager, h:
     let obs_id = key_of(h, "CheckBoxAllowObservers");
     let obs = find(wm, obs_id);
     let allows_observers = h.custom_pref_allows_observers();
-    if let Some(o) = obs {
-        gadget::check_box_set_checked(wm, h, o, allows_observers);
+    match obs {
+        Some(o) => gadget::check_box_set_checked(wm, h, o, allows_observers),
+        None => h.undefined("PopupHostGameInit: GadgetCheckBoxSetChecked(NULL) of the observers box"),
     }
 
     let combo_id = key_of(h, "ComboBoxLadderName");
@@ -341,8 +347,9 @@ pub fn popup_host_game_init<H: PopupHostGameHost>(wm: &mut GameWindowManager, h:
     let use_stats_id = key_of(h, "CheckBoxUseStats");
     let use_stats_win = find(wm, use_stats_id);
     let using_stats = h.custom_pref_use_stats();
-    if let Some(u) = use_stats_win {
-        gadget::check_box_set_checked(wm, h, u, using_stats);
+    match use_stats_win {
+        Some(u) => gadget::check_box_set_checked(wm, h, u, using_stats),
+        None => h.undefined("PopupHostGameInit: GadgetCheckBoxSetChecked(NULL) of the stats box"),
     }
 
     let limit_id = key_of(h, "CheckBoxLimitArmies");
@@ -354,10 +361,13 @@ pub fn popup_host_game_init<H: PopupHostGameHost>(wm: &mut GameWindowManager, h:
         p.check_box_limit_armies_id = limit_id;
         p.check_box_limit_armies = limit_win;
     }
-    let limited = if using_stats { false } else { h.custom_pref_factions_limited() };
-    if let Some(l) = limit_win {
-        wm.win_enable(l, !using_stats);
-        gadget::check_box_set_checked(wm, h, l, limited);
+    let limited = if using_stats && !plant(22709) { false } else { h.custom_pref_factions_limited() };
+    match limit_win {
+        Some(l) => {
+            wm.win_enable(l, !using_stats || plant(22708));
+            gadget::check_box_set_checked(wm, h, l, limited);
+        }
+        None => h.undefined("PopupHostGameInit: checkBoxLimitArmies->winEnable on NULL"),
     }
 
     wm.win_set_focus(h, parent);
@@ -367,10 +377,21 @@ pub fn popup_host_game_init<H: PopupHostGameHost>(wm: &mut GameWindowManager, h:
 /// `PopupHostGameUpdate(layout, userData)`.
 pub fn popup_host_game_update<H: PopupHostGameHost>(wm: &mut GameWindowManager, h: &mut H, _layout: usize) {
     let p = h.popup_host_game().clone();
-    let use_stats = p.check_box_use_stats.is_some_and(|c| gadget::check_box_is_checked(wm, c));
-    let Some(limit) = p.check_box_limit_armies else { return };
+    let use_stats = match p.check_box_use_stats {
+        Some(c) => gadget::check_box_is_checked(wm, c),
+        None => {
+            h.undefined("PopupHostGameUpdate: GadgetCheckBoxIsChecked(NULL)");
+            false
+        }
+    };
+    let Some(limit) = p.check_box_limit_armies else {
+        h.undefined("PopupHostGameUpdate: checkBoxLimitArmies->winEnable on NULL");
+        return;
+    };
     if use_stats {
-        wm.win_enable(limit, false);
+        if !plant(22710) {
+            wm.win_enable(limit, false);
+        }
         gadget::check_box_set_checked(wm, h, limit, false);
     } else {
         wm.win_enable(limit, true);
@@ -380,7 +401,7 @@ pub fn popup_host_game_update<H: PopupHostGameHost>(wm: &mut GameWindowManager, 
 /// `PopupHostGameInput(window, msg, mData1, mData2)`: Escape's release presses *Cancel*.
 pub fn popup_host_game_input<H: PopupHostGameHost>(wm: &mut GameWindowManager, h: &mut H, window: WinId, msg: u32, d1: WindowMsgData, d2: WindowMsgData) -> MsgHandled {
     if msg == gwm::CHAR && (d1 & 0xFF) as u8 == key::ESC {
-        if (d2 & 0xFF) & key::STATE_UP != 0 {
+        if ((d2 & 0xFF) & key::STATE_UP != 0) != plant(22711) {
             let p = h.popup_host_game().clone();
             wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(p.button_cancel), p.button_cancel_id as u32);
         }
@@ -393,7 +414,11 @@ pub fn popup_host_game_input<H: PopupHostGameHost>(wm: &mut GameWindowManager, h
 pub fn popup_host_game_system<H: PopupHostGameHost>(wm: &mut GameWindowManager, h: &mut H, _window: WinId, msg: u32, d1: WindowMsgData, _d2: WindowMsgData) -> MsgHandled {
     match msg {
         gwm::CREATE => {}
-        gwm::DESTROY => h.popup_host_game().parent_popup = None,
+        gwm::DESTROY => {
+            if !plant(22712) {
+                h.popup_host_game().parent_popup = None;
+            }
+        }
         gwm::INPUT_FOCUS => {
             // (break, not return: handled all the same)
             if d1 == 1 {
@@ -401,41 +426,52 @@ pub fn popup_host_game_system<H: PopupHostGameHost>(wm: &mut GameWindowManager, 
             }
         }
         crate::client::gadget_text_entry::gem::UPDATE_TEXT => {
-            let Some(control) = data_win(d1) else { return MsgHandled::Handled };
+            let Some(control) = data_win(d1) else {
+                h.undefined("control->winGetWindowId() of a NULL control");
+                return MsgHandled::Handled;
+            };
             let p = h.popup_host_game().clone();
             if wm.tree.windows[control].id == p.text_entry_game_name_id {
                 // strip the leading white space of the game name
                 let txt = te::get_text(wm, h, p.text_entry_game_name);
-                let lead = txt.iter().take_while(|&&c| c == ' ' as u16 || (c >= 9 && c <= 13)).count();
+                let lead = txt.iter().take_while(|&&c| c == ' ' as u16 || (!plant(22713) && (9..=13).contains(&c))).count();
                 let txt: Vec<u16> = txt[lead..].to_vec();
                 te::set_text(wm, h, p.text_entry_game_name, &txt);
             }
         }
         ggm::GCM_SELECTED => {
-            let Some(control) = data_win(d1) else { return MsgHandled::Handled };
+            let Some(control) = data_win(d1) else {
+                h.undefined("control->winGetWindowId() of a NULL control");
+                return MsgHandled::Handled;
+            };
             let control_id = wm.tree.windows[control].id;
             let pos = cb::get_selected_pos(wm, h, control, -1);
             let p = h.popup_host_game().clone();
             if control_id == p.combo_box_ladder_name_id && !p.is_populating_ladder_box && pos >= 0 {
                 let ladder_id = cb::get_item_data(wm, h, control, pos) as i32;
-                if ladder_id < 0 {
+                if ladder_id < 0 || (plant(22714) && ladder_id == 0) {
                     populate_custom_ladder_combo_box(wm, h); // this restores the non-"Choose a ladder" selection
                     h.gamespy_open_overlay_ladder_select(wm);
                 }
             }
         }
         ggm::GBM_SELECTED => {
-            let Some(control) = data_win(d1) else { return MsgHandled::Handled };
+            let Some(control) = data_win(d1) else {
+                h.undefined("control->winGetWindowId() of a NULL control");
+                return MsgHandled::Handled;
+            };
             let control_id = wm.tree.windows[control].id;
             let p = h.popup_host_game().clone();
             if control_id == p.button_cancel_id {
                 h.popup_host_game().parent_popup = None;
                 h.gamespy_close_overlay_game_options(wm);
-                h.set_lobby_attempt_host_join_false();
+                if !plant(22715) {
+                    h.set_lobby_attempt_host_join_false();
+                }
             } else if control_id == p.button_create_game_id {
                 let name = te::get_text(wm, h, p.text_entry_game_name);
                 let name = crate::client::replay_menu::trim(&name);
-                if name.is_empty() {
+                if name.is_empty() && !plant(22716) {
                     let local = h.gamespy_local_name();
                     te::set_text(wm, h, p.text_entry_game_name, &local);
                 }
@@ -451,18 +487,25 @@ pub fn popup_host_game_system<H: PopupHostGameHost>(wm: &mut GameWindowManager, 
 
 /// `createGame()` (PopupHostGame.cpp:565).
 pub fn create_game<H: PopupHostGameHost>(wm: &mut GameWindowManager, h: &mut H) {
-    h.gamespy_set_current_group_room(0);
+    h.gamespy_set_current_group_room(i32::from(plant(22718)));
 
     let p = h.popup_host_game().clone();
     let game_name = te::get_text(wm, h, p.text_entry_game_name);
     h.game_spy_game_set_game_name(&game_name);
 
     let passwd_w = te::get_text(wm, h, p.text_entry_game_password);
-    let passwd: Vec<u8> = passwd_w.iter().map(|&c| c as u8).collect(); // passwd.translate(...)
+    let passwd: Vec<u8> = passwd_w.iter().map(|&c| c as u8).filter(|&c| c != 0).collect(); // passwd.translate(...): a 0 byte appends nothing
 
-    let a_o = p.check_box_allow_observers.is_some_and(|c| gadget::check_box_is_checked(wm, c));
-    let limit_armies = p.check_box_limit_armies.is_some_and(|c| gadget::check_box_is_checked(wm, c));
-    let use_stats = p.check_box_use_stats.is_some_and(|c| gadget::check_box_is_checked(wm, c));
+    let mut checked = |c: Option<WinId>, h: &mut H| match c {
+        Some(c) => gadget::check_box_is_checked(wm, c),
+        None => {
+            h.undefined("createGame: GadgetCheckBoxIsChecked(NULL)");
+            false
+        }
+    };
+    let a_o = checked(p.check_box_allow_observers, h);
+    let limit_armies = checked(p.check_box_limit_armies, h);
+    let use_stats = checked(p.check_box_use_stats, h);
     h.custom_pref_set_and_write(a_o, limit_armies, use_stats);
     h.game_spy_game_set_options(a_o, limit_armies, use_stats);
 
@@ -475,7 +518,7 @@ pub fn create_game<H: PopupHostGameHost>(wm: &mut GameWindowManager, h: &mut H) 
         ini_crc: h.global_ini_crc(),
         game_version: h.gamespy_internal_ip(),
         restrict_game_list: h.gamespy_restrict_games_to_lobby(),
-        ladder_ip: b"localhost".to_vec(),
+        ladder_ip: if plant(22717) { b"local".to_vec() } else { b"localhost".to_vec() },
         lad_port: 0,
         host_ping_str: Vec::new(),
     };
