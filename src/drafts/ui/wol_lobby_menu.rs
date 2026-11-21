@@ -26,6 +26,7 @@
 //! - `GBM_SELECTED` on the Join button reads `GadgetListBoxGetSelected(GetGameListBox(), &selected)` as a single int.
 
 use crate::client::gadget;
+use crate::logic::modules::plant;
 use crate::client::gadget_combo_box as cb;
 use crate::client::gadget_list_box as lb;
 use crate::client::gadget_text_entry as te;
@@ -426,7 +427,10 @@ fn atoi(s: &[u8]) -> i32 {
 
 /// `handleLobbySlashCommands(uText)`.
 pub fn handle_lobby_slash_commands<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: &mut H, u_text: &[u16]) -> bool {
-    let message: Vec<u8> = u_text.iter().map(|&c| c as u8).collect(); // message.translate(uText)
+    // message.translate(uText): each unit cast to `char` and concatenated with `concat(const char c)`, which adds nothing for a zero byte.
+    // ~~`u_text.iter().map(|&c| c as u8).collect()` kept a unit whose low byte is 0 as a NUL~~ **CORRECTED 2026-11-21 (#215, wol6; the differential test
+    // tests/differential_draft_wol_slash.rs found 159 of 20,000 cases):** such units are dropped, as upstream's translate does.
+    let message: Vec<u8> = u_text.iter().map(|&c| c as u8).filter(|&c| !(c == 0 && !plant(23461))).collect();
 
     if message.first() != Some(&b'/') {
         return false; // not a slash command
@@ -435,22 +439,23 @@ pub fn handle_lobby_slash_commands<H: WolLobbyMenuHost>(wm: &mut GameWindowManag
     // remainder.nextToken(&token) with the default separators " \n\r\t"
     let remainder = &message[1..];
     let seps = b" \n\r\t";
-    let start = remainder.iter().position(|c| !seps.contains(c)).unwrap_or(remainder.len());
+    let start = if plant(23467) { 0 } else { remainder.iter().position(|c| !seps.contains(c)).unwrap_or(remainder.len()) };
     let end = remainder[start..].iter().position(|c| seps.contains(c)).map_or(remainder.len(), |e| start + e);
-    let token = remainder[start..end].to_ascii_lowercase();
+    let token = if plant(23462) { remainder[start..end].to_vec() } else { remainder[start..end].to_ascii_lowercase() };
 
     if token == b"host" {
-        let s = utf16(&format!("Hosting qr2:{} thread:{}", h.qr2_hosting_status(), h.is_thread_hosting()));
+        let s = if plant(23466) { utf16(&format!("Hosting qr2:{} thread:{}", h.is_thread_hosting(), h.qr2_hosting_status())) } else { utf16(&format!("Hosting qr2:{} thread:{}", h.qr2_hosting_status(), h.is_thread_hosting())) };
         let c = h.gamespy_color_default();
         h.gamespy_add_text(wm, &s, c, None);
         true // was a slash command
-    } else if token == b"me" && u_text.len() > 4 {
+    } else if token == b"me" && u_text.len() > if plant(23463) { 3 } else { 4 } {
         let players = h.wol_lobby_menu().listbox_lobby_players;
-        h.gamespy_send_chat(wm, &u_text[4..], true, players);
+        let from = if plant(23464) { 3 } else { 4 };
+        h.gamespy_send_chat(wm, &u_text[from..], !plant(23465), if plant(23468) { None } else { players });
         true // was a slash command
     } else if token == b"refresh" {
         // Added 2/19/03 added the game refresh
-        refresh_game_list(wm, h, true);
+        refresh_game_list(wm, h, !plant(23469));
         refresh_player_list(wm, h, true);
         true // was a slash command
     } else {
@@ -1361,7 +1366,7 @@ pub fn wol_lobby_menu_system<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h:
                 shell::pop(wm, h);
             } else if control_id == m.button_refresh_id {
                 // Added 2/17/03 added the game refresh button
-                refresh_game_list(wm, h, true);
+                refresh_game_list(wm, h, !plant(23469));
                 refresh_player_list(wm, h, true);
             } else if control_id == m.button_host_id {
                 if m.trying_to_host_or_join {

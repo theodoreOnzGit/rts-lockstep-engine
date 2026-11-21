@@ -26,6 +26,7 @@
 //! - The `Request` branch reads `options.str()+1` after `nextToken(&key, "=")`, i.e. the text after the `=`.
 
 use crate::client::gadget;
+use crate::logic::modules::plant;
 use crate::client::gadget_combo_box as cb;
 use crate::client::gadget_list_box as lb;
 use crate::client::gadget_text_entry as te;
@@ -2178,7 +2179,10 @@ pub fn wol_game_setup_menu_input() -> MsgHandled {
 
 /// `handleGameSetupSlashCommands(uText)`.
 pub fn handle_game_setup_slash_commands<H: WolGameSetupMenuHost>(wm: &mut GameWindowManager, h: &mut H, u_text: &[u16]) -> bool {
-    let message: Vec<u8> = u_text.iter().map(|&c| c as u8).collect(); // message.translate(uText)
+    // message.translate(uText): each unit cast to `char` and concatenated with `concat(const char c)`, which adds nothing for a zero byte.
+    // ~~`u_text.iter().map(|&c| c as u8).collect()` kept a unit whose low byte is 0 as a NUL~~ **CORRECTED 2026-11-21 (#215, wol6; the differential test
+    // tests/differential_draft_wol_slash.rs found 159 of 20,000 cases):** such units are dropped, as upstream's translate does.
+    let message: Vec<u8> = u_text.iter().map(|&c| c as u8).filter(|&c| !(c == 0 && !plant(23471))).collect();
 
     if message.first() != Some(&b'/') {
         return false; // not a slash command
@@ -2187,17 +2191,18 @@ pub fn handle_game_setup_slash_commands<H: WolGameSetupMenuHost>(wm: &mut GameWi
     // remainder.nextToken(&token) with the default separators " \n\r\t"
     let remainder = &message[1..];
     let seps = b" \n\r\t";
-    let start = remainder.iter().position(|c| !seps.contains(c)).unwrap_or(remainder.len());
+    let start = if plant(23477) { 0 } else { remainder.iter().position(|c| !seps.contains(c)).unwrap_or(remainder.len()) };
     let end = remainder[start..].iter().position(|c| seps.contains(c)).map_or(remainder.len(), |e| start + e);
-    let token = remainder[start..end].to_ascii_lowercase();
+    let token = if plant(23472) { remainder[start..end].to_vec() } else { remainder[start..end].to_ascii_lowercase() };
 
     if token == b"host" {
-        let s = utf16(&format!("Hosting qr2:{} thread:{}", h.qr2_hosting_status(), h.is_thread_hosting()));
+        let s = if plant(23476) { utf16(&format!("Hosting qr2:{} thread:{}", h.is_thread_hosting(), h.qr2_hosting_status())) } else { utf16(&format!("Hosting qr2:{} thread:{}", h.qr2_hosting_status(), h.is_thread_hosting())) };
         let c = h.gamespy_color_default();
         h.gamespy_add_text(wm, &s, c, None);
         true // was a slash command
-    } else if token == b"me" && u_text.len() > 4 {
-        h.gamespy_send_chat(wm, &u_text[4..], true, None);
+    } else if token == b"me" && u_text.len() > if plant(23473) { 3 } else { 4 } {
+        let from = if plant(23474) { 3 } else { 4 };
+        h.gamespy_send_chat(wm, &u_text[from..], !plant(23475), None);
         true // was a slash command
     } else {
         // (the debug-only /slots and /discon are not translated)
