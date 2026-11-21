@@ -15060,7 +15060,7 @@ mod differential {
         println!("cargo:rerun-if-changed=differential/shim_ui3b");
     }
 
-    /// #215 (group ui4): the PROGRAM `ui4_ref` for the menu drafts of `src/drafts/ui` that drive the list box, text entry, combo box and static
+    /// #215 (group ui4): the PROGRAMS (`ui4_<menu>`, one per wrapper) for the menu drafts of `src/drafts/ui` that drive the list box, text entry, combo box and static
     /// text gadgets (disconnect_window, disconnect_menu, ...). It is #70's window manager program (`wm_ref`: upstream's GameWindowManager.cpp, GameWindow.cpp,
     /// WinInstanceData.cpp, GameWindowGlobal.cpp and the eleven Gadget*.cpp, cut and edited exactly as there) built with `differential/wrap_wm.cpp`'s
     /// stand-ins (its text is included, with four asserted edits: its `main` renamed, and its three aborting stand-ins for `WindowLayout::addWindow`,

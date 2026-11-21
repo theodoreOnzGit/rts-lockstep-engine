@@ -5,7 +5,7 @@
 //! `showPacketRouterTimeout`, `hidePacketRouterTimeout`, `setPacketRouterTimeoutTime`, `sendChat`, `showChat`, `quitGame`, `removePlayer`,
 //! `voteForPlayer`, `updateVotes`) and `src/drafts/ui/disconnect_window.rs` (`ShowDisconnectWindow`, `HideDisconnectWindow`,
 //! `DisconnectControlInput`, `DisconnectControlSystem`, the file's statics) against upstream `DisconnectMenu.cpp` and `DisconnectWindow.cpp`, cut
-//! verbatim by build.rs (`drafts_ui4`) into the program `ui4_ref` (differential/wrap_draft_ui4_disconnect.cpp lists the stand-ins and the one edit), which also
+//! verbatim by build.rs (`drafts_ui4`) into the program `UI4_DISCONNECT_EXE` (differential/wrap_draft_ui4_disconnect.cpp lists the stand-ins and the one edit), which also
 //! holds upstream's real window manager, window layout and gadgets (list box, text entry, push button, static text: #70's program).
 //!
 //! # Method
