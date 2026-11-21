@@ -193,6 +193,10 @@ static bool GetUnsignedIntFromRegistry(const char *, const char *, unsigned int 
 static bool SetUnsignedIntInRegistry(const char *, const char *, unsigned int val) { theLog.push_back(51); theLog.push_back(val); return g_versionSet != 0; }
 static bool GetStringFromRegistry(const char *, const char *, std::string &val) { theLog.push_back(52); if (!g_haveProxy) return false; val = g_proxy; return true; }
 static void FormatURLFromRegistry(std::string &game, std::string &map, std::string &config, std::string &motd) { theLog.push_back(53); game = g_gameURL; map = g_mapURL; config = g_configURL; motd = g_motdURL; }
+/* Renamed (#227): <stdio.h> already declared `remove` extern, so `static int remove` (an error -fpermissive demotes to a warning)
+** kept EXTERNAL linkage and replaced the C library's remove() in every test binary that linked this object: battle honours'
+** SkirmishStats.ini was then never deleted between cases (differential_battle_honors: 2,644 mismatches). */
+#define remove Mmu_remove
 static int remove(const char *) { return 0; }
 #define _O_CREAT 1
 #define _O_RDWR 2
