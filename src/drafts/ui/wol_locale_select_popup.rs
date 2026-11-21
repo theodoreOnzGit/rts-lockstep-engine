@@ -12,9 +12,10 @@ use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{data_win, ggm, gwm, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
 
-/// `LOC_MIN`, `LOC_MAX` (GameSpy locale ids, PersistentStorageThread.h).
+/// `LOC_MIN`, `LOC_MAX` (GameSpy locale ids, PersistentStorageDefs.h `enum LocaleType`: `LOC_MIN = 1`, `LOC_MAX = 37`).
+/// ~~`LOC_MAX` was 20~~ **Corrected 2026-11-21 (#215, group ui3a):** 37 (the draft's 20 left `WOL:Locale21` to `37` out of the list).
 pub const LOC_MIN: i32 = 1;
-pub const LOC_MAX: i32 = 20;
+pub const LOC_MAX: i32 = 37;
 
 /// The file's statics (`NAMEKEY_INVALID` is 0, `NULL` is `None`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
