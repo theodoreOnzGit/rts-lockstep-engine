@@ -43,7 +43,9 @@ pub fn get_remote_ip_entry(prefs: &UserPreferences, i: i32) -> Vec<u16> {
     // asciientry.set(asciientry.str() + 1); // skip the ':'
     let rest: Vec<u8> = if end < entry.len() { entry[end + 1..].to_vec() } else { Vec::new() };
     // ret.translate(ipstr)
-    ret.extend(ipstr.iter().map(|&c| c as u16));
+    // (`(WideChar)getCharAt(i)` of a `char`: a byte above 0x7F is negative and sign-extends. Corrected 2026-11-21 (#215, group ui5): it was zero-extended; found by the NetworkDirectConnect
+    // test, whose entries hold `é`, which the lanprefs test's ASCII preference maps never had.)
+    ret.extend(ipstr.iter().map(|&c| (c as i8) as i16 as u16));
     if !rest.is_empty() {
         ret.push(b'(' as u16);
         if plant(15888) {
