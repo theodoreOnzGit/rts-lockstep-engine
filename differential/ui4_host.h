@@ -13,11 +13,30 @@
 #include "GameClient/GameText.h"
 
 /* ---- the layouts */
+/* the init callback every layout made gets (a wrapper sets it; NULL: none), run by `runInit()` */
+static WindowLayoutInitFunc u4_layout_init = NULL;
 static std::vector<int> u4_layout_members;
 static std::vector<WindowLayout *> u4_layouts;
+/* a layout the code under test deleted (`deleteInstance`): its dump line as it was at the deletion, kept here (index-aligned with u4_layouts; "" while it lives) */
+static std::vector<std::string> u4_layout_dead;
+class U4Layout : public WindowLayout
+{
+public:
+	size_t idx;
+	~U4Layout()
+	{
+		std::ostringstream o;
+		o << " hidden " << (int)m_hidden << " wins";
+		for (GameWindow *w = m_windowList; w; w = w->winGetNextInLayout()) o << " " << widx(w);
+		u4_layout_dead[idx] = o.str();
+	}
+};
 WindowLayout *GameWindowManager::winCreateLayout(AsciiString filename)
 {
-	WindowLayout *l = new WindowLayout;
+	U4Layout *l = new U4Layout;
+	l->idx = u4_layouts.size();
+	u4_layout_dead.push_back("");
+	l->setInit(u4_layout_init);
 	g_log << "layout " << filename.str() << "\n";
 	for (size_t i = u4_layout_members.size(); i-- > 0;)
 	{
@@ -78,8 +97,9 @@ static int u4_li(std::istringstream &in) { int a = 0; in >> a; return a; }
 static GameWindow *u4_win(int i) { return (i >= 0 && i < (int)g_windows.size() && !g_freed[i]) ? g_windows[i] : NULL; }
 static int u4_lay_index(WindowLayout *l)
 {
-	for (size_t i = 0; i < u4_layouts.size(); ++i)
-		if (u4_layouts[i] == l) return (int)i;
+	/* newest first: a deleted layout's address can be reused by a later one */
+	for (size_t i = u4_layouts.size(); i-- > 0;)
+		if (l && u4_layouts[i] == l && u4_layout_dead[i].empty()) return (int)i;
 	return -1;
 }
 

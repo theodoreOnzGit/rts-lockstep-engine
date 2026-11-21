@@ -15147,6 +15147,8 @@ mod differential {
             ("void WindowLayout::addWindow(GameWindow *) { abort(); }\n", ""),
             ("void WindowLayout::removeWindow(GameWindow *) { abort(); }\n", ""),
             ("WindowLayout *GameWindowManager::winCreateLayout(AsciiString) { abort(); }\n", ""),
+            // the Gameinfo images (GameInfoWindow.cpp's random and observer icons) are found as the `Img*` ones are
+            ("\tif (strncasecmp(n, \"img\", 3) != 0) return NULL;\n", "\tif (strncasecmp(n, \"img\", 3) != 0 && strncasecmp(n, \"Gameinfo\", 8) != 0) return NULL;\n"),
         ] {
             assert_eq!(base_text.matches(from).count(), 1, "wrap_wm.cpp: {from:?} must occur once");
             base_text = base_text.replace(from, to);
@@ -15160,6 +15162,7 @@ mod differential {
             ("wl_cpp.inc", format!("{gui_rel}WindowLayout.cpp"), "WindowLayout::WindowLayout( void )", None, vec![]),
             ("disconnect_window.inc", format!("{menus}DisconnectWindow.cpp"), "// Private Data -----", None, vec![]),
             // the one edit: `text.format(fmt, playerName.str())` goes through the shim's glibc vswprintf, whose `%ls` reads 32-bit units
+            ("game_info_window.inc", format!("{menus}GameInfoWindow.cpp"), "static GameWindow *parent = NULL;", None, vec![("staticTextGameName,UnicodeString.TheEmptyString", "staticTextGameName,UnicodeString::TheEmptyString"), ("staticTextMapName,UnicodeString.TheEmptyString", "staticTextMapName,UnicodeString::TheEmptyString")]),
             ("popup_join_game.inc", format!("{menus}PopupJoinGame.cpp"), "static NameKeyType parentPopupID", None, vec![("munkee.translate(txtInput);", "ui4_translate(munkee, txtInput);")]),
             ("disconnect_menu.inc", format!("{gui_rel}DisconnectMenu/DisconnectMenu.cpp"), "char *DisconnectMenu::m_playerNameTextControlNames[] = {", None, vec![("text.format(TheGameText->fetch(\"Network:PlayerLeftGame\"), playerName.str());", "ui4_format_ls(text, TheGameText->fetch(\"Network:PlayerLeftGame\"), playerName);")]),
         ];
@@ -15197,7 +15200,7 @@ mod differential {
         configure(&mut b);
         let wm_objs = b.files(&sources).compile_intermediates();
         // one program per wrapper, each with its own menus' cuts and stand-ins, over the same window manager objects
-        for (wrapper, env) in [("wrap_draft_ui4_disconnect.cpp", "UI4_DISCONNECT_EXE"), ("wrap_draft_ui4_join.cpp", "UI4_JOIN_EXE")] {
+        for (wrapper, env) in [("wrap_draft_ui4_disconnect.cpp", "UI4_DISCONNECT_EXE"), ("wrap_draft_ui4_join.cpp", "UI4_JOIN_EXE"), ("wrap_draft_ui4_gameinfo.cpp", "UI4_GAMEINFO_EXE")] {
             println!("cargo:rerun-if-changed=differential/{wrapper}");
             let mut b = cc::Build::new();
             configure(&mut b);

@@ -67,6 +67,11 @@ static void u4_dump(std::ostringstream &o)
 {
 	for (size_t i = 0; i < u4_layouts.size(); ++i)
 	{
+		if (!u4_layout_dead[i].empty())
+		{
+			o << "lay" << i << u4_layout_dead[i] << "\n";
+			continue;
+		}
 		WindowLayout *l = u4_layouts[i];
 		o << "lay" << i << " hidden " << (int)l->isHidden() << " wins";
 		for (GameWindow *w = l->getFirstWindow(); w; w = w->winGetNextInLayout()) o << " " << widx(w);

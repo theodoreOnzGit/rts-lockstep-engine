@@ -103,7 +103,7 @@ pub fn show_disconnect_window<H: DisconnectWindowHost>(wm: &mut GameWindowManage
     if let Some(display) = d.text_display_window {
         gadget_list_box::reset(wm, h, display);
         let text = crate::drafts::ui::disconnect_menu::DisconnectMenuHost::fetch_text(h, b"GUI:InternetDisconnectionMenuBody1");
-        gadget_list_box::add_entry_text(wm, h, display, &text, WHITE, -1, -1, false);
+        gadget_list_box::add_entry_text(wm, h, display, &text, WHITE, -1, -1, true);
     }
 }
 

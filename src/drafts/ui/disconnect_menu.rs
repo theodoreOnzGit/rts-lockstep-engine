@@ -254,7 +254,7 @@ pub fn send_chat<H: DisconnectMenuHost>(h: &mut H, text: &[u16]) {
 /// `DisconnectMenu::showChat(text)`.
 pub fn show_chat<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h: &mut H, text: &[u16]) {
     if let Some(display) = win_by_name(wm, h, TEXT_DISPLAY_CONTROL_NAME) {
-        gadget_list_box::add_entry_text(wm, h, display, text, CHAT_NORMAL_COLOR, -1, -1, false);
+        gadget_list_box::add_entry_text(wm, h, display, text, CHAT_NORMAL_COLOR, -1, -1, true);
     }
 }
 
@@ -272,7 +272,7 @@ pub fn remove_player<H: DisconnectMenuHost>(wm: &mut GameWindowManager, h: &mut 
     let text = h.format_with_name(&fmt, player_name);
 
     if let Some(d) = display {
-        gadget_list_box::add_entry_text(wm, h, d, &text, if plant(21466) { 0xFFFF_FFFFu32 as i32 } else { CHAT_NORMAL_COLOR }, -1, -1, false);
+        gadget_list_box::add_entry_text(wm, h, d, &text, if plant(21466) { 0xFFFF_FFFFu32 as i32 } else { CHAT_NORMAL_COLOR }, -1, -1, true);
     }
 }
 

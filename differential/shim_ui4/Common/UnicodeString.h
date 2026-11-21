@@ -1,5 +1,5 @@
 /* differential/shim_ui4 (#215, group ui4): the shim's Common/UnicodeString.h (differential/shim/Common/UnicodeString.h) COPIED, with the members the menu
-** cuts call and the shim lacks added at the end of the class (marked `ui4`): set(const UnicodeString &), trim() (UnicodeString.cpp:231: leading and trailing
+** cuts call and the shim lacks added at the end of the class (marked `ui4`): set(const UnicodeString &), translate(const char *), trim() (UnicodeString.cpp:231: leading and trailing
 ** iswspace removed; the C locale's white space: 0x20 and 0x09..0x0D). The menus' wrapper (wrap_draft_ui4.cpp) puts this directory ahead of differential/shim. */
 /* Shim for GameEngine/Include/Common/UnicodeString.h, differential tests only:
 ** TheEmptyString, str(), getLength(), isEmpty(), set(const WideChar*), getCharAt(),
@@ -125,6 +125,9 @@ public:
 	/* ui4: UnicodeString::set(const UnicodeString &) */
 	void set(const UnicodeString &o) { m_s = o.m_s; }
 	void set(const WideChar *s2) { if (s2) m_s = s2; else m_s.clear(); }
+	/* ui4: UnicodeString::translate(const AsciiString &) called with a C string (the AsciiString is made from it): each char, sign-extended as the signed char it is,
+	** becomes a WideChar, a 0 appended as nothing (concat(WideChar)) */
+	void translate(const char *c) { m_s.clear(); for (; *c; ++c) { WideChar w = (WideChar)*c; if (w) m_s += w; } }
 	/* ui4: UnicodeString::trim() */
 	void trim()
 	{
