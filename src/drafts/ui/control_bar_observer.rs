@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_observer.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarObserver.cpp
@@ -7,6 +8,7 @@
 
 use crate::client::window_manager::{data_win, ggm, gwm, GameWindowManager, GuiHost, MsgHandled, WindowMsgData};
 use crate::client::window_script::{win_status, WinId};
+use crate::logic::modules::plant;
 
 /// `enum { MAX_BUTTONS = 8 }` (ControlBarObserver.cpp:55).
 pub const MAX_BUTTONS: usize = 8;
@@ -120,7 +122,7 @@ pub fn init_observer_controls<H: ObserverHost>(wm: &mut GameWindowManager, h: &m
 
     for i in 0..MAX_BUTTONS {
         let button_id = h.name_to_key(format!("ControlBar.wnd:ButtonPlayer{i}").as_bytes());
-        let button = wm.win_get_window_from_id(list, button_id);
+        let button = wm.win_get_window_from_id(if plant(21241) { None } else { list }, button_id);
         let text_id = h.name_to_key(format!("ControlBar.wnd:StaticTextPlayer{i}").as_bytes());
         let text = wm.win_get_window_from_id(list, text_id);
         let o = h.observer();
@@ -165,12 +167,14 @@ pub fn control_bar_observer_system<H: ObserverHost>(wm: &mut GameWindowManager, 
             if control_id == o.button_cancel_id {
                 h.set_observer_look_at_player(None);
                 if let Some(w) = o.observer_player_info_window {
-                    wm.win_hide(w, true);
+                    wm.win_hide(w, !plant(21243));
                 }
                 if let Some(w) = o.observer_player_list_window {
-                    wm.win_hide(w, false);
+                    wm.win_hide(w, plant(21243));
                 }
-                populate_observer_list(wm, h);
+                if !plant(21242) {
+                    populate_observer_list(wm, h);
+                }
             }
             for i in 0..MAX_BUTTONS {
                 if control_id == o.button_player_id[i] {
@@ -182,7 +186,7 @@ pub fn control_bar_observer_system<H: ObserverHost>(wm: &mut GameWindowManager, 
                     }
                     let p = o.button_player[i].and_then(|b| h.gadget_button_get_data_player(wm, b));
                     h.set_observer_look_at_player(p);
-                    if h.observer_look_at_player().is_some() {
+                    if h.observer_look_at_player().is_some() && !plant(21244) {
                         populate_observer_info_window(wm, h);
                     }
                     return MsgHandled::Handled;
@@ -229,8 +233,8 @@ pub fn populate_observer_list<H: ObserverHost>(wm: &mut GameWindowManager, h: &m
 
             // `TheGameInfo->getConstSlot(currentButton)`
             let team_number = h.slot_team_number(current_button);
-            let mut team_str = format!("Team:{}", team_number + 1);
-            if h.slot_is_ai(current_button) && team_number == -1 {
+            let mut team_str = format!("Team:{}", if plant(21245) { team_number } else { team_number + 1 });
+            if h.slot_is_ai(current_button) && (team_number == -1 || (plant(21246) && team_number == 0)) {
                 team_str = "Team:AI".to_string();
             }
 
@@ -257,7 +261,9 @@ pub fn populate_observer_list<H: ObserverHost>(wm: &mut GameWindowManager, h: &m
                     }
 
                     current_button += 1;
-                    break;
+                    if !plant(21247) {
+                        break;
+                    }
                 }
             }
         }
@@ -277,7 +283,9 @@ pub fn populate_observer_list<H: ObserverHost>(wm: &mut GameWindowManager, h: &m
 /// `ControlBar::populateObserverInfoWindow()` (ControlBarObserver.cpp:290).
 pub fn populate_observer_info_window<H: ObserverHost>(wm: &mut GameWindowManager, h: &mut H) {
     let o = h.observer().clone();
-    if wm.is_hidden(o.observer_player_info_window) {
+    // `ObserverPlayerInfoWindow->winIsHidden()`: the window's own bit (a missing window: upstream dereferences NULL; `isHidden(None)` is true)
+    let info_hidden = o.observer_player_info_window.map_or(true, |w| if plant(21251) { wm.is_hidden(Some(w)) } else { wm.tree.windows[w].status & win_status::HIDDEN != 0 });
+    if info_hidden != plant(21250) {
         return;
     }
 
@@ -299,11 +307,13 @@ pub fn populate_observer_info_window<H: ObserverHost>(wm: &mut GameWindowManager
 
     let mut num_buildings = h.count_objects(p, &["SCORE", "STRUCTURE"], &[]);
     num_buildings += h.count_objects(p, &["SCORE_CREATE", "STRUCTURE"], &[]);
-    num_buildings += h.count_objects(p, &["SCORE_DESTROY", "STRUCTURE"], &[]);
+    if !plant(21248) {
+        num_buildings += h.count_objects(p, &["SCORE_DESTROY", "STRUCTURE"], &[]);
+    }
     if let Some(w) = o.static_text_number_of_buildings {
         h.gadget_static_text_set_text(wm, w, &utf16(&num_buildings.to_string()));
     }
-    let killed = h.total_units_destroyed(p);
+    let killed = if plant(21249) { h.total_units_lost(p) } else { h.total_units_destroyed(p) };
     if let Some(w) = o.static_text_number_of_units_killed {
         h.gadget_static_text_set_text(wm, w, &utf16(&killed.to_string()));
     }

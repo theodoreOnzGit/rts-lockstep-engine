@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_establish_connections_window.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/EstablishConnectionsWindow.cpp
@@ -11,6 +12,7 @@
 use crate::client::shell::ShellHost;
 use crate::client::window_manager::{data_win, ggm, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
+use crate::logic::modules::plant;
 
 /// `layoutFilename`, `parentName`, `gadgetsToHide`, `perPlayerGadgetsToHide` (the NULL terminator is the slice's end).
 pub const LAYOUT_FILENAME: &str = "GameSpyGameOptionsMenu.wnd";
@@ -65,7 +67,7 @@ fn show_game_spy_qm_underlying_gui_elements<H: EstablishConnectionsWindowHost>(w
 
 /// `InitEstablishConnectionsDialog()`.
 fn init_establish_connections_dialog<H: EstablishConnectionsWindowHost>(wm: &mut GameWindowManager, h: &mut H) {
-    let id = ShellHost::name_to_key(h, b"EstablishConnectionsScreen.wnd:ButtonQuit") as i32;
+    let id = ShellHost::name_to_key(h, if plant(21229) { b"EstablishConnectionsScreen.wnd:ButtonQuit1" } else { b"EstablishConnectionsScreen.wnd:ButtonQuit" }) as i32;
     let win = wm.win_get_window_from_id(None, id);
     h.establish_connections_window().button_quit_id = id;
     h.establish_connections_window().button_quit_window = win;
@@ -73,20 +75,20 @@ fn init_establish_connections_dialog<H: EstablishConnectionsWindowHost>(wm: &mut
 
 /// `ShowEstablishConnectionsWindow()`.
 pub fn show_establish_connections_window<H: EstablishConnectionsWindowHost>(wm: &mut GameWindowManager, h: &mut H) {
-    if h.establish_connections_window().establish_connections_layout.is_none() {
+    if h.establish_connections_window().establish_connections_layout.is_none() || plant(21226) {
         let layout = h.create_layout(wm, b"Menus/EstablishConnectionsScreen.wnd");
         h.establish_connections_window().establish_connections_layout = layout;
         init_establish_connections_dialog(wm, h);
     }
     let Some(layout) = h.establish_connections_window().establish_connections_layout else { return };
-    wm.layout_hide(layout, false);
+    wm.layout_hide(layout, plant(21221));
     // `winSetFocus(establishConnectionsLayout->getFirstWindow())`
     let first = wm.layouts[layout].windows.first().copied();
     wm.win_set_focus(h, first);
-    if !h.is_qm_game() {
-        show_game_spy_game_options_underlying_gui_elements(wm, h, false);
+    if h.is_qm_game() == plant(21222) {
+        show_game_spy_game_options_underlying_gui_elements(wm, h, plant(21223));
     } else {
-        show_game_spy_qm_underlying_gui_elements(wm, h, false);
+        show_game_spy_qm_underlying_gui_elements(wm, h, plant(21223));
     }
 }
 
@@ -94,13 +96,15 @@ pub fn show_establish_connections_window<H: EstablishConnectionsWindowHost>(wm: 
 /// `deleteInstance`) and shows the underlying elements again.
 pub fn hide_establish_connections_window<H: EstablishConnectionsWindowHost>(wm: &mut GameWindowManager, h: &mut H) {
     let Some(layout) = h.establish_connections_window().establish_connections_layout else { return };
-    wm.layout_destroy_windows(layout);
+    if !plant(21225) {
+        wm.layout_destroy_windows(layout);
+    }
     // (`deleteInstance`: the layout record itself is released by the host)
     h.establish_connections_window().establish_connections_layout = None;
     if !h.is_qm_game() {
-        show_game_spy_game_options_underlying_gui_elements(wm, h, true);
+        show_game_spy_game_options_underlying_gui_elements(wm, h, !plant(21224));
     } else {
-        show_game_spy_qm_underlying_gui_elements(wm, h, true);
+        show_game_spy_qm_underlying_gui_elements(wm, h, !plant(21224));
     }
 }
 
@@ -114,10 +118,13 @@ pub fn establish_connections_control_system<H: EstablishConnectionsWindowHost>(w
     if msg == ggm::GBM_SELECTED {
         if let Some(control) = data_win(d1) {
             let control_id = wm.win(control).id;
-            if control_id == h.establish_connections_window().button_quit_id {
+            if control_id == h.establish_connections_window().button_quit_id || plant(21227) {
                 h.establish_connections_abort_game();
             }
         }
+    }
+    if plant(21228) && msg != ggm::GBM_SELECTED {
+        return MsgHandled::Ignored;
     }
     MsgHandled::Handled
 }

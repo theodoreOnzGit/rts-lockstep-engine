@@ -104,8 +104,6 @@ use std::collections::BTreeMap;
 use support_ui3a::Rng;
 
 extern "C" {
-    // (`--cfg u3a_dev`: the fast loop of the author links a hand-built copy of the wrapper under another name, see the notes of the PR)
-    #[cfg_attr(u3a_dev, link_name = "ref_u3a_small_run_dev")]
     fn ref_u3a_small_run(input: *const i32, n: i32, out: *mut u8, cap: i32) -> i32;
 }
 

@@ -1,10 +1,12 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_establish_connections_menu.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/EstablishConnectionsMenu/EstablishConnectionsMenu.cpp
 //!     (`EstablishConnectionsMenu`: initMenu, endMenu, abortGame, setPlayerName, setPlayerStatus)
 
 use crate::client::window_manager::{GameWindowManager, GuiHost};
+use crate::logic::modules::plant;
 
 /// `m_playerReadyControlNames` (unused by the .cpp's functions).
 pub const PLAYER_READY_CONTROL_NAMES: [&str; 7] = [
@@ -61,12 +63,18 @@ pub trait EstablishConnectionsHost: GuiHost {
 
 /// `EstablishConnectionsMenu::initMenu()`.
 pub fn init_menu<H: EstablishConnectionsHost>(wm: &mut GameWindowManager, h: &mut H) {
-    h.show_establish_connections_window(wm);
+    if plant(21176) {
+        h.hide_establish_connections_window(wm);
+    } else {
+        h.show_establish_connections_window(wm);
+    }
 }
 
 /// `EstablishConnectionsMenu::endMenu()`.
 pub fn end_menu<H: EstablishConnectionsHost>(wm: &mut GameWindowManager, h: &mut H) {
-    h.hide_establish_connections_window(wm);
+    if !plant(21177) {
+        h.hide_establish_connections_window(wm);
+    }
 }
 
 /// `EstablishConnectionsMenu::abortGame()`: empty upstream.
@@ -74,7 +82,7 @@ pub fn abort_game() {}
 
 /// `EstablishConnectionsMenu::setPlayerName(slot, name)`: a missing control returns (the assert is compiled out).
 pub fn set_player_name<H: EstablishConnectionsHost>(wm: &mut GameWindowManager, h: &mut H, slot: usize, name: &[u16]) {
-    let control_id = h.name_to_key(PLAYER_NAME_CONTROL_NAMES[slot].as_bytes());
+    let control_id = h.name_to_key(if plant(21173) { PLAYER_STATUS_CONTROL_NAMES[slot] } else if plant(21175) { PLAYER_NAME_CONTROL_NAMES[(slot + 1).min(6)] } else { PLAYER_NAME_CONTROL_NAMES[slot] }.as_bytes());
     let Some(control) = wm.win_get_window_from_id(None, control_id) else { return };
     crate::client::gadget::static_text_set_text(wm, h, Some(control), name);
 }
@@ -87,11 +95,11 @@ pub fn set_player_status<H: EstablishConnectionsHost>(wm: &mut GameWindowManager
     let label: &[u8] = match state {
         NatConnectionState::WaitingForManglerResponse => b"GUI:WaitingForManglerResponse",
         NatConnectionState::WaitingForMangledPort => b"GUI:WaitingForMangledPort",
-        NatConnectionState::WaitingForResponse => b"GUI:WaitingForResponse",
-        NatConnectionState::Done => b"GUI:ConnectionDone",
-        NatConnectionState::Failed => b"GUI:ConnectionFailed",
-        NatConnectionState::WaitingToBegin => b"GUI:WaitingToBeginConnection",
-        NatConnectionState::NetgearDelay => b"GUI:UnknownConnectionState",
+        NatConnectionState::WaitingForResponse => if plant(21172) { b"GUI:WaitingForMangledPort" } else { b"GUI:WaitingForResponse" },
+        NatConnectionState::Done => if plant(21171) { b"GUI:ConnectionFailed" } else { b"GUI:ConnectionDone" },
+        NatConnectionState::Failed => if plant(21171) { b"GUI:ConnectionDone" } else { b"GUI:ConnectionFailed" },
+        NatConnectionState::WaitingToBegin => if plant(21178) { b"GUI:UnknownConnectionState" } else { b"GUI:WaitingToBeginConnection" },
+        NatConnectionState::NetgearDelay => if plant(21174) { b"GUI:NetgearDelay" } else { b"GUI:UnknownConnectionState" },
     };
     let text = h.fetch_text(label);
     crate::client::gadget::static_text_set_text(wm, h, Some(control), &text);

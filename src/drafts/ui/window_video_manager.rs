@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_video_manager.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/WindowVideoManager.cpp
@@ -10,7 +11,8 @@
 use std::collections::BTreeMap;
 
 use crate::client::window_manager::GameWindowManager;
-use crate::client::window_script::WinId;
+use crate::client::window_script::{win_status, WinId};
+use crate::logic::modules::plant;
 
 /// `enum WindowVideoPlayType`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,7 +73,9 @@ impl WindowVideo {
     /// and the stream are released.
     pub fn destroy<V: VideoHost>(mut self, wm: &mut GameWindowManager, v: &mut V) {
         if let Some(win) = self.win {
-            v.set_window_video_buffer(wm, win, None);
+            if !plant(21160) {
+                v.set_window_video_buffer(wm, win, None);
+            }
         }
         self.win = None;
         if let (Some(stream), Some(buffer)) = (self.video_stream.take(), self.video_buffer.take()) {
@@ -94,7 +98,7 @@ impl WindowVideo {
     pub fn set_window_state<V: VideoHost>(&mut self, wm: &mut GameWindowManager, v: &mut V, state: WindowVideoStates) {
         self.state = state;
 
-        if self.state == WindowVideoStates::Stop {
+        if self.state == WindowVideoStates::Stop && !plant(21156) {
             if let Some(win) = self.win {
                 v.set_window_video_buffer(wm, win, None);
             }
@@ -114,8 +118,19 @@ impl Default for WindowVideo {
     }
 }
 
-/// `class WindowVideoManager`. Upstream's `std::map<GameWindow *, WindowVideo *>` iterates in pointer order; the
-/// window index order stands in for it.
+/// `win->winIsHidden()`: the window's own hidden bit (`GameWindowManager::isHidden` counts its ancestors too: the planted bug `plant_id`).
+fn win_is_hidden(wm: &GameWindowManager, w: WinId, plant_id: u32) -> bool {
+    if plant(plant_id) {
+        wm.is_hidden(Some(w))
+    } else {
+        wm.tree.windows[w].status & win_status::HIDDEN != 0
+    }
+}
+
+/// `class WindowVideoManager`. ~~Upstream's `std::map<GameWindow *, WindowVideo *>` iterates in pointer order; the window index order stands in for it.~~
+/// **Corrected 2026-11-21 (#215, group ui3b):** upstream's map is a `std::hash_map<ConstGameWindowPtr, WindowVideo *, hashConstGameWindowPtr>`
+/// (WindowVideoManager.h), whose iteration order is unspecified (bucket order); the draft iterates in window-index order, which the differential test's
+/// C++ stand-in (a `std::map` on the pointer) reproduces. Nothing in `update` depends on the order but the order of the calls on the video stream.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WindowVideoManager {
     pub playing_videos: BTreeMap<WinId, WindowVideo>,
@@ -158,12 +173,12 @@ impl WindowVideoManager {
             let Some(win) = win_vid.win else { continue };
             let state = win_vid.state;
 
-            if state == WindowVideoStates::Hidden && !wm.is_hidden(Some(win)) {
+            if state == WindowVideoStates::Hidden && (win_is_hidden(wm, win, 21161) == plant(21157)) {
                 self.resume_movie(wm, v, win);
             }
 
             let state = self.playing_videos.get(&key).map_or(state, |w| w.state);
-            if state == WindowVideoStates::Play && wm.is_hidden(Some(win)) {
+            if state == WindowVideoStates::Play && win_is_hidden(wm, win, 21162) {
                 self.hide_movie(wm, v, win);
             }
 
@@ -180,11 +195,19 @@ impl WindowVideoManager {
                     v.frame_decompress_render_next(stream, buffer);
 
                     // If we reach frame Index of 0, we might have to pause, or loop.
-                    if v.frame_index(stream) == 0 {
+                    if v.frame_index(stream) == if plant(21155) { 1 } else { 0 } {
                         if play_type == WindowVideoPlayType::Once {
-                            self.stop_movie(wm, v, win);
+                            if plant(21153) {
+                                self.pause_movie(wm, v, win);
+                            } else {
+                                self.stop_movie(wm, v, win);
+                            }
                         } else if play_type == WindowVideoPlayType::ShowLastFrame {
-                            self.pause_movie(wm, v, win);
+                            if plant(21154) {
+                                self.stop_movie(wm, v, win);
+                            } else {
+                                self.pause_movie(wm, v, win);
+                            }
                         }
                     }
                 }
@@ -195,7 +218,13 @@ impl WindowVideoManager {
     /// `WindowVideoManager::playMovie(win, movieName, playType)`.
     pub fn play_movie<V: VideoHost>(&mut self, wm: &mut GameWindowManager, v: &mut V, win: WinId, movie_name: &[u8], play_type: WindowVideoPlayType) {
         // if we already have a movie playing for that window, kill it.
-        self.stop_and_remove_movie(wm, v, win);
+        if !plant(21151) {
+            self.stop_and_remove_movie(wm, v, win);
+        }
+        if plant(21152) {
+            self.pause_all_movies = false;
+            self.stop_all_movies = false;
+        }
 
         // create the new stream and the new buffer (upstream: TheVideoPlayer->open, TheDisplay->createVideoBuffer,
         // allocate — device-only, not translated)
@@ -233,8 +262,10 @@ impl WindowVideoManager {
         if let Some(w) = self.playing_videos.get_mut(&win) {
             w.set_window_state(wm, v, WindowVideoStates::Play);
         }
-        self.pause_all_movies = false;
-        self.stop_all_movies = false;
+        if !plant(21159) {
+            self.pause_all_movies = false;
+            self.stop_all_movies = false;
+        }
     }
 
     /// `WindowVideoManager::stopMovie(win)`.
@@ -256,8 +287,8 @@ impl WindowVideoManager {
         for w in self.playing_videos.values_mut() {
             w.set_window_state(wm, v, WindowVideoStates::Stop);
         }
-        self.stop_all_movies = true;
-        self.pause_all_movies = false;
+        self.stop_all_movies = !plant(21158);
+        self.pause_all_movies = plant(21158);
     }
 
     /// `WindowVideoManager::pauseAllMovies()`.

@@ -64,7 +64,6 @@ use std::ffi::CString;
 use support_ui3a::Rng;
 
 extern "C" {
-    #[cfg_attr(u3a_dev, link_name = "ref_u3a_welcome_run_dev")]
     fn ref_u3a_welcome_run(input: *const std::os::raw::c_char, out: *mut u8, cap: i32) -> i32;
 }
 

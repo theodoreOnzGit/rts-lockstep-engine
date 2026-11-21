@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_structure_inventory.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarStructureInventory.cpp
@@ -7,6 +8,7 @@
 
 use crate::client::window_manager::{GameWindowManager, GuiHost};
 use crate::client::window_script::{win_status, WinId};
+use crate::logic::modules::plant;
 
 /// `STOP_ID` (ControlBarStructureInventory.cpp:57).
 pub const STOP_ID: usize = 10;
@@ -83,13 +85,13 @@ pub fn populate_button_proc<H: StructureInventoryHost>(wm: &mut GameWindowManage
 
     // put object in inventory data
     let object_id = h.object_id(obj);
-    h.set_contain_data(info.button_index, ContainEntry { control: Some(button), object_id });
+    h.set_contain_data(if plant(21117) { (info.button_index + 1).min(MAX_COMMANDS_PER_SET - 1) } else { info.button_index }, ContainEntry { control: Some(button), object_id });
 
     // set the UI button that will allow us to press it and cause the object to exit the container
     h.gadget_button_set_enabled_image_of_template(wm, button, obj);
 
     // Show the auto-contained object's veterancy symbol!
-    h.gadget_button_draw_overlay_for_object(wm, button, Some(obj));
+    h.gadget_button_draw_overlay_for_object(wm, button, if plant(21116) { None } else { Some(obj) });
 
     // Enable the button
     wm.win_enable(button, true);
@@ -107,7 +109,7 @@ pub fn populate_structure_inventory<H: StructureInventoryHost>(wm: &mut GameWind
     h.hot_key_manager_reset();
 
     // Start by hiding all the buttons.
-    for command_index in 0..MAX_COMMANDS_PER_SET {
+    for command_index in 0..(if plant(21111) { MAX_STRUCTURE_INVENTORY_BUTTONS } else { MAX_COMMANDS_PER_SET }) {
         if let Some(w) = h.command_window(command_index) {
             wm.win_hide(w, true);
         }
@@ -118,7 +120,7 @@ pub fn populate_structure_inventory<H: StructureInventoryHost>(wm: &mut GameWind
         return;
     }
 
-    let evacuate_command = h.find_command_button(b"Command_Evacuate");
+    let evacuate_command = h.find_command_button(if plant(21112) { b"Command_Stop" } else { b"Command_Evacuate" });
     if let Some(w) = h.command_window(EVACUATE_ID) {
         h.set_control_command(wm, w, evacuate_command);
         wm.win_enable(w, false);
@@ -152,7 +154,7 @@ pub fn populate_structure_inventory<H: StructureInventoryHost>(wm: &mut GameWind
 
         // if the structure can hold a lesser amount inside it than what the GUI displays we will completely hide the
         // buttons that can't contain anything
-        if (i as i32) + 1 > h.contain_max(building) {
+        if (i as i32) + (if plant(21113) { 0 } else { 1 }) > h.contain_max(building) {
             wm.win_hide(w, true);
         }
     }
@@ -162,11 +164,13 @@ pub fn populate_structure_inventory<H: StructureInventoryHost>(wm: &mut GameWind
         wm.win_hide(w, false);
     }
     if let Some(w) = h.command_window(STOP_ID) {
-        wm.win_hide(w, false);
+        if !plant(21115) {
+            wm.win_hide(w, false);
+        }
     }
 
     // if there is at least one item in there enable the evacuate and stop buttons
-    if h.contain_count(building) != 0 {
+    if (h.contain_count(building) != 0 && !plant(21114)) || (h.contain_count(building) > 1 && plant(21114)) {
         if let Some(w) = h.command_window(EVACUATE_ID) {
             wm.win_enable(w, true);
         }
@@ -187,7 +191,9 @@ pub fn populate_structure_inventory<H: StructureInventoryHost>(wm: &mut GameWind
 
     // save how many items were contained by the object at this time
     let count = h.contain_count(building);
-    h.set_last_recorded_inventory_count(count);
+    if !plant(21118) {
+        h.set_last_recorded_inventory_count(count);
+    }
 }
 
 /// `ControlBar::updateContextStructureInventory()` (ControlBarStructureInventory.cpp:207).
@@ -196,7 +202,7 @@ pub fn update_context_structure_inventory<H: StructureInventoryHost>(wm: &mut Ga
 
     // it is possible that we had a building selected that can be garrisoned, and while it was selected the enemy
     // occupied it: unselect the building so that we can't see the contents
-    if !h.is_locally_controlled(source) && h.local_relationship_to_object_not_neutral(source) {
+    if (plant(21119) && (!h.is_locally_controlled(source) || h.local_relationship_to_object_not_neutral(source))) || (!plant(21119) && !h.is_locally_controlled(source) && h.local_relationship_to_object_not_neutral(source)) {
         h.deselect_drawable_of_object(source);
         return;
     }
@@ -205,7 +211,7 @@ pub fn update_context_structure_inventory<H: StructureInventoryHost>(wm: &mut Ga
     if !h.has_contain(source) {
         return;
     }
-    if h.last_recorded_inventory_count() != h.contain_count(source) {
+    if (h.last_recorded_inventory_count() != h.contain_count(source) && !plant(21120)) || (h.last_recorded_inventory_count() < h.contain_count(source) && plant(21120)) {
         populate_structure_inventory(wm, h, source);
     }
 }
