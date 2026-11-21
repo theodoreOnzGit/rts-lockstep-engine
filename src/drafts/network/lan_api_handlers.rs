@@ -1,4 +1,8 @@
-//! UNTESTED DRAFT (#202, #207, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 random programs (test: tests/differential_draft_lanhandlers.rs);
+//! not yet wired into the game.
+//! Fixed by the test: the game announcement's last-heard clock read (after the parse, as upstream), `translate`'s sign extension of login/host bytes >= 0x80, and
+//! the full-map join (upstream's `player` still equals MAX_SLOTS: "game full"). Excluded inputs and the draft's design limit (the host trait holds a snapshot of
+//! `AmIHost()`) are listed in the test's module doc.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameNetwork/LANAPIhandlers.cpp
@@ -7,6 +11,7 @@
 //! message and the sender's address.
 
 use crate::common::crc::Crc;
+use crate::logic::modules::plant;
 use crate::common::game_info::{
     game_info_to_ascii_string, parse_ascii_string_to_game_info, slot_state, GameSlot, PLAYERTEMPLATE_OBSERVER,
 };
@@ -23,8 +28,10 @@ fn utf16(s: &str) -> Vec<u16> {
     s.encode_utf16().collect()
 }
 
+/// `LANPlayer::setHost/setLogin(AsciiString)`: `UnicodeString::translate`, which widens each `char` (signed) to a `WideChar`:
+/// a byte of 0x80 or more is sign-extended (0xE9 becomes 0xFFE9).
 fn widen(b: &[u8]) -> UnicodeString {
-    let v: Vec<u16> = b.iter().map(|&c| c as u16).collect();
+    let v: Vec<u16> = b.iter().map(|&c| if plant(23061) { u16::from(c) } else { i16::from(c as i8) as u16 }).collect();
     UnicodeString::try_from_chars(&v).unwrap_or_default()
 }
 
@@ -58,6 +65,9 @@ impl<H: LanApiHost> LANAPI<H> {
             reply.set_message_type(lan_message_type::LOBBY_ANNOUNCE);
             self.send_message(&reply, 0);
             self.last_resend_time = self.host.time_get_time();
+            if plant(23074) {
+                self.last_resend_time = 0;
+            }
         } else if let Some(g) = self.current_game {
             if self.games[g].get_ip(0) == self.local_ip {
                 let mut reply = LANMessage::new();
@@ -89,10 +99,11 @@ impl<H: LanApiHost> LANAPI<H> {
         let options = msg.game_info_options();
         let in_progress = msg.game_info_in_progress();
         let direct = msg.game_info_is_direct_connect();
-        let now = self.host.time_get_time();
         let success = parse_game_options_string(Some(&mut self.games[idx]), &options, &mut self.host);
         self.games[idx].info.in_progress = in_progress;
         self.games[idx].set_is_direct_connect(direct);
+        // upstream reads the clock AFTER the parse (which reads it too): `game->setLastHeard(timeGetTime())`
+        let now = self.host.time_get_time();
         self.games[idx].set_last_heard(now);
         if !success {
             self.remove_game(idx);
@@ -112,7 +123,7 @@ impl<H: LanApiHost> LANAPI<H> {
             if self.current_game.is_none() {
                 if let Some(idx) = self.announced_game(msg) {
                     let remote = self.direct_connect_remote_ip;
-                    self.request_game_join(Some(idx), remote);
+                    self.request_game_join(Some(idx), if plant(23070) { 0 } else { remote });
                 }
             }
         } else {
@@ -185,8 +196,9 @@ impl<H: LanApiHost> LANAPI<H> {
                         }
                     }
                     if !s.is_empty() {
-                        let a: Vec<u8> = s.iter().take(G_MAX_SERIAL_LENGTH).copied().collect();
-                        let b: Vec<u8> = msg.game_to_join_serial().iter().take(G_MAX_SERIAL_LENGTH).copied().collect();
+                        let n = if plant(23063) { G_MAX_SERIAL_LENGTH - 1 } else { G_MAX_SERIAL_LENGTH };
+                        let a: Vec<u8> = s.iter().take(n).copied().collect();
+                        let b: Vec<u8> = msg.game_to_join_serial().iter().take(n).copied().collect();
                         if a == b {
                             reply.set_message_type(lan_message_type::JOIN_DENY);
                             reply.set_joined_slot_or_reason(ReturnType::SerialDupe as i32);
@@ -204,7 +216,8 @@ impl<H: LanApiHost> LANAPI<H> {
                 let mut player = 0usize;
                 while can_join && player < SLOTS {
                     if self.games[g].info.slots[player].is_human()
-                        && self.games[g].info.slots[player].name.as_slice() == joiner_name.str()
+                        && (self.games[g].info.slots[player].name.as_slice() == joiner_name.str()
+                            || (plant(23064) && widen_eq_nocase(&self.games[g].info.slots[player].name, joiner_name.str())))
                     {
                         reply.set_message_type(lan_message_type::JOIN_DENY);
                         reply.set_joined_slot_or_reason(ReturnType::DuplicateName as i32);
@@ -220,7 +233,7 @@ impl<H: LanApiHost> LANAPI<H> {
                 let mut num_players = 0;
                 for p in 0..SLOTS {
                     let s = &self.games[g].info.slots[p];
-                    if s.is_occupied() && s.player_template != PLAYERTEMPLATE_OBSERVER {
+                    if s.is_occupied() && (plant(23065) || s.player_template != PLAYERTEMPLATE_OBSERVER) {
                         num_players += 1;
                     }
                 }
@@ -229,8 +242,11 @@ impl<H: LanApiHost> LANAPI<H> {
                     num_starting_spots = n;
                 }
 
-                let mut player = 0usize;
-                if num_players < num_starting_spots {
+                // upstream's `player` still holds the last loop's end value (MAX_SLOTS: the loops above ran to the end when
+                // `canJoin`), so a full map (numPlayers >= numStartingSpots) falls into "game full" below
+                let mut player = if plant(23062) { 0usize } else { SLOTS };
+                if if plant(23066) { num_players <= num_starting_spots } else { num_players < num_starting_spots } {
+                    player = 0;
                     while can_join && player < SLOTS {
                         if self.games[g].info.slots[player].is_open() {
                             reply.set_message_type(lan_message_type::JOIN_ACCEPT);
@@ -299,7 +315,7 @@ impl<H: LanApiHost> LANAPI<H> {
                     slot.ip = self.local_ip;
                     slot.port = NETWORK_BASE_PORT_NUMBER as u16;
                     let mut extra = LANSlotExtra::new();
-                    extra.set_last_heard(0);
+                    extra.set_last_heard(if plant(23067) { self.host.time_get_time() } else { 0 });
                     extra.set_login_ascii(&self.user_name);
                     extra.set_host_ascii(&self.host_name);
                     self.games[g].set_slot(pos, slot, extra);
@@ -311,7 +327,7 @@ impl<H: LanApiHost> LANAPI<H> {
                     let mut entry = format!(
                         "{}.{}.{}.{}:",
                         sender_ip >> 24,
-                        (sender_ip & 0xff0000) >> 16,
+                        (sender_ip & 0xff0000) >> if plant(23073) { 8 } else { 16 },
                         (sender_ip & 0xff00) >> 8,
                         sender_ip & 0xff
                     )
@@ -383,7 +399,9 @@ impl<H: LanApiHost> LANAPI<H> {
             if let Some(i) = self.games.iter().position(|g| g.get_name() == name) {
                 self.remove_game(i);
                 let gl = self.games.clone();
-                self.host.on_game_list(&gl);
+                if !plant(23071) {
+                    self.host.on_game_list(&gl);
+                }
             }
         }
     }
@@ -405,7 +423,7 @@ impl<H: LanApiHost> LANAPI<H> {
             let g = self.current_game.unwrap_or(0);
             for player in 0..SLOTS {
                 if self.games[g].get_ip(player) == sender_ip {
-                    self.host.on_accept(sender_ip, msg.accept_is_accepted());
+                    self.host.on_accept(sender_ip, msg.accept_is_accepted() != plant(23075));
                     break;
                 }
             }
@@ -417,7 +435,7 @@ impl<H: LanApiHost> LANAPI<H> {
     pub fn handle_has_map(&mut self, msg: &LANMessage, sender_ip: u32) {
         if !self.in_lobby {
             if let Some(g) = self.current_game {
-                let portable = self.host.map_to_portable(&self.games[g].info.map_name);
+                let portable = if plant(23068) { self.games[g].info.map_name.clone() } else { self.host.map_to_portable(&self.games[g].info.map_name) };
                 let mut crc = Crc::new();
                 crc.compute_crc(&portable);
                 if crc.get() != msg.map_status_map_crc() {
@@ -441,7 +459,9 @@ impl<H: LanApiHost> LANAPI<H> {
                 let (pn, pip) = (self.lobby_players[i].get_name(), self.lobby_players[i].get_ip());
                 self.host.on_chat(&pn, pip, &msg.chat_message(), format);
                 let now = self.host.time_get_time();
-                self.lobby_players[i].set_last_heard(now);
+                if !plant(23072) {
+                    self.lobby_players[i].set_last_heard(now);
+                }
             }
         } else {
             if self.lookup_game(&msg.game_name()) != self.current_game {
@@ -515,7 +535,7 @@ impl<H: LanApiHost> LANAPI<H> {
         if sender_ip == self.local_ip {
             return;
         }
-        if self.game_start_time != 0 {
+        if self.game_start_time != 0 && !plant(23069) {
             return;
         }
         self.games[g].info.slots[su].un_accept();
@@ -523,6 +543,11 @@ impl<H: LanApiHost> LANAPI<H> {
         self.request_game_options(&options, false, 0);
         self.host.lan_update_slot_list();
     }
+}
+
+/// (planted bug 23064 only) a name equal when ASCII case is ignored.
+fn widen_eq_nocase(a: &[u16], b: &[u16]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(&x, &y)| x == y || (x < 128 && y < 128 && (x as u8).eq_ignore_ascii_case(&(y as u8))))
 }
 
 // keep the shared limits imported for the doc references above
