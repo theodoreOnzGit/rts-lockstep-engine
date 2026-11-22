@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 3,000 sequences (test: tests/differential_draft_lan_map_select.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/LanMapSelectMenu.cpp
@@ -15,6 +16,7 @@ use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::{win_status, WinId};
 use crate::common::game_info::MAX_SLOTS;
+use crate::logic::modules::plant;
 
 const FILE: &str = "LanMapSelectMenu.wnd";
 
@@ -70,8 +72,8 @@ pub trait LanMapSelectHost: ShellHost {
     fn map_cache_find(&self, map: &[u8]) -> Option<(u32, u32)>;
     /// `TheMapCache->updateCache()`.
     fn map_cache_update(&mut self);
-    /// `populateMapListbox(listbox, isSystemMapDir, TRUE, TheLAN->GetMyGame()->getMap())`.
-    fn populate_map_listbox(&mut self, wm: &mut GameWindowManager, list: Option<WinId>, system: bool);
+    /// `populateMapListbox(listbox, useSystemMaps, isMultiplayer, mapToSelect)` (the menu passes `TRUE` and `TheLAN->GetMyGame()->getMap()`).
+    fn populate_map_listbox(&mut self, wm: &mut GameWindowManager, list: Option<WinId>, system: bool, is_multiplayer: bool, map_to_select: &[u8]);
     /// `(const char *)GadgetListBoxGetItemData(list, row)`: the row's map file, if it has one.
     fn map_list_name(&self, item_data: u32) -> Option<Vec<u8>>;
     /// `getMapPreviewImage(map)`: the image name; `winMapPreview->winSetUserData(TheMapCache->findMap(map))`.
@@ -136,7 +138,7 @@ pub fn lan_map_select_menu_init<H: LanUnderlyingGui>(wm: &mut GameWindowManager,
     let mut uses_system_map_dir = h.lan_prefs_uses_system_map_dir();
     let my_map = h.lan_my_game_map();
     if let Some(official) = h.map_cache_is_official(&my_map) {
-        uses_system_map_dir = official;
+        uses_system_map_dir = if plant(23_861) { !official } else { official };
     }
 
     let ids = [key_of(h, "ButtonBack"), key_of(h, "ButtonOK"), key_of(h, "ListboxMap"), key_of(h, "WinMapPreview"), key_of(h, "RadioButtonSystemMaps"), key_of(h, "RadioButtonUserMaps")];
@@ -155,7 +157,7 @@ pub fn lan_map_select_menu_init<H: LanUnderlyingGui>(wm: &mut GameWindowManager,
     let win_map_preview = wm.win_get_window_from_id(parent, ids[3]);
     h.lan_map_select().win_map_preview = win_map_preview;
 
-    if let Some(r) = if uses_system_map_dir { radio_system } else { radio_user } {
+    if let Some(r) = if uses_system_map_dir != plant(23_862) { radio_system } else { radio_user } {
         radio_set_selection(wm, h, r, false);
     }
 
@@ -171,6 +173,8 @@ pub fn lan_map_select_menu_init<H: LanUnderlyingGui>(wm: &mut GameWindowManager,
         if let Some(b) = b {
             wm.win_hide(b, true);
             wm.win_enable(b, false);
+        } else {
+            wm.set_undefined("LanMapSelectMenuInit: ButtonMapStartPosition missing (null dereference)");
         }
     }
 
@@ -179,15 +183,23 @@ pub fn lan_map_select_menu_init<H: LanUnderlyingGui>(wm: &mut GameWindowManager,
     let map_list = wm.win_get_window_from_id(parent, list_id);
     h.lan_map_select().map_list = map_list;
     if map_list.is_some() {
-        h.map_cache_update();
-        h.populate_map_listbox(wm, map_list, uses_system_map_dir);
+        if !plant(23_863) {
+            h.map_cache_update();
+        }
+        let map = h.lan_my_game_map();
+        h.populate_map_listbox(wm, map_list, uses_system_map_dir, true, &map);
     }
 }
 
 /// `LanMapSelectMenuShutdown(layout, userData)`.
 pub fn lan_map_select_menu_shutdown<H: LanMapSelectHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
     // hide menu
-    wm.layout_hide(layout, true);
+    if wm.layouts[layout].deleted {
+        wm.set_undefined("LanMapSelectMenuShutdown: the layout was deleted (use after free)");
+    }
+    if !plant(23_872) {
+        wm.layout_hide(layout, true);
+    }
     nullify_controls(h);
 
     // our shutdown is complete
@@ -202,7 +214,7 @@ pub fn lan_map_select_menu_input<H: LanMapSelectHost>(wm: &mut GameWindowManager
     if msg != gwm::CHAR || (d1 & 0xFF) as u8 != key::ESC {
         return MsgHandled::Ignored;
     }
-    if (d2 & 0xFF) & key::STATE_UP != 0 {
+    if (d2 & 0xFF) & (if plant(23_866) { key::STATE_DOWN } else { key::STATE_UP }) != 0 {
         let id = key_of(h, "ButtonBack");
         let button = wm.win_get_window_from_id(Some(window), id);
         wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(button), id as u32);
@@ -212,18 +224,24 @@ pub fn lan_map_select_menu_input<H: LanMapSelectHost>(wm: &mut GameWindowManager
 
 /// `mapSelectLayout->destroyWindows(); mapSelectLayout->deleteInstance(); mapSelectLayout = NULL;`.
 fn destroy_map_select_layout<H: LanMapSelectHost>(wm: &mut GameWindowManager, h: &mut H) {
-    if let Some(l) = h.lan_map_select().map_select_layout.take() {
-        wm.layout_destroy_windows(l);
-        wm.layouts[l].deleted = true;
+    match h.lan_map_select().map_select_layout.take() {
+        Some(l) if !wm.layouts[l].deleted => {
+            wm.layout_destroy_windows(l);
+            wm.layouts[l].deleted = true;
+        }
+        // `mapSelectLayout` is NULL (or deleted): upstream calls through it
+        _ => wm.set_undefined("LanMapSelectMenuSystem: mapSelectLayout is NULL (null dereference)"),
     }
 }
 
 /// The row's map file (its item data), else the text translated (`asciiMap.translate(map)`).
-fn row_map<H: LanMapSelectHost>(wm: &mut GameWindowManager, h: &mut H, list: WinId, row: i32, text: &[u16]) -> Vec<u8> {
-    let data = lb::get_item_data(wm, h, list, row, 0);
+fn row_map<H: LanMapSelectHost>(wm: &mut GameWindowManager, h: &mut H, list: Option<WinId>, row: i32, text: &[u16]) -> Vec<u8> {
+    // (`GadgetListBoxGetItemData(NULL, ...)` is NULL)
+    let data = list.map_or(0, |l| lb::get_item_data(wm, h, l, row, 0));
     match h.map_list_name(data) {
         Some(n) => n,
-        None => text.iter().map(|&c| c as u8).collect(),
+        // `asciiMap.translate(map)`: each unit's low byte appended, a NUL appending nothing (`concat((char)c)`)
+        None => text.iter().map(|&c| c as u8).filter(|&b| b != 0).collect(),
     }
 }
 
@@ -246,7 +264,10 @@ pub fn lan_map_select_menu_system<H: LanUnderlyingGui>(wm: &mut GameWindowManage
             return MsgHandled::Handled;
         }
         lb::glm::DOUBLE_CLICKED => {
-            let Some((control, id)) = control_id(wm) else { return MsgHandled::Handled };
+            let Some((control, id)) = control_id(wm) else {
+                wm.set_undefined("LanMapSelectMenuSystem: a NULL control (null dereference)");
+                return MsgHandled::Handled;
+            };
             if id == m0.listbox_map {
                 let row_selected = d2 as i32;
                 if row_selected >= 0 {
@@ -257,20 +278,25 @@ pub fn lan_map_select_menu_system<H: LanUnderlyingGui>(wm: &mut GameWindowManage
             }
         }
         ggm::GBM_SELECTED => {
-            let Some((_, id)) = control_id(wm) else { return MsgHandled::Handled };
+            let Some((_, id)) = control_id(wm) else {
+                wm.set_undefined("LanMapSelectMenuSystem: a NULL control (null dereference)");
+                return MsgHandled::Handled;
+            };
             if id == m0.radio_button_system_maps_id {
                 h.map_cache_update();
-                h.populate_map_listbox(wm, m0.map_list, true);
-                h.lan_prefs_write_use_system_map_dir(true);
+                let map = h.lan_my_game_map();
+                h.populate_map_listbox(wm, m0.map_list, true, true, &map);
+                h.lan_prefs_write_use_system_map_dir(!plant(23_864));
             } else if id == m0.radio_button_user_maps_id {
                 h.map_cache_update();
-                h.populate_map_listbox(wm, m0.map_list, false);
+                let map = h.lan_my_game_map();
+                h.populate_map_listbox(wm, m0.map_list, plant(23_865), true, &map);
                 h.lan_prefs_write_use_system_map_dir(false);
             } else if id == m0.button_back {
                 destroy_map_select_layout(wm, h);
                 nullify_controls(h);
                 show_lan_game_options_underlying_gui_elements(wm, h, true);
-                h.post_to_lan_game_options(PostToLanGameOptionsType::MapBack);
+                h.post_to_lan_game_options(if plant(23_869) { PostToLanGameOptionsType::SendGameOpts } else { PostToLanGameOptionsType::MapBack });
             } else if id == m0.button_ok {
                 let mut selected = -1;
                 if let Some(mw) = map_window {
@@ -279,13 +305,15 @@ pub fn lan_map_select_menu_system<H: LanUnderlyingGui>(wm: &mut GameWindowManage
                 if selected != -1 {
                     let mw = map_window.expect("selected implies the list");
                     let map = lb::get_text(wm, h, mw, selected, 0);
-                    let ascii_map = row_map(wm, h, mw, selected, &map);
+                    let ascii_map = row_map(wm, h, Some(mw), selected, &map);
                     h.lan_game_set_map(&ascii_map);
-                    let ascii_map = ascii_map.to_ascii_lowercase(); // asciiMap.toLower()
+                    let ascii_map = if plant(23_867) { ascii_map } else { ascii_map.to_ascii_lowercase() }; // asciiMap.toLower()
                     if let Some((crc, size)) = h.map_cache_find(&ascii_map) {
                         h.lan_game_slot0_set_map_availability(true);
                         h.lan_game_set_map_crc_and_size(crc, size);
-                        h.lan_game_reset_start_spots();
+                        if !plant(23_868) {
+                            h.lan_game_reset_start_spots();
+                        }
                         h.lan_game_adjust_slots_for_map(); // BGC- adjust the slots for the new map.
                     }
 
@@ -297,25 +325,35 @@ pub fn lan_map_select_menu_system<H: LanUnderlyingGui>(wm: &mut GameWindowManage
             }
         }
         ggm::GLM_SELECTED => {
-            let Some((_, id)) = control_id(wm) else { return MsgHandled::Handled };
+            let Some((_, id)) = control_id(wm) else {
+                wm.set_undefined("LanMapSelectMenuSystem: a NULL control (null dereference)");
+                return MsgHandled::Handled;
+            };
             if id != m0.listbox_map {
                 return MsgHandled::Handled;
             }
             let row_selected = d2 as i32;
             if row_selected < 0 {
-                h.position_start_spots(wm, b"", &m0.button_map_start_position, m0.win_map_preview);
+                let old = h.lan_my_game_map();
+                h.position_start_spots(wm, if plant(23_871) { &old } else { b"" }, &m0.button_map_start_position, m0.win_map_preview);
                 return MsgHandled::Handled;
             }
-            let (Some(preview), Some(mw)) = (m0.win_map_preview, map_window) else { return MsgHandled::Handled };
+            let Some(preview) = m0.win_map_preview else {
+                wm.set_undefined("LanMapSelectMenuSystem: winMapPreview is NULL (null dereference)");
+                return MsgHandled::Handled;
+            };
             wm.win_set_status(preview, win_status::IMAGE);
-            let map = lb::get_text(wm, h, mw, row_selected, 0);
-            let ascii_map = row_map(wm, h, mw, row_selected, &map).to_ascii_lowercase();
+            // (`GadgetListBoxGetText(NULL, ...)` is the empty text)
+            let map = map_window.map_or_else(Vec::new, |mw| lb::get_text(wm, h, mw, row_selected, 0));
+            let ascii_map = row_map(wm, h, map_window, row_selected, &map).to_ascii_lowercase();
             let image = h.get_map_preview_image(&ascii_map);
             h.set_preview_user_data_map(wm, preview, &ascii_map);
             match image {
                 Some(i) => h.win_set_enabled_image0(wm, preview, &i),
                 None => {
-                    wm.win_clear_status(preview, win_status::IMAGE);
+                    if !plant(23_870) {
+                        wm.win_clear_status(preview, win_status::IMAGE);
+                    }
                 }
             }
             h.position_start_spots(wm, &ascii_map, &m0.button_map_start_position, m0.win_map_preview);
