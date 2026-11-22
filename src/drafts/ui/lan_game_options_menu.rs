@@ -1,4 +1,8 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 300 sequences, 48,291 outputs (test: tests/differential_draft_lan_game_options.rs);
+//! not yet wired into the game.
+//! Not covered: a game that is not in a game or has no local slot (`getLANSlot(-1)`), `GetMyGame() == NULL` outside the guards upstream has, messages after Deinit (upstream
+//! derefs NULL there); the GUIUtil.cpp helpers (`UpdateSlotList`, `Populate*ComboBox`, `EnableAcceptControls`, `positionStartSpots`, `updateMapStartSpots`) are the host's, logged
+//! on both sides, not compared with `client::gui_util`; non-ASCII map names (`%hs`).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/LanGameOptionsMenu.cpp

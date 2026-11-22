@@ -29,9 +29,42 @@
 //! Draft defects found on reading, before a run: (1) `LanSlotInfo.user` holds the LANPlayer's `UnicodeString`s as bytes (`getName()`, `getLogin()`, `getHost()` are wide):
 //! fixed to `Vec<u16>`. Expected after that: a few mismatches from my generator and stand-ins, then 0.
 //!
+//! Draft defects found by the run (and fixed): (2) `InitLanGameGadgets` assigned `comboBoxPlayerID[i]`, `comboBoxPlayer[i]`, the colour / faction / team ids and the accept
+//! button AFTER the `GadgetComboBoxSetSelectedPos` calls whose `GCM_SELECTED` reaches the menu's system callback; upstream assigns each first, so the callback saw the
+//! combo box (the first run: 20 of 2,946 outputs, from the first Init: C++ `game reset accepted` where the draft did nothing). Not draft defects, mine: the shell's pushed
+//! screen, `GuiHost::layout` unlogged, the stack bookkeeping (each found as a mismatch in the harness, fixed there).
+//!
+//! # Planted bugs (`L9_PLANT=<id>`)
+//!
+//! | id | planted bug |
+//! |---|---|
+//! | 24661 | colour bound `<=` the number of colours |
+//! | 24662 | the colour -1 (random) is also checked for availability |
+//! | 24663 | leaving the observer template does not reset colour, team and start position |
+//! | 24664 | a negative start position is checked for availability |
+//! | 24665 | the team selection does not reset the accepted flags |
+//! | 24666 | the host's re-send updates the slot list before sending the options |
+//! | 24667 | StartPressed: too many players is `<=` the map's number of players |
+//! | 24668 | StartPressed counts observers as users |
+//! | 24669 | StartPressed starts the timer when the countdown is 0 |
+//! | 24670 | updateGameOptions cuts the map name at `/` instead of `\\` |
+//! | 24671 | updateGameOptions always re-positions the start spots |
+//! | 24672 | Init hides the accept button of slot 1, not slot 0 |
+//! | 24673 | Init of the host disables its own combo boxes (`start = 0`) |
+//! | 24674 | a player combo box change repopulates the faction box for AI to AI too (`\|\|` for `^`) |
+//! | 24675 | the client's Accept button calls `EnableAcceptControls(FALSE)` |
+//! | 24676 | Escape acts on the key-down |
+//! | 24677 | `getNextSelectablePlayer` accepts an observer local slot |
+//! | 24678 | Shutdown does not reset the game start timer |
+//! | 24679 | the player tooltip swaps login and host |
+//! | 24680 | PostToLanGameOptions leaves slot 7's start position |
+//! | 24681 | trim keeps the leading white space |
+//!
 //! # Results
 //!
-//! (filled in below, after the runs)
+//! 2026-11-22, `DRAFT_CASES=300` (the default, about 45 s a run): **0 mismatches over 300 sequences, 48,353 outputs compared**, max ULP 0. The prediction held for (1) (fixed on
+//! reading); (2) was a miss (not predicted). Planted bugs: see the table in the report on #215 (mismatches of 300 sequences; 21 of 21 caught; 24674 and 24677 were missed at 0
+//! until the generator got two composites: an AI slot changed to another AI through its combo box, and an observer host clicking a start position).
 
 mod support;
 mod ui4_common;
@@ -866,6 +899,19 @@ fn gen_step(g: &mut Gen, sc: &Scene, valid: &mut bool, progress: &mut bool, out:
         92 => out.push(format!("@ lo slots {}", g.below(2))),
         93 => out.push(format!("@ lo chk {} {}", sc.singles[7], g.below(2))),
         94 => out.push(format!("@ lo msl {}", g.below(2))),
+        // composites aimed at the AI -> AI change of a player combo box and at the start position of an observer host
+        96 if g.below(2) == 0 => {
+            let i = 1 + g.below(7) as usize;
+            if i != sc.local {
+                out.push(format!("@ lg slot {i} {} -1 -1 -1 -1 1 1 0 {}", pick(g, &[2, 3, 4]), pick(g, &NAMES)));
+                out.push(format!("@ lo cbsel {} {}", sc.combos[0][i], pick(g, &[1u32, 2, 3])));
+            }
+        }
+        97 if g.below(2) == 0 => {
+            let l = sc.local;
+            out.push(format!("@ lg slot {l} 5 {} -1 {} {} 1 1 100 {}", g.below(5) as i32 - 1, pick(g, &[-2i32, -2, -1, 0]), g.below(5) as i32 - 1, pick(g, &NAMES)));
+            out.push(sys(ggm::GBM_SELECTED, sc.spos[slot], 0));
+        }
         96 if g.below(3) == 0 => out.push(format!("@ lo stack {}", g.below(2))),
         95 => {
             let b = g.below(2);
