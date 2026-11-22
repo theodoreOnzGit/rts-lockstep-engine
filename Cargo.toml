@@ -8,7 +8,6 @@ repository = "https://github.com/theodoreOnzGit/rts-lockstep-engine"
 readme = "README.md"
 keywords = ["rts", "lockstep", "deterministic", "game-engine", "simulation"]
 categories = ["game-engines", "simulation"]
-publish = false
 # The pinned upstream source is a test-only reference; never package it.
 # #229: the tests (the differential ones need `differential/` and `upstream/`), the docs, the scripts and the
 # agents' instructions are not packaged either; without them the `.crate` fits under crates.io's 10 MB limit.

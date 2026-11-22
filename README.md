@@ -469,6 +469,11 @@ git submodule update --init          # upstream/ at commit 0a05454d...
 cargo test --release --features differential
 ```
 
+- **The `differential` feature works only in a git checkout, not from
+  crates.io.** The published crate leaves out `upstream/`, `differential/` and
+  `tests/` (#229), so with this feature on, a crates.io download stops in
+  `build.rs` with "feature `differential` needs the upstream submodule".
+  Clone the repository to run the comparisons.
 - `upstream/` is EA's repository as a git submodule. Its files are never
   edited. `build.rs` compiles the needed `.cpp` files with the `cc` crate,
   only when the `differential` feature is on (off by default, so normal and
