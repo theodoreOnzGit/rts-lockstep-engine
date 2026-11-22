@@ -370,6 +370,7 @@ mod differential {
         drafts_ui4(root); // #215 (group ui4): the list box / text entry / combo box / static text menus of src/drafts/ui, on upstream's own window manager and gadgets (fn drafts_ui4, the end of this module)
         drafts_ui5(root); // #215 (group ui5): network_direct_connect, popup_ladder_select, popup_host_game on group ui4's window manager (fn drafts_ui5, the end of this module)
         drafts_wol6(root); // #215 (group wol6): the big WOL menus' (lobby, game setup, quick match, buddy overlay) references (fn drafts_wol6, the end of this module)
+        drafts_wol7(root); // #215 (group wol7): the WOL menus' window-bound list functions, as programs on upstream's own window manager and gadgets (fn drafts_wol7, the end of this module)
 
         // The W3D readers, compiled first so that their references to
         // matrix3d.cpp (upstream_wwmath) and to the RAMFile of
@@ -15468,6 +15469,146 @@ mod differential {
                 .include(up.join("Libraries/Include"))
                 .file(dif.join(wrapper));
             b.compile(lib);
+        }
+    }
+
+    /// #215 (group wol7): the PROGRAMS `wol7_<menu>` for the window-bound functions of the big WOL menu drafts (`populateGroupRoomListbox`, `insertPlayerInListbox`,
+    /// `PopulateLobbyPlayerListbox`, `playerTooltip`, ...). The same as group ui5's (the window manager and gadget sources `drafts_ui4` generated, compiled with
+    /// `differential/shim_ui5` ahead of the shims, wrap_wm.cpp's text, ui4_host.h and ui4_main.h), so the C++ side runs upstream's REAL GadgetListBox and GadgetComboBox. The
+    /// base text (`w7_wm_base.inc`) is wrap_wm.cpp's with `main` renamed, the three aborting layout stand-ins removed (as ui4's) and TWO more edits, each asserted once: the
+    /// mapped image collection answers the images the case declares (`w7_image_*`, at the width the case gives) and logs each lookup, and `Mouse::setCursorTooltip` logs the
+    /// tooltip and its width instead of storing it. The menus' own text is cut VERBATIM into OUT_DIR/draft_wol7_gen (each anchor asserted once; the edits are listed in the wrapper).
+    /// `WOL7_<MENU>_EXE` is each program's path.
+    fn drafts_wol7(root: &Path) {
+        let up = root.join("upstream/GeneralsMD/Code");
+        let dif = root.join("differential");
+        let shim = dif.join("shim");
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let gen4 = out_dir.join("draft_ui4_gen");
+        let gen = out_dir.join("draft_wol7_gen");
+        std::fs::create_dir_all(&gen).expect("create draft_wol7_gen");
+        let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+            assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+            let i = text.find(from).expect("from");
+            match to {
+                Some(to) => {
+                    assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                    let j = text.find(to).expect("to");
+                    assert!(i < j, "{file}: a cut must end after it starts");
+                    text[i..j].to_string()
+                }
+                None => text[i..].to_string(),
+            }
+        };
+        // wrap_wm.cpp's text, edited (see the doc comment)
+        println!("cargo:rerun-if-changed=differential/wrap_wm.cpp");
+        let mut base_text = std::fs::read_to_string(dif.join("wrap_wm.cpp")).expect("read wrap_wm.cpp");
+        for (from, to) in [
+            ("int main(void)\n", "int wm_ref_main(void)\n"),
+            ("void WindowLayout::addWindow(GameWindow *) { abort(); }\n", ""),
+            ("void WindowLayout::removeWindow(GameWindow *) { abort(); }\n", ""),
+            ("WindowLayout *GameWindowManager::winCreateLayout(AsciiString) { abort(); }\n", ""),
+            // the images the case declares (the wrapper's `w7_image_*`), each lookup logged
+            ("\tif (strncasecmp(n, \"img\", 3) != 0) return NULL;\n", "\tif (w7_in_menu) g_log << \"find \" << n << \"\\n\";\n\tif (!w7_image_exists(n)) return NULL;\n"),
+            ("ICoord2D sz = { (len >= 3 && strcmp(n + len - 3, \"Mid\") == 0) ? 7 : 5, 10 };", "ICoord2D sz = { w7_image_width(n), 10 };"),
+            // the tooltip and its width are logged, not stored (the verified Rust host logs the same)
+            ("void Mouse::setCursorTooltip(UnicodeString tooltip, Int tooltipDelay, const RGBColor *, Real)\n{\n\tm_tooltip = tooltip;\n\tm_delay = tooltipDelay;\n}", "static void dump_text(std::ostringstream &o, const UnicodeString &t);\nvoid Mouse::setCursorTooltip(UnicodeString tooltip, Int tooltipDelay, const RGBColor *, Real width)\n{\n\tg_log << \"tip\";\n\tdump_text(g_log, tooltip);\n\tunsigned wb;\n\tmemcpy(&wb, &width, 4);\n\tg_log << \" delay \" << tooltipDelay << \" width \" << wb << \"\\n\";\n}"),
+        ] {
+            assert_eq!(base_text.matches(from).count(), 1, "wrap_wm.cpp: {from:?} must occur once");
+            base_text = base_text.replace(from, to);
+        }
+        std::fs::write(gen.join("w7_wm_base.inc"), format!("/* generated by build.rs (drafts_wol7): differential/wrap_wm.cpp with its main renamed, three aborting stand-ins removed, the image and tooltip stand-ins edited */\n{base_text}")).expect("write w7_wm_base.inc");
+        let head = "/* generated by build.rs (drafts_wol7): verbatim from upstream (see the wrapper that includes it) */\n";
+        let menus = "GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/";
+        let peer_h = "GameEngine/Include/GameNetwork/GameSpy/PeerDefs.h".to_string();
+        let peer_c = "GameEngine/Source/GameNetwork/GameSpy/PeerDefs.cpp".to_string();
+        let lobby = format!("{menus}WOLLobbyMenu.cpp");
+        // (inc name, upstream file under Code/, start anchor, end anchor, edits)
+        let cuts: Vec<(&str, String, &str, Option<&str>, Vec<(&str, &str)>)> = vec![
+            ("small_skip.inc", "GameEngine/Source/Common/System/AsciiString.cpp".to_string(), "inline char* skipSeps(char* p, const char* seps)", Some("inline char* skipWhitespace(char* p)"), vec![]),
+            ("small_token.inc", "GameEngine/Source/Common/System/AsciiString.cpp".to_string(), "Bool AsciiString::nextToken(AsciiString* tok, const char* seps)", None, vec![]),
+            ("qm_combos.inc", format!("{menus}WOLQuickMatchMenu.cpp"), "static void populateQMColorComboBox(QuickMatchPreferences& pref)", Some("void HandleQMLadderSelection(Int ladderID)"), vec![]),
+            ("peer_buddy.inc", peer_h.clone(), "class BuddyInfo\n{", Some("class BuddyMessage\n{"), vec![]),
+            ("peer_room.inc", peer_h.clone(), "class GameSpyGroupRoom\n{", Some("class Transport;"), vec![]),
+            ("peer_player.inc", peer_h.clone(), "class PlayerInfo\n{", Some("extern Color GameSpyColor[GSCOLOR_MAX];"), vec![]),
+            ("peer_cmp.inc", peer_c.clone(), "bool AsciiComparator::operator()(AsciiString s1, AsciiString s2) const", Some("GameSpyInfo::GameSpyInfo()"), vec![]),
+            (
+                "lobby_lists.inc",
+                lobby.clone(),
+                "static void playerTooltip(GameWindow *window,",
+                Some("/** Initialize the WOL Lobby Menu */"),
+                vec![
+                    // MSVC's 16-bit wchar_t against glibc's 32-bit one: the wrapper's w7_fmt_* do what `UnicodeString::format` does with these formats (the shim's goes through glibc's vswprintf)
+                    ("playerInfo.format(TheGameText->fetch(\"TOOLTIP:PlayerInfo\"), TheGameText->fetch(localeIdentifier).str(), playerWins, playerLosses);", "w7_fmt_sii(playerInfo, TheGameText->fetch(\"TOOLTIP:PlayerInfo\"), TheGameText->fetch(localeIdentifier), playerWins, playerLosses);"),
+                    ("tooltip.format(TheGameText->fetch(\"TOOLTIP:LocalPlayer\"), uName.str());", "w7_fmt_s(tooltip, TheGameText->fetch(\"TOOLTIP:LocalPlayer\"), uName);"),
+                    ("tooltip.format(TheGameText->fetch(\"TOOLTIP:BuddyPlayer\"), uName.str());", "w7_fmt_s(tooltip, TheGameText->fetch(\"TOOLTIP:BuddyPlayer\"), uName);"),
+                    ("tooltip.format(TheGameText->fetch(\"TOOLTIP:ProfiledPlayer\"), uName.str());", "w7_fmt_s(tooltip, TheGameText->fetch(\"TOOLTIP:ProfiledPlayer\"), uName);"),
+                    ("tooltip.format(TheGameText->fetch(\"TOOLTIP:GenericPlayer\"), uName.str());", "w7_fmt_s(tooltip, TheGameText->fetch(\"TOOLTIP:GenericPlayer\"), uName);"),
+                    ("tmp.format(L\"\\n%ls %ls\", TheGameText->fetch(sideName).str(), TheGameText->fetch(rankName).str());", "w7_fmt_nl_ss(tmp, TheGameText->fetch(sideName), TheGameText->fetch(rankName));"),
+                    // `GadgetListBoxGetSelected(list, (Int *)(&selectedIndices))` writes the 32-bit `(Int)list->selections` over the pointer variable: with a 32-bit pointer, as in the
+                    // game, that is the whole variable; here the variable's other half must be zero, as the program's heap is below 4 GB (see ui4_main.h)
+                    ("Int *selectedIndices;", "Int *selectedIndices = NULL;"),
+                    // MSVC 6's `for` scope: the `i` of the first loop is used by the loop that restores the selection
+                    ("for (i=0, indexIt = indicesToSelect.begin();", "Int i;\n\t\t\tfor (i=0, indexIt = indicesToSelect.begin();"),
+                ],
+            ),
+        ];
+        for (name, path, from, to, edits) in &cuts {
+            println!("cargo:rerun-if-changed={}", up.join(path).display());
+            let text = read_upstream(up.join(path));
+            let mut cut = piece(&text, path, from, *to);
+            for (a, b) in edits {
+                assert_eq!(cut.matches(a).count(), 1, "{path}: edit {a:?} must occur once");
+                cut = cut.replace(a, b);
+            }
+            std::fs::write(gen.join(name), format!("{head}{cut}")).expect("write a wol7 cut");
+        }
+        {
+            println!("cargo:rerun-if-changed=differential/wrap_draft_wol7_small.cpp");
+            let mut b = cc::Build::new();
+            base(&mut b);
+            b.flag("-fpermissive").flag("-w").include(&gen).include(&shim).include(up.join("GameEngine/Include")).include(up.join("Libraries/Include")).file(dif.join("wrap_draft_wol7_small.cpp"));
+            b.compile("draft_wol7_small");
+        }
+        println!("cargo:rerun-if-changed=differential/shim_ui5");
+        println!("cargo:rerun-if-changed=differential/ui4_host.h");
+        println!("cargo:rerun-if-changed=differential/ui4_main.h");
+        let obj = out_dir.join("wol7_obj");
+        std::fs::create_dir_all(&obj).expect("create wol7_obj");
+        let gui = up.join("GameEngine/Source/GameClient/GUI");
+        let configure = |b: &mut cc::Build| {
+            base(b);
+            b.out_dir(&obj)
+                .pic(false)
+                .flag("-fpermissive")
+                .flag("-fno-pie")
+                .include(&gen)
+                .include(&gen4)
+                .include(dif.join("shim_ui5"))
+                .include(dif.join("shim_ui4"))
+                .include(dif.join("shim_wm"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(gui.join("Gadget"))
+                .include(&dif);
+        };
+        let wm_files = ["GameWindowManager.cpp", "GameWindow.cpp", "WinInstanceData.cpp", "GameWindowGlobal.cpp", "GadgetCheckBox.cpp", "GadgetComboBox.cpp", "GadgetHorizontalSlider.cpp", "GadgetListBox.cpp", "GadgetProgressBar.cpp", "GadgetPushButton.cpp", "GadgetRadioButton.cpp", "GadgetStaticText.cpp", "GadgetTabControl.cpp", "GadgetTextEntry.cpp", "GadgetVerticalSlider.cpp"];
+        let sources: Vec<std::path::PathBuf> = wm_files.iter().map(|f| gen4.join(f)).collect();
+        let mut b = cc::Build::new();
+        configure(&mut b);
+        let wm_objs = b.files(&sources).compile_intermediates();
+        for (wrapper, env) in [("wrap_draft_wol7_lobby.cpp", "WOL7_LOBBY_EXE"), ("wrap_draft_wol7_qm.cpp", "WOL7_QM_EXE")] {
+            println!("cargo:rerun-if-changed=differential/{wrapper}");
+            let mut b = cc::Build::new();
+            configure(&mut b);
+            let objs = b.file(dif.join(wrapper)).compile_intermediates();
+            let exe = out_dir.join(wrapper.trim_start_matches("wrap_draft_").trim_end_matches(".cpp"));
+            let mut link = b.get_compiler().to_command();
+            link.arg("-no-pie").arg("-o").arg(&exe).args(&wm_objs).args(&objs);
+            let st = link.status().expect("link a wol7 program");
+            assert!(st.success(), "linking {wrapper} failed");
+            println!("cargo:rustc-env={env}={}", exe.display());
         }
     }
 }

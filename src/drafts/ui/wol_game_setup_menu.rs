@@ -393,9 +393,10 @@ fn ascii_to_wide(s: &[u8]) -> Vec<u16> {
 }
 
 /// `atoi`.
-fn atoi(s: &[u8]) -> i32 {
+pub fn atoi(s: &[u8]) -> i32 {
     let mut i = 0;
-    while i < s.len() && s[i].is_ascii_whitespace() {
+    // C's `isspace`: space, \t, \n, \v, \f, \r (Rust's `is_ascii_whitespace` has no \v)
+    while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r') {
         i += 1;
     }
     let neg = i < s.len() && s[i] == b'-';
