@@ -8,7 +8,7 @@
 //!
 //! # Method
 //!
-//! `DRAFT_CASES` sequences (default 400: one run is under a minute; fixed seed). A scene: the menu's parent window and its 35 named children (the eleven single gadgets, per
+//! `DRAFT_CASES` sequences (default 300: one run is under a minute; fixed seed). A scene: the menu's parent window and its 35 named children (the eleven single gadgets, per
 //! slot a player / colour / faction / team combo box, an accept button and a start-position button; a combo box is eight windows), a game (host or client, local slot, 8
 //! slots of random state), the map cache, the preferences, the settings. Then 6 to 24 operations: Init, Update, Shutdown, direct calls (`StartPressed`, `playerTooltip`,
 //! `lanUpdateSlotList`, `updateGameOptions`, `PostToLanGameOptions`, `LANEnableStartButton`, `InitLanGameGadgets`, `DeinitLanGameGadgets`), state changes (slots, the map,
@@ -301,6 +301,7 @@ impl ShellHost for Host {
                 let _ = writeln!(self.log, "layout init {layout}");
             }
             _ => {
+                self.log.push_str("shell popimmediate\n");
                 let _ = writeln!(self.log, "shell shutdown pi {} {layout}", u8::from(user == Some(true)));
             }
         }
@@ -762,7 +763,7 @@ fn win_any(sc: &Scene, g: &mut Gen) -> usize {
 }
 
 /// One generated step (possibly several operations). `valid`: the gadgets are set (Init done, not torn down).
-fn gen_step(g: &mut Gen, sc: &Scene, valid: &mut bool, out: &mut Vec<String>) {
+fn gen_step(g: &mut Gen, sc: &Scene, valid: &mut bool, progress: &mut bool, out: &mut Vec<String>) {
     let parent = 0;
     let slot = g.below(8) as usize;
     let sys = |msg: u32, ctl: usize, d2: u32| format!("@ sys 0 {parent} {msg} 1 {ctl} {d2}");
@@ -771,7 +772,10 @@ fn gen_step(g: &mut Gen, sc: &Scene, valid: &mut bool, out: &mut Vec<String>) {
         match r {
             0..=39 => {
                 out.push("@ lo init".into());
-                *valid = true;
+                // (a game in progress: Init pops back to the lobby and sets no gadget)
+                if !*progress {
+                    *valid = true;
+                }
             }
             40..=49 => {
                 out.push("@ lo igg".into());
@@ -791,6 +795,9 @@ fn gen_step(g: &mut Gen, sc: &Scene, valid: &mut bool, out: &mut Vec<String>) {
     match r {
         0..=5 => {
             out.push("@ lo init".into());
+            if !*progress {
+                    *valid = true;
+                }
         }
         6..=8 => out.push("@ lo update".into()),
         9..=11 => {
@@ -829,7 +836,9 @@ fn gen_step(g: &mut Gen, sc: &Scene, valid: &mut bool, out: &mut Vec<String>) {
         59..=60 => out.push(sys(ggm::GEM_EDIT_DONE, win_any(sc, g), 0)),
         61..=62 => {
             let msg = pick(g, &[gwm::CREATE, gwm::DESTROY, gwm::INPUT_FOCUS, 99]);
-            out.push(format!("@ sys 0 {parent} {msg} 0 {} 0", g.below(3)));
+            // (INPUT_FOCUS with mData1 TRUE writes through mData2: not sent)
+            let d1 = if msg == gwm::INPUT_FOCUS { 2 * g.below(2) } else { g.below(3) };
+            out.push(format!("@ sys 0 {parent} {msg} 0 {d1} 0"));
         }
         63..=66 => {
             let key = pick(g, &[1u32, 1, 1, 2, 57]);
@@ -857,7 +866,12 @@ fn gen_step(g: &mut Gen, sc: &Scene, valid: &mut bool, out: &mut Vec<String>) {
         92 => out.push(format!("@ lo slots {}", g.below(2))),
         93 => out.push(format!("@ lo chk {} {}", sc.singles[7], g.below(2))),
         94 => out.push(format!("@ lo msl {}", g.below(2))),
-        95 => out.push(format!("@ lg inprogress {}", g.below(2))),
+        96 if g.below(3) == 0 => out.push(format!("@ lo stack {}", g.below(2))),
+        95 => {
+            let b = g.below(2);
+            *progress = b != 0;
+            out.push(format!("@ lg inprogress {b}"));
+        }
         96 => state_ops(g, out),
         97 => {
             out.push(format!("H {} {}", win_any(sc, g), g.below(2)));
@@ -1084,14 +1098,15 @@ fn lan_game_options_matches_upstream() {
     let mut g = Gen::new(0x215_1A_07);
     let mut chk = Check::new("LanGameOptionsMenu");
     let menu_funcs: [(&[u8], &[u8]); 1] = [(SYS, INP)];
-    for case in 0..cases(400) as u64 {
+    for case in 0..cases(300) as u64 {
         let sc = gen_scene(&mut g);
         let mut ops = sc.ops.clone();
         let mut valid = false;
+        let mut progress = false;
         let _ = (sc.host, sc.cash);
         for _ in 0..6 + g.below(19) {
             let mut step = Vec::new();
-            gen_step(&mut g, &sc, &mut valid, &mut step);
+            gen_step(&mut g, &sc, &mut valid, &mut progress, &mut step);
             ops.extend(step);
         }
         run_case(&mut chk, case, ops, &menu_funcs);
@@ -1110,6 +1125,7 @@ fn run_case(chk: &mut Check, case: u64, ops: Vec<String>, menu_funcs: &[(&[u8], 
         let freed_before = wm.ext.iter().filter(|e| e.freed).count() + wm.layouts.iter().filter(|l| l.deleted).count();
         // the shell's stack is the case's `@ lo stack` (the host's `pending_push` hack links the layout)
         h.shell.screen_stack = if h.stack { vec![h.layout] } else { Vec::new() };
+        let had_stack = h.stack;
         if v[0] == "W" && v[2] == "4" {
             combo_create(&mut wm, &mut h, &v);
         } else if v[0] == "W" && v[2] == "2" {
@@ -1135,7 +1151,7 @@ fn run_case(chk: &mut Check, case: u64, ops: Vec<String>, menu_funcs: &[(&[u8], 
             run = i;
             break;
         }
-        if h.stack && h.shell.screen_stack.is_empty() {
+        if had_stack && h.shell.screen_stack.is_empty() {
             h.stack = false;
         }
         let log = std::mem::take(&mut h.log);

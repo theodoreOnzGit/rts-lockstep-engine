@@ -23,6 +23,7 @@ use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindo
 use crate::client::window_script::WinId;
 use crate::client::window_transitions as wt;
 use crate::common::game_info::{MAX_SLOTS, PLAYERTEMPLATE_OBSERVER};
+use crate::logic::modules::plant;
 
 /// `GameMakeColor(255,255,255,255)`: the file's global `white`.
 const WHITE: i32 = 0xFFFF_FFFFu32 as i32;
@@ -210,7 +211,7 @@ fn get_next_selectable_player<H: LanGameOptionsHost>(h: &H, start: i32) -> i32 {
     let mut j = start;
     while j < MAX_SLOTS as i32 {
         if let Some(slot) = h.lan_slot(j as usize) {
-            if slot.start_pos == -1 && ((j == h.lan_local_slot_num() && slot.player_template != PLAYERTEMPLATE_OBSERVER) || slot.is_ai) {
+            if slot.start_pos == -1 && ((j == h.lan_local_slot_num() && (slot.player_template != PLAYERTEMPLATE_OBSERVER || plant(24677))) || slot.is_ai) {
                 return j;
             }
         }
@@ -263,7 +264,7 @@ pub fn player_tooltip<H: LanGameOptionsHost>(wm: &mut GameWindowManager, h: &mut
         return;
     };
     let fmt = h.fetch_text(b"TOOLTIP:LANPlayer");
-    let tooltip = h.format_tooltip_lan_player(&fmt, &name, &login, &host);
+    let tooltip = if plant(24679) { h.format_tooltip_lan_player(&fmt, &name, &host, &login) } else { h.format_tooltip_lan_player(&fmt, &name, &login, &host) };
     h.mouse_set_cursor_tooltip(&tooltip);
 }
 
@@ -292,7 +293,7 @@ pub fn start_pressed<H: LanGameOptionsHost>(wm: &mut GameWindowManager, h: &mut 
     let mut num_humans = 0;
     for i in 0..MAX_SLOTS {
         if let Some(slot) = h.lan_slot(i) {
-            if slot.is_occupied && slot.player_template != PLAYERTEMPLATE_OBSERVER {
+            if slot.is_occupied && (slot.player_template != PLAYERTEMPLATE_OBSERVER || plant(24668)) {
                 if slot.is_human {
                     num_humans += 1;
                 }
@@ -304,7 +305,7 @@ pub fn start_pressed<H: LanGameOptionsHost>(wm: &mut GameWindowManager, h: &mut 
     // Check for too many players
     let map = h.lan_game_map();
     let md = h.map_cache_find_map(&map);
-    if md.as_ref().map_or(true, |m| m.0 < num_users) {
+    if md.as_ref().map_or(true, |m| if plant(24667) { m.0 <= num_users } else { m.0 < num_users }) {
         if h.lan_am_i_host() {
             let fmt = h.fetch_text(b"LAN:TooManyPlayers");
             let text = h.format_one_int(&fmt, md.as_ref().map_or(0, |m| m.0));
@@ -391,7 +392,7 @@ pub fn start_pressed<H: LanGameOptionsHost>(wm: &mut GameWindowManager, h: &mut 
             }
         }
         let seconds = h.multiplayer_start_countdown_timer_seconds();
-        if seconds != 0 {
+        if (seconds != 0) != plant(24669) {
             h.lan_request_game_start_timer(seconds);
         } else {
             h.lan_request_game_start();
@@ -419,9 +420,14 @@ pub fn lan_enable_start_button<H: LanGameOptionsHost>(wm: &mut GameWindowManager
 /// the slot list.
 fn host_resend<H: LanGameOptionsHost>(wm: &mut GameWindowManager, h: &mut H) {
     if !h.lan_game_options().s_is_initing {
+        if plant(24666) {
+            lan_update_slot_list(wm, h);
+        }
         let opts = h.generate_game_options_string();
         h.lan_request_game_options(&opts, true);
-        lan_update_slot_list(wm, h);
+        if !plant(24666) {
+            lan_update_slot_list(wm, h);
+        }
     }
 }
 
@@ -443,9 +449,9 @@ fn handle_color_selection<H: LanGameOptionsHost>(wm: &mut GameWindowManager, h: 
     if color == slot.color {
         return;
     }
-    if color >= -1 && color < h.multiplayer_num_colors() {
+    if color >= -1 && (if plant(24661) { color <= h.multiplayer_num_colors() } else { color < h.multiplayer_num_colors() }) {
         let mut color_available = true;
-        if color != -1 {
+        if color != -1 || plant(24662) {
             for i in 0..MAX_SLOTS {
                 if let Some(check) = h.lan_slot(i) {
                     if color == check.color && i != index {
@@ -484,7 +490,7 @@ fn handle_player_template_selection<H: LanGameOptionsHost>(wm: &mut GameWindowMa
     let old_template = slot.player_template;
     h.lan_slot_set_player_template(index, player_template);
 
-    if old_template == PLAYERTEMPLATE_OBSERVER || player_template == PLAYERTEMPLATE_OBSERVER {
+    if (old_template == PLAYERTEMPLATE_OBSERVER && !plant(24663)) || player_template == PLAYERTEMPLATE_OBSERVER {
         // Was observer, is not: reset colour and team; is observer now: likewise (the two branches are identical)
         let o = h.lan_game_options().clone();
         if let Some(c) = o.combo_box_color[index] {
@@ -516,7 +522,7 @@ fn handle_start_position_selection<H: LanGameOptionsHost>(wm: &mut GameWindowMan
     }
 
     let mut skip = false;
-    if start_pos < 0 {
+    if start_pos < 0 && !plant(24664) {
         // always allow setting to "no start pos"
         skip = true;
     }
@@ -559,7 +565,9 @@ fn handle_team_selection<H: LanGameOptionsHost>(wm: &mut GameWindowManager, h: &
         return;
     }
     h.lan_slot_set_team_number(index, team);
-    h.lan_game_reset_accepted();
+    if !plant(24665) {
+        h.lan_game_reset_accepted();
+    }
 
     if h.lan_am_i_host() {
         if !h.lan_game_options().s_is_initing {
@@ -722,7 +730,7 @@ pub fn init_lan_game_gadgets<H: LanGameOptionsHost>(wm: &mut GameWindowManager, 
             o.button_map_start_position[i] = pos;
         }
 
-        if i != 0 {
+        if i != if plant(24672) { 1 } else { 0 } {
             if let Some(a) = accept {
                 wm.win_hide(a, true);
             }
@@ -805,7 +813,7 @@ pub fn lan_game_options_menu_init<H: LanGameOptionsHost>(wm: &mut GameWindowMana
         lan_update_slot_list(wm, h);
         update_game_options(wm, h);
 
-        start = 1; // leave my combo boxes usable
+        start = if plant(24673) { 0 } else { 1 }; // leave my combo boxes usable
     } else {
         let accept = h.fetch_text(b"GUI:Accept");
         if let Some(b) = o.button_start {
@@ -873,7 +881,7 @@ pub fn update_game_options<H: LanGameOptionsHost>(wm: &mut GameWindowManager, h:
         Some((_, name, _)) if local_has_map => name,
         _ => {
             // s = s.reverseFind('\\') + 1
-            let leaf: &[u8] = match map.iter().rposition(|&c| c == b'\\') {
+            let leaf: &[u8] = match map.iter().rposition(|&c| c == if plant(24670) { b'/' } else { b'\\' }) {
                 Some(p) => &map[p + 1..],
                 None => &map,
             };
@@ -882,7 +890,7 @@ pub fn update_game_options<H: LanGameOptionsHost>(wm: &mut GameWindowManager, h:
     };
 
     let old = o.text_entry_map_display.map(|w| gadget::static_text_get_text(wm, w)).unwrap_or_default();
-    if old != map_display_name {
+    if old != map_display_name || plant(24671) {
         lan_position_start_spots(wm, h);
     }
 
@@ -940,7 +948,7 @@ pub fn lan_game_options_menu_shutdown<H: LanGameOptionsHost>(wm: &mut GameWindow
 
     shell::reverse_animate_window(wm, h);
     wt::reverse(wm, h, b"LanGameOptionsFade");
-    if h.lan_exists() {
+    if h.lan_exists() && !plant(24678) {
         h.lan_reset_game_start_timer();
     }
 }
@@ -959,7 +967,7 @@ pub fn lan_game_options_menu_input<H: LanGameOptionsHost>(wm: &mut GameWindowMan
             return MsgHandled::Ignored;
         }
         if (d1 & 0xFF) as u8 == key::ESC {
-            if (d2 & 0xFF) & key::STATE_UP != 0 {
+            if ((d2 & 0xFF) & key::STATE_UP != 0) != plant(24676) {
                 let o = h.lan_game_options().clone();
                 wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(o.button_back), o.button_back_id as u32);
             }
@@ -1029,7 +1037,7 @@ pub fn lan_game_options_menu_system<H: LanGameOptionsHost>(wm: &mut GameWindowMa
                                 if was_ai || is_ai {
                                     h.lan_game_reset_accepted();
                                 }
-                                if was_ai ^ is_ai {
+                                if if plant(24674) { was_ai || is_ai } else { was_ai ^ is_ai } {
                                     h.gui_util_populate_player_template(wm, i, was_ai);
                                 }
                                 if !h.lan_game_options().s_is_initing {
@@ -1078,7 +1086,7 @@ pub fn lan_game_options_menu_system<H: LanGameOptionsHost>(wm: &mut GameWindowMa
                     start_pressed(wm, h);
                 } else {
                     h.lan_request_accept();
-                    h.gui_util_enable_accept_controls(wm, true);
+                    h.gui_util_enable_accept_controls(wm, !plant(24675));
                 }
             } else if id == o.checkbox_limit_superweapons_id {
                 handle_limit_superweapons_click(wm, h);
@@ -1150,7 +1158,7 @@ fn trim(s: &mut Vec<u16>) {
     while s.last().is_some_and(is_space) {
         s.pop();
     }
-    let lead = s.iter().take_while(|c| is_space(c)).count();
+    let lead = if plant(24681) { 0 } else { s.iter().take_while(|c| is_space(c)).count() };
     s.drain(..lead);
 }
 
@@ -1165,7 +1173,9 @@ pub fn post_to_lan_game_options<H: LanGameOptionsHost>(wm: &mut GameWindowManage
 
             // Clear the start positions
             for i in 0..MAX_SLOTS {
-                h.lan_slot_set_start_pos(i, -1);
+                if !(plant(24680) && i == 7) {
+                    h.lan_slot_set_start_pos(i, -1);
+                }
             }
 
             let opts = h.generate_game_options_string();
