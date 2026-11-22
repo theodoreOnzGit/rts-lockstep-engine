@@ -1,5 +1,9 @@
 //! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential-tested so far (#215, group wol7): `populate_qm_color_combo_box` and `populate_qm_side_combo_box` (tests/differential_draft_wol_qm_combos.rs, 3,000 sequences, 0 mismatches, on
+//! upstream's real combo box; fixed before the first run: the side's label was built through UTF-8) and `next_token_space` and `atoi` (tests/differential_draft_wol7_helpers.rs, 20,000 cases). Not covered:
+//! the ladder list and combo populates, the map select list, Init, Shutdown, Update, System, Input.
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLQuickMatchMenu.cpp
 //!     (the file's statics, `isInfoShown`, `hideInfoGadgets`, `hideOptionsGadgets`, `enableOptionsGadgets`,

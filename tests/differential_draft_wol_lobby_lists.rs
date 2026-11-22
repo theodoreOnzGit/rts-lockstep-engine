@@ -113,8 +113,8 @@ fn gen_scene(g: &mut Gen) -> Scene {
     for _ in 0..g.below(3) {
         ops.push(format!("W -1 4 {} 50 120 20 {en} {} 0 0 5 64 0 0 6 1 0", 400 + 10 * combos.len() as i32, gws::COMBO_BOX));
         combos.push(next);
-        // a combo box makes its three children after itself
-        next += 4;
+        // a combo box makes its seven children after itself (the drop-down button, the entry, the list box, its two buttons, slider and thumb)
+        next += 8;
     }
     Scene { ops, players_list, other_list, combos, rect: (x, y, w, h) }
 }

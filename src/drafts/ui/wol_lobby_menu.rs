@@ -1,5 +1,10 @@
 //! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential-tested so far (#215): `handle_lobby_slash_commands`, `refresh_game_list`, `refresh_player_list` and `lookup_small_rank_image` (group wol6; tests/differential_draft_wol_slash.rs, differential_draft_wol_rank.rs);
+//! `player_tooltip`, `populate_group_room_listbox`, `insert_player_in_listbox` and `populate_lobby_player_listbox` (group wol7; tests/differential_draft_wol_lobby_lists.rs, 2,000 sequences, 0 mismatches,
+//! on upstream's real list box and combo box; the first runs found five defects, fixed: sign-extended mouse coordinates, `%2.2d` of a negative locale, the empty tooltip's width, `translate`'s sign
+//! extension and zero bytes). Not covered: Init, Shutdown, Update, System, Input, `fill_player_info`, `set_lobby_attempt_host_join`, `shutdown_complete`.
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLLobbyMenu.cpp
 //!     (the file's statics, `handleLobbySlashCommands`, `SetLobbyAttemptHostJoin`, `playerTooltip`,

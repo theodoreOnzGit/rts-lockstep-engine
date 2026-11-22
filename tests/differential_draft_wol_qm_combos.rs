@@ -69,11 +69,11 @@ fn gen_scene(g: &mut Gen) -> Vec<String> {
     for k in 0..decoys {
         ops.push(format!("@ wu -1 0 {} 0 300 200 {en} {}", k * 5, gws::USER_WINDOW));
     }
-    // the colour combo box at `decoys`, its three children, the side combo box at `decoys + 4`
+    // the colour combo box at `decoys` and its seven children (the drop-down button, the entry, the list box with its two buttons, its slider and thumb), the side combo box at `decoys + 8`
     for k in 0..2 {
         ops.push(format!("W -1 4 {} 50 120 20 {en} {} 0 0 5 64 0 0 20 1 0", 400 + 10 * k, gws::COMBO_BOX));
     }
-    ops.push(format!("@ w7 qmwin {} {}", decoys, decoys + 4));
+    ops.push(format!("@ w7 qmwin {} {}", decoys, decoys + 8));
     ops
 }
 
