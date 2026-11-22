@@ -57,7 +57,8 @@ pub trait WolMapSelectHost: ShellHost {
     fn map_cache_is_official(&self, map: &[u8]) -> Option<bool>;
     fn map_cache_find(&self, lower: &[u8]) -> Option<(u32, u32)>;
     fn map_cache_update(&mut self);
-    fn populate_map_listbox(&mut self, wm: &mut GameWindowManager, list: Option<WinId>, system: bool);
+    /// `populateMapListbox(listbox, useSystemMaps, isMultiplayer, mapToSelect)` (the menu passes `TRUE` and `TheGameSpyGame->getMap()`).
+    fn populate_map_listbox(&mut self, wm: &mut GameWindowManager, list: Option<WinId>, system: bool, is_multiplayer: bool, map_to_select: &[u8]);
     fn map_list_name(&self, item_data: u32) -> Option<Vec<u8>>;
     fn get_map_preview_image(&mut self, map: &[u8]) -> Option<Vec<u8>>;
     fn set_preview_user_data_map(&mut self, wm: &mut GameWindowManager, preview: WinId, map: &[u8]);
@@ -146,8 +147,9 @@ pub fn wol_map_select_menu_init<H: WolMapSelectHost>(wm: &mut GameWindowManager,
         if let Some(r) = radio_system {
             radio_set_selection(wm, h, r, false);
         }
-        if let Some(r) = radio_user {
-            wm.win_enable(r, false);
+        match radio_user {
+            Some(r) => wm.win_enable(r, false),
+            None => wm.set_undefined("WOLMapSelectMenuInit: RadioButtonUserMaps is NULL (null dereference)"),
         }
     } else if uses_system_map_dir {
         if let Some(r) = radio_system {
@@ -169,6 +171,8 @@ pub fn wol_map_select_menu_init<H: WolMapSelectHost>(wm: &mut GameWindowManager,
         if let Some(b) = b {
             wm.win_hide(b, true);
             wm.win_enable(b, false);
+        } else {
+            wm.set_undefined("WOLMapSelectMenuInit: ButtonMapStartPosition missing (null dereference)");
         }
     }
 
@@ -181,13 +185,17 @@ pub fn wol_map_select_menu_init<H: WolMapSelectHost>(wm: &mut GameWindowManager,
     h.wol_map_select().map_list = map_list;
     if map_list.is_some() {
         h.map_cache_update();
-        h.populate_map_listbox(wm, map_list, uses_system_map_dir);
+        let map = h.game_spy_game_map();
+        h.populate_map_listbox(wm, map_list, uses_system_map_dir, true, &map);
     }
 }
 
 /// `WOLMapSelectMenuShutdown(layout, userData)`.
 pub fn wol_map_select_menu_shutdown<H: WolMapSelectHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
     nullify_controls(h);
+    if wm.layouts[layout].deleted {
+        wm.set_undefined("WOLMapSelectMenuShutdown: the layout was deleted (use after free)");
+    }
     wm.layout_hide(layout, true);
     shell::shutdown_complete(wm, h, Some(layout), false);
 }
@@ -215,17 +223,23 @@ pub fn wol_map_select_menu_input<H: WolMapSelectHost>(wm: &mut GameWindowManager
 
 /// `WOLMapSelectLayout->destroyWindows(); deleteInstance(); WOLMapSelectLayout = NULL;`.
 fn destroy_layout<H: WolMapSelectHost>(wm: &mut GameWindowManager, h: &mut H) {
-    if let Some(l) = h.wol_map_select().wol_map_select_layout.take() {
-        wm.layout_destroy_windows(l);
-        wm.layouts[l].deleted = true;
+    match h.wol_map_select().wol_map_select_layout.take() {
+        Some(l) if !wm.layouts[l].deleted => {
+            wm.layout_destroy_windows(l);
+            wm.layouts[l].deleted = true;
+        }
+        // `WOLMapSelectLayout` is NULL (or deleted): upstream calls through it
+        _ => wm.set_undefined("WOLMapSelectMenuSystem: WOLMapSelectLayout is NULL (null dereference)"),
     }
 }
 
-fn row_map<H: WolMapSelectHost>(wm: &mut GameWindowManager, h: &mut H, list: WinId, row: i32, text: &[u16]) -> Vec<u8> {
-    let data = lb::get_item_data(wm, h, list, row, 0);
+fn row_map<H: WolMapSelectHost>(wm: &mut GameWindowManager, h: &mut H, list: Option<WinId>, row: i32, text: &[u16]) -> Vec<u8> {
+    // (`GadgetListBoxGetItemData(NULL, ...)` is NULL)
+    let data = list.map_or(0, |l| lb::get_item_data(wm, h, l, row, 0));
     match h.map_list_name(data) {
         Some(n) => n,
-        None => text.iter().map(|&c| c as u8).collect(), // asciiMap.translate(map)
+        // `asciiMap.translate(map)`: each unit's low byte appended, a NUL appending nothing (`concat((char)c)`)
+        None => text.iter().map(|&c| c as u8).filter(|&b| b != 0).collect(),
     }
 }
 
@@ -242,7 +256,10 @@ pub fn wol_map_select_menu_system<H: WolMapSelectHost>(wm: &mut GameWindowManage
             return MsgHandled::Handled;
         }
         lb::glm::DOUBLE_CLICKED => {
-            let Some((control, id)) = control_id(wm) else { return MsgHandled::Handled };
+            let Some((control, id)) = control_id(wm) else {
+                wm.set_undefined("WOLMapSelectMenuSystem: a NULL control (null dereference)");
+                return MsgHandled::Handled;
+            };
             let m = h.wol_map_select().clone();
             if id == m.listbox_map {
                 let row_selected = d2 as i32;
@@ -254,7 +271,10 @@ pub fn wol_map_select_menu_system<H: WolMapSelectHost>(wm: &mut GameWindowManage
             }
         }
         ggm::GLM_SELECTED => {
-            let Some((_, id)) = control_id(wm) else { return MsgHandled::Handled };
+            let Some((_, id)) = control_id(wm) else {
+                wm.set_undefined("WOLMapSelectMenuSystem: a NULL control (null dereference)");
+                return MsgHandled::Handled;
+            };
             let m = h.wol_map_select().clone();
             if id == m.listbox_map {
                 let row_selected = d2 as i32;
@@ -262,10 +282,14 @@ pub fn wol_map_select_menu_system<H: WolMapSelectHost>(wm: &mut GameWindowManage
                     h.position_start_spots(wm, b"", &m.button_map_start_position, m.win_map_preview);
                     return MsgHandled::Handled;
                 }
-                let (Some(preview), Some(mw)) = (m.win_map_preview, m.win_map_window) else { return MsgHandled::Handled };
+                let Some(preview) = m.win_map_preview else {
+                    wm.set_undefined("WOLMapSelectMenuSystem: winMapPreview is NULL (null dereference)");
+                    return MsgHandled::Handled;
+                };
                 wm.win_set_status(preview, win_status::IMAGE);
-                let map = lb::get_text(wm, h, mw, row_selected, 0);
-                let ascii_map = row_map(wm, h, mw, row_selected, &map).to_ascii_lowercase();
+                // (`GadgetListBoxGetText(NULL, ...)` is the empty text)
+                let map = m.win_map_window.map_or_else(Vec::new, |mw| lb::get_text(wm, h, mw, row_selected, 0));
+                let ascii_map = row_map(wm, h, m.win_map_window, row_selected, &map).to_ascii_lowercase();
                 let image = h.get_map_preview_image(&ascii_map);
                 h.set_preview_user_data_map(wm, preview, &ascii_map);
                 match image {
@@ -278,31 +302,38 @@ pub fn wol_map_select_menu_system<H: WolMapSelectHost>(wm: &mut GameWindowManage
             }
         }
         ggm::GBM_SELECTED => {
-            let Some((_, id)) = control_id(wm) else { return MsgHandled::Handled };
+            let Some((_, id)) = control_id(wm) else {
+                wm.set_undefined("WOLMapSelectMenuSystem: a NULL control (null dereference)");
+                return MsgHandled::Handled;
+            };
             let m = h.wol_map_select().clone();
-            let game_map = h.game_spy_game_map();
             if id == m.button_back {
                 show_game_spy_game_options_underlying_gui_elements(wm, h, true);
                 destroy_layout(wm, h);
                 h.wol_position_start_spots(wm);
             } else if id == m.radio_button_system_maps_id {
                 h.map_cache_update();
-                let _ = &game_map;
-                h.populate_map_listbox(wm, m.map_list, true);
+                let map = h.game_spy_game_map();
+                h.populate_map_listbox(wm, m.map_list, true, true, &map);
                 h.custom_prefs_set_uses_system_map_dir_and_write(true);
             } else if id == m.radio_button_user_maps_id {
                 h.map_cache_update();
-                h.populate_map_listbox(wm, m.map_list, false);
+                let map = h.game_spy_game_map();
+                h.populate_map_listbox(wm, m.map_list, false, true, &map);
                 h.custom_prefs_set_uses_system_map_dir_and_write(false);
             } else if id == m.button_ok {
                 let selected = match m.win_map_window {
                     Some(mw) => lb::get_selected(wm, h, mw).first().copied().unwrap_or(-1),
-                    None => -1,
+                    None => {
+                        // `Int selected;` is read uninitialised after `GadgetListBoxGetSelected(NULL, &selected)`
+                        wm.set_undefined("WOLMapSelectMenuSystem: winMapWindow is NULL (selected is uninitialised)");
+                        -1
+                    }
                 };
                 if selected != -1 {
                     let mw = m.win_map_window.expect("selected implies the list");
                     let map = lb::get_text(wm, h, mw, selected, 0);
-                    let ascii_map = row_map(wm, h, mw, selected, &map);
+                    let ascii_map = row_map(wm, h, Some(mw), selected, &map);
                     h.game_spy_game_set_map(&ascii_map);
                     let lower = ascii_map.to_ascii_lowercase();
                     if let Some((crc, size)) = h.map_cache_find(&lower) {
