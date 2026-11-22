@@ -1,5 +1,10 @@
 //! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential-tested so far (#215): `handle_lobby_slash_commands`, `refresh_game_list`, `refresh_player_list` and `lookup_small_rank_image` (group wol6; tests/differential_draft_wol_slash.rs, differential_draft_wol_rank.rs);
+//! `player_tooltip`, `populate_group_room_listbox`, `insert_player_in_listbox` and `populate_lobby_player_listbox` (group wol7; tests/differential_draft_wol_lobby_lists.rs, 2,000 sequences, 0 mismatches,
+//! on upstream's real list box and combo box; the first runs found five defects, fixed: sign-extended mouse coordinates, `%2.2d` of a negative locale, the empty tooltip's width, `translate`'s sign
+//! extension and zero bytes). Not covered: Init, Shutdown, Update, System, Input, `fill_player_info`, `set_lobby_attempt_host_join`, `shutdown_complete`.
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLLobbyMenu.cpp
 //!     (the file's statics, `handleLobbySlashCommands`, `SetLobbyAttemptHostJoin`, `playerTooltip`,
@@ -408,9 +413,10 @@ fn utf16(s: &str) -> Vec<u16> {
 }
 
 /// `atoi`.
-fn atoi(s: &[u8]) -> i32 {
+pub fn atoi(s: &[u8]) -> i32 {
     let mut i = 0;
-    while i < s.len() && s[i].is_ascii_whitespace() {
+    // C's `isspace`: space, \t, \n, \v, \f, \r (Rust's `is_ascii_whitespace` has no \v)
+    while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r') {
         i += 1;
     }
     let neg = i < s.len() && s[i] == b'-';
@@ -480,36 +486,40 @@ fn rank_for_points<H: WolLobbyMenuHost>(h: &H, rank_points: i32) -> i32 {
 
 /// `playerTooltip(window, instData, mouse)` (WOLLobbyMenu.cpp:165): the player list's tooltip callback.
 pub fn player_tooltip<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: &mut H, window: WinId, mouse: u32) {
-    let x = (mouse & 0xFFFF) as u16 as i16 as i32; // LOLONGTOSHORT
-    let y = (mouse >> 16) as u16 as i16 as i32; // HILONGTOSHORT
+    // LOLONGTOSHORT(a) is `(a) & 0x0000FFFF` and HILONGTOSHORT(b) `((b) & 0xFFFF0000) >> 16` of an UnsignedInt (GameWindow.h:111): neither is sign-extended
+    let x = if plant(24261) { (mouse & 0xFFFF) as u16 as i16 as i32 } else { (mouse & 0xFFFF) as i32 };
+    let y = if plant(24261) { (mouse >> 16) as u16 as i16 as i32 } else { (mouse >> 16) as i32 };
 
     let (row, col) = lb::get_entry_based_on_xy(wm, h, window, x, y).unwrap_or((-1, -1));
 
     if row == -1 || col == -1 {
-        h.mouse_set_cursor_tooltip(&[], -1.0); // TheEmptyString
+        h.mouse_set_cursor_tooltip(&[], 1.0); // `setCursorTooltip`'s default width is 1.0f (Mouse.h:267) // TheEmptyString
         return;
     }
 
     let u_name = lb::get_text(wm, h, window, row, COLUMN_PLAYERNAME);
-    let a_name: Vec<u8> = u_name.iter().map(|&c| c as u8).collect();
+    // aName.translate(uName): each unit's low byte, a unit whose low byte is 0 appending nothing
+    let a_name: Vec<u8> = u_name.iter().map(|&c| c as u8).filter(|&b| b != 0).collect();
 
     // upstream dereferences `it->second` without checking `end()`; a missing player is treated as default info
     let info = h.gamespy_player_info_by_name(&a_name).unwrap_or_default();
     let local = h.gamespy_local_name_ascii();
-    let is_local_player = local.eq_ignore_ascii_case(&info.name);
+    let is_local_player = if plant(24267) { local == info.name } else { local.eq_ignore_ascii_case(&info.name) };
 
     if col == 0 {
-        if info.preorder {
+        if info.preorder != plant(24262) {
             let t = h.fetch_text(b"TOOLTIP:LobbyOfficersClub");
-            h.mouse_set_cursor_tooltip(&t, -1.0);
+            h.mouse_set_cursor_tooltip(&t, 1.0); // the default width, 1.0f
         } else {
-            h.mouse_set_cursor_tooltip(&[], -1.0);
+            h.mouse_set_cursor_tooltip(&[], 1.0); // `setCursorTooltip`'s default width is 1.0f (Mouse.h:267)
         }
         return;
     }
 
     let player_locale = info.locale.clone();
-    let locale_identifier = format!("WOL:Locale{:02}", atoi(&player_locale));
+    // `format("WOL:Locale%2.2d", n)`: the precision 2 is a minimum of two digits after the sign (-5 is "-05", unlike Rust's `{:02}`, which counts the sign in the width)
+    let locale_number = atoi(&player_locale);
+    let locale_identifier = format!("WOL:Locale{}{:02}", if locale_number < 0 { "-" } else { "" }, locale_number.unsigned_abs());
     let player_wins = info.wins;
     let player_losses = info.losses;
     let fmt = h.fetch_text(b"TOOLTIP:PlayerInfo");
@@ -526,7 +536,7 @@ pub fn player_tooltip<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: &mut H
             // buddy
             let fmt = h.fetch_text(b"TOOLTIP:BuddyPlayer");
             tooltip = h.format_text_arg(&fmt, &u_name);
-        } else if info.profile_id != 0 {
+        } else if (info.profile_id != 0) != plant(24263) {
             // non-buddy profiled player
             let fmt = h.fetch_text(b"TOOLTIP:ProfiledPlayer");
             tooltip = h.format_text_arg(&fmt, &u_name);
@@ -537,19 +547,20 @@ pub fn player_tooltip<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: &mut H
         }
     }
 
-    if info.is_ignored {
+    if info.is_ignored && !plant(24264) {
         tooltip.extend(h.fetch_text(b"TOOLTIP:IgnoredModifier"));
     }
 
-    if info.profile_id != 0 {
+    if (info.profile_id != 0) != plant(24265) {
         tooltip.extend(player_info);
     }
 
     let rank = rank_for_points(h, info.rank_points);
     let mut side_name = b"GUI:RandomSide".to_vec();
-    if info.side > 0 {
+    if info.side > i32::from(plant(24266)) {
         if let Some(side) = h.player_template_side(info.side) {
-            side_name = format!("SIDE:{}", String::from_utf8_lossy(&side)).into_bytes();
+            // `sideName.format("SIDE:%s", ...)`: the side's bytes as they are (not converted through UTF-8)
+            side_name = [b"SIDE:".as_slice(), side.as_slice()].concat();
         }
     }
     let rank_name = format!("GUI:GSRank{rank}");
@@ -563,7 +574,7 @@ pub fn player_tooltip<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: &mut H
 }
 
 /// `populateGroupRoomListbox(lb)`.
-fn populate_group_room_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: &mut H, list: Option<WinId>) {
+pub fn populate_group_room_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: &mut H, list: Option<WinId>) {
     let Some(list) = list else { return };
 
     cb::reset(wm, h, list);
@@ -573,16 +584,19 @@ fn populate_group_room_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, 
     let qm_channel = h.gamespy_config_qm_channel();
     let current = h.gamespy_current_group_room();
     for room in h.gamespy_group_room_list() {
-        if room.group_id != qm_channel {
+        if room.group_id != qm_channel || plant(24268) {
             if room.group_id == current {
-                let c = h.gamespy_color_current_room();
+                let c = if plant(24269) { h.gamespy_color_room() } else { h.gamespy_color_current_room() };
                 let selected = cb::add_entry(wm, h, list, &room.translated_name, c);
-                cb::set_item_data(wm, h, list, selected, room.group_id as u32);
+                cb::set_item_data(wm, h, list, selected, if plant(24270) { selected as u32 } else { room.group_id as u32 });
                 index_to_select = selected;
             } else {
                 let c = h.gamespy_color_room();
                 let selected = cb::add_entry(wm, h, list, &room.translated_name, c);
                 cb::set_item_data(wm, h, list, selected, room.group_id as u32);
+                if plant(24271) {
+                    index_to_select = selected;
+                }
             }
         }
         // else: skipping QM groupID
@@ -619,9 +633,10 @@ pub fn lookup_small_rank_image<H: WolLobbyMenuHost>(h: &H, side: i32, rank_point
 }
 
 /// `insertPlayerInListbox(info, color)`.
-fn insert_player_in_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: &mut H, info: &LobbyPlayerInfo, color: i32) -> i32 {
+pub fn insert_player_in_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: &mut H, info: &LobbyPlayerInfo, color: i32) -> i32 {
     let Some(players) = h.wol_lobby_menu().listbox_lobby_players else { return -1 };
-    let u_str: Vec<u16> = info.name.iter().map(|&c| u16::from(c)).collect(); // uStr.translate(info.m_name)
+    // uStr.translate(info.m_name): each `char` (signed) sign-extended to a WideChar, a 0 appending nothing
+    let u_str: Vec<u16> = info.name.iter().filter(|&&c| c != 0).map(|&c| c as i8 as i16 as u16).collect();
 
     let current_rank = info.rank_points;
     let current_side = info.side;
@@ -630,8 +645,8 @@ fn insert_player_in_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: 
     let is_preorder = h.gamespy_did_player_preorder(info.profile_id);
 
     let mut preorder_img = h.find_image_by_name(b"OfficersClubsmall");
-    let mut w = preorder_img.as_ref().map_or(10, |i| h.image_width(i));
-    w = lb::get_column_width(wm, players, 0).min(w);
+    let mut w = preorder_img.as_ref().map_or(if plant(24274) { 0 } else { 10 }, |i| h.image_width(i));
+    w = if plant(24272) { lb::get_column_width(wm, players, 0).max(w) } else { lb::get_column_width(wm, players, 0).min(w) };
     let hh = w;
     if !is_preorder {
         preorder_img = None;
@@ -642,7 +657,7 @@ fn insert_player_in_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: 
 
     // `#if 0` Officer's Club (preorder image) no longer used in Zero Hour
     let index = lb::add_entry_image(wm, h, players, rank_img, -1, 0, w, hh, true, -1);
-    lb::add_entry_text(wm, h, players, &u_str, color, index, 1, true);
+    lb::add_entry_text(wm, h, players, &u_str, color, index, if plant(24273) { 2 } else { 1 }, true);
     index
 }
 
@@ -666,7 +681,7 @@ pub fn populate_lobby_player_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowMan
         }
         num_selected += 1;
         let u_str = lb::get_text(wm, h, players_list, sel, COLUMN_PLAYERNAME);
-        let selected_name: Vec<u8> = u_str.iter().map(|&c| c as u8).collect();
+        let selected_name: Vec<u8> = u_str.iter().map(|&c| c as u8).filter(|&b| b != 0).collect(); // translate: a low byte 0 appends nothing
         selected_names.push(selected_name);
     }
 
@@ -677,7 +692,7 @@ pub fn populate_lobby_player_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowMan
 
     // Ops
     for info in &players {
-        if info.flags & PEER_FLAG_OP != 0 || h.gamespy_config_is_player_vip(info.profile_id) {
+        if info.flags & PEER_FLAG_OP != 0 || (h.gamespy_config_is_player_vip(info.profile_id) && !plant(24275)) {
             let color = if info.is_ignored { h.gamespy_color_player_ignored() } else { h.gamespy_color_player_owner() };
             let index = insert_player_in_listbox(wm, h, info, color);
 
@@ -691,7 +706,7 @@ pub fn populate_lobby_player_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowMan
     for info in &players {
         let is_buddy = h.gamespy_is_buddy(info.profile_id);
         if !(info.flags & PEER_FLAG_OP != 0 || h.gamespy_config_is_player_vip(info.profile_id)) && is_buddy {
-            let color = if info.is_ignored { h.gamespy_color_player_ignored() } else { h.gamespy_color_player_buddy() };
+            let color = if info.is_ignored { h.gamespy_color_player_ignored() } else if plant(24276) { h.gamespy_color_player_normal() } else { h.gamespy_color_player_buddy() };
             let index = insert_player_in_listbox(wm, h, info, color);
 
             if selected_names.contains(&info.name) {
@@ -719,12 +734,14 @@ pub fn populate_lobby_player_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowMan
         lb::set_selected(wm, h, players_list, &new_indices);
     }
 
-    if indices_to_select.len() != num_selected {
+    if indices_to_select.len() != num_selected + usize::from(plant(24277)) {
         wm.win_set_lone_window(h, None);
     }
 
     // restore top visible entry
-    lb::set_top_visible_entry(wm, h, players_list, previous_top_index);
+    if !plant(24278) {
+        lb::set_top_visible_entry(wm, h, players_list, previous_top_index);
+    }
 }
 
 /// `WOLLobbyMenuInit(layout, userData)` (WOLLobbyMenu.cpp:578).

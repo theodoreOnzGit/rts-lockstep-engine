@@ -1,5 +1,9 @@
 //! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential-tested so far (#215, group wol7): `populate_qm_color_combo_box` and `populate_qm_side_combo_box` (tests/differential_draft_wol_qm_combos.rs, 3,000 sequences, 0 mismatches, on
+//! upstream's real combo box; fixed before the first run: the side's label was built through UTF-8) and `next_token_space` and `atoi` (tests/differential_draft_wol7_helpers.rs, 20,000 cases). Not covered:
+//! the ladder list and combo populates, the map select list, Init, Shutdown, Update, System, Input.
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLQuickMatchMenu.cpp
 //!     (the file's statics, `isInfoShown`, `hideInfoGadgets`, `hideOptionsGadgets`, `enableOptionsGadgets`,
@@ -20,6 +24,7 @@
 //! ladder combo (`comboBoxLadder` is `NULL` when there are no ladders) leaves upstream's `selected` uninitialised;
 //! [`get_ladder_info`] answers "no ladder" there instead (flagged for the differential pass).
 
+use crate::logic::modules::plant;
 use crate::client::gadget;
 use crate::client::gadget_combo_box as cb;
 use crate::client::gadget_list_box as lb;
@@ -492,7 +497,7 @@ pub fn update_start_button<H: WolQuickMatchMenuHost>(wm: &mut GameWindowManager,
 }
 
 /// `populateQMColorComboBox(pref)`.
-fn populate_qm_color_combo_box<H: WolQuickMatchMenuHost>(wm: &mut GameWindowManager, h: &mut H) {
+pub fn populate_qm_color_combo_box<H: WolQuickMatchMenuHost>(wm: &mut GameWindowManager, h: &mut H) {
     let Some(combo) = h.wol_quick_match_menu().combo_box_color else { return };
     let num_colors = h.multiplayer_num_colors();
 
@@ -505,17 +510,18 @@ fn populate_qm_color_combo_box<H: WolQuickMatchMenuHost>(wm: &mut GameWindowMana
     cb::set_item_data(wm, h, combo, new_index, -1i32 as u32);
 
     for c in 0..num_colors {
-        let Some((color, tooltip)) = h.multiplayer_color(c) else { continue };
+        let def = if plant(24287) { Some(h.multiplayer_color(c).unwrap_or((0, Vec::new()))) } else { h.multiplayer_color(c) };
+        let Some((color, tooltip)) = def else { continue };
         let color_name = h.fetch_text(&tooltip);
         let new_index = cb::add_entry(wm, h, combo, &color_name, color);
-        cb::set_item_data(wm, h, combo, new_index, c as u32);
+        cb::set_item_data(wm, h, combo, new_index, if plant(24288) { c as u32 + 1 } else { c as u32 });
     }
     let pref_color = h.qm_pref_color();
-    cb::set_selected_pos(wm, h, combo, pref_color, false);
+    cb::set_selected_pos(wm, h, combo, pref_color + i32::from(plant(24289)), false);
 }
 
 /// `populateQMSideComboBox(favSide, li)`.
-fn populate_qm_side_combo_box<H: WolQuickMatchMenuHost>(wm: &mut GameWindowManager, h: &mut H, fav_side: i32, li: Option<&QmLadderInfo>) {
+pub fn populate_qm_side_combo_box<H: WolQuickMatchMenuHost>(wm: &mut GameWindowManager, h: &mut H, fav_side: i32, li: Option<&QmLadderInfo>) {
     let Some(combo) = h.wol_quick_match_menu().combo_box_side else { return };
     let templates = h.player_templates();
 
@@ -532,17 +538,18 @@ fn populate_qm_side_combo_box<H: WolQuickMatchMenuHost>(wm: &mut GameWindowManag
 
     for (c, fac) in templates.iter().enumerate() {
         let c = c as i32;
-        if fac.starting_building_empty {
+        if fac.starting_building_empty != plant(24293) {
             continue;
         }
 
-        let side = format!("SIDE:{}", String::from_utf8_lossy(&fac.side)).into_bytes();
-        if seen_sides.contains(&side) {
+        // `side.format("SIDE:%s", ...)`: the side's bytes as they are (not converted through UTF-8)
+        let side = [b"SIDE:".as_slice(), fac.side.as_slice()].concat();
+        if seen_sides.contains(&side) && !plant(24290) {
             continue;
         }
 
         if let Some(li) = li {
-            if !li.valid_factions.contains(&fac.side) {
+            if !li.valid_factions.contains(&fac.side) && !plant(24291) {
                 continue; // ladder doesn't allow it.
             }
         }
@@ -552,7 +559,7 @@ fn populate_qm_side_combo_box<H: WolQuickMatchMenuHost>(wm: &mut GameWindowManag
         // @todo: unlock these when something rad happens
         let disallow_locked_generals = true;
         let starts_locked = fac.general_starting_enabled.map_or(false, |enabled| !enabled);
-        if disallow_locked_generals && starts_locked {
+        if disallow_locked_generals && starts_locked && !plant(24292) {
             continue;
         }
 
@@ -560,15 +567,15 @@ fn populate_qm_side_combo_box<H: WolQuickMatchMenuHost>(wm: &mut GameWindowManag
 
         let t = h.fetch_text(&side);
         let new_index = cb::add_entry(wm, h, combo, &t, random_color);
-        cb::set_item_data(wm, h, combo, new_index, c as u32);
+        cb::set_item_data(wm, h, combo, new_index, if plant(24296) { new_index as u32 } else { c as u32 });
 
-        if c == fav_side {
+        if (if plant(24295) { new_index } else { c }) == fav_side {
             entry_to_select = new_index;
         }
     }
 
     cb::set_selected_pos(wm, h, combo, entry_to_select, false);
-    wm.win_enable(combo, !li.is_some_and(|l| l.random_factions));
+    wm.win_enable(combo, if plant(24294) { li.is_none() } else { !li.is_some_and(|l| l.random_factions) });
 }
 
 /// `HandleQMLadderSelection(ladderID)`.
@@ -1196,34 +1203,37 @@ fn next_response<H: WolQuickMatchMenuHost>(h: &mut H, allowed_messages: &mut i32
 
 /// `AsciiString::nextToken(&tok, " ")`: skips leading separators, takes the token, leaves the rest (from the
 /// separator on) in `data`.
-fn next_token_space(data: &mut Vec<u8>) -> Option<Vec<u8>> {
+pub fn next_token_space(data: &mut Vec<u8>) -> Option<Vec<u8>> {
     if data.is_empty() {
         return None;
     }
-    let start = data.iter().position(|&c| c != b' ').unwrap_or(data.len());
-    let end = data[start..].iter().position(|&c| c == b' ').map_or(data.len(), |e| start + e);
+    let start = if plant(24284) { 0 } else { data.iter().position(|&c| c != b' ').unwrap_or(data.len()) };
+    let end = data[start..].iter().position(|&c| c == b' ' || (plant(24285) && c == b'\t')).map_or(data.len(), |e| start + e);
     if end > start {
         let tok = data[start..end].to_vec();
-        *data = data[end..].to_vec();
+        *data = data[if plant(24286) { start } else { end }..].to_vec();
         Some(tok)
     } else {
-        data.clear();
+        if !plant(24283) {
+            data.clear();
+        }
         None
     }
 }
 
 /// `atoi`.
-fn atoi(s: &[u8]) -> i32 {
+pub fn atoi(s: &[u8]) -> i32 {
     let mut i = 0;
-    while i < s.len() && s[i].is_ascii_whitespace() {
+    // C's `isspace`: space, \t, \n, \v, \f, \r (Rust's `is_ascii_whitespace` has no \v)
+    while i < s.len() && if plant(24279) { s[i] == b' ' } else { matches!(s[i], b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r') } {
         i += 1;
     }
-    let neg = i < s.len() && s[i] == b'-';
-    if i < s.len() && (s[i] == b'-' || s[i] == b'+') {
+    let neg = i < s.len() && s[i] == b'-' && !plant(24280);
+    if i < s.len() && (s[i] == b'-' || (s[i] == b'+' && !plant(24281))) {
         i += 1;
     }
     let mut v: i32 = 0;
-    while i < s.len() && s[i].is_ascii_digit() {
+    while i < s.len() && s[i].is_ascii_digit() && !(plant(24282) && i >= 9) {
         v = v.wrapping_mul(10).wrapping_add(i32::from(s[i] - b'0'));
         i += 1;
     }

@@ -21,11 +21,43 @@ pub struct LobbyHost {
     pub now: u32,
     pub rank_values: [i32; 14],
     pub images: Vec<Vec<u8>>,
+    /// the GameSpy state the list functions read (group wol7)
+    pub gs: Gs,
+    /// the scene operations' log (ui4_common::HasLog)
+    pub scene_log: String,
+}
+
+/// The case's GameSpy state of the lobby's list functions (group wol7): what the C++ wrapper's `@ w7` operations set.
+#[derive(Default)]
+pub struct Gs {
+    pub colors: [i32; 32],
+    pub image_widths: std::collections::BTreeMap<Vec<u8>, i32>,
+    pub templates: Vec<Vec<u8>>,
+    pub local_name: Vec<u8>,
+    pub current_room: i32,
+    pub qm: i32,
+    pub rooms: std::collections::BTreeMap<i32, LobbyGroupRoom>,
+    /// keyed by the ASCII-lower-cased name (`AsciiComparator`: stricmp)
+    pub players: std::collections::BTreeMap<Vec<u8>, LobbyPlayerInfo>,
+    pub buddies: std::collections::BTreeSet<i32>,
+    pub preorder: std::collections::BTreeSet<i32>,
+    pub vip: std::collections::BTreeSet<i32>,
+    pub saved_ignored: std::collections::BTreeSet<i32>,
+    pub ignored_names: std::collections::BTreeSet<Vec<u8>>,
+}
+
+impl Gs {
+    /// `PlayerInfo::isIgnored()` (PeerDefs.cpp:827).
+    pub fn with_ignored(&self, p: &LobbyPlayerInfo) -> LobbyPlayerInfo {
+        let mut q = p.clone();
+        q.is_ignored = if p.profile_id != 0 { self.saved_ignored.contains(&p.profile_id) } else { self.ignored_names.contains(&p.name) };
+        q
+    }
 }
 
 impl LobbyHost {
     pub fn new() -> Self {
-        LobbyHost { shell: Shell::new(), menu: WolLobbyMenu::new(), log: RefCell::new(String::new()), color_default: 0, qr2: 0, thread: 0, changed: false, now: 0, rank_values: [0; 14], images: Vec::new() }
+        LobbyHost { shell: Shell::new(), menu: WolLobbyMenu::new(), log: RefCell::new(String::new()), color_default: 0, qr2: 0, thread: 0, changed: false, now: 0, rank_values: [0; 14], images: Vec::new(), gs: Gs::default(), scene_log: String::new() }
     }
     pub fn line(&self, s: String) {
         let mut l = self.log.borrow_mut();
@@ -34,7 +66,14 @@ impl LobbyHost {
     }
 }
 
-impl GuiHost for LobbyHost {}
+impl GuiHost for LobbyHost {
+    fn font_height(&self, font: Option<&rts_lockstep_engine::client::window_script::GameFont>) -> i32 {
+        font.map_or(12, |f| f.point_size)
+    }
+    fn printable_key(&self, key: u8, state: i32) -> u16 {
+        if state == 1 { u16::from(key) } else { 0 }
+    }
+}
 
 impl ShellHost for LobbyHost {
     fn shell(&mut self) -> &mut Shell {
@@ -97,43 +136,52 @@ impl WolLobbyMenuHost for LobbyHost {
         self.thread
     }
     fn fetch_text(&self, label: &[u8]) -> Vec<u16> {
-        unreachable!("fetch_text")
+        let mut t = b"T:".to_vec();
+        t.extend_from_slice(label);
+        t.iter().map(|&b| u16::from(b)).collect()
     }
     fn format_text_arg(&self, fmt: &[u16], text: &[u16]) -> Vec<u16> {
-        unreachable!("format_text_arg")
+        let mut v = fmt.to_vec();
+        v.push(u16::from(b'|'));
+        v.extend_from_slice(text);
+        v
     }
     fn format_text_int_int(&self, fmt: &[u16], text: &[u16], a: i32, b: i32) -> Vec<u16> {
-        unreachable!("format_text_int_int")
+        let mut v = fmt.to_vec();
+        v.push(u16::from(b'|'));
+        v.extend_from_slice(text);
+        v.extend(format!("|{a}|{b}").encode_utf16());
+        v
     }
     fn gamespy_color_current_room(&self) -> i32 {
-        unreachable!("gamespy_color_current_room")
+        self.gs.colors[1]
     }
     fn gamespy_color_room(&self) -> i32 {
-        unreachable!("gamespy_color_room")
+        self.gs.colors[2]
     }
     fn gamespy_color_player_ignored(&self) -> i32 {
-        unreachable!("gamespy_color_player_ignored")
+        self.gs.colors[10]
     }
     fn gamespy_color_player_owner(&self) -> i32 {
-        unreachable!("gamespy_color_player_owner")
+        self.gs.colors[7]
     }
     fn gamespy_color_player_buddy(&self) -> i32 {
-        unreachable!("gamespy_color_player_buddy")
+        self.gs.colors[8]
     }
     fn gamespy_color_player_normal(&self) -> i32 {
-        unreachable!("gamespy_color_player_normal")
+        self.gs.colors[6]
     }
     fn image_width(&self, image: &[u8]) -> i32 {
-        unreachable!("image_width")
+        self.gs.image_widths.get(image).copied().unwrap_or(0)
     }
     fn player_template_side(&self, n: i32) -> Option<Vec<u8>> {
-        unreachable!("player_template_side")
+        usize::try_from(n).ok().and_then(|i| self.gs.templates.get(i).cloned())
     }
     fn gamespy_local_name(&self) -> Vec<u16> {
         unreachable!("gamespy_local_name")
     }
     fn gamespy_local_name_ascii(&self) -> Vec<u8> {
-        unreachable!("gamespy_local_name_ascii")
+        self.gs.local_name.clone()
     }
     fn gamespy_local_profile_id(&self) -> i32 {
         unreachable!("gamespy_local_profile_id")
@@ -142,22 +190,22 @@ impl WolLobbyMenuHost for LobbyHost {
         unreachable!("gamespy_max_messages_per_update")
     }
     fn gamespy_current_group_room(&self) -> i32 {
-        unreachable!("gamespy_current_group_room")
+        self.gs.current_room
     }
     fn gamespy_set_current_group_room(&mut self, id: i32) {
         unreachable!("gamespy_set_current_group_room")
     }
     fn gamespy_group_room_list(&self) -> Vec<LobbyGroupRoom> {
-        unreachable!("gamespy_group_room_list")
+        self.gs.rooms.values().cloned().collect()
     }
     fn gamespy_clear_player_info_map(&mut self) {
         unreachable!("gamespy_clear_player_info_map")
     }
     fn gamespy_player_info_map(&self) -> Vec<LobbyPlayerInfo> {
-        unreachable!("gamespy_player_info_map")
+        self.gs.players.values().map(|p| self.gs.with_ignored(p)).collect()
     }
     fn gamespy_player_info_by_name(&self, name: &[u8]) -> Option<LobbyPlayerInfo> {
-        unreachable!("gamespy_player_info_by_name")
+        self.gs.players.get(&name.to_ascii_lowercase()).map(|p| self.gs.with_ignored(p))
     }
     fn gamespy_update_player_info(&mut self, p: &LobbyPlayerInfo) {
         unreachable!("gamespy_update_player_info")
@@ -166,10 +214,10 @@ impl WolLobbyMenuHost for LobbyHost {
         unreachable!("gamespy_player_left_group_room")
     }
     fn gamespy_is_buddy(&self, profile_id: i32) -> bool {
-        unreachable!("gamespy_is_buddy")
+        self.gs.buddies.contains(&profile_id)
     }
     fn gamespy_did_player_preorder(&self, profile_id: i32) -> bool {
-        unreachable!("gamespy_did_player_preorder")
+        self.gs.preorder.contains(&profile_id)
     }
     fn gamespy_join_group_room(&mut self, id: i32) {
         unreachable!("gamespy_join_group_room")
@@ -226,13 +274,13 @@ impl WolLobbyMenuHost for LobbyHost {
         unreachable!("ladder_exists")
     }
     fn gamespy_config_qm_channel(&self) -> i32 {
-        unreachable!("gamespy_config_qm_channel")
+        self.gs.qm
     }
     fn gamespy_config_restrict_games_to_lobby(&self) -> bool {
         unreachable!("gamespy_config_restrict_games_to_lobby")
     }
     fn gamespy_config_is_player_vip(&self, profile_id: i32) -> bool {
-        unreachable!("gamespy_config_is_player_vip")
+        self.gs.vip.contains(&profile_id)
     }
     fn game_spy_game_reset(&mut self) {
         unreachable!("game_spy_game_reset")
@@ -331,7 +379,8 @@ impl WolLobbyMenuHost for LobbyHost {
         unreachable!("set_player_tooltip_func")
     }
     fn mouse_set_cursor_tooltip(&mut self, text: &[u16], width: f32) {
-        unreachable!("mouse_set_cursor_tooltip")
+        let t = format!("tip [{}]", text.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(","));
+        self.line(format!("{t} delay -1 width {}", width.to_bits()));
     }
     fn layout_first_window(&mut self, wm: &GameWindowManager, layout: usize) -> Option<WinId> {
         unreachable!("layout_first_window")
