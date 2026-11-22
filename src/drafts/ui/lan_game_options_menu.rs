@@ -53,8 +53,8 @@ pub struct LanSlotInfo {
     pub is_local_player: bool,
     pub has_map: bool,
     pub name: Vec<u16>,
-    /// `getUser()`'s `LANPlayer` (name, login, host), or `None`.
-    pub user: Option<(Vec<u8>, Vec<u8>, Vec<u8>)>,
+    /// `getUser()`'s `LANPlayer` (name, login, host: `UnicodeString`s), or `None`.
+    pub user: Option<(Vec<u16>, Vec<u16>, Vec<u16>)>,
 }
 
 /// The file's statics and the two globals (`listboxChatWindowLanGame`, `mapSelectLayout`).
@@ -191,7 +191,7 @@ pub trait LanGameOptionsHost: ShellHost {
     /// `UnicodeString::format(fmt, ...)` of the messages below.
     fn format_one_int(&self, fmt: &[u16], a: i32) -> Vec<u16>;
     fn format_two_text(&self, fmt: &[u16], a: &[u16], b: &[u16]) -> Vec<u16>;
-    fn format_tooltip_lan_player(&self, fmt: &[u16], name: &[u8], login: &[u8], host: &[u8]) -> Vec<u16>;
+    fn format_tooltip_lan_player(&self, fmt: &[u16], name: &[u16], login: &[u16], host: &[u16]) -> Vec<u16>;
 }
 
 fn key_of<H: LanGameOptionsHost>(h: &mut H, n: &str) -> i32 {
@@ -655,6 +655,12 @@ pub fn init_lan_game_gadgets<H: LanGameOptionsHost>(wm: &mut GameWindowManager, 
     for i in 0..MAX_SLOTS {
         let id_player = key_of(h, &format!("ComboBoxPlayer{i}"));
         let combo_player = wm.win_get_window_from_id(parent, id_player);
+        {
+            // (upstream assigns `comboBoxPlayerID[i]` and `comboBoxPlayer[i]` first: the `GCM_SELECTED` that `GadgetComboBoxSetSelectedPos` sends below reaches the menu's system callback)
+            let o = h.lan_game_options();
+            o.combo_box_player_id[i] = id_player;
+            o.combo_box_player[i] = combo_player;
+        }
         if let Some(c) = combo_player {
             cb::reset(wm, h, c);
             if let Some(e) = cb::get_edit_box(wm, c) {
@@ -674,6 +680,7 @@ pub fn init_lan_game_gadgets<H: LanGameOptionsHost>(wm: &mut GameWindowManager, 
 
         let id_color = key_of(h, &format!("ComboBoxColor{i}"));
         let combo_color = wm.win_get_window_from_id(parent, id_color);
+        h.lan_game_options().combo_box_color_id[i] = id_color;
         h.lan_game_options().combo_box_color[i] = combo_color;
         h.gui_util_populate_color(wm, i);
         if let Some(c) = combo_color {
@@ -682,6 +689,7 @@ pub fn init_lan_game_gadgets<H: LanGameOptionsHost>(wm: &mut GameWindowManager, 
 
         let id_tpl = key_of(h, &format!("ComboBoxPlayerTemplate{i}"));
         let combo_tpl = wm.win_get_window_from_id(parent, id_tpl);
+        h.lan_game_options().combo_box_player_template_id[i] = id_tpl;
         h.lan_game_options().combo_box_player_template[i] = combo_tpl;
         h.gui_util_populate_player_template(wm, i, true);
         if let Some(c) = combo_tpl {
@@ -693,11 +701,14 @@ pub fn init_lan_game_gadgets<H: LanGameOptionsHost>(wm: &mut GameWindowManager, 
 
         let id_team = key_of(h, &format!("ComboBoxTeam{i}"));
         let combo_team = wm.win_get_window_from_id(parent, id_team);
+        h.lan_game_options().combo_box_team_id[i] = id_team;
         h.lan_game_options().combo_box_team[i] = combo_team;
         h.gui_util_populate_team(wm, i);
 
         let id_accept = key_of(h, &format!("ButtonAccept{i}"));
         let accept = wm.win_get_window_from_id(parent, id_accept);
+        h.lan_game_options().button_accept_id[i] = id_accept;
+        h.lan_game_options().button_accept[i] = accept;
         if let Some(a) = accept {
             h.win_set_tooltip_func(wm, a, b"gameAcceptTooltip");
         }
@@ -707,13 +718,6 @@ pub fn init_lan_game_gadgets<H: LanGameOptionsHost>(wm: &mut GameWindowManager, 
 
         {
             let o = h.lan_game_options();
-            o.combo_box_player_id[i] = id_player;
-            o.combo_box_player[i] = combo_player;
-            o.combo_box_color_id[i] = id_color;
-            o.combo_box_player_template_id[i] = id_tpl;
-            o.combo_box_team_id[i] = id_team;
-            o.button_accept_id[i] = id_accept;
-            o.button_accept[i] = accept;
             o.button_map_start_position_id[i] = id_pos;
             o.button_map_start_position[i] = pos;
         }
