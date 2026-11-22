@@ -1,5 +1,11 @@
 //! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
 //!
+//! Differential-tested so far (#215, group wol8; tests/differential_draft_wol_game_setup_display.rs, 300 sequences, 0 mismatches, on upstream's real window manager and gadgets, upstream's
+//! text cut verbatim): `wol_display_game_options`, `wol_display_slot_list`, `wol_position_start_spots` and the private `handle_player_template_selection` (reached from the first) and
+//! `ascii_to_wide`/`set_map_display_from_path`. The first run found one defect (#232), fixed: `ascii_to_wide` zero-extended (`u16::from(c)`) where `UnicodeString::translate` sign-extends.
+//! The stand-ins (staging room, GameSpy layer, GUI helpers, map preview, peer queue) are listed in differential/wrap_draft_wol8_setup.cpp. Everything else in this file is NOT covered:
+//! Init, Shutdown, Update, Input, System, the other handlers and tooltips, `StartPressed`, `savePlayerInfo`, the slash commands (those of group wol6 excepted).
+//!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLGameSetupMenu.cpp
 //!     (the file's statics, `SendStatsToOtherPlayers`, `PopBackToLobby`, `WOLPositionStartSpots`, `savePlayerInfo`,
@@ -388,8 +394,10 @@ fn utf16(s: &str) -> Vec<u16> {
     s.encode_utf16().collect()
 }
 
+/// `UnicodeString::translate(const AsciiString&)` (UnicodeString.cpp:200): each `char` sign-extended to a `WideChar` (#232: this was `u16::from(c)`, which zero-extends: 0xE9 became
+/// 0x00E9 where upstream gives 0xFFE9).
 fn ascii_to_wide(s: &[u8]) -> Vec<u16> {
-    s.iter().map(|&c| u16::from(c)).collect()
+    s.iter().map(|&c| if plant(25071) { u16::from(c) } else { c as i8 as i16 as u16 }).collect()
 }
 
 /// `atoi`.
@@ -466,7 +474,7 @@ pub fn pop_back_to_lobby<H: WolGameSetupMenuHost>(wm: &mut GameWindowManager, h:
 pub fn wol_position_start_spots<H: WolGameSetupMenuHost>(wm: &mut GameWindowManager, h: &mut H) {
     let m = h.wol_game_setup_menu().clone();
     let mut win = m.window_map;
-    if h.wol_map_select_layout().is_some() {
+    if h.wol_map_select_layout().is_some() != plant(25080) {
         win = wm.win_get_window_from_id(None, m.window_map_select_map_id);
 
         // get the controls.
@@ -732,7 +740,7 @@ fn handle_player_template_selection<H: WolGameSetupMenuHost>(wm: &mut GameWindow
             h.staging_slot_set_start_pos(index, -1);
         }
 
-        if h.gamespy_am_i_host() {
+        if h.gamespy_am_i_host() != plant(25081) {
             // send around a new slotlist
             h.staging_reset_accepted();
             h.gamespy_set_game_options();
@@ -982,7 +990,7 @@ pub fn wol_display_game_options<H: WolGameSetupMenuHost>(wm: &mut GameWindowMana
 
     let md = h.map_cache_find_map(&room.map);
     if let (Some((_, display, _)), Some(ls)) = (&md, &local_slot) {
-        if ls.has_map {
+        if ls.has_map || plant(25072) {
             gadget::static_text_set_text(wm, h, m.text_entry_map_display, display);
         } else {
             set_map_display_from_path(wm, h, &m, &room.map);
@@ -1018,7 +1026,7 @@ pub fn wol_display_game_options<H: WolGameSetupMenuHost>(wm: &mut GameWindowMana
     }
 
     // Note: must check if checkbox is already correct to avoid infinite recursion
-    let limit_superweapons = room.superweapon_restriction != 0;
+    let limit_superweapons = if plant(25074) { room.superweapon_restriction > 0 } else { room.superweapon_restriction != 0 };
     if let Some(c) = m.check_box_limit_superweapons {
         if limit_superweapons != gadget::check_box_is_checked(wm, c) {
             gadget::check_box_set_checked(wm, h, c, limit_superweapons);
@@ -1027,7 +1035,7 @@ pub fn wol_display_game_options<H: WolGameSetupMenuHost>(wm: &mut GameWindowMana
 
     if let Some(combo) = m.combo_box_starting_cash {
         let item_count = cb::get_length(wm, combo);
-        for index in 0..item_count {
+        for index in 0..(if plant(25076) { item_count - 1 } else { item_count }) {
             let value = cb::get_item_data(wm, h, combo, index);
             if value == room.starting_cash {
                 // Note: must check if combobox is already correct to avoid infinite recursion
@@ -1036,7 +1044,9 @@ pub fn wol_display_game_options<H: WolGameSetupMenuHost>(wm: &mut GameWindowMana
                     cb::set_selected_pos(wm, h, combo, index, true);
                 }
 
-                break;
+                if !plant(25075) {
+                    break;
+                }
             }
         }
         // DEBUG_ASSERTCRASH(index < itemCount, ...) is not translated
@@ -1046,7 +1056,7 @@ pub fn wol_display_game_options<H: WolGameSetupMenuHost>(wm: &mut GameWindowMana
 /// The `else` of `WOLDisplayGameOptions`' map name: the map's path after the last backslash.
 fn set_map_display_from_path<H: WolGameSetupMenuHost>(wm: &mut GameWindowManager, h: &mut H, m: &WolGameSetupMenu, map: &[u8]) {
     let mut s: &[u8] = map;
-    if let Some(p) = map.iter().rposition(|&c| c == b'\\') {
+    if let Some(p) = if plant(25073) { map.iter().position(|&c| c == b'\\') } else { map.iter().rposition(|&c| c == b'\\') } {
         s = &map[p + 1..];
     }
     let map_display = ascii_to_wide(s);
@@ -1059,7 +1069,7 @@ pub fn wol_display_slot_list<H: WolGameSetupMenuHost>(wm: &mut GameWindowManager
         return;
     }
 
-    if !h.staging_room_info().is_in_game {
+    if !h.staging_room_info().is_in_game && !plant(25082) {
         return;
     }
 
@@ -1079,12 +1089,14 @@ pub fn wol_display_slot_list<H: WolGameSetupMenuHost>(wm: &mut GameWindowManager
                 // set up my own ping...
                 let p = h.gamespy_ping_string();
                 h.staging_slot_set_ping_string(i, &p);
-                ping = h.staging_slot(i).map_or(ping, |s| s.ping);
+                if !plant(25078) {
+                    ping = h.staging_slot(i).map_or(ping, |s| s.ping);
+                }
             }
 
             if let Some(w) = m.generic_ping_window[i] {
                 wm.win_hide(w, false);
-                if ping < h.gamespy_config_ping_cutoff_good() {
+                if if plant(25077) { ping <= h.gamespy_config_ping_cutoff_good() } else { ping < h.gamespy_config_ping_cutoff_good() } {
                     h.win_set_enabled_image0(wm, w, &m.ping_images[0]);
                 } else if ping < h.gamespy_config_ping_cutoff_bad() {
                     h.win_set_enabled_image0(wm, w, &m.ping_images[1]);
@@ -1093,7 +1105,7 @@ pub fn wol_display_slot_list<H: WolGameSetupMenuHost>(wm: &mut GameWindowManager
                 }
             }
         } else if let Some(w) = m.generic_ping_window[i] {
-            wm.win_hide(w, true);
+            wm.win_hide(w, !plant(25079));
         }
     }
 }

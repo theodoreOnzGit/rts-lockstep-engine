@@ -19,11 +19,33 @@ pub struct GameSetupHost {
     pub qr2: i32,
     pub thread: i32,
     pub now: u32,
+    /// the scene operations' log (ui4_common::HasLog) and the declared image names (group wol8)
+    pub scene_log: String,
+    pub w8_images: std::collections::BTreeSet<Vec<u8>>,
+    /// group wol8, the staging room's display functions: the case's room and slots, the SDK's answers and the key table (`keys_on`: a name's key is its first-asked number, as
+    /// the C++ `NameKeyGenerator`; off, 0 as before)
+    pub w8: W8State,
+}
+
+#[derive(Default)]
+pub struct W8State {
+    pub keys_on: bool,
+    pub keys: std::collections::BTreeMap<Vec<u8>, u32>,
+    pub room_exists: bool,
+    pub am_i_host: bool,
+    pub room: StagingRoomInfo,
+    pub slots: Vec<StagingSlotInfo>,
+    pub ping_string: Vec<u8>,
+    pub good: i32,
+    pub bad: i32,
+    pub maps: std::collections::BTreeMap<Vec<u8>, (i32, Vec<u16>, bool)>,
+    pub map_select_layout: bool,
+    pub map_names: Vec<Vec<u8>>,
 }
 
 impl GameSetupHost {
     pub fn new() -> Self {
-        GameSetupHost { shell: Shell::new(), menu: WolGameSetupMenu::default(), log: RefCell::new(String::new()), color_default: 0, qr2: 0, thread: 0, now: 0 }
+        GameSetupHost { shell: Shell::new(), menu: WolGameSetupMenu::default(), log: RefCell::new(String::new()), color_default: 0, qr2: 0, thread: 0, now: 0, scene_log: String::new(), w8_images: Default::default(), w8: W8State::default() }
     }
     pub fn line(&self, s: String) {
         let mut l = self.log.borrow_mut();
@@ -32,7 +54,14 @@ impl GameSetupHost {
     }
 }
 
-impl GuiHost for GameSetupHost {}
+impl GuiHost for GameSetupHost {
+    fn font_height(&self, font: Option<&rts_lockstep_engine::client::window_script::GameFont>) -> i32 {
+        font.map_or(12, |f| f.point_size)
+    }
+    fn printable_key(&self, key: u8, state: i32) -> u16 {
+        if state == 1 { u16::from(key) } else { 0 }
+    }
+}
 
 impl ShellHost for GameSetupHost {
     fn shell(&mut self) -> &mut Shell {
@@ -52,8 +81,12 @@ impl ShellHost for GameSetupHost {
         ShellEnv::default()
     }
     fn request(&mut self, _r: ShellRequest) {}
-    fn name_to_key(&mut self, _name: &[u8]) -> u32 {
-        0
+    fn name_to_key(&mut self, name: &[u8]) -> u32 {
+        if !self.w8.keys_on {
+            return 0;
+        }
+        let n = self.w8.keys.len() as u32 + 1;
+        *self.w8.keys.entry(name.to_vec()).or_insert(n)
     }
 }
 
@@ -81,7 +114,9 @@ impl WolGameSetupMenuHost for GameSetupHost {
         self.thread
     }
     fn fetch_text(&self, label: &[u8]) -> Vec<u16> {
-        unreachable!("fetch_text")
+        let mut t = b"T:".to_vec();
+        t.extend_from_slice(label);
+        t.iter().map(|&b| u16::from(b)).collect()
     }
     fn format_text_arg(&self, fmt: &[u16], a: &[u16]) -> Vec<u16> {
         unreachable!("format_text_arg")
@@ -117,19 +152,19 @@ impl WolGameSetupMenuHost for GameSetupHost {
         unreachable!("gamespy_local_profile_id")
     }
     fn gamespy_ping_string(&self) -> Vec<u8> {
-        unreachable!("gamespy_ping_string")
+        self.w8.ping_string.clone()
     }
     fn gamespy_max_messages_per_update(&self) -> i32 {
         unreachable!("gamespy_max_messages_per_update")
     }
     fn gamespy_am_i_host(&self) -> bool {
-        unreachable!("gamespy_am_i_host")
+        self.w8.am_i_host
     }
     fn gamespy_set_current_group_room(&mut self, id: i32) {
         unreachable!("gamespy_set_current_group_room")
     }
     fn gamespy_set_game_options(&mut self) {
-        unreachable!("gamespy_set_game_options")
+        self.line("setGameOptions".to_string());
     }
     fn gamespy_leave_staging_room(&mut self) {
         unreachable!("gamespy_leave_staging_room")
@@ -165,28 +200,28 @@ impl WolGameSetupMenuHost for GameSetupHost {
         unreachable!("gamespy_is_buddy")
     }
     fn gamespy_config_ping_cutoff_good(&self) -> i32 {
-        unreachable!("gamespy_config_ping_cutoff_good")
+        self.w8.good
     }
     fn gamespy_config_ping_cutoff_bad(&self) -> i32 {
-        unreachable!("gamespy_config_ping_cutoff_bad")
+        self.w8.bad
     }
     fn staging_room_exists(&self) -> bool {
-        unreachable!("staging_room_exists")
+        self.w8.room_exists
     }
     fn staging_room_info(&self) -> StagingRoomInfo {
-        unreachable!("staging_room_info")
+        self.w8.room.clone()
     }
     fn staging_slot(&self, i: usize) -> Option<StagingSlotInfo> {
-        unreachable!("staging_slot")
+        self.w8.slots.get(i).cloned()
     }
     fn staging_slot_set_color(&mut self, i: usize, v: i32) {
         unreachable!("staging_slot_set_color")
     }
     fn staging_slot_set_player_template(&mut self, i: usize, v: i32) {
-        unreachable!("staging_slot_set_player_template")
+        self.w8.slots[i].player_template = v;
     }
     fn staging_slot_set_start_pos(&mut self, i: usize, v: i32) {
-        unreachable!("staging_slot_set_start_pos")
+        self.w8.slots[i].start_pos = v;
     }
     fn staging_slot_set_team_number(&mut self, i: usize, v: i32) {
         unreachable!("staging_slot_set_team_number")
@@ -213,13 +248,14 @@ impl WolGameSetupMenuHost for GameSetupHost {
         unreachable!("staging_slot_set_nat_behavior")
     }
     fn staging_slot_set_ping_string(&mut self, i: usize, s: &[u8]) {
-        unreachable!("staging_slot_set_ping_string")
+        // `GameSpyGameSlot::setPingString` (StagingRoomGameInfo.cpp:449): the SDK's `getPingValue` is a stand-in on both sides, `atoi`
+        self.w8.slots[i].ping = atoi(s);
     }
     fn staging_set_new_player_slot(&mut self, i: usize, name: &[u16], ip: u32) {
         unreachable!("staging_set_new_player_slot")
     }
     fn staging_reset_accepted(&mut self) {
-        unreachable!("staging_reset_accepted")
+        self.line("resetAccepted".to_string());
     }
     fn staging_reset(&mut self) {
         unreachable!("staging_reset")
@@ -303,7 +339,7 @@ impl WolGameSetupMenuHost for GameSetupHost {
         unreachable!("game_spy_game_am_i_host")
     }
     fn map_file_name_for_item_data(&self, item: u32) -> Vec<u8> {
-        unreachable!("map_file_name_for_item_data")
+        self.w8.map_names[item as usize - 1].clone()
     }
     fn game_spy_game_map(&self) -> Vec<u8> {
         unreachable!("game_spy_game_map")
@@ -354,7 +390,7 @@ impl WolGameSetupMenuHost for GameSetupHost {
         unreachable!("map_cache_update")
     }
     fn map_cache_find_map(&self, map: &[u8]) -> Option<(i32, Vec<u16>, bool)> {
-        unreachable!("map_cache_find_map")
+        self.w8.maps.get(map).cloned()
     }
     fn map_cache_find(&self, lower: &[u8]) -> Option<(u32, u32)> {
         unreachable!("map_cache_find")
@@ -390,7 +426,8 @@ impl WolGameSetupMenuHost for GameSetupHost {
         unreachable!("peer_next_response")
     }
     fn peer_request_utm_player(&mut self, id: &[u8], nick: &[u8], options: &[u8]) {
-        unreachable!("peer_request_utm_player")
+        let n = if nick.is_empty() { "-".to_string() } else { nick.iter().map(|b| format!("{b:02x}")).collect::<String>() };
+        self.line(format!("utm {} {} {}", String::from_utf8_lossy(id), n, String::from_utf8_lossy(options)));
     }
     fn peer_request_utm_room(&mut self, id: &[u8], options: &[u8]) {
         unreachable!("peer_request_utm_room")
@@ -438,19 +475,20 @@ impl WolGameSetupMenuHost for GameSetupHost {
         unreachable!("establish_connections_menu_end")
     }
     fn wol_map_select_layout(&self) -> Option<usize> {
-        unreachable!("wol_map_select_layout")
+        self.w8.map_select_layout.then_some(1)
     }
     fn set_wol_map_select_layout(&mut self, l: Option<usize>) {
         unreachable!("set_wol_map_select_layout")
     }
     fn position_start_spots_for_map(&mut self, wm: &mut GameWindowManager, map: &[u8], map_window: Option<WinId>) {
-        unreachable!("position_start_spots_for_map")
+        let n = if map.is_empty() { "-".to_string() } else { map.iter().map(|b| format!("{b:02x}")).collect::<String>() };
+        self.line(format!("positionStartSpots map {n} win {}", win_id(map_window)));
     }
     fn position_start_spots_for_staging_room(&mut self, wm: &mut GameWindowManager, map_window: Option<WinId>) {
-        unreachable!("position_start_spots_for_staging_room")
+        self.line(format!("positionStartSpots room win {}", win_id(map_window)));
     }
     fn update_map_start_spots(&mut self, wm: &mut GameWindowManager) {
-        unreachable!("update_map_start_spots")
+        self.line("updateMapStartSpots".to_string());
     }
     fn gui_util_populate_starting_cash(&mut self, wm: &mut GameWindowManager, combo: Option<WinId>) {
         unreachable!("gui_util_populate_starting_cash")
@@ -459,13 +497,13 @@ impl WolGameSetupMenuHost for GameSetupHost {
         unreachable!("gui_util_populate_color")
     }
     fn gui_util_populate_player_template(&mut self, wm: &mut GameWindowManager, i: usize, allow_observers: bool) {
-        unreachable!("gui_util_populate_player_template")
+        self.line(format!("populateTpl {i} {}", i32::from(allow_observers)));
     }
     fn gui_util_populate_team(&mut self, wm: &mut GameWindowManager, i: usize) {
         unreachable!("gui_util_populate_team")
     }
     fn gui_util_update_slot_list(&mut self, wm: &mut GameWindowManager) {
-        unreachable!("gui_util_update_slot_list")
+        self.line("UpdateSlotList".to_string());
     }
     fn slot_list_updates_enabled(&self) -> bool {
         unreachable!("slot_list_updates_enabled")
@@ -477,7 +515,7 @@ impl WolGameSetupMenuHost for GameSetupHost {
         unreachable!("win_set_tooltip_func")
     }
     fn win_set_tooltip(&mut self, wm: &mut GameWindowManager, w: WinId, text: &[u16]) {
-        unreachable!("win_set_tooltip")
+        wm.tree.windows[w].inst.tooltip_text = Some(text.to_vec());
     }
     fn combo_list_box_set_tooltip_func(&mut self, wm: &mut GameWindowManager, combo: WinId, func: &[u8]) {
         unreachable!("combo_list_box_set_tooltip_func")
@@ -486,7 +524,7 @@ impl WolGameSetupMenuHost for GameSetupHost {
         unreachable!("win_screen_rect")
     }
     fn win_set_enabled_image0(&mut self, wm: &mut GameWindowManager, w: WinId, image: &Option<Vec<u8>>) {
-        unreachable!("win_set_enabled_image0")
+        wm.tree.windows[w].inst.enabled_draw_data[0].image = image.clone();
     }
     fn find_image_by_name(&self, name: &[u8]) -> Option<Vec<u8>> {
         unreachable!("find_image_by_name")
