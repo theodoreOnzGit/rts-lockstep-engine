@@ -3,7 +3,9 @@
 //! Differential-tested so far (#215): `handle_lobby_slash_commands`, `refresh_game_list`, `refresh_player_list` and `lookup_small_rank_image` (group wol6; tests/differential_draft_wol_slash.rs, differential_draft_wol_rank.rs);
 //! `player_tooltip`, `populate_group_room_listbox`, `insert_player_in_listbox` and `populate_lobby_player_listbox` (group wol7; tests/differential_draft_wol_lobby_lists.rs, 2,000 sequences, 0 mismatches,
 //! on upstream's real list box and combo box; the first runs found five defects, fixed: sign-extended mouse coordinates, `%2.2d` of a negative locale, the empty tooltip's width, `translate`'s sign
-//! extension and zero bytes). Not covered: Init, Shutdown, Update, System, Input, `fill_player_info`, `set_lobby_attempt_host_join`, `shutdown_complete`.
+//! extension and zero bytes). Group wol8 (tests/differential_draft_wol_lobby_rc.rs, 1,500 sequences, 0 mismatches; upstream's `case GLM_RIGHT_CLICKED:` cut verbatim): the `GLM_RIGHT_CLICKED`
+//! arm of `wol_lobby_menu_system`, both branches (the player list's and the game list's), with `open_rc_menu`; the first run's fix (#232): the player list's `aName.translate(...)` appended a
+//! NUL for a unit whose low byte is 0. Not covered: Init, Shutdown, Update, the other arms of System, Input, `fill_player_info`, `set_lobby_attempt_host_join`, `shutdown_complete`.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLLobbyMenu.cpp
@@ -1471,26 +1473,31 @@ pub fn wol_lobby_menu_system<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h:
 
             if control_id == m.listbox_lobby_players_id {
                 if rc_pos < 0 {
-                    lb::set_selected(wm, h, control, &[-1]);
+                    if !plant(25066) {
+                        lb::set_selected(wm, h, control, &[-1]);
+                    }
                     return MsgHandled::Handled;
                 }
 
                 let mut profile_id = 0;
                 let u_name = lb::get_text(wm, h, control, rc_pos, COLUMN_PLAYERNAME);
-                let a_name: Vec<u8> = u_name.iter().map(|&c| c as u8).collect();
+                // aName.translate(uName) (WOLLobbyMenu.cpp:1737): each unit's low byte, a unit whose low byte is 0 appending nothing (#232: this was `c as u8` alone, which kept a NUL)
+                let a_name: Vec<u8> = u_name.iter().map(|&c| c as u8).filter(|&b| plant(25061) || b != 0).collect();
                 if let Some(info) = h.gamespy_player_info_by_name(&a_name) {
                     profile_id = info.profile_id;
                 }
 
                 let mut is_buddy = false;
                 let rc_layout: Option<usize>;
-                if profile_id <= 0 {
+                if if plant(25064) { profile_id < 0 } else { profile_id <= 0 } {
                     rc_layout = ShellHost::create_layout(h, wm, b"Menus/RCNoProfileMenu.wnd");
-                } else if profile_id == h.gamespy_local_profile_id() {
+                } else if !plant(25065) && profile_id == h.gamespy_local_profile_id() {
                     rc_layout = ShellHost::create_layout(h, wm, b"Menus/RCLocalPlayerMenu.wnd");
                 } else if h.gamespy_is_buddy(profile_id) {
                     rc_layout = ShellHost::create_layout(h, wm, b"Menus/RCBuddiesMenu.wnd");
                     is_buddy = true;
+                } else if plant(25065) && profile_id == h.gamespy_local_profile_id() {
+                    rc_layout = ShellHost::create_layout(h, wm, b"Menus/RCLocalPlayerMenu.wnd");
                 } else {
                     rc_layout = ShellHost::create_layout(h, wm, b"Menus/RCNonBuddiesMenu.wnd");
                 }
@@ -1504,15 +1511,15 @@ pub fn wol_lobby_menu_system<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h:
                 let mut rc_pos_x = rc_mouse_x;
                 let mut rc_pos_y = rc_mouse_y;
                 let (dw, dh) = h.display_size();
-                if rc_mouse_x + rc_size.0 > dw {
+                if if plant(25062) { rc_mouse_x > dw } else { rc_mouse_x + rc_size.0 > dw } {
                     rc_pos_x = dw - rc_size.0;
                 }
-                if rc_mouse_y + rc_size.1 > dh {
+                if rc_mouse_y + rc_size.1 > if plant(25063) { dw } else { dh } {
                     rc_pos_y = dh - rc_size.1;
                 }
                 wm.win_set_position(rc_menu, rc_pos_x, rc_pos_y);
 
-                h.win_set_user_data_rc_menu(wm, rc_menu, profile_id, &a_name, is_buddy); // ITEM_BUDDY / ITEM_NONBUDDY
+                h.win_set_user_data_rc_menu(wm, rc_menu, profile_id, &a_name, is_buddy != plant(25069)); // ITEM_BUDDY / ITEM_NONBUDDY
                 wm.win_set_lone_window(h, Some(rc_menu));
             } else if control_id == h.get_game_list_box_id() {
                 if rc_pos < 0 {
@@ -1520,8 +1527,8 @@ pub fn wol_lobby_menu_system<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h:
                     return MsgHandled::Handled;
                 }
 
-                let selected_id = lb::get_item_data(wm, h, control, rc_pos, 0) as i32;
-                if selected_id > 0 {
+                let selected_id = lb::get_item_data(wm, h, control, rc_pos, i32::from(plant(25067))) as i32;
+                if if plant(25068) { selected_id >= 0 } else { selected_id > 0 } {
                     if let Some(the_room) = h.gamespy_staging_room_to_join(selected_id) {
                         if h.ladder_exists(&the_room.ladder_ip, the_room.ladder_port) {
                             let Some(rc_layout) = ShellHost::create_layout(h, wm, b"Menus/RCGameDetailsMenu.wnd") else { return MsgHandled::Handled };
@@ -1529,7 +1536,7 @@ pub fn wol_lobby_menu_system<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h:
                             lb::set_selected(wm, h, control, &[rc_pos]);
 
                             let Some(rc_menu) = open_rc_menu(wm, h, rc_layout) else { return MsgHandled::Handled };
-                            wm.win_set_position(rc_menu, rc_mouse_x, rc_mouse_y);
+                            if plant(25070) { wm.win_set_position(rc_menu, rc_mouse_y, rc_mouse_x) } else { wm.win_set_position(rc_menu, rc_mouse_x, rc_mouse_y) };
 
                             h.win_set_user_data_int(wm, rc_menu, selected_id);
                             wm.win_set_lone_window(h, Some(rc_menu));

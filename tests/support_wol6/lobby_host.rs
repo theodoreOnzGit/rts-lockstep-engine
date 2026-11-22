@@ -44,6 +44,13 @@ pub struct Gs {
     pub vip: std::collections::BTreeSet<i32>,
     pub saved_ignored: std::collections::BTreeSet<i32>,
     pub ignored_names: std::collections::BTreeSet<Vec<u8>>,
+    /// group wol8, the right-click menu: the windows the next `create_layout` holds (empty: none made, as before), the local profile, the game list's id,
+    /// the staging rooms (None: a NULL pointer in the map) and the ladders (ip, port)
+    pub lay_members: Vec<usize>,
+    pub local_profile: i32,
+    pub game_list_id: i32,
+    pub rooms_to_join: std::collections::BTreeMap<i32, Option<LobbyRoomToJoin>>,
+    pub ladders: std::collections::BTreeSet<(Vec<u8>, u16)>,
 }
 
 impl Gs {
@@ -79,8 +86,18 @@ impl ShellHost for LobbyHost {
     fn shell(&mut self) -> &mut Shell {
         &mut self.shell
     }
-    fn create_layout(&mut self, _wm: &mut GameWindowManager, _filename: &[u8]) -> Option<usize> {
-        None
+    fn create_layout(&mut self, wm: &mut GameWindowManager, filename: &[u8]) -> Option<usize> {
+        if self.gs.lay_members.is_empty() {
+            return None;
+        }
+        // winCreateLayout of differential/ui4_host.h: a layout of the case's windows, head first
+        self.line(format!("layout {}", String::from_utf8_lossy(filename)));
+        let l = wm.layouts.len();
+        wm.layouts.push(rts_lockstep_engine::client::window_manager::WindowLayout::default());
+        for &m in self.gs.lay_members.clone().iter().rev() {
+            wm.layout_add_window(l, m);
+        }
+        Some(l)
     }
     fn create_from_script(&mut self, _wm: &mut GameWindowManager, _filename: &[u8]) -> Option<WinId> {
         None
@@ -184,7 +201,7 @@ impl WolLobbyMenuHost for LobbyHost {
         self.gs.local_name.clone()
     }
     fn gamespy_local_profile_id(&self) -> i32 {
-        unreachable!("gamespy_local_profile_id")
+        self.gs.local_profile
     }
     fn gamespy_max_messages_per_update(&self) -> i32 {
         unreachable!("gamespy_max_messages_per_update")
@@ -268,10 +285,10 @@ impl WolLobbyMenuHost for LobbyHost {
         unreachable!("gamespy_mark_as_staging_room_joiner")
     }
     fn gamespy_staging_room_to_join(&self, id: i32) -> Option<LobbyRoomToJoin> {
-        unreachable!("gamespy_staging_room_to_join")
+        self.gs.rooms_to_join.get(&id).cloned().flatten()
     }
     fn ladder_exists(&self, ip: &[u8], port: u16) -> bool {
-        unreachable!("ladder_exists")
+        self.gs.ladders.contains(&(ip.to_vec(), port))
     }
     fn gamespy_config_qm_channel(&self) -> i32 {
         self.gs.qm
@@ -364,7 +381,7 @@ impl WolLobbyMenuHost for LobbyHost {
         unreachable!("get_game_list_box")
     }
     fn get_game_list_box_id(&self) -> i32 {
-        unreachable!("get_game_list_box_id")
+        self.gs.game_list_id
     }
     fn refresh_game_info_list_box(&mut self, wm: &mut GameWindowManager, game_list: Option<WinId>, info_list: Option<WinId>) {
         unreachable!("refresh_game_info_list_box")
@@ -383,22 +400,25 @@ impl WolLobbyMenuHost for LobbyHost {
         self.line(format!("{t} delay -1 width {}", width.to_bits()));
     }
     fn layout_first_window(&mut self, wm: &GameWindowManager, layout: usize) -> Option<WinId> {
-        unreachable!("layout_first_window")
+        wm.layouts[layout].windows.first().copied()
     }
     fn layout_run_init(&mut self, wm: &mut GameWindowManager, layout: usize) {
-        unreachable!("layout_run_init")
+        // the layouts of the C++ program have no init callback (`u4_layout_init` is NULL): `runInit` does nothing
     }
     fn set_unignore_text(&mut self, wm: &mut GameWindowManager, layout: usize, nick: &[u8], id: i32) {
-        unreachable!("set_unignore_text")
+        let n = if nick.is_empty() { "-".to_string() } else { nick.iter().map(|b| format!("{b:02x}")).collect() };
+        self.line(format!("unignore {layout} {n} {id}"));
     }
     fn win_set_user_data_rc_menu(&mut self, wm: &mut GameWindowManager, w: WinId, id: i32, nick: &[u8], is_buddy: bool) {
-        unreachable!("win_set_user_data_rc_menu")
+        let n = if nick.is_empty() { "-".to_string() } else { nick.iter().map(|b| format!("{b:02x}")).collect() };
+        // RCItemType: ITEM_BUDDY 0, ITEM_REQUEST 1, ITEM_NONBUDDY 2
+        self.line(format!("rcdata {w} {id} {n} {}", if is_buddy { 0 } else { 2 }));
     }
     fn win_set_user_data_int(&mut self, wm: &mut GameWindowManager, w: WinId, v: i32) {
-        unreachable!("win_set_user_data_int")
+        self.line(format!("ud {w} {v}"));
     }
     fn display_size(&self) -> (i32, i32) {
-        unreachable!("display_size")
+        (800, 600)
     }
     fn game_client_frame(&self) -> u32 {
         unreachable!("game_client_frame")
