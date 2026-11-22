@@ -49,10 +49,10 @@
 //!
 //! # Results
 //!
-//! 2026-11-22, `DRAFT_CASES=3000` (the default, about 22 s a run), max ULP 0: **0 mismatches over 3,000 sequences, 204,086 outputs compared.** The prediction held (the three draft
+//! 2026-11-22, `DRAFT_CASES=3000` (the default, about 22 s a run), max ULP 0: **0 mismatches over 3,000 sequences, 205,121 outputs compared** (a case stops after the first operation that deletes the layout: the C++ then reads freed windows). The prediction held (the three draft
 //! defects were fixed on reading, before the first run); reverting defect (1) alone gives 2 mismatches (cases 598 and 1673: `preview map 61,0,62` against `61,62`), so the
-//! test reaches it. Planted bugs (mismatches of 3,000 sequences): 23861 468; 23862 1769; 23863 1439; 23864 619; 23865 670; 23866 174; 23867 8; 23868 26; 23869 154; 23870 524;
-//! 23871 27; 23872 592. **12 of 12 caught** (an earlier 23867 missed at 0 until the generator got the composite "Init, pick a row, OK" sequences).
+//! test reaches it. Planted bugs (mismatches of 3,000 sequences): 23861 487; 23862 1929; 23863 1713; 23864 726; 23865 883; 23866 175; 23867 16; 23868 58; 23869 164; 23870 597;
+//! 23871 25; 23872 575. **12 of 12 caught** (an earlier 23867 missed at 0 until the generator got the composite "Init, pick a row, OK" sequences).
 
 mod lan6_common;
 mod support;

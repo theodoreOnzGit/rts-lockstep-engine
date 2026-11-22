@@ -259,9 +259,9 @@ pub fn gen_scene(g: &mut Gen, cfg: &Cfg) -> Scene {
     }
     let place = |g: &mut Gen, tops: &[usize]| -> i32 {
         match g.below(20) {
-            0..=13 if parent_present => 0,
-            14..=16 => -1,
-            0..=13 => -1,
+            0..=17 if parent_present => 0,
+            18 => -1,
+            0..=17 => -1,
             _ if decoys > 0 => tops[tops.len() - 1 - g.below(decoys as u32) as usize] as i32,
             _ => -1,
         }
@@ -279,7 +279,7 @@ pub fn gen_scene(g: &mut Gen, cfg: &Cfg) -> Scene {
     }
     // the preview and its start buttons
     if g.below(16) != 0 {
-        let ps = place(g, &tops);
+        let ps = if parent_present { 0 } else { -1 };
         ops.push(format!("@ wu {ps} 0 130 20 100 80 {en} {}", gws::USER_WINDOW));
         wins.push((next, 2));
         names.push((next, fname("WinMapPreview")));
@@ -480,7 +480,7 @@ pub fn run_case<H: MapMenu>(exe: &str, chk: &mut Check, case: u64, ops: Vec<Stri
     let mut run = ops.len();
     for (i, op) in ops.iter().enumerate() {
         let v: Vec<&str> = op.split(' ').collect();
-        let freed_before = wm.ext.iter().filter(|e| e.freed).count();
+        let freed_before = wm.ext.iter().filter(|e| e.freed).count() + wm.layouts.iter().filter(|l| l.deleted).count();
         if v[0] == "@" && v[1] == "ms" && common_ms(&mut wm, &mut h, &v) {
         } else if v[0] == "@" && matches!(v[1], "ms" | "sys" | "inp") {
             h.menu_op(&mut wm, op);
@@ -491,6 +491,9 @@ pub fn run_case<H: MapMenu>(exe: &str, chk: &mut Check, case: u64, ops: Vec<Stri
             assert!(ok, "unknown op {op}");
         }
         if wm.undefined.is_some() || h.mh().ub {
+            if std::env::var("LAN6_DEBUG").is_ok() {
+                eprintln!("UNDEFINED case {case} op {i} `{op}`: {:?}", wm.undefined);
+            }
             run = i;
             break;
         }
@@ -501,11 +504,14 @@ pub fn run_case<H: MapMenu>(exe: &str, chk: &mut Check, case: u64, ops: Vec<Stri
         st.push_str(&h.mh().dump_common(&wm));
         chunks.push(format!("#{i}\n{log}{st}"));
         // (a destroyed layout frees windows the later operations would name)
-        if wm.ext.iter().filter(|e| e.freed).count() != freed_before {
+        if wm.ext.iter().filter(|e| e.freed).count() + wm.layouts.iter().filter(|l| l.deleted).count() != freed_before {
             run = i + 1;
             break;
         }
     }
     let ops: Vec<String> = ops.into_iter().take(run).collect();
+    if std::env::var("LAN6_DUMP_CASE").ok().and_then(|v| v.parse::<u64>().ok()) == Some(case) {
+        let _ = std::fs::write("/tmp/claude-0/-home-user/3cefbd62-dbac-57be-8b5b-f778561c06c9/scratchpad/case.txt", ops.join("\n") + "\n");
+    }
     compare_case(exe, chk, case, &ops, &chunks);
 }

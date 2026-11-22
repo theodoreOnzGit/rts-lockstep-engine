@@ -1,4 +1,5 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 3,000 sequences (test: tests/differential_draft_wol_map_select.rs);
+//! not yet wired into the game.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/WOLMapSelectMenu.cpp
@@ -15,6 +16,7 @@ use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::{win_status, WinId};
 use crate::common::game_info::MAX_SLOTS;
+use crate::logic::modules::plant;
 
 const FILE: &str = "WOLMapSelectMenu.wnd";
 const LAYOUT_FILENAME: &str = "GameSpyGameOptionsMenu.wnd";
@@ -121,10 +123,10 @@ pub fn wol_map_select_menu_init<H: WolMapSelectHost>(wm: &mut GameWindowManager,
 
     let game_map = h.game_spy_game_map();
     if let Some(official) = h.map_cache_is_official(&game_map) {
-        uses_system_map_dir = official;
+        uses_system_map_dir = if plant(23_875) { !official } else { official };
     }
     let use_stats = h.current_staging_room_use_stats();
-    if use_stats {
+    if use_stats && !plant(23_873) {
         uses_system_map_dir = true;
     }
 
@@ -148,7 +150,7 @@ pub fn wol_map_select_menu_init<H: WolMapSelectHost>(wm: &mut GameWindowManager,
             radio_set_selection(wm, h, r, false);
         }
         match radio_user {
-            Some(r) => wm.win_enable(r, false),
+            Some(r) => wm.win_enable(r, plant(23_874)),
             None => wm.set_undefined("WOLMapSelectMenuInit: RadioButtonUserMaps is NULL (null dereference)"),
         }
     } else if uses_system_map_dir {
@@ -196,7 +198,9 @@ pub fn wol_map_select_menu_shutdown<H: WolMapSelectHost>(wm: &mut GameWindowMana
     if wm.layouts[layout].deleted {
         wm.set_undefined("WOLMapSelectMenuShutdown: the layout was deleted (use after free)");
     }
-    wm.layout_hide(layout, true);
+    if !plant(23_881) {
+        wm.layout_hide(layout, true);
+    }
     shell::shutdown_complete(wm, h, Some(layout), false);
 }
 
@@ -204,14 +208,14 @@ pub fn wol_map_select_menu_shutdown<H: WolMapSelectHost>(wm: &mut GameWindowMana
 pub fn wol_map_select_menu_update<H: WolMapSelectHost>(_wm: &mut GameWindowManager, h: &mut H, _layout: usize) {
     if h.wol_map_select().raise_message_boxes {
         h.raise_gs_message_box();
-        h.wol_map_select().raise_message_boxes = false;
+        h.wol_map_select().raise_message_boxes = plant(23_880);
     }
 }
 
 /// `WOLMapSelectMenuInput(window, msg, mData1, mData2)`: Escape's release presses *Back*.
 pub fn wol_map_select_menu_input<H: WolMapSelectHost>(wm: &mut GameWindowManager, h: &mut H, window: WinId, msg: u32, d1: WindowMsgData, d2: WindowMsgData) -> MsgHandled {
     if msg == gwm::CHAR && (d1 & 0xFF) as u8 == key::ESC {
-        if (d2 & 0xFF) & key::STATE_UP != 0 {
+        if (d2 & 0xFF) & (if plant(23_884) { key::STATE_DOWN } else { key::STATE_UP }) != 0 {
             let id = key_of(h, "ButtonBack");
             let button = wm.win_get_window_from_id(Some(window), id);
             wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(button), id as u32);
@@ -295,7 +299,9 @@ pub fn wol_map_select_menu_system<H: WolMapSelectHost>(wm: &mut GameWindowManage
                 match image {
                     Some(i) => h.win_set_enabled_image0(wm, preview, &i),
                     None => {
-                        wm.win_clear_status(preview, win_status::IMAGE);
+                        if !plant(23_883) {
+                            wm.win_clear_status(preview, win_status::IMAGE);
+                        }
                     }
                 }
                 h.position_start_spots(wm, &ascii_map, &m.button_map_start_position, m.win_map_preview);
@@ -308,14 +314,20 @@ pub fn wol_map_select_menu_system<H: WolMapSelectHost>(wm: &mut GameWindowManage
             };
             let m = h.wol_map_select().clone();
             if id == m.button_back {
-                show_game_spy_game_options_underlying_gui_elements(wm, h, true);
+                if !plant(23_879) {
+                    show_game_spy_game_options_underlying_gui_elements(wm, h, true);
+                }
                 destroy_layout(wm, h);
-                h.wol_position_start_spots(wm);
+                if plant(23_879) {
+                    show_game_spy_game_options_underlying_gui_elements(wm, h, true);
+                } else {
+                    h.wol_position_start_spots(wm);
+                }
             } else if id == m.radio_button_system_maps_id {
                 h.map_cache_update();
                 let map = h.game_spy_game_map();
                 h.populate_map_listbox(wm, m.map_list, true, true, &map);
-                h.custom_prefs_set_uses_system_map_dir_and_write(true);
+                h.custom_prefs_set_uses_system_map_dir_and_write(!plant(23_876));
             } else if id == m.radio_button_user_maps_id {
                 h.map_cache_update();
                 let map = h.game_spy_game_map();
@@ -335,15 +347,19 @@ pub fn wol_map_select_menu_system<H: WolMapSelectHost>(wm: &mut GameWindowManage
                     let map = lb::get_text(wm, h, mw, selected, 0);
                     let ascii_map = row_map(wm, h, Some(mw), selected, &map);
                     h.game_spy_game_set_map(&ascii_map);
-                    let lower = ascii_map.to_ascii_lowercase();
+                    let lower = if plant(23_882) { ascii_map.clone() } else { ascii_map.to_ascii_lowercase() };
                     if let Some((crc, size)) = h.map_cache_find(&lower) {
                         h.game_spy_game_slot0_set_map_availability(true);
                         h.game_spy_game_set_map_crc_and_size(crc, size);
                     }
                     h.game_spy_game_adjust_slots_for_map(); // BGC- adjust the slots for the new map.
-                    h.game_spy_game_reset_accepted();
+                    if !plant(23_877) {
+                        h.game_spy_game_reset_accepted();
+                    }
                     h.game_spy_game_reset_start_spots();
-                    h.game_spy_info_set_game_options();
+                    if !plant(23_878) {
+                        h.game_spy_info_set_game_options();
+                    }
 
                     h.wol_display_slot_list(wm);
                     h.wol_display_game_options(wm);
