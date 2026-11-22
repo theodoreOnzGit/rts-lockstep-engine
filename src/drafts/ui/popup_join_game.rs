@@ -1,4 +1,7 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_popup_join_game.rs);
+//! not yet wired into the game.
+//!
+//! Corrected 2026-11-21 (#215, group ui4): the password's unit whose low byte is 0 is dropped (`concat((char)c)` of a NUL appends nothing), not kept as a NUL byte.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/PopupJoinGame.cpp
@@ -12,6 +15,7 @@ use crate::client::gadget_text_entry as te;
 use crate::client::shell::ShellHost;
 use crate::client::window_manager::{data_win, ggm, gwm, key, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
+use crate::logic::modules::plant;
 
 /// The file's statics (`NAMEKEY_INVALID` is 0, `NULL` is `None`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -51,8 +55,10 @@ pub fn popup_join_game_init<H: PopupJoinGameHost>(wm: &mut GameWindowManager, h:
     let parent_id = ShellHost::name_to_key(h, b"PopupJoinGame.wnd:ParentJoinPopUp") as i32;
     let parent = wm.win_get_window_from_id(None, parent_id);
     let entry_id = ShellHost::name_to_key(h, b"PopupJoinGame.wnd:TextEntryGamePassword") as i32;
-    let entry = wm.win_get_window_from_id(parent, entry_id);
-    te::set_text(wm, h, entry, &[]);
+    let entry = wm.win_get_window_from_id(if plant(21481) { None } else { parent }, entry_id);
+    if !plant(21482) {
+        te::set_text(wm, h, entry, &[]);
+    }
 
     let name_id = ShellHost::name_to_key(h, b"PopupJoinGame.wnd:StaticTextGameName") as i32;
     let static_text_game_name = wm.win_get_window_from_id(parent, name_id);
@@ -69,24 +75,30 @@ pub fn popup_join_game_init<H: PopupJoinGameHost>(wm: &mut GameWindowManager, h:
     }
 
     if let Some(room) = h.current_staging_room() {
-        gadget::static_text_set_text(wm, h, static_text_game_name, &room.game_name);
+        if !plant(21483) {
+            gadget::static_text_set_text(wm, h, static_text_game_name, &room.game_name);
+        }
     }
 
     wm.win_set_focus(h, parent);
-    h.win_set_modal(wm, parent);
+    if !plant(21484) {
+        h.win_set_modal(wm, parent);
+    }
 }
 
 /// The shared "close the password overlay and give up" tail of Escape, *Cancel* and a missing room.
 fn close_password_overlay<H: PopupJoinGameHost>(wm: &mut GameWindowManager, h: &mut H) {
     h.gamespy_close_overlay_game_password(wm);
     h.set_lobby_attempt_host_join_false();
-    h.popup_join_game().parent_popup = None;
+    if !plant(21487) {
+        h.popup_join_game().parent_popup = None;
+    }
 }
 
 /// `PopupJoinGameInput(window, msg, mData1, mData2)`.
 pub fn popup_join_game_input<H: PopupJoinGameHost>(wm: &mut GameWindowManager, h: &mut H, msg: u32, d1: WindowMsgData, d2: WindowMsgData) -> MsgHandled {
-    if msg == gwm::CHAR && (d1 & 0xFF) as u8 == key::ESC {
-        if (d2 & 0xFF) & key::STATE_UP != 0 {
+    if msg == gwm::CHAR && (if plant(21486) { d1 == u32::from(key::ESC) } else { (d1 & 0xFF) as u8 == key::ESC }) {
+        if ((d2 & 0xFF) & key::STATE_UP != 0) != plant(21485) {
             close_password_overlay(wm, h);
         }
         return MsgHandled::Handled;
@@ -101,20 +113,26 @@ fn join_game<H: PopupJoinGameHost>(wm: &mut GameWindowManager, h: &mut H, passwo
         return;
     };
 
-    h.peer_request_join_staging_room(&room.game_name, room.id, password);
+    h.peer_request_join_staging_room(&room.game_name, room.id + i32::from(plant(21490)), password);
     // DEBUG_LOG(("Attempting to join game %d(%ls) with password [%s]\n", ...))
 
-    h.gamespy_close_overlay_game_password(wm);
+    if !plant(21491) {
+        h.gamespy_close_overlay_game_password(wm);
+    }
     h.popup_join_game().parent_popup = None;
 }
 
 /// `PopupJoinGameSystem(window, msg, mData1, mData2)`.
 pub fn popup_join_game_system<H: PopupJoinGameHost>(wm: &mut GameWindowManager, h: &mut H, _window: WinId, msg: u32, d1: WindowMsgData, _d2: WindowMsgData) -> MsgHandled {
     match msg {
-        gwm::CREATE | gwm::DESTROY => {}
+        gwm::CREATE | gwm::DESTROY => {
+            if plant(21492) {
+                return MsgHandled::Ignored;
+            }
+        }
         ggm::GBM_SELECTED => {
             let Some(control) = data_win(d1) else { return MsgHandled::Handled };
-            if wm.tree.windows[control].id == h.popup_join_game().button_cancel_id {
+            if wm.tree.windows[control].id == h.popup_join_game().button_cancel_id || plant(21488) {
                 close_password_overlay(wm, h);
             }
         }
@@ -130,9 +148,13 @@ pub fn popup_join_game_system<H: PopupJoinGameHost>(wm: &mut GameWindowManager, 
             if wm.tree.windows[control].id == p.text_entry_game_password_id {
                 let mut txt = te::get_text(wm, h, p.text_entry_game_password);
                 te::set_text(wm, h, p.text_entry_game_password, &[]);
-                txt = crate::client::replay_menu::trim(&txt);
+                if !plant(21489) {
+                    txt = crate::client::replay_menu::trim(&txt);
+                }
                 if !txt.is_empty() {
-                    let munkee: Vec<u8> = txt.iter().map(|&c| c as u8).collect(); // munkee.translate(txtInput)
+                    // munkee.translate(txtInput): `concat((char)c)` per unit, and `concat(char)` of a NUL appends nothing (AsciiString.h:536 concats the
+                    // string `{c, 0}`), so a unit whose low byte is 0 is dropped (found by the differential test, #215)
+                    let munkee: Vec<u8> = txt.iter().map(|&c| c as u8).filter(|&b| b != 0).collect();
                     join_game(wm, h, &munkee);
                 }
             }

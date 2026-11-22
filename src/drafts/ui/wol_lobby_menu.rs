@@ -26,6 +26,7 @@
 //! - `GBM_SELECTED` on the Join button reads `GadgetListBoxGetSelected(GetGameListBox(), &selected)` as a single int.
 
 use crate::client::gadget;
+use crate::logic::modules::plant;
 use crate::client::gadget_combo_box as cb;
 use crate::client::gadget_list_box as lb;
 use crate::client::gadget_text_entry as te;
@@ -426,7 +427,10 @@ fn atoi(s: &[u8]) -> i32 {
 
 /// `handleLobbySlashCommands(uText)`.
 pub fn handle_lobby_slash_commands<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h: &mut H, u_text: &[u16]) -> bool {
-    let message: Vec<u8> = u_text.iter().map(|&c| c as u8).collect(); // message.translate(uText)
+    // message.translate(uText): each unit cast to `char` and concatenated with `concat(const char c)`, which adds nothing for a zero byte.
+    // ~~`u_text.iter().map(|&c| c as u8).collect()` kept a unit whose low byte is 0 as a NUL~~ **CORRECTED 2026-11-21 (#215, wol6; the differential test
+    // tests/differential_draft_wol_slash.rs found 159 of 20,000 cases):** such units are dropped, as upstream's translate does.
+    let message: Vec<u8> = u_text.iter().map(|&c| c as u8).filter(|&c| !(c == 0 && !plant(23461))).collect();
 
     if message.first() != Some(&b'/') {
         return false; // not a slash command
@@ -435,22 +439,23 @@ pub fn handle_lobby_slash_commands<H: WolLobbyMenuHost>(wm: &mut GameWindowManag
     // remainder.nextToken(&token) with the default separators " \n\r\t"
     let remainder = &message[1..];
     let seps = b" \n\r\t";
-    let start = remainder.iter().position(|c| !seps.contains(c)).unwrap_or(remainder.len());
+    let start = if plant(23467) { 0 } else { remainder.iter().position(|c| !seps.contains(c)).unwrap_or(remainder.len()) };
     let end = remainder[start..].iter().position(|c| seps.contains(c)).map_or(remainder.len(), |e| start + e);
-    let token = remainder[start..end].to_ascii_lowercase();
+    let token = if plant(23462) { remainder[start..end].to_vec() } else { remainder[start..end].to_ascii_lowercase() };
 
     if token == b"host" {
-        let s = utf16(&format!("Hosting qr2:{} thread:{}", h.qr2_hosting_status(), h.is_thread_hosting()));
+        let s = if plant(23466) { utf16(&format!("Hosting qr2:{} thread:{}", h.is_thread_hosting(), h.qr2_hosting_status())) } else { utf16(&format!("Hosting qr2:{} thread:{}", h.qr2_hosting_status(), h.is_thread_hosting())) };
         let c = h.gamespy_color_default();
         h.gamespy_add_text(wm, &s, c, None);
         true // was a slash command
-    } else if token == b"me" && u_text.len() > 4 {
+    } else if token == b"me" && u_text.len() > if plant(23463) { 3 } else { 4 } {
         let players = h.wol_lobby_menu().listbox_lobby_players;
-        h.gamespy_send_chat(wm, &u_text[4..], true, players);
+        let from = if plant(23464) { 3 } else { 4 };
+        h.gamespy_send_chat(wm, &u_text[from..], !plant(23465), if plant(23468) { None } else { players });
         true // was a slash command
     } else if token == b"refresh" {
         // Added 2/19/03 added the game refresh
-        refresh_game_list(wm, h, true);
+        refresh_game_list(wm, h, !plant(23469));
         refresh_player_list(wm, h, true);
         true // was a slash command
     } else {
@@ -467,7 +472,7 @@ pub fn set_lobby_attempt_host_join<H: WolLobbyMenuHost>(h: &mut H, start: bool) 
 /// The rank for `rankPoints`: `while (rankPoints >= m_ranks[i + 1]) ++i`.
 fn rank_for_points<H: WolLobbyMenuHost>(h: &H, rank_points: i32) -> i32 {
     let mut i: usize = 0;
-    while rank_points >= h.rank_point_value(i + 1) {
+    while if plant(23482) { rank_points > h.rank_point_value(i + 1) } else { rank_points >= h.rank_point_value(i + 1) } {
         i += 1;
     }
     i as i32
@@ -588,24 +593,28 @@ fn populate_group_room_listbox<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, 
 
 /// `LookupSmallRankImage(side, rankPoints)`: the mapped image's name.
 pub fn lookup_small_rank_image<H: WolLobbyMenuHost>(h: &H, side: i32, rank_points: i32) -> Option<Vec<u8>> {
-    if rank_points == 0 {
+    if rank_points == 0 || (plant(23481) && rank_points < 0) {
         return None;
     }
 
     let rank = rank_for_points(h, rank_points);
 
-    if !(0..10).contains(&rank) {
+    if !(0..if plant(23483) { 9 } else { 10 }).contains(&rank) {
         return None;
     }
 
     let side_str = match side {
+        5 if plant(23484) => "CHA",
+        13 if plant(23485) => "N",
+        10 if plant(23486) => "N",
         2 | 5 | 6 | 7 => "USA",  // USA, Super Weapon, Laser, Air Force
         3 | 8 | 9 | 10 => "CHA", // China, Tank, Infantry, Nuke
         4 | 11 | 12 | 13 => "GLA", // GLA, Toxin, Demolition, Stealth
         _ => "N",
     };
 
-    let full_image_name = format!("{}-{}", RANK_NAMES[rank as usize], side_str);
+    let name_at = if plant(23487) { (rank as usize).saturating_sub(1) } else { rank as usize };
+    let full_image_name = if plant(23488) { format!("{}-{}", side_str, RANK_NAMES[name_at]) } else { format!("{}-{}", RANK_NAMES[name_at], side_str) };
     h.find_image_by_name(full_image_name.as_bytes())
 }
 
@@ -1361,7 +1370,7 @@ pub fn wol_lobby_menu_system<H: WolLobbyMenuHost>(wm: &mut GameWindowManager, h:
                 shell::pop(wm, h);
             } else if control_id == m.button_refresh_id {
                 // Added 2/17/03 added the game refresh button
-                refresh_game_list(wm, h, true);
+                refresh_game_list(wm, h, !plant(23469));
                 refresh_player_list(wm, h, true);
             } else if control_id == m.button_host_id {
                 if m.trying_to_host_or_join {

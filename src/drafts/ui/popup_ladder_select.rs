@@ -1,4 +1,9 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! UNTESTED DRAFT (#202, #203, #214): compiles; PARTLY tested against the upstream C++ (#215, group ui5): `populateLadderComboBox`, `populateLadderListBox`, `handleLadderSelection`,
+//! `setPasswordMode`, `PopupLadderSelectInit/Input/System`, `ladderSelectedCallback` and `updateLadderDetails` match it on 3,000 cases (test:
+//! tests/differential_draft_popup_ladder_select.rs). NOT covered, so the file keeps this banner: `RCGameDetailsMenuInit`, `RCGameDetailsMenuSystem` and `closeRightClickMenu` (they need
+//! layouts made from WND files, the lone window and the GameSpy staging rooms).
+//! Corrected 2026-11-21 (#215, group ui5): the password's `translate` drops a unit whose low byte is 0; the places where upstream is undefined (the ladder list box missing, a NULL control)
+//! report through [`PopupLadderSelectHost::undefined`].
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/PopupLadderSelect.cpp
@@ -18,6 +23,7 @@ use crate::client::gadget_text_entry as te;
 use crate::client::shell::ShellHost;
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
+use crate::logic::modules::plant;
 
 /// `GameMakeColor(255,255,255,255)`, `GameMakeColor(0,255,255,255)`.
 const WHITE: i32 = 0xFFFF_FFFFu32 as i32;
@@ -118,6 +124,8 @@ pub trait PopupLadderSelectHost: ShellHost {
     fn win_set_lone_window(&mut self, wm: &mut GameWindowManager, w: WinId);
     /// `GGM_CLOSE` for the right-click menu and the id of its `ButtonLadderDetails` are kept in these statics.
     fn rc_game_details_ids(&mut self) -> &mut (i32, i32);
+    /// Upstream does something undefined here (a NULL dereference, an uninitialised `Int`): `what` says what. The draft carries on with its own reading; a test excludes the input.
+    fn undefined(&mut self, _what: &str) {}
 }
 
 fn key_of<H: PopupLadderSelectHost>(h: &mut H, n: &str) -> i32 {
@@ -136,7 +144,10 @@ fn populate_ladder_list_box<H: PopupLadderSelectHost>(wm: &mut GameWindowManager
     h.populate_qm_ladder_list_box(wm, p.listbox_ladder_select);
     h.populate_custom_ladder_list_box(wm, p.listbox_ladder_select);
 
-    let Some(l) = p.listbox_ladder_select else { return };
+    let Some(l) = p.listbox_ladder_select else {
+        h.undefined("populateLadderListBox: GadgetListBoxGetSelected(NULL) leaves selIndex uninitialised");
+        return;
+    };
     let sel_index = lb::get_selected(wm, h, l).first().copied().unwrap_or(-1);
     if sel_index < 0 {
         return;
@@ -150,6 +161,11 @@ fn populate_ladder_list_box<H: PopupLadderSelectHost>(wm: &mut GameWindowManager
 
 /// `handleLadderSelection(ladderID)`.
 fn handle_ladder_selection<H: PopupLadderSelectHost>(h: &mut H, ladder_id: i32) {
+    if plant(22755) {
+        h.handle_custom_ladder_selection(ladder_id);
+        h.handle_qm_ladder_selection(ladder_id);
+        return;
+    }
     h.handle_qm_ladder_selection(ladder_id);
     h.handle_custom_ladder_selection(ladder_id);
 }
@@ -172,7 +188,7 @@ fn set_password_mode<H: PopupLadderSelectHost>(wm: &mut GameWindowManager, h: &m
         PasswordMode::PassNone => {
             hide(wm, p.password_parent, true);
             hide(wm, p.bad_password_parent, true);
-            enable(wm, p.button_ok, true);
+            enable(wm, p.button_ok, !plant(22741));
             enable(wm, p.button_cancel, true);
             enable(wm, p.text_entry_password, false);
             enable(wm, p.listbox_ladder_select, true);
@@ -185,7 +201,9 @@ fn set_password_mode<H: PopupLadderSelectHost>(wm: &mut GameWindowManager, h: &m
             enable(wm, p.button_cancel, false);
             if let Some(t) = p.text_entry_password {
                 wm.win_enable(t, true);
-                te::set_text(wm, h, Some(t), &[]);
+                if !plant(22742) {
+                    te::set_text(wm, h, Some(t), &[]);
+                }
             }
             enable(wm, p.listbox_ladder_select, false);
             wm.win_set_focus(h, p.text_entry_password);
@@ -197,7 +215,7 @@ fn set_password_mode<H: PopupLadderSelectHost>(wm: &mut GameWindowManager, h: &m
             enable(wm, p.button_cancel, false);
             enable(wm, p.text_entry_password, false);
             enable(wm, p.listbox_ladder_select, false);
-            wm.win_set_focus(h, p.parent);
+            wm.win_set_focus(h, if plant(22743) { None } else { p.parent });
         }
     }
 }
@@ -244,11 +262,13 @@ pub fn popup_ladder_select_init<H: PopupLadderSelectHost>(wm: &mut GameWindowMan
     }
 
     wm.win_set_focus(h, parent);
-    h.win_set_modal(wm, parent);
+    if !plant(22744) {
+        h.win_set_modal(wm, parent);
+    }
 
     set_password_mode(wm, h, PasswordMode::PassNone);
 
-    h.custom_match_hide_host_popup(wm, true);
+    h.custom_match_hide_host_popup(wm, !plant(22745));
 
     populate_ladder_list_box(wm, h);
 }
@@ -258,11 +278,11 @@ pub fn popup_ladder_select_input<H: PopupLadderSelectHost>(wm: &mut GameWindowMa
     if msg == gwm::CHAR && (d1 & 0xFF) as u8 == key::ESC {
         if (d2 & 0xFF) & key::STATE_UP != 0 {
             match h.popup_ladder_select().current_mode {
-                PasswordMode::PassNone => {
+                PasswordMode::PassNone if !plant(22746) => {
                     populate_ladder_combo_box(wm, h);
                     h.gamespy_close_overlay_ladder_select(wm);
                 }
-                PasswordMode::PassEntry | PasswordMode::PassError => set_password_mode(wm, h, PasswordMode::PassNone),
+                _ => set_password_mode(wm, h, PasswordMode::PassNone),
             }
         }
         return MsgHandled::Handled;
@@ -274,6 +294,11 @@ pub fn popup_ladder_select_input<H: PopupLadderSelectHost>(wm: &mut GameWindowMa
 pub fn ladder_selected_callback<H: PopupLadderSelectHost>(wm: &mut GameWindowManager, h: &mut H) {
     let idx = h.popup_ladder_select().ladder_index;
     handle_ladder_selection(h, idx);
+    if plant(22756) {
+        h.gamespy_close_overlay_ladder_select(wm);
+        populate_ladder_combo_box(wm, h);
+        return;
+    }
     populate_ladder_combo_box(wm, h);
     h.gamespy_close_overlay_ladder_select(wm);
 }
@@ -289,7 +314,9 @@ pub fn popup_ladder_select_system<H: PopupLadderSelectHost>(wm: &mut GameWindowM
                 p.listbox_ladder_select = None;
                 p.listbox_ladder_details = None;
             }
-            h.custom_match_hide_host_popup(wm, false);
+            if !plant(22747) {
+                h.custom_match_hide_host_popup(wm, false);
+            }
         }
         gwm::INPUT_FOCUS => {
             if d1 == 1 {
@@ -297,21 +324,29 @@ pub fn popup_ladder_select_system<H: PopupLadderSelectHost>(wm: &mut GameWindowM
             }
         }
         ggm::GBM_SELECTED => {
-            let Some(control) = data_win(d1) else { return MsgHandled::Handled };
+            let Some(control) = data_win(d1) else {
+                h.undefined("control->winGetWindowId() of a NULL control");
+                return MsgHandled::Handled;
+            };
             let id = wm.tree.windows[control].id;
             let p = h.popup_ladder_select().clone();
             if id == p.button_ok_id {
                 let select_pos = match p.listbox_ladder_select {
                     Some(l) => lb::get_selected(wm, h, l).first().copied().unwrap_or(-1),
-                    None => -1,
+                    None => {
+                        h.undefined("GBM_SELECTED: GadgetListBoxGetSelected(NULL) leaves selectPos as -1; then GetItemData(NULL)");
+                        -1
+                    }
                 };
                 if select_pos < 0 {
                     return MsgHandled::Handled;
                 }
                 let ladder_index = lb::get_item_data(wm, h, p.listbox_ladder_select.expect("pos implies list"), select_pos, 0) as i32;
-                h.popup_ladder_select().ladder_index = ladder_index;
+                if !plant(22750) {
+                    h.popup_ladder_select().ladder_index = ladder_index;
+                }
                 let li = h.ladder_find_by_index(ladder_index);
-                if li.is_some_and(|l| !l.crypted_password.is_empty()) {
+                if li.is_some_and(|l| l.crypted_password.is_empty() == plant(22748)) {
                     set_password_mode(wm, h, PasswordMode::PassEntry);
                 } else {
                     ladder_selected_callback(wm, h);
@@ -326,11 +361,11 @@ pub fn popup_ladder_select_system<H: PopupLadderSelectHost>(wm: &mut GameWindowM
                     return MsgHandled::Handled;
                 };
                 let pass_w = te::get_text(wm, h, p.text_entry_password);
-                let pass: Vec<u8> = pass_w.iter().map(|&c| c as u8).collect(); // pass.translate(...)
+                let pass: Vec<u8> = pass_w.iter().map(|&c| c as u8).filter(|&c| c != 0).collect(); // pass.translate(...): a 0 byte appends nothing
                 if !pass.is_empty() {
                     // password ok
                     let crypt_pass = h.encrypt_string(&pass);
-                    if crypt_pass == li.crypted_password {
+                    if (crypt_pass == li.crypted_password) != plant(22749) {
                         ladder_selected_callback(wm, h);
                     } else {
                         set_password_mode(wm, h, PasswordMode::PassError);
@@ -344,34 +379,46 @@ pub fn popup_ladder_select_system<H: PopupLadderSelectHost>(wm: &mut GameWindowM
         }
         lb::glm::SELECTED => {
             let p = h.popup_ladder_select().clone();
-            let Some(l) = p.listbox_ladder_select else { return MsgHandled::Handled };
+            let Some(l) = p.listbox_ladder_select else {
+                h.undefined("GLM_SELECTED: GadgetListBoxGetSelected(NULL) leaves selIndex uninitialised");
+                return MsgHandled::Handled;
+            };
             let sel_index = lb::get_selected(wm, h, l).first().copied().unwrap_or(-1);
             if sel_index < 0 {
                 return MsgHandled::Handled;
             }
             let sel_id = lb::get_item_data(wm, h, l, sel_index, 0) as i32;
-            if sel_id == 0 {
+            if sel_id == 0 && !plant(22752) {
                 return MsgHandled::Handled;
             }
             update_ladder_details(wm, h, sel_id, p.static_text_ladder_name, p.listbox_ladder_details);
         }
         lb::glm::DOUBLE_CLICKED => {
-            let Some(control) = data_win(d1) else { return MsgHandled::Handled };
+            let Some(control) = data_win(d1) else {
+                h.undefined("control->winGetWindowId() of a NULL control");
+                return MsgHandled::Handled;
+            };
             let id = wm.tree.windows[control].id;
             let select_pos = d2 as i32;
             lb::set_selected(wm, h, control, &[select_pos]);
             let p = h.popup_ladder_select().clone();
-            if id == p.listbox_ladder_select_id {
-                if let Some(b) = p.button_ok {
-                    let bid = wm.tree.windows[b].id;
-                    wm.win_send_system_msg(h, p.parent, ggm::GBM_SELECTED, win_data(Some(b)), bid as u32);
+            if id == p.listbox_ladder_select_id || plant(22751) {
+                match p.button_ok {
+                    Some(b) => {
+                        let bid = wm.tree.windows[b].id;
+                        wm.win_send_system_msg(h, p.parent, ggm::GBM_SELECTED, win_data(Some(b)), bid as u32);
+                    }
+                    None => h.undefined("GLM_DOUBLE_CLICKED: buttonOk->winGetWindowId() on NULL"),
                 }
             }
         }
         ggm::GEM_EDIT_DONE => {
-            let Some(control) = data_win(d1) else { return MsgHandled::Handled };
+            let Some(control) = data_win(d1) else {
+                h.undefined("control->winGetWindowId() of a NULL control");
+                return MsgHandled::Handled;
+            };
             let p = h.popup_ladder_select().clone();
-            if wm.tree.windows[control].id == p.text_entry_password_id {
+            if wm.tree.windows[control].id == p.text_entry_password_id || plant(22758) {
                 let ok = wm.win_get_window_from_id(p.password_parent, p.button_password_ok_id);
                 wm.win_send_system_msg(h, p.parent, ggm::GBM_SELECTED, win_data(ok), p.button_password_ok_id as u32);
             }
@@ -397,7 +444,7 @@ pub fn update_ladder_details<H: PopupLadderSelectHost>(wm: &mut GameWindowManage
     let line = h.format_ladder_name_and_size(&fmt, &info.name, info.players_per_team, info.players_per_team);
     gadget::static_text_set_text(wm, h, Some(name_win), &line);
 
-    if !info.location.is_empty() {
+    if !info.location.is_empty() || plant(22757) {
         lb::add_entry_text(wm, h, details, &info.location, caption_color, -1, 0, false);
     }
 
@@ -416,7 +463,7 @@ pub fn update_ladder_details<H: PopupLadderSelectHost>(wm: &mut GameWindowManage
 
     if info.min_wins != 0 {
         let fmt = h.fetch_text(b"GUI:LadderMinWins");
-        let line = h.format_int(&fmt, info.min_wins);
+        let line = h.format_int(&fmt, if plant(22753) { info.max_wins } else { info.min_wins });
         lb::add_entry_text(wm, h, details, &line, caption_color, -1, 0, false);
     }
 
@@ -426,7 +473,7 @@ pub fn update_ladder_details<H: PopupLadderSelectHost>(wm: &mut GameWindowManage
         lb::add_entry_text(wm, h, details, &line, caption_color, -1, 0, false);
     }
 
-    let label: &[u8] = if info.random_factions { b"GUI:LadderRandomFactions" } else { b"GUI:LadderFactions" };
+    let label: &[u8] = if info.random_factions != plant(22754) { b"GUI:LadderRandomFactions" } else { b"GUI:LadderFactions" };
     let t = h.fetch_text(label);
     lb::add_entry_text(wm, h, details, &t, caption_color, -1, 0, false);
 
@@ -471,7 +518,10 @@ pub fn rc_game_details_menu_system<H: PopupLadderSelectHost>(wm: &mut GameWindow
         ggm::CLOSE => close_right_click_menu(wm, h, window),
         gwm::DESTROY => {}
         ggm::GBM_SELECTED => {
-            let Some(control) = data_win(d1) else { return MsgHandled::Handled };
+            let Some(control) = data_win(d1) else {
+                h.undefined("control->winGetWindowId() of a NULL control");
+                return MsgHandled::Handled;
+            };
             let control_id = wm.tree.windows[control].id;
             let selected_id = h.win_user_data_int(wm, window);
             if selected_id == 0 {

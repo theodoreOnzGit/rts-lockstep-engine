@@ -1,4 +1,8 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 20,000 cases (test: tests/differential_draft_game_info_window.rs);
+//! not yet wired into the game.
+//!
+//! Corrected 2026-11-21 (#215, group ui4): the list box entries are added with `overwrite` TRUE (GadgetListBox.h's default; the draft had FALSE, which refuses the
+//! image into a full list), and the leaf name of a map not in the cache is widened with its sign (`(WideChar)` of a signed `char`).
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/GameInfoWindow.cpp
@@ -9,6 +13,7 @@ use crate::client::gadget_list_box;
 use crate::client::shell::ShellHost;
 use crate::client::window_manager::{gwm, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
+use crate::logic::modules::plant;
 
 /// `MAX_SLOTS` (GameInfo.h).
 pub const MAX_SLOTS: usize = 8;
@@ -97,22 +102,31 @@ pub fn create_lan_game_info_window<H: GameInfoWindowHost>(wm: &mut GameWindowMan
     }
     let Some(layout) = h.game_info_window().game_info_window_layout else { return };
 
-    h.layout_run_init(wm, layout);
-    wm.layout_bring_forward(layout);
-    wm.layout_hide(layout, true);
+    if !plant(21493) {
+        h.layout_run_init(wm, layout);
+    }
+    if !plant(21494) {
+        wm.layout_bring_forward(layout);
+    }
+    wm.layout_hide(layout, !plant(21495));
 
     let parent = h.game_info_window().parent;
     let (Some(parent), Some(size_win)) = (parent, size_and_pos_win) else { return };
-    let (x, y) = wm.tree.screen_position(size_win);
+    let (x, y) = if plant(21496) { let r = wm.win(size_win).region; (r.0, r.1) } else { wm.tree.screen_position(size_win) };
     wm.win_set_position(parent, x, y);
 
     let (width, height) = wm.win(size_win).size;
-    wm.win_set_size(h, parent, width, height);
+    if plant(21497) {
+        wm.win_set_size(h, parent, height, width);
+    } else {
+        wm.win_set_size(h, parent, width, height);
+    }
 }
 
 /// `DestroyGameInfoWindow()`.
 pub fn destroy_game_info_window<H: GameInfoWindowHost>(wm: &mut GameWindowManager, h: &mut H) {
-    if let Some(layout) = h.game_info_window().game_info_window_layout.take() {
+    let l = if plant(21508) { h.game_info_window().game_info_window_layout } else { h.game_info_window().game_info_window_layout.take() };
+    if let Some(layout) = l {
         wm.layout_destroy_windows(layout);
         // `deleteInstance()`: the layout record is released by the host
     }
@@ -135,25 +149,30 @@ pub fn refresh_game_info_window<H: GameInfoWindowHost>(wm: &mut GameWindowManage
     static_text(wm, h, g.static_text_game_name, &name0);
     // set the map name
     let mut ascii_map = h.game_info_map();
-    ascii_map.make_ascii_lowercase();
+    if !plant(21498) {
+        ascii_map.make_ascii_lowercase();
+    }
     let map: Vec<u16> = match h.map_cache_display_name(&ascii_map) {
         Some(display) => display,
         None => {
             // can happen if the map will have to be transferred... so use the leaf name (srj)
             let original = h.game_info_map();
-            let no_path = match original.iter().rposition(|&c| c == b'\\') {
+            let no_path = match (if plant(21499) { original.iter().position(|&c| c == b'\\') } else { original.iter().rposition(|&c| c == b'\\') }) {
                 Some(i) => &original[i + 1..],
                 None => &original[..],
             };
-            // `UnicodeString::translate(const char *)`: each byte widened
-            no_path.iter().map(|&c| c as u16).collect()
+            // `UnicodeString::translate(const AsciiString &)`: `(WideChar)getCharAt(i)`, a signed `char` widened with its sign (0xE9 becomes 0xFFE9; the
+            // differential test found the draft's `c as u16` wrong, #215)
+            no_path.iter().map(|&c| c as i8 as i16 as u16).collect()
         }
     };
     static_text(wm, h, g.static_text_map_name, &map);
 
     // fill in the player list
     let Some(list) = g.list_box_players else { return };
-    gadget_list_box::reset(wm, h, list);
+    if !plant(21504) {
+        gadget_list_box::reset(wm, h, list);
+    }
 
     let num_colors = h.multiplayer_num_colors();
     for i in 0..MAX_SLOTS {
@@ -162,32 +181,32 @@ pub fn refresh_game_info_window<H: GameInfoWindowHost>(wm: &mut GameWindowManage
         let mut added_row: i32 = -1;
         let Some(slot) = h.game_info_occupied_slot(i) else { continue };
         let color = slot.color;
-        if color > -1 && color < num_colors {
+        if color > if plant(21500) { 0 } else { -1 } && color < num_colors {
             player_color = h.multiplayer_color(color);
         }
         if slot.is_ai {
             let label: Option<&[u8]> = match slot.state {
                 SlotState::EasyAi => Some(b"GUI:EasyAI"),
-                SlotState::MedAi => Some(b"GUI:MediumAI"),
+                SlotState::MedAi => Some(if plant(21503) { b"GUI:EasyAI" } else { b"GUI:MediumAI" }),
                 SlotState::BrutalAi => Some(b"GUI:HardAI"),
                 SlotState::Other => None,
             };
             if let Some(label) = label {
                 let text = h.fetch_text(label);
-                added_row = gadget_list_box::add_entry_text(wm, h, list, &text, player_color, -1, 1, false);
+                added_row = gadget_list_box::add_entry_text(wm, h, list, &text, player_color, -1, 1, true); // (`overwrite` defaults to TRUE in GadgetListBox.h; the draft had FALSE)
             }
         } else if slot.is_human {
-            added_row = gadget_list_box::add_entry_text(wm, h, list, &slot.name, player_color, -1, 1, false);
+            added_row = gadget_list_box::add_entry_text(wm, h, list, &slot.name, player_color, -1, 1, true); // (`overwrite` defaults to TRUE in GadgetListBox.h; the draft had FALSE)
         }
         let player_template = slot.player_template;
-        if player_template == PLAYERTEMPLATE_OBSERVER {
-            gadget_list_box::add_entry_image(wm, h, list, Some(b"GameinfoOBSRVR".to_vec()), added_row, 0, 22, 25, false, WHITE);
-        } else if player_template < 0 || player_template >= h.player_template_count() {
+        if player_template == if plant(21501) { -1 } else { PLAYERTEMPLATE_OBSERVER } {
+            gadget_list_box::add_entry_image(wm, h, list, Some(b"GameinfoOBSRVR".to_vec()), added_row, 0, 22, 25, true, WHITE);
+        } else if player_template < 0 || player_template > h.player_template_count() - i32::from(!plant(21502)) {
             // @todo (upstream): when we get art that shows player's side, draw the art instead of putting in text
-            gadget_list_box::add_entry_image(wm, h, list, Some(b"GameinfoRANDOM".to_vec()), added_row, 0, 22, 25, false, WHITE);
+            gadget_list_box::add_entry_image(wm, h, list, Some(b"GameinfoRANDOM".to_vec()), added_row, 0, 22, 25, true, WHITE);
         } else {
             let icon = h.player_template_side_icon(player_template);
-            gadget_list_box::add_entry_image(wm, h, list, icon, added_row, 0, 22, 25, false, WHITE);
+            gadget_list_box::add_entry_image(wm, h, list, icon, added_row, 0, 22, 25, true, WHITE);
         }
     }
 }
@@ -195,7 +214,7 @@ pub fn refresh_game_info_window<H: GameInfoWindowHost>(wm: &mut GameWindowManage
 /// `HideGameInfoWindow(hide)`.
 pub fn hide_game_info_window<H: GameInfoWindowHost>(wm: &mut GameWindowManager, h: &mut H, hide: bool) {
     if let Some(parent) = h.game_info_window().parent {
-        wm.win_hide(parent, hide);
+        wm.win_hide(parent, hide != plant(21505));
     }
 }
 
@@ -236,7 +255,9 @@ pub fn game_info_window_init<H: GameInfoWindowHost>(wm: &mut GameWindowManager, 
     };
 
     static_text(wm, h, game_name, &[]);
-    static_text(wm, h, map_name, &[]);
+    if !plant(21506) {
+        static_text(wm, h, map_name, &[]);
+    }
     if let Some(l) = list {
         gadget_list_box::reset(wm, h, l);
     }
@@ -252,7 +273,7 @@ pub fn game_info_window_system(wm: &mut GameWindowManager, _window: WinId, msg: 
             if d1 == 1 {
                 wm.focus_reply = true;
             }
-            return MsgHandled::Handled;
+            return if plant(21507) { MsgHandled::Ignored } else { MsgHandled::Handled };
         }
         _ => return MsgHandled::Ignored,
     }

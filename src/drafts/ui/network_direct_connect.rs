@@ -1,4 +1,10 @@
-//! UNTESTED DRAFT (#202, #203, #214): compiles; not yet tested against the upstream C++.
+//! DIFFERENTIAL-TESTED (#202, #215): matches the upstream C++ on 3,000 cases (test: tests/differential_draft_network_direct_connect.rs);
+//! not yet wired into the game.
+//!
+//! Corrected 2026-11-21 (#215, group ui5): `TheLAN->init()` after the second `NEW LANAPI()` of `NetworkDirectConnectInit` is [`NetworkDirectConnectHost::lan_init`] (the draft asked the host
+//! for a second `new` and `init`); `nextToken` skips leading separators; `%d.%d.%d.%d` is the C library's (white space, a sign); `translate` drops a unit whose low byte is 0; the packed
+//! address wraps; the places where upstream is undefined (a NULL control or combo box, an unread `scanf` field, a `strcpy` overrun, `TheLAN` NULL) report through
+//! [`NetworkDirectConnectHost::undefined`]. Functions not covered: none.
 //!
 //! Translated from (EA's GPLv3 release, upstream commit 0a05454d):
 //!   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/NetworkDirectConnect.cpp
@@ -14,6 +20,7 @@ use crate::client::shell::{self, ShellHost};
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
 use crate::client::window_transitions as wt;
+use crate::logic::modules::plant;
 
 /// `g_lanPlayerNameLength` (LANAPI.h).
 pub const G_LAN_PLAYER_NAME_LENGTH: usize = 12;
@@ -58,6 +65,8 @@ pub trait NetworkDirectConnectHost: ShellHost {
     fn lan_exists(&self) -> bool;
     /// `TheLAN = NEW LANAPI(); TheLAN->init()` (init only when `init`); `delete TheLAN; TheLAN = NULL`.
     fn lan_create(&mut self, init: bool);
+    /// `TheLAN->init()`.
+    fn lan_init(&mut self);
     fn lan_delete(&mut self);
     fn lan_reset(&mut self);
     fn lan_get_local_ip(&self) -> u32;
@@ -69,6 +78,8 @@ pub trait NetworkDirectConnectHost: ShellHost {
     /// `OptionPreferences::getOnlineIPAddress()`; the enumerated local addresses (`IPEnumeration::getAddresses()`).
     fn option_prefs_online_ip_address(&mut self) -> u32;
     fn enumerated_ip_addresses(&mut self) -> Vec<u32>;
+    /// Upstream does something undefined here (a NULL dereference, an uninitialised read, a buffer overrun): `what` says what. The draft carries on with its own reading; a test excludes the input.
+    fn undefined(&mut self, _what: &str) {}
 }
 
 fn utf16(s: &str) -> Vec<u16> {
@@ -78,27 +89,58 @@ fn utf16(s: &str) -> Vec<u16> {
 /// `GameMakeColor(255,255,255,255)`.
 const WHITE: i32 = 0xFFFF_FFFFu32 as i32;
 
-/// `swscanf(s, L"%d.%d.%d.%d", ...)`: the fields read before the first mismatch.
-fn scan_ip(s: &[u16]) -> Vec<i32> {
-    let text: String = String::from_utf16_lossy(s);
+/// `swscanf(s, L"%d.%d.%d.%d", ...)` / `sscanf(s, "%d.%d.%d.%d", ...)` (the C library's `%d`): for each field, white space skipped, an optional sign, at least one digit; between
+/// fields a literal `.`. Returns the fields read before the first mismatch, and whether one of them is beyond `int` (the C libraries differ there: undefined here).
+fn scan_ip(s: &[u16]) -> (Vec<i32>, bool) {
+    let is_space = |c: u16| c == 0x20 || (9..=13).contains(&c);
     let mut out = Vec::new();
-    let mut rest = text.trim_start();
+    let mut overflow = false;
+    let mut p = 0;
     for n in 0..4 {
-        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit() || (*c == '-' && false)).collect();
-        if digits.is_empty() {
+        while p < s.len() && is_space(s[p]) {
+            p += 1;
+        }
+        let mut neg = false;
+        if p < s.len() && (s[p] == '+' as u16 || s[p] == '-' as u16) {
+            neg = s[p] == '-' as u16;
+            p += 1;
+        }
+        let first = p;
+        let mut v: i64 = 0;
+        while p < s.len() && (b'0' as u16..=b'9' as u16).contains(&s[p]) {
+            v = (v * 10 + i64::from(s[p] - b'0' as u16)).min(1 << 40);
+            p += 1;
+        }
+        if p == first {
             break;
         }
-        out.push(digits.parse::<i32>().unwrap_or(0));
-        rest = &rest[digits.len()..];
+        let v = if neg { -v } else { v };
+        if v > i64::from(i32::MAX) || v < i64::from(i32::MIN) {
+            overflow = true;
+        }
+        out.push(v as i32);
         if n < 3 {
-            if let Some(r) = rest.strip_prefix('.') {
-                rest = r;
+            if p < s.len() && s[p] == '.' as u16 {
+                p += 1;
             } else {
                 break;
             }
         }
     }
-    out
+    (out, overflow)
+}
+
+/// `nextToken(&tok, seps)` of `AsciiString` / `UnicodeString` (AsciiString.cpp:368, UnicodeString.cpp:330): leading separators skipped, then the run up to the next separator (the
+/// token stays empty when there is none).
+fn next_token<T: Copy + PartialEq>(s: &[T], seps: &[T]) -> Vec<T> {
+    let start = s.iter().position(|c| !seps.contains(c)).unwrap_or(s.len());
+    let end = s[start..].iter().position(|c| seps.contains(c)).map_or(s.len(), |p| start + p);
+    s[start..end].to_vec()
+}
+
+/// `AsciiString::translate(UnicodeString)`: each unit's low byte, a 0 appending nothing (`concat((char)c)`).
+fn translate(s: &[u16]) -> Vec<u8> {
+    s.iter().map(|&c| c as u8).filter(|&c| c != 0 || plant(22675)).collect()
 }
 
 /// `"%d.%d.%d.%d"` of a packed address.
@@ -121,7 +163,7 @@ pub fn populate_remote_ip_combo_box<H: NetworkDirectConnectHost>(wm: &mut GameWi
     }
     if num_remote_ips > 0 {
         if let Some(c) = combo {
-            cb::set_selected_pos(wm, h, c, 0, true);
+            cb::set_selected_pos(wm, h, c, i32::from(plant(22661)), true);
         }
     }
     h.lan_prefs_write();
@@ -129,33 +171,47 @@ pub fn populate_remote_ip_combo_box<H: NetworkDirectConnectHost>(wm: &mut GameWi
 
 /// `UpdateRemoteIPList()` (NetworkDirectConnect.cpp:113).
 pub fn update_remote_ip_list<H: NetworkDirectConnectHost>(wm: &mut GameWindowManager, h: &mut H) {
-    let Some(combo) = h.network_direct_connect().combobox_remote_ip else { return };
+    let Some(combo) = h.network_direct_connect().combobox_remote_ip else {
+        h.undefined("UpdateRemoteIPList: GadgetComboBoxGetLength(NULL) dereferences it");
+        return;
+    };
     let mut num_entries = cb::get_length(wm, combo);
     let current_selection = cb::get_selected_pos(wm, h, combo, -1);
     let unisel = cb::get_text(wm, h, combo);
-    let sel: Vec<u8> = unisel.iter().map(|&c| c as u8).collect(); // sel.translate(unisel)
+    let sel = translate(&unisel); // sel.translate(unisel)
     // newEntry.nextToken(&newIP, ":")
-    let new_ip: Vec<u16> = unisel.iter().copied().take_while(|&c| c != ':' as u16).collect();
-    let n1 = scan_ip(&new_ip);
+    let new_ip = next_token(&unisel, &[':' as u16]);
+    let (n1, n1_overflow) = scan_ip(&new_ip);
+    if n1_overflow {
+        h.undefined("UpdateRemoteIPList: a field beyond int in swscanf");
+    }
     if n1.len() != 4 {
         return;
     }
 
     h.lan_prefs_set(b"RemoteIP0", &sel);
 
-    let mut current_ini_entry = 1;
+    let mut current_ini_entry = i32::from(!plant(22663));
     let mut i = 0;
     while i < num_entries {
         if i != current_selection {
             cb::set_selected_pos(wm, h, combo, i, false);
             let uni = cb::get_text(wm, h, combo);
-            let ascii: Vec<u8> = uni.iter().map(|&c| c as u8).collect();
+            let ascii = translate(&uni);
 
             if current_selection == -1 {
-                let old_ip: Vec<u16> = uni.iter().copied().take_while(|&c| c != ':' as u16).collect();
-                let n2 = scan_ip(&old_ip);
+                let old_ip = next_token(&uni, &[':' as u16]);
+                let (n2, n2_overflow) = scan_ip(&old_ip);
+                if n2_overflow {
+                    h.undefined("UpdateRemoteIPList: a field beyond int in swscanf");
+                }
                 // swscanf's result is not checked upstream; unread fields keep the stack's garbage — modelled as 0
-                let is_equal = (0..4).all(|k| n1[k] == n2.get(k).copied().unwrap_or(0));
+                let is_equal = (0..if plant(22662) { 3 } else { 4 }).all(|k| {
+                    if k >= n2.len() {
+                        h.undefined("UpdateRemoteIPList: n2 read before swscanf set it");
+                    }
+                    n1[k] == n2.get(k).copied().unwrap_or(0)
+                });
                 if is_equal {
                     num_entries -= 1;
                     i += 1;
@@ -170,7 +226,7 @@ pub fn update_remote_ip_list<H: NetworkDirectConnectHost>(wm: &mut GameWindowMan
         i += 1;
     }
 
-    if current_selection == -1 {
+    if current_selection == -1 && !plant(22664) {
         num_entries += 1;
     }
     h.lan_prefs_set(b"NumRemoteIPs", format!("{num_entries}").as_bytes());
@@ -188,7 +244,7 @@ fn save_name_and_trim<H: NetworkDirectConnectHost>(wm: &mut GameWindowManager, h
         update_remote_ip_list(wm, h);
         populate_remote_ip_combo_box(wm, h);
     }
-    while name.len() > G_LAN_PLAYER_NAME_LENGTH {
+    while name.len() > G_LAN_PLAYER_NAME_LENGTH - usize::from(plant(22666)) {
         name.pop();
     }
     name
@@ -208,7 +264,7 @@ pub fn host_direct_connect_game<H: NetworkDirectConnectHost>(wm: &mut GameWindow
     let name = save_name_and_trim(wm, h, None);
 
     h.lan_request_set_name(&name);
-    h.lan_request_game_create(&local_ip_string, true);
+    h.lan_request_game_create(&local_ip_string, !plant(22665));
 }
 
 /// `JoinDirectConnectGame()` (NetworkDirectConnect.cpp:245).
@@ -222,14 +278,21 @@ pub fn join_direct_connect_game<H: NetworkDirectConnectHost>(wm: &mut GameWindow
         Some(c) => cb::get_text(wm, h, c),
         None => Vec::new(),
     };
-    let asciientry: Vec<u8> = ipunistring.iter().map(|&c| c as u8).collect();
+    let asciientry = translate(&ipunistring);
     // asciientry.nextToken(&ipstring, "(")
-    let ipstring: Vec<u8> = asciientry.iter().copied().take_while(|&c| c != b'(').collect();
+    let ipstring = next_token(&asciientry, b"(");
     // (`char ipstr[16]; strcpy(ipstr, ...)` overflows upstream for a longer string; not modelled)
     let ip_w: Vec<u16> = ipstring.iter().map(|&c| c as u16).collect();
-    let f = scan_ip(&ip_w);
+    let (f, f_overflow) = scan_ip(&ip_w);
+    if f_overflow {
+        h.undefined("JoinDirectConnectGame: a field beyond int in sscanf");
+    }
+    if f.len() < 4 || ipstring.len() >= 16 {
+        h.undefined("JoinDirectConnectGame: ip1..ip4 unread by sscanf, or the text overruns char ipstr[16]");
+    }
     let g = |k: usize| f.get(k).copied().unwrap_or(0);
-    let ipaddress = ((g(0) << 24) + (g(1) << 16) + (g(2) << 8) + g(3)) as u32;
+    // (`(ip1 << 24) + ...` wraps in the game's int; so here)
+    let ipaddress = g(0).wrapping_shl(if plant(22672) { 16 } else { 24 }).wrapping_add(g(1).wrapping_shl(16)).wrapping_add(g(2).wrapping_shl(8)).wrapping_add(g(3)) as u32;
 
     // get our name
     let name = save_name_and_trim(wm, h, Some(true));
@@ -294,7 +357,7 @@ pub fn network_direct_connect_init<H: NetworkDirectConnectHost>(wm: &mut GameWin
                 ip = first;
             }
         }
-        h.lan_create(true); // TheLAN->init()
+        h.lan_init(); // TheLAN->init()
         h.lan_set_local_ip(ip);
     }
     let ip = h.lan_get_local_ip();
@@ -302,7 +365,7 @@ pub fn network_direct_connect_init<H: NetworkDirectConnectHost>(wm: &mut GameWin
     crate::client::gadget::static_text_set_text(wm, h, wins[5], &ipstr);
 
     // Clear the lobby of any games / players
-    h.lan_request_lobby_leave(true);
+    h.lan_request_lobby_leave(!plant(22669));
 
     // Show Menu
     wm.layout_hide(layout, false);
@@ -326,7 +389,7 @@ pub fn network_direct_connect_shutdown<H: NetworkDirectConnectHost>(wm: &mut Gam
     h.network_direct_connect().is_shutting_down = true;
 
     // if we are doing an immediate pop, just do it
-    if pop_immediate {
+    if pop_immediate && !plant(22670) {
         shutdown_complete(wm, h, layout);
         return;
     }
@@ -337,7 +400,8 @@ pub fn network_direct_connect_shutdown<H: NetworkDirectConnectHost>(wm: &mut Gam
 
 /// `NetworkDirectConnectUpdate(layout, userData)`.
 pub fn network_direct_connect_update<H: NetworkDirectConnectHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
-    if h.network_direct_connect().is_shutting_down && shell::is_anim_finished(wm, h) && crate::client::window_transitions::is_finished(wm) {
+    let fin = (shell::is_anim_finished(wm, h), crate::client::window_transitions::is_finished(wm));
+    if h.network_direct_connect().is_shutting_down && if plant(22671) { fin.0 || fin.1 } else { fin.0 && fin.1 } {
         shutdown_complete(wm, h, layout);
     }
 }
@@ -353,7 +417,7 @@ pub fn network_direct_connect_input<H: NetworkDirectConnectHost>(wm: &mut GameWi
         }
         if k == key::ESC {
             // send a simulated selected event to the parent window of the back/exit button
-            if state & key::STATE_UP != 0 {
+            if (state & key::STATE_UP != 0) != plant(22668) {
                 let d = h.network_direct_connect().clone();
                 wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(d.button_back), d.button_back_id as u32);
             }
@@ -379,14 +443,17 @@ pub fn network_direct_connect_system<H: NetworkDirectConnectHost>(wm: &mut GameW
             if h.network_direct_connect().button_pushed {
                 return MsgHandled::Handled;
             }
-            let Some(control) = data_win(d1) else { return MsgHandled::Handled };
+            let Some(control) = data_win(d1) else {
+                h.undefined("GBM_SELECTED: control->winGetWindowId() of a NULL control");
+                return MsgHandled::Handled;
+            };
             let control_id = wm.tree.windows[control].id;
             let d = h.network_direct_connect().clone();
             if control_id == d.button_back_id {
                 let name = save_name_and_trim(wm, h, None);
                 h.lan_request_set_name(&name);
 
-                h.network_direct_connect().button_pushed = true;
+                h.network_direct_connect().button_pushed = !plant(22667);
                 h.set_lan_button_pushed(true);
                 shell::pop(wm, h);
             } else if control_id == d.button_host_id {

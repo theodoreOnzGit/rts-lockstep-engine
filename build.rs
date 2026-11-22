@@ -367,6 +367,9 @@ mod differential {
         drafts_net4(&up, &shim, &dif); // #215 (group net4): the GameSpy persistent-storage, IP enumeration, download manager, ... drafts' references (fn drafts_net4, the end of this module)
         drafts_ui3a(&up, &dif); // #215 (group ui3a): the WOL (GameSpy online) menu drafts' references (fn drafts_ui3a, the end of this module)
         drafts_ui3b(root); // #215 (group ui3b): the GUI callbacks and control-bar drafts of src/drafts/ui (fn drafts_ui3b, the end of this module)
+        drafts_ui4(root); // #215 (group ui4): the list box / text entry / combo box / static text menus of src/drafts/ui, on upstream's own window manager and gadgets (fn drafts_ui4, the end of this module)
+        drafts_ui5(root); // #215 (group ui5): network_direct_connect, popup_ladder_select, popup_host_game on group ui4's window manager (fn drafts_ui5, the end of this module)
+        drafts_wol6(root); // #215 (group wol6): the big WOL menus' (lobby, game setup, quick match, buddy overlay) references (fn drafts_wol6, the end of this module)
 
         // The W3D readers, compiled first so that their references to
         // matrix3d.cpp (upstream_wwmath) and to the RAMFile of
@@ -11263,6 +11266,7 @@ mod differential {
         drafts_netpkt(&up, &shim, &dif, &ww); // #215: the network drafts (group netpkt), see the function at the end of this module
         drafts_netlogic(&up, &shim, &dif, &ww); // #215 (group netlogic): the network bookkeeping drafts, see the function at the end of this module
         drafts_gameinfo(&up, &shim, &dif, &ww); // #215 (group gameinfo): the LAN and GameSpy staging-room game-info drafts, see the function at the end of this module
+        drafts_lan5(root); // #215 (group lan5): the LAN API handlers' reference, on the real game-info classes (after drafts_gameinfo, whose ginfo_gen it needs; fn drafts_lan5, the end of this module)
         drafts_guilogic2(&up, &shim, &dif); // #215 (group guilogic2): anim2d and others, see the function at the end of this module
         drafts_network2(&up, &shim, &dif, &ww); // #215 (group network2): Connection and Transport, see the function at the end of this module
         drafts_ui2(&up, &shim, &dif); // #215 (group ui2): the common_client drafts' pure parts, see the function at the end of this module
@@ -15057,5 +15061,413 @@ mod differential {
             b.compile(&format!("draft_ui3b_{}", wrapper.trim_start_matches("wrap_draft_").trim_end_matches(".cpp")));
         }
         println!("cargo:rerun-if-changed=differential/shim_ui3b");
+    }
+
+    /// #215 (group ui4): the PROGRAMS (`ui4_<menu>`, one per wrapper) for the menu drafts of `src/drafts/ui` that drive the list box, text entry, combo box and static
+    /// text gadgets (disconnect_window, disconnect_menu, ...). It is #70's window manager program (`wm_ref`: upstream's GameWindowManager.cpp, GameWindow.cpp,
+    /// WinInstanceData.cpp, GameWindowGlobal.cpp and the eleven Gadget*.cpp, cut and edited exactly as there) built with `differential/wrap_wm.cpp`'s
+    /// stand-ins (its text is included, with four asserted edits: its `main` renamed, and its three aborting stand-ins for `WindowLayout::addWindow`,
+    /// `removeWindow` and `GameWindowManager::winCreateLayout` removed, since this program has the real WindowLayout.cpp and its own `winCreateLayout`),
+    /// plus the menus' own files, cut VERBATIM (each anchor asserted once) into OUT_DIR/draft_ui4_gen. Its entry point is stdin/stdout (the
+    /// operations of tests/ui4_common/mod.rs); `UI4_<MENU>_EXE` is each program's path. Everything the menus call outside the cuts is a stand-in listed in
+    /// `differential/ui4_host.h` and the wrappers `differential/wrap_draft_ui4_<menu>.cpp`.
+    fn drafts_ui4(root: &Path) {
+        let up = root.join("upstream/GeneralsMD/Code");
+        let dif = root.join("differential");
+        let shim = dif.join("shim");
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let gen = out_dir.join("draft_ui4_gen");
+        std::fs::create_dir_all(&gen).expect("create draft_ui4_gen");
+        let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+            assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+            let i = text.find(from).expect("from");
+            match to {
+                Some(to) => {
+                    assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                    let j = text.find(to).expect("to");
+                    assert!(i < j, "{file}: a cut must end after it starts");
+                    text[i..j].to_string()
+                }
+                None => text[i..].to_string(),
+            }
+        };
+        let gui = up.join("GameEngine/Source/GameClient/GUI");
+        // the window manager and the gadgets: the same files and the same five MSVC-only edits as `wm_ref` (see the #70 block of `build`)
+        let edits: &[(&str, &[(&str, &str)])] = &[
+            (
+                "Gadget/GadgetListBox.cpp",
+                &[
+                    ("for(j = 0; j < TheKeyboard->MAX_KEY_STATES; ++j)", "for(Int j = 0; j < TheKeyboard->MAX_KEY_STATES; ++j)"),
+                    ("tAndC->string = UnicodeString.TheEmptyString;", "tAndC->string = UnicodeString::TheEmptyString;"),
+                    ("for (Int i=0; i<selectCount && i<list->endPos; ++i)", "Int i;\n\t\t\t\tfor (i=0; i<selectCount && i<list->endPos; ++i)"),
+                    ("\t\t\tfor(i = 0; i < (Int)mData1; i ++)", "\t\t\tfor(Int i = 0; i < (Int)mData1; i ++)"),
+                ],
+            ),
+            ("Gadget/GadgetComboBox.cpp", &[("UnicodeString.TheEmptyString", "UnicodeString::TheEmptyString")]),
+        ];
+        let files = [
+            "GameWindowManager.cpp",
+            "GameWindow.cpp",
+            "WinInstanceData.cpp",
+            "GameWindowGlobal.cpp",
+            "Gadget/GadgetCheckBox.cpp",
+            "Gadget/GadgetComboBox.cpp",
+            "Gadget/GadgetHorizontalSlider.cpp",
+            "Gadget/GadgetListBox.cpp",
+            "Gadget/GadgetProgressBar.cpp",
+            "Gadget/GadgetPushButton.cpp",
+            "Gadget/GadgetRadioButton.cpp",
+            "Gadget/GadgetStaticText.cpp",
+            "Gadget/GadgetTabControl.cpp",
+            "Gadget/GadgetTextEntry.cpp",
+            "Gadget/GadgetVerticalSlider.cpp",
+        ];
+        let mut sources = Vec::new();
+        for f in files {
+            let path = gui.join(f);
+            println!("cargo:rerun-if-changed={}", path.display());
+            let mut text = read_upstream(&path);
+            let marker = "#include \"PreRTS.h\"";
+            assert_eq!(text.matches(marker).count(), 1, "{f}: {marker:?} must occur once");
+            text = text[text.find(marker).expect("marker")..].to_string();
+            for (file, list) in edits {
+                if *file == f {
+                    for (from, to) in *list {
+                        assert_eq!(text.matches(from).count(), 1, "{f}: {from:?} must occur once");
+                        text = text.replace(from, to);
+                    }
+                }
+            }
+            let name = f.replace("Gadget/", "");
+            std::fs::write(gen.join(&name), format!("/* generated by build.rs (drafts_ui4): verbatim from GameEngine/Source/GameClient/GUI/{f} (see build.rs) */\n{text}")).expect("write ui4 wm source");
+            sources.push(gen.join(&name));
+        }
+        // wrap_wm.cpp's text, edited (see the doc comment)
+        println!("cargo:rerun-if-changed=differential/wrap_wm.cpp");
+        let mut base_text = std::fs::read_to_string(dif.join("wrap_wm.cpp")).expect("read wrap_wm.cpp");
+        for (from, to) in [
+            ("int main(void)\n", "int wm_ref_main(void)\n"),
+            ("void WindowLayout::addWindow(GameWindow *) { abort(); }\n", ""),
+            ("void WindowLayout::removeWindow(GameWindow *) { abort(); }\n", ""),
+            ("WindowLayout *GameWindowManager::winCreateLayout(AsciiString) { abort(); }\n", ""),
+            // the Gameinfo images (GameInfoWindow.cpp's random and observer icons) are found as the `Img*` ones are
+            ("\tif (strncasecmp(n, \"img\", 3) != 0) return NULL;\n", "\tif (strncasecmp(n, \"img\", 3) != 0 && strncasecmp(n, \"Gameinfo\", 8) != 0) return NULL;\n"),
+        ] {
+            assert_eq!(base_text.matches(from).count(), 1, "wrap_wm.cpp: {from:?} must occur once");
+            base_text = base_text.replace(from, to);
+        }
+        std::fs::write(gen.join("ui4_wm_base.inc"), format!("/* generated by build.rs (drafts_ui4): differential/wrap_wm.cpp with its main renamed and three aborting stand-ins removed */\n{base_text}")).expect("write ui4_wm_base.inc");
+        // the menus' own files, verbatim
+        let menus = "GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/";
+        let gui_rel = "GameEngine/Source/GameClient/GUI/";
+        let head = "/* generated by build.rs (drafts_ui4): verbatim from upstream (see differential/ui4_host.h and the wrapper that includes it) */\n";
+        let cuts: Vec<(&str, String, &str, Option<&str>, Vec<(&str, &str)>)> = vec![
+            ("wl_cpp.inc", format!("{gui_rel}WindowLayout.cpp"), "WindowLayout::WindowLayout( void )", None, vec![]),
+            ("disconnect_window.inc", format!("{menus}DisconnectWindow.cpp"), "// Private Data -----", None, vec![]),
+            // the one edit: `text.format(fmt, playerName.str())` goes through the shim's glibc vswprintf, whose `%ls` reads 32-bit units
+            ("game_info_window.inc", format!("{menus}GameInfoWindow.cpp"), "static GameWindow *parent = NULL;", None, vec![("staticTextGameName,UnicodeString.TheEmptyString", "staticTextGameName,UnicodeString::TheEmptyString"), ("staticTextMapName,UnicodeString.TheEmptyString", "staticTextMapName,UnicodeString::TheEmptyString")]),
+            ("popup_join_game.inc", format!("{menus}PopupJoinGame.cpp"), "static NameKeyType parentPopupID", None, vec![("munkee.translate(txtInput);", "ui4_translate(munkee, txtInput);")]),
+            ("disconnect_menu.inc", format!("{gui_rel}DisconnectMenu/DisconnectMenu.cpp"), "char *DisconnectMenu::m_playerNameTextControlNames[] = {", None, vec![("text.format(TheGameText->fetch(\"Network:PlayerLeftGame\"), playerName.str());", "ui4_format_ls(text, TheGameText->fetch(\"Network:PlayerLeftGame\"), playerName);")]),
+        ];
+        for (name, path, from, to, edits) in &cuts {
+            println!("cargo:rerun-if-changed={}", up.join(path).display());
+            let text = read_upstream(up.join(path));
+            let mut cut = piece(&text, path, from, *to);
+            for (a, b) in edits {
+                assert_eq!(cut.matches(a).count(), 1, "{path}: edit {a:?} must occur once");
+                cut = cut.replace(a, b);
+            }
+            std::fs::write(gen.join(name), format!("{head}{cut}")).expect("write a ui4 cut");
+        }
+        println!("cargo:rerun-if-changed=differential/ui4_host.h");
+        println!("cargo:rerun-if-changed=differential/ui4_main.h");
+        println!("cargo:rerun-if-changed=differential/shim_ui4");
+        let obj = out_dir.join("ui4_obj");
+        std::fs::create_dir_all(&obj).expect("create ui4_obj");
+        let configure = |b: &mut cc::Build| {
+            base(b);
+            b.out_dir(&obj)
+                .pic(false)
+                .flag("-fpermissive")
+                .flag("-fno-pie")
+                .include(&gen)
+                .include(dif.join("shim_ui4"))
+                .include(dif.join("shim_wm"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(gui.join("Gadget"))
+                .include(&dif);
+        };
+        let mut b = cc::Build::new();
+        configure(&mut b);
+        let wm_objs = b.files(&sources).compile_intermediates();
+        // one program per wrapper, each with its own menus' cuts and stand-ins, over the same window manager objects
+        for (wrapper, env) in [("wrap_draft_ui4_disconnect.cpp", "UI4_DISCONNECT_EXE"), ("wrap_draft_ui4_join.cpp", "UI4_JOIN_EXE"), ("wrap_draft_ui4_gameinfo.cpp", "UI4_GAMEINFO_EXE")] {
+            println!("cargo:rerun-if-changed=differential/{wrapper}");
+            let mut b = cc::Build::new();
+            configure(&mut b);
+            let objs = b.file(dif.join(wrapper)).compile_intermediates();
+            let exe = out_dir.join(wrapper.trim_start_matches("wrap_draft_").trim_end_matches(".cpp"));
+            let mut link = b.get_compiler().to_command();
+            link.arg("-no-pie").arg("-o").arg(&exe).args(&wm_objs).args(&objs);
+            let st = link.status().expect("link a ui4 program");
+            assert!(st.success(), "linking {wrapper} failed");
+            println!("cargo:rustc-env={env}={}", exe.display());
+        }
+    }
+
+    /// #215 (group ui5): the PROGRAMS `ui5_<menu>` for the menu drafts network_direct_connect, popup_ladder_select and popup_host_game. The same as group ui4's (the window manager and
+    /// gadget sources `drafts_ui4` generated, wrap_wm.cpp's text as `ui4_wm_base.inc`, ui4_host.h and ui4_main.h), compiled AGAIN with `differential/shim_ui5` ahead of the shims (its
+    /// AsciiString / UnicodeString / transitions headers differ from ui4's, so the window manager objects are rebuilt rather than shared). The menus' files are cut VERBATIM into
+    /// OUT_DIR/draft_ui5_gen (each anchor asserted once; the edits are listed in the wrappers). `UI5_<MENU>_EXE` is each program's path.
+    fn drafts_ui5(root: &Path) {
+        let up = root.join("upstream/GeneralsMD/Code");
+        let dif = root.join("differential");
+        let shim = dif.join("shim");
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let gen4 = out_dir.join("draft_ui4_gen");
+        let gen = out_dir.join("draft_ui5_gen");
+        std::fs::create_dir_all(&gen).expect("create draft_ui5_gen");
+        let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+            assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+            let i = text.find(from).expect("from");
+            match to {
+                Some(to) => {
+                    assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                    let j = text.find(to).expect("to");
+                    assert!(i < j, "{file}: a cut must end after it starts");
+                    text[i..j].to_string()
+                }
+                None => text[i..].to_string(),
+            }
+        };
+        let menus = "GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/";
+        let head = "/* generated by build.rs (drafts_ui5): verbatim from upstream (see the wrapper that includes it) */\n";
+        let qp = "GameEngine/Source/Common/System/QuotedPrintable.cpp".to_string();
+        let lan = format!("{menus}LanLobbyMenu.cpp");
+        // (name, file, from, to, edits)
+        let cuts: Vec<(&str, String, &str, Option<&str>, Vec<(&str, &str)>)> = vec![
+            ("qp_to.inc", qp.clone(), "#define MAGIC_CHAR '_'", Some("// Convert ascii strings into ascii quoted-printable strings"), vec![]),
+            ("qp_from.inc", qp.clone(), "// Convert ascii quoted-printable strings into unicode strings", Some("// Convert ascii quoted-printable strings into ascii strings"), vec![]),
+            ("lan_user.inc", lan.clone(), "UnicodeString LANPreferences::getUserName(void)", Some("Int LANPreferences::getPreferredColor(void)"), vec![]),
+            ("lan_ips.inc", lan.clone(), "Int LANPreferences::getNumRemoteIPs(void)", Some("static const char superweaponRestrictionKey[]"), vec![]),
+            ("host_game.inc", format!("{menus}PopupHostGame.cpp"), "static NameKeyType parentPopupID", None, vec![]),
+            (
+                "ladder_select.inc",
+                format!("{menus}PopupLadderSelect.cpp"),
+                "static NameKeyType parentID",
+                None,
+                vec![
+                    ("line.format(TheGameText->fetch(\"GUI:LadderNameAndSize\"), info->name.str(), info->playersPerTeam, info->playersPerTeam);", "ui5_fmt_name(line, TheGameText->fetch(\"GUI:LadderNameAndSize\"), info->name, info->playersPerTeam, info->playersPerTeam);"),
+                    ("line.format(TheGameText->fetch(\"GUI:LadderURL\"), info->homepageURL.str());", "ui5_fmt_text(line, TheGameText->fetch(\"GUI:LadderURL\"), info->homepageURL);"),
+                    ("line.format(TheGameText->fetch(\"GUI:LadderMinWins\"), info->minWins);", "ui5_fmt_int(line, TheGameText->fetch(\"GUI:LadderMinWins\"), info->minWins);"),
+                    ("line.format(TheGameText->fetch(\"GUI:LadderMaxWins\"), info->maxWins);", "ui5_fmt_int(line, TheGameText->fetch(\"GUI:LadderMaxWins\"), info->maxWins);"),
+                    // (MSVC 6's `for` scope: the `it` of the earlier loop)
+                    ("for (it = validMaps.begin(); it != validMaps.end(); ++it)", "for (AsciiStringListIterator it = validMaps.begin(); it != validMaps.end(); ++it)"),
+                ],
+            ),
+            (
+                "ndc.inc",
+                format!("{menus}NetworkDirectConnect.cpp"),
+                "extern Bool LANbuttonPushed;",
+                None,
+                vec![("sel.translate(unisel);", "ui5_translate(sel, unisel);"), ("ascii.translate(uni);", "ui5_translate(ascii, uni);"), ("asciientry.translate(ipunistring);", "ui5_translate(asciientry, ipunistring);")],
+            ),
+        ];
+        for (name, path, from, to, edits) in &cuts {
+            println!("cargo:rerun-if-changed={}", up.join(path).display());
+            let text = read_upstream(up.join(path));
+            let mut cut = piece(&text, path, from, *to);
+            for (a, b) in edits {
+                assert_eq!(cut.matches(a).count(), 1, "{path}: edit {a:?} must occur once");
+                cut = cut.replace(a, b);
+            }
+            std::fs::write(gen.join(name), format!("{head}{cut}")).expect("write a ui5 cut");
+        }
+        println!("cargo:rerun-if-changed=differential/shim_ui5");
+        println!("cargo:rerun-if-changed=differential/ui4_host.h");
+        println!("cargo:rerun-if-changed=differential/ui4_main.h");
+        let obj = out_dir.join("ui5_obj");
+        std::fs::create_dir_all(&obj).expect("create ui5_obj");
+        let gui = up.join("GameEngine/Source/GameClient/GUI");
+        let configure = |b: &mut cc::Build| {
+            base(b);
+            b.out_dir(&obj)
+                .pic(false)
+                .flag("-fpermissive")
+                .flag("-fno-pie")
+                .include(&gen)
+                .include(&gen4)
+                .include(dif.join("shim_ui5"))
+                .include(dif.join("shim_ui4"))
+                .include(dif.join("shim_wm"))
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(gui.join("Gadget"))
+                .include(&dif);
+        };
+        let wm_files = ["GameWindowManager.cpp", "GameWindow.cpp", "WinInstanceData.cpp", "GameWindowGlobal.cpp", "GadgetCheckBox.cpp", "GadgetComboBox.cpp", "GadgetHorizontalSlider.cpp", "GadgetListBox.cpp", "GadgetProgressBar.cpp", "GadgetPushButton.cpp", "GadgetRadioButton.cpp", "GadgetStaticText.cpp", "GadgetTabControl.cpp", "GadgetTextEntry.cpp", "GadgetVerticalSlider.cpp"];
+        let sources: Vec<std::path::PathBuf> = wm_files.iter().map(|f| gen4.join(f)).collect();
+        let mut b = cc::Build::new();
+        configure(&mut b);
+        let wm_objs = b.files(&sources).compile_intermediates();
+        for (wrapper, env) in [("wrap_draft_ui5_ndc.cpp", "UI5_NDC_EXE"), ("wrap_draft_ui5_host.cpp", "UI5_HOST_EXE"), ("wrap_draft_ui5_ladder.cpp", "UI5_LADDER_EXE")] {
+            println!("cargo:rerun-if-changed=differential/{wrapper}");
+            let mut b = cc::Build::new();
+            configure(&mut b);
+            let objs = b.file(dif.join(wrapper)).compile_intermediates();
+            let exe = out_dir.join(wrapper.trim_start_matches("wrap_draft_").trim_end_matches(".cpp"));
+            let mut link = b.get_compiler().to_command();
+            link.arg("-no-pie").arg("-o").arg(&exe).args(&wm_objs).args(&objs);
+            let st = link.status().expect("link a ui5 program");
+            assert!(st.success(), "linking {wrapper} failed");
+            println!("cargo:rustc-env={env}={}", exe.display());
+        }
+    }
+    /// (#215, group lan5) The reference for src/drafts/network/lan_api_handlers.rs: LANAPIhandlers.cpp cut verbatim (every anchor asserted once) on
+    /// the real LANGameInfo/GameInfo (wrap_game_info.cpp #included whole, as drafts_gameinfo does), with LANAPI.cpp's helpers the handlers call. See
+    /// differential/wrap_draft_lanhandlers.cpp for the list of cuts and stand-ins. Every class and global of the wrapper is renamed Lh*.
+    fn drafts_lan5(root: &Path) {
+        let up = root.join("upstream/GeneralsMD/Code");
+        let dif = root.join("differential");
+        let shim = dif.join("shim");
+        let ww = up.join("Libraries/Source/WWVegas");
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let gen = out_dir.join("draft_lan5_gen");
+        std::fs::create_dir_all(&gen).expect("create draft_lan5_gen");
+        let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+            assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+            let i = text.find(from).expect("from");
+            match to {
+                Some(to) => {
+                    assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                    let j = text.find(to).expect("to");
+                    assert!(i < j, "{file}: a cut must end after it starts");
+                    text[i..j].to_string()
+                }
+                None => text[i..].to_string(),
+            }
+        };
+        let ge = up.join("GameEngine");
+        let head = "/* generated by build.rs (drafts_lan5): verbatim from upstream (see the wrapper that includes it) */\n";
+        let lh = read_upstream(ge.join("Include/GameNetwork/LANAPI.h"));
+        let lc = read_upstream(ge.join("Source/GameNetwork/LANAPI.cpp"));
+        let nd = read_upstream(ge.join("Include/GameNetwork/NetworkDefs.h"));
+        let lg = read_upstream(ge.join("Source/GameNetwork/LANGameInfo.cpp"));
+        let qp = read_upstream(ge.join("Source/Common/System/QuotedPrintable.cpp"));
+        let hd = read_upstream(ge.join("Source/GameNetwork/LANAPIhandlers.cpp"));
+        let opts = piece(&lg, "LANGameInfo.cpp", "AsciiString GenerateGameOptionsString( void )", None);
+        assert_eq!(opts.matches("AsciiString.TheEmptyString").count(), 1, "LANGameInfo.cpp: the TheEmptyString typo must occur once");
+        let msg = piece(&lh, "LANAPI.h", "struct LANMessage\n{", Some("#pragma pack(pop)"));
+        let consts = format!(
+            "{}{}",
+            piece(&lh, "LANAPI.h", "static const Int g_lanGameNameReservedLength", Some("static const Int m_lanMaxOptionsLength")),
+            piece(&lh, "LANAPI.h", "static const Int g_maxSerialLength", Some("struct LANMessage;\n"))
+        );
+        let cuts: Vec<(&str, String)> = vec![
+            ("lh_consts.inc", consts),
+            ("lh_msg.inc", msg.replacen("struct LANMessage\n{", "struct LANMessagePod\n{", 1)),
+            ("lh_chat.inc", piece(&lh, "LANAPI.h", "\tenum ChatType\n\t{", Some("\n\t// Request functions generate network traffic\n\tvirtual void RequestLocations( void ) = 0;"))),
+            ("lh_ret.inc", piece(&lh, "LANAPI.h", "\tenum ReturnType\n\t{", Some("\tUnicodeString getErrorStringFromReturnType( ReturnType ret );"))),
+            ("lh_pending.inc", piece(&lh, "LANAPI.h", "\tenum PendingActionType\n\t{", Some("\tstatic const UnsignedInt s_resendDelta; // in ms"))),
+            ("lh_qp.inc", piece(&qp, "QuotedPrintable.cpp", "#define MAGIC_CHAR '_'", Some("// Convert ascii strings into ascii quoted-printable strings"))),
+            ("lh_lan_slots.inc", piece(&lg, "LANGameInfo.cpp", "// LANGameSlot ----------------------------------------\n", Some("// Misc game-related functionality --------------------\n"))),
+            ("lh_lan_options.inc", opts.replacen("AsciiString.TheEmptyString", "AsciiString::TheEmptyString", 1)),
+            ("lh_head.inc", piece(&lc, "LANAPI.cpp", "static const UnsignedShort lobbyPort = 8086;", Some("AsciiString GetMessageTypeString(UnsignedInt type);\n\nconst UnsignedInt LANAPI::s_resendDelta"))),
+            ("lh_send.inc", piece(&lc, "LANAPI.cpp", "void LANAPI::sendMessage(LANMessage *msg, UnsignedInt ip /* = 0 */)", Some("AsciiString GetMessageTypeString(UnsignedInt type)\n{"))),
+            ("lh_join.inc", piece(&lc, "LANAPI.cpp", "void LANAPI::RequestGameJoin( LANGameInfo *game, UnsignedInt ip /* = 0 */ )", Some("void LANAPI::RequestGameJoinDirectConnect(UnsignedInt ipaddress)"))),
+            ("lh_options.inc", piece(&lc, "LANAPI.cpp", "void LANAPI::RequestGameOptions( AsciiString gameOptions, Bool isPublic, UnsignedInt ip /* = 0 */ )", Some("void LANAPI::RequestGameCreate( UnicodeString gameName, Bool isDirectConnect )"))),
+            ("lh_fill.inc", piece(&lc, "LANAPI.cpp", "void LANAPI::fillInLANMessage( LANMessage *msg )", Some("void LANAPI::RequestLobbyLeave( Bool forced )"))),
+            ("lh_lists.inc", piece(&lc, "LANAPI.cpp", "LANGameInfo * LANAPI::LookupGame( UnicodeString gameName )", Some("Bool LANAPI::SetLocalIP( UnsignedInt localIP )"))),
+            ("lh_host.inc", piece(&lc, "LANAPI.cpp", "Bool LANAPI::AmIHost( void )", Some("void LANAPI::setIsActive(Bool isActive) {"))),
+            ("lh_handlers.inc", piece(&hd, "LANAPIhandlers.cpp", "void LANAPI::handleRequestLocations( LANMessage *msg, UnsignedInt senderIP )", None)),
+        ];
+        for (name, text) in &cuts {
+            std::fs::write(gen.join(name), format!("{head}{text}")).expect("write a lan5 cut");
+        }
+        let mut b = cc::Build::new();
+        base(&mut b);
+        b.flag("-fpermissive")
+            .include(dif.join("shim_dgi"))
+            .include(&gen)
+            .include(dif.join("shim_ginfo"))
+            .include(out_dir.join("ginfo_gen"))
+            .include(&shim)
+            .include(up.join("GameEngine/Include"))
+            .include(up.join("Libraries/Include"))
+            .include(ww.join("WWMath"))
+            .include(ww.join("WWLib"))
+            .file(dif.join("wrap_draft_lanhandlers.cpp"));
+        b.compile("upstream_draft_lan5");
+        for p in [
+            "differential/wrap_draft_lanhandlers.cpp",
+            "differential/wrap_game_info.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameNetwork/LANAPIhandlers.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameNetwork/LANAPI.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameNetwork/LANGameInfo.cpp",
+            "upstream/GeneralsMD/Code/GameEngine/Include/GameNetwork",
+        ] {
+            println!("cargo:rerun-if-changed={p}");
+        }
+    }
+
+    /// #215 (group wol6): the references for the big WOL (GameSpy online) menu drafts of `src/drafts/ui` (`wol_lobby_menu.rs`, `wol_game_setup_menu.rs`,
+    /// `wol_quick_match_menu.rs`, `wol_buddy_overlay.rs`). Each cut is verbatim from upstream (each anchor asserted to occur once) and written to
+    /// OUT_DIR/draft_wol6_gen; each wrapper (`differential/wrap_draft_<name>.cpp`) lists its cuts and stand-ins in its header.
+    fn drafts_wol6(root: &Path) {
+        let up = root.join("upstream/GeneralsMD/Code");
+        let dif = root.join("differential");
+        let shim = dif.join("shim");
+        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+        let gen = out_dir.join("draft_wol6_gen");
+        std::fs::create_dir_all(&gen).expect("create draft_wol6_gen");
+        let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+            assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+            let i = text.find(from).expect("from");
+            match to {
+                Some(to) => {
+                    assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                    let j = text.find(to).expect("to");
+                    assert!(i < j, "{file}: a cut must end after it starts");
+                    text[i..j].to_string()
+                }
+                None => text[i..].to_string(),
+            }
+        };
+        let head = "/* generated by build.rs (drafts_wol6): verbatim from upstream (see the wrapper that includes it) */\n";
+        let menus = "GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/";
+        let qr2 = "extern \"C\" {\nint getQR2HostingStatus(void);\n}";
+        // (inc name, upstream file under Code/, start anchor, end anchor)
+        let cuts: Vec<(&str, String, &str, Option<&str>)> = vec![
+            ("gscolor.inc", "GameEngine/Include/GameNetwork/GameSpy/PeerDefs.h".to_string(), "enum GameSpyColors {", Some("extern Color GameSpyColor[GSCOLOR_MAX];")),
+            ("lobby_statics.inc", format!("{menus}WOLLobbyMenu.cpp"), "static time_t gameListRefreshTime = 0;", Some("void setUnignoreText( WindowLayout *layout, AsciiString nick, GPProfile id);")),
+            ("lobby_slash.inc", format!("{menus}WOLLobbyMenu.cpp"), qr2, Some("static Bool s_tryingToHostOrJoin = FALSE;")),
+            ("lobby_refresh.inc", format!("{menus}WOLLobbyMenu.cpp"), "static void refreshGameList( Bool forceRefresh )", Some("/** WOL Lobby Menu update method */")),
+            ("gs_slash.inc", format!("{menus}WOLGameSetupMenu.cpp"), qr2, Some("static Int getNextSelectablePlayer(Int start)")),
+            ("lobby_rank.inc", format!("{menus}WOLLobbyMenu.cpp"), "static const char *rankNames[] = {", Some("static Int insertPlayerInListbox(const PlayerInfo& info, Color color)")),
+        ];
+        for (name, path, from, to) in &cuts {
+            println!("cargo:rerun-if-changed={}", up.join(path).display());
+            let text = read_upstream(up.join(path));
+            let cut = piece(&text, path, from, *to);
+            std::fs::write(gen.join(name), format!("{head}{cut}")).expect("write a wol6 cut");
+        }
+        println!("cargo:rerun-if-changed=differential/wol6_slash_host.h");
+        for (wrapper, lib) in [("wrap_draft_wol_slash.cpp", "draft_wol6_slash"), ("wrap_draft_wol_rank.cpp", "draft_wol6_rank")] {
+            println!("cargo:rerun-if-changed=differential/{wrapper}");
+            let mut b = cc::Build::new();
+            base(&mut b);
+            b.flag("-fpermissive")
+                .flag("-w")
+                .include(&gen)
+                .include(&dif)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .file(dif.join(wrapper));
+            b.compile(lib);
+        }
     }
 }
