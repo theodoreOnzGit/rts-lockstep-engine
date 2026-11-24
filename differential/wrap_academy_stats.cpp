@@ -277,7 +277,9 @@ int ref_academy_save(const char *path)
 /* XferLoad of `path` into fresh statistics: out[0] the status, then the probe (out[1..6]). */
 void ref_academy_load(const char *path, unsigned *out)
 {
-	g_player.m_academy = AcademyStats();
+	/* AcademyStats() has a user-declared empty constructor so it leaves members uninitialised;
+	** init(&g_player) clears non-xfer'd pointers (such as m_commandCenterTemplate) while keeping the vptr (#236). */
+	g_player.m_academy.init(&g_player);
 	XferLoad x;
 	int status = 0;
 	try {

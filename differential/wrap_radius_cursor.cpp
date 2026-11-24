@@ -352,7 +352,8 @@ extern "C" int ref_radius_cursor_seq(const int *in, int nin, int *out, int cap)
 /* ---- (#130) the logic's own decals ---- */
 namespace rcz {
 alignas(RadiusDecal) unsigned char g_decalBuf[6][sizeof(RadiusDecal)];
-RadiusDecalTemplate g_tmpl[6];
+/* Function-local static avoids static initialization order fiasco with AsciiString::TheEmptyString (#238). */
+RadiusDecalTemplate *tmplAt(Int s) { static RadiusDecalTemplate arr[6]; return &arr[s]; }
 RadiusDecal *decalAt(Int s) { return reinterpret_cast<RadiusDecal *>(g_decalBuf[s]); }
 UnsignedInt nameHash(const char *c)
 {
@@ -382,7 +383,7 @@ extern "C" int ref_logic_decals_seq(const int *in, int nin, int *out, int cap)
 	}
 	for (Int s = 0; s < 6; ++s) {
 		new (g_decalBuf[s]) RadiusDecal();
-		g_tmpl[s] = RadiusDecalTemplate();
+		*tmplAt(s) = RadiusDecalTemplate();
 	}
 	char name[16];
 	for (int st = 5; st + 16 <= nin; st += 16) {
@@ -391,7 +392,7 @@ extern "C" int ref_logic_decals_seq(const int *in, int nin, int *out, int cap)
 		RadiusDecal *d = decalAt(slot);
 		switch (w[0]) {
 		case 0: {
-			RadiusDecalTemplate &t = g_tmpl[slot];
+			RadiusDecalTemplate &t = *tmplAt(slot);
 			sprintf(name, "T%d", (int)slot);
 			t.m_name = w[2] ? name : "";
 			t.m_shadowType = (ShadowType)w[3];

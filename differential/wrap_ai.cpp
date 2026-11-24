@@ -1078,14 +1078,18 @@ public:
 		m_putInContainerName.clear();
 	}
 };
-static DeliverPayloadAIUpdateModuleData g_deliverData;
+/* Function-local static avoids static initialization order fiasco with AsciiString::TheEmptyString (#237). */
+static DeliverPayloadAIUpdateModuleData &deliverData() {
+	static DeliverPayloadAIUpdateModuleData d;
+	return d;
+}
 class DeliverPayloadAIUpdate : public AIUpdateInterface
 {
 public:
 
 	DeliverPayloadAIUpdate( Thing *thing, const ModuleData* moduleData );
 	virtual ~DeliverPayloadAIUpdate( void );
-	const DeliverPayloadAIUpdateModuleData *getDeliverPayloadAIUpdateModuleData() const { return &g_deliverData; }
+	const DeliverPayloadAIUpdateModuleData *getDeliverPayloadAIUpdateModuleData() const { return &deliverData(); }
 
 	virtual AIFreeToExitType getAiFreeToExit(const Object* exiter) const;
 
@@ -3313,6 +3317,7 @@ void setScene(const AiEnv *env)
 		if ((env->missileGarrison[2] >> k) & 1) g_missileData.m_garrisonHitKillKindofNot.set((KindOfType)k);
 	}
 	/* batch A37: a DeliverPayloadAIUpdate's data (the template names the scene's) */
+	DeliverPayloadAIUpdateModuleData &g_deliverData = deliverData();
 	g_deliverData = DeliverPayloadAIUpdateModuleData();
 	g_deliverData.m_doorDelay = env->deliverTimes[0];
 	g_deliverData.m_dropDelay = env->deliverTimes[1];
