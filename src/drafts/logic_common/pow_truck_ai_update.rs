@@ -634,3 +634,46 @@ pub fn prison_dock_update_action<W: PowTruckWorld>(w: &mut W, ai: &mut PowTruckA
     // end docking
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::xfer_load::XferLoad;
+    use crate::common::xfer_save::XferSave;
+
+    #[test]
+    fn module_data_and_snapshot_round_trip() {
+        let md = PowTruckAiUpdateModuleData::default();
+        assert_eq!(md.bored_time_in_frames, 0);
+        assert_eq!(md.hang_around_prison_distance, 0.0);
+        assert_eq!(pow_truck_field_names(), ["BoredTime", "AtPrisonDistance"]);
+
+        let mut ai = PowTruckAiUpdate::new(md.clone());
+        ai.ai_mode = PowTruckAiMode::Manual;
+        ai.current_task = PowTruckTask::ReturningPrisoners;
+        ai.target_id = 42;
+        ai.prison_id = 99;
+        ai.entered_waiting_frame = 1234;
+        ai.last_find_frame = 5678;
+
+        let mut save = XferSave::new();
+        save.open(b"pow").unwrap();
+        ai.xfer(&mut save).unwrap();
+        save.close().unwrap();
+        let bytes = save.take_bytes();
+        // version (1 byte) + 6 x 4-byte fields = 25 bytes
+        assert_eq!(bytes.len(), 25);
+
+        let mut loaded = PowTruckAiUpdate::new(md);
+        let mut load = XferLoad::new(bytes);
+        load.open(b"pow").unwrap();
+        loaded.xfer(&mut load).unwrap();
+        loaded.load_post_process();
+        assert_eq!(loaded.ai_mode, PowTruckAiMode::Manual);
+        assert_eq!(loaded.current_task, PowTruckTask::ReturningPrisoners);
+        assert_eq!(loaded.target_id, 42);
+        assert_eq!(loaded.prison_id, 99);
+        assert_eq!(loaded.entered_waiting_frame, 1234);
+        assert_eq!(loaded.last_find_frame, 5678);
+    }
+}

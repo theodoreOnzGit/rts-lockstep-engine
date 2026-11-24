@@ -181,3 +181,33 @@ impl Snapshot for DemoralizeSpecialPower {
     /// `DemoralizeSpecialPower::loadPostProcess`: the base's.
     fn load_post_process(&mut self) {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::xfer_load::XferLoad;
+    use crate::common::xfer_save::XferSave;
+
+    #[test]
+    fn module_data_and_snapshot_round_trip() {
+        let md = DemoralizeSpecialPowerModuleData::default();
+        assert_eq!(md.base_range, 0.0);
+        assert_eq!(md.max_range, 0.0);
+        assert_eq!(md.base_duration_in_frames, 0);
+        assert_eq!(md.max_duration_in_frames, 0);
+
+        let mut d = DemoralizeSpecialPower::new(md);
+        let mut save = XferSave::new();
+        save.open(b"demo").unwrap();
+        d.xfer(&mut save).unwrap();
+        save.close().unwrap();
+        let bytes = save.take_bytes();
+        assert_eq!(bytes, vec![1]);
+
+        let mut loaded = DemoralizeSpecialPower::new(DemoralizeSpecialPowerModuleData::default());
+        let mut load = XferLoad::new(bytes);
+        load.open(b"demo").unwrap();
+        loaded.xfer(&mut load).unwrap();
+        loaded.load_post_process();
+    }
+}

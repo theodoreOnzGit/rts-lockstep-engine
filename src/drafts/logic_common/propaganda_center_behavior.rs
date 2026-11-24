@@ -180,3 +180,36 @@ impl Snapshot for PropagandaCenterBehavior {
     /// `PropagandaCenterBehavior::loadPostProcess`: the base's.
     fn load_post_process(&mut self) {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::xfer_load::XferLoad;
+    use crate::common::xfer_save::XferSave;
+
+    #[test]
+    fn module_data_and_snapshot_round_trip() {
+        let md = PropagandaCenterBehaviorModuleData::default();
+        assert_eq!(md.brainwash_duration, 0);
+
+        let mut p = PropagandaCenterBehavior::new(md.clone());
+        p.brainwashing_subject_id = 77;
+        p.brainwashing_subject_start_frame = 500;
+        p.brainwashed_list = vec![10, 20, 30];
+
+        let mut save = XferSave::new();
+        save.open(b"prop").unwrap();
+        p.xfer(&mut save).unwrap();
+        save.close().unwrap();
+        let bytes = save.take_bytes();
+
+        let mut loaded = PropagandaCenterBehavior::new(md);
+        let mut load = XferLoad::new(bytes);
+        load.open(b"prop").unwrap();
+        loaded.xfer(&mut load).unwrap();
+        loaded.load_post_process();
+        assert_eq!(loaded.brainwashing_subject_id, 77);
+        assert_eq!(loaded.brainwashing_subject_start_frame, 500);
+        assert_eq!(loaded.brainwashed_list, vec![10, 20, 30]);
+    }
+}
