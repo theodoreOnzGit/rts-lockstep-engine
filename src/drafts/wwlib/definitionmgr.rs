@@ -419,6 +419,10 @@ impl DefinitionMgrClass {
                 csave.begin_chunk(chunk_id);
                 if let Some(factory) = SaveLoadSystemClass::find_persist_factory(chunk_id) {
                     (factory.save)(csave, &PersistObject::Definition(definition.clone()));
+                } else {
+                    // Upstream calls definition->Get_Factory().Save() directly even if unregistered (#225).
+                    let objptr = Arc::as_ptr(definition) as usize as u32;
+                    super::persistfactory::simple_persist_factory_save(csave, objptr, |cs| definition.write().unwrap().save(cs));
                 }
                 csave.end_chunk();
             }
@@ -509,6 +513,34 @@ impl DefinitionMgrClass {
 /// `_TheDefinitionMgr`'s constructor / destructor: registration as a sub-system and `Free_Definitions` on exit.
 pub fn definition_mgr_set_id(definition: &DefinitionHandle, id: u32) {
     definition_set_id(definition, id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drafts::wwlib::definition::{DefinitionClass, DefinitionKind};
+
+    #[test]
+    fn save_objects_writes_definition_when_factory_unregistered() {
+        DefinitionMgrClass::free_definitions();
+        let def = DefinitionClass::new_handle(DefinitionKind::Generic {
+            class_id: 0x1000,
+            factory_chunk_id: 0xBEEF_0001,
+            create: |_| None,
+        });
+        definition_mgr_set_id(&def, 0x1001);
+        def.write().unwrap().set_name("unregistered_factory_def");
+        DefinitionMgrClass::register_definition(&def);
+
+        let mut csave = ChunkSaveClass::new();
+        assert!(DefinitionMgrClass::save_objects(&mut csave));
+        let bytes = &csave.file;
+        // Expect outer chunk (0xBEEF_0001) + objptr (0x00100100) + objdata (0x00100101), not an 8-byte empty chunk.
+        assert!(bytes.len() > 8, "Save_Objects wrote empty chunk: {} bytes", bytes.len());
+        assert_eq!(&bytes[0..4], &0xBEEF_0001u32.to_le_bytes());
+
+        DefinitionMgrClass::free_definitions();
+    }
 }
 
 /// Whether two handles are the same definition (`def1 == def2`).
