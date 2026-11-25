@@ -22,7 +22,9 @@
 //! diagonal is flipped for a blend (see the engine module's quirks); that is kept.
 
 use rts_lockstep_engine::client::terrain_height_map::{ExtraBlendCell, TerrainAtlas, TerrainColors, TerrainHeightMap, TerrainVertex};
+use rts_lockstep_engine::client::water::WaterSettings;
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
+use rts_lockstep_engine::common::game_common::CellShroudStatus;
 use rts_lockstep_engine::logic::world::game_logic::World;
 
 /// What the terrain is drawn as.
@@ -93,6 +95,140 @@ pub fn terrain_look<D: LocalDevice>(world: &World, fs: Option<&FileSystem<D>>) -
     }
     let atlas = hm.build_terrain_texture();
     TerrainBuild::Ready(TerrainLook::Textured { vertices: hm.update_vb(), atlas, extra: hm.extra_blend_cells(), colors: hm.terrain_colors() })
+}
+
+/// A standing-water polygon from `world.terrain.triggers()` (`is_water_area()`), triangulated in XY at `height` (#240).
+#[derive(Clone, Debug, PartialEq)]
+pub struct WaterPolygon {
+    pub positions: Vec<[f32; 3]>,
+    pub indices: Vec<u32>,
+}
+
+/// Standing water colour `[r, g, b, a]` from [`WaterSettings`], or a default translucent blue-teal when `Water.ini` is
+/// absent.
+pub fn water_color(settings: &WaterSettings) -> [f32; 4] {
+    if let Some(t) = settings.transparency.as_deref() {
+        let c = &t.get_final_override().data;
+        let a = c.min_water_opacity.clamp(0.25, 0.85);
+        [c.standing_water_color.red.clamp(0.0, 1.0), c.standing_water_color.green.clamp(0.0, 1.0), c.standing_water_color.blue.clamp(0.0, 1.0), a]
+    } else {
+        [0.12, 0.36, 0.52, 0.58]
+    }
+}
+
+/// Ear-clips a simple 2D polygon into triangle indices (handles convex and concave polygons, CW or CCW).
+fn triangulate_polygon_2d(pts: &[[f32; 2]]) -> Vec<u32> {
+    let n = pts.len();
+    if n < 3 {
+        return Vec::new();
+    }
+    // Signed area * 2: positive for CCW, negative for CW.
+    let area2: f32 = (0..n).map(|i| {
+        let a = pts[i];
+        let b = pts[(i + 1) % n];
+        a[0] * b[1] - b[0] * a[1]
+    }).sum();
+    let mut rem: Vec<usize> = if area2 >= 0.0 { (0..n).collect() } else { (0..n).rev().collect() };
+    let mut out = Vec::with_capacity((n - 2) * 3);
+    let cross = |a: [f32; 2], b: [f32; 2], c: [f32; 2]| (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    let in_tri = |p: [f32; 2], a: [f32; 2], b: [f32; 2], c: [f32; 2]| {
+        cross(a, b, p) >= -1e-5 && cross(b, c, p) >= -1e-5 && cross(c, a, p) >= -1e-5
+    };
+    let mut guard = 0usize;
+    while rem.len() > 3 && guard < n * n {
+        guard += 1;
+        let m = rem.len();
+        let mut clipped = false;
+        for i in 0..m {
+            let i0 = rem[(i + m - 1) % m];
+            let i1 = rem[i];
+            let i2 = rem[(i + 1) % m];
+            let (a, b, c) = (pts[i0], pts[i1], pts[i2]);
+            if cross(a, b, c) <= 1e-6 {
+                continue;
+            }
+            let has_inside = rem.iter().any(|&k| k != i0 && k != i1 && k != i2 && in_tri(pts[k], a, b, c));
+            if !has_inside {
+                out.extend_from_slice(&[i0 as u32, i1 as u32, i2 as u32]);
+                rem.remove(i);
+                clipped = true;
+                break;
+            }
+        }
+        if !clipped {
+            break;
+        }
+    }
+    if rem.len() >= 3 {
+        for i in 1..rem.len() - 1 {
+            out.extend_from_slice(&[rem[0] as u32, rem[i] as u32, rem[i + 1] as u32]);
+        }
+    }
+    out
+}
+
+/// Extracts and triangulates every standing-water polygon trigger in `world.terrain` at its current water height (#240).
+pub fn water_polygons(world: &World) -> Vec<WaterPolygon> {
+    let mut out = Vec::new();
+    for trig in world.terrain.triggers() {
+        if !trig.is_water_area() || trig.num_points() < 3 {
+            continue;
+        }
+        let n = trig.num_points() as usize;
+        let pts2d: Vec<[f32; 2]> = (0..n).map(|i| {
+            let p = trig.point(i as i32);
+            [p.x as f32, p.y as f32]
+        }).collect();
+        let indices = triangulate_polygon_2d(&pts2d);
+        if indices.is_empty() {
+            continue;
+        }
+        let z = world
+            .terrain
+            .water_handle_by_name(trig.name())
+            .and_then(|h| world.terrain.water_height_uncounted(Some(h)).ok())
+            .unwrap_or_else(|| trig.point(0).z as f32);
+        let positions = pts2d.into_iter().map(|[x, y]| [x, y, z]).collect();
+        out.push(WaterPolygon { positions, indices });
+    }
+    out
+}
+
+/// An RGBA8 shroud/fog-of-war grid over `world.partition.get_world_extents()` (#240).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShroudGrid {
+    pub width: u32,
+    pub height: u32,
+    pub lo: [f32; 2],
+    pub hi: [f32; 2],
+    pub rgba: Vec<u8>,
+}
+
+/// Reads the partition manager's shroud grid for `local_player` into an RGBA8 overlay texture (`Clear` = alpha 0,
+/// `Fogged` = alpha 130, `Shrouded` = alpha 235). Returns `None` when the grid is empty or `local_player` is `None`.
+pub fn shroud_grid(world: &World, local_player: Option<i32>) -> Option<ShroudGrid> {
+    let player = local_player?;
+    let pm = &world.partition;
+    let nx = pm.get_cell_count_x();
+    let ny = pm.get_cell_count_y();
+    if nx <= 0 || ny <= 0 {
+        return None;
+    }
+    let ext = pm.get_world_extents();
+    let (w, h) = (nx as u32, ny as u32);
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    for y in 0..ny {
+        for x in 0..nx {
+            let a = match pm.get_shroud_status_for_player_at_cell(player, x, y) {
+                CellShroudStatus::Clear => 0u8,
+                CellShroudStatus::Fogged => 130u8,
+                CellShroudStatus::Shrouded => 235u8,
+            };
+            let idx = ((y as u32 * w + x as u32) * 4) as usize;
+            rgba[idx + 3] = a;
+        }
+    }
+    Some(ShroudGrid { width: w, height: h, lo: [ext.lo.x, ext.lo.y], hi: [ext.hi.x, ext.hi.y], rgba })
 }
 
 #[cfg(feature = "app")]
@@ -268,6 +404,89 @@ mod bevy_side {
                 }
             }
         }
+    }
+
+    /// Marks spawned water meshes so dynamic water height changes can replace them without rebuilding terrain (#240).
+    #[derive(Component)]
+    pub struct WaterSurface;
+
+    /// Spawns translucent standing-water polygon meshes (`Ground` + `WaterSurface`) (#240).
+    pub fn spawn_water(
+        commands: &mut Commands,
+        meshes: &mut Assets<Mesh>,
+        materials: &mut Assets<StandardMaterial>,
+        polys: &[WaterPolygon],
+        rgba: [f32; 4],
+    ) {
+        if polys.is_empty() {
+            return;
+        }
+        let mat = materials.add(StandardMaterial {
+            base_color: Color::srgba(rgba[0], rgba[1], rgba[2], rgba[3]),
+            alpha_mode: AlphaMode::Blend,
+            perceptual_roughness: 0.15,
+            reflectance: 0.5,
+            double_sided: true,
+            cull_mode: None,
+            depth_bias: 0.5,
+            ..default()
+        });
+        for p in polys {
+            let positions: Vec<[f32; 3]> = p.positions.iter().map(|&pt| to_bevy(pt)).collect();
+            let normals = vec![[0.0, 1.0, 0.0]; positions.len()];
+            let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+                .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+            mesh.insert_indices(Indices::U32(p.indices.clone()));
+            commands.spawn((Ground, WaterSurface, Mesh3d(meshes.add(mesh)), MeshMaterial3d(mat.clone())));
+        }
+    }
+
+    /// Spawns a terrain-conforming shroud/fog-of-war overlay mesh (`Ground`) over `vertices` and returns its texture
+    /// handle (#240).
+    pub fn spawn_shroud_overlay(
+        commands: &mut Commands,
+        meshes: &mut Assets<Mesh>,
+        materials: &mut Assets<StandardMaterial>,
+        images: &mut Assets<Image>,
+        vertices: &[TerrainVertex],
+        grid: &ShroudGrid,
+    ) -> Option<Handle<Image>> {
+        if vertices.is_empty() {
+            return None;
+        }
+        let span_x = (grid.hi[0] - grid.lo[0]).max(1.0);
+        let span_y = (grid.hi[1] - grid.lo[1]).max(1.0);
+        let uvs: Vec<[f32; 2]> = vertices
+            .iter()
+            .map(|v| [((v.x - grid.lo[0]) / span_x).clamp(0.0, 1.0), ((v.y - grid.lo[1]) / span_y).clamp(0.0, 1.0)])
+            .collect();
+        let indices: Vec<u32> = (0..vertices.len() as u32 / 4).flat_map(|c| TERRAIN_CELL_INDICES.map(|i| i + 4 * c)).collect();
+        let mesh = cell_mesh(vertices.iter().map(pos).collect(), vertices.iter().map(nrm).collect(), Some(uvs), None, indices);
+        let mut image = Image::new(
+            Extent3d { width: grid.width, height: grid.height, depth_or_array_layers: 1 },
+            TextureDimension::D2,
+            grid.rgba.clone(),
+            TextureFormat::Rgba8Unorm,
+            RenderAssetUsages::default(),
+        );
+        image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+            address_mode_u: ImageAddressMode::ClampToEdge,
+            address_mode_v: ImageAddressMode::ClampToEdge,
+            mag_filter: ImageFilterMode::Linear,
+            min_filter: ImageFilterMode::Linear,
+            ..default()
+        });
+        let handle = images.add(image);
+        let mat = materials.add(StandardMaterial {
+            base_color_texture: Some(handle.clone()),
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            depth_bias: 3.0,
+            ..default()
+        });
+        commands.spawn((Ground, Mesh3d(meshes.add(mesh)), MeshMaterial3d(mat)));
+        Some(handle)
     }
 }
 
@@ -573,5 +792,63 @@ mod tests {
         let blended = vertices.chunks_exact(4).filter(|c| c.iter().any(|v| v.alpha != 0)).count();
         println!("terrain: waited {waits} times; {} cells, {blended} blended; atlas {}x{}", vertices.len() / 4, atlas.width, atlas.height);
         assert_eq!((vertices.len() / 4, blended, atlas.height), (29 * 29, 29, 256));
+    }
+
+    #[test]
+    fn water_polygons_triangulate_convex_and_concave_triggers() {
+        use rts_lockstep_engine::common::ascii_string::AsciiString;
+        use rts_lockstep_engine::common::base_type::ICoord3D;
+        use rts_lockstep_engine::logic::terrain_logic::TriggerArea;
+
+        let (mut w, _) = crate::demo::demo_world();
+        // L-shaped concave water polygon at z = 12
+        let pts = vec![
+            ICoord3D { x: 0, y: 0, z: 12 },
+            ICoord3D { x: 100, y: 0, z: 12 },
+            ICoord3D { x: 100, y: 50, z: 12 },
+            ICoord3D { x: 50, y: 50, z: 12 },
+            ICoord3D { x: 50, y: 100, z: 12 },
+            ICoord3D { x: 0, y: 100, z: 12 },
+        ];
+        let water_trig = TriggerArea::new(AsciiString::try_from_bytes(b"Lake").unwrap(), 1, true, pts).unwrap();
+        let non_water = TriggerArea::new(
+            AsciiString::try_from_bytes(b"Zone").unwrap(),
+            2,
+            false,
+            vec![ICoord3D { x: 0, y: 0, z: 0 }, ICoord3D { x: 10, y: 0, z: 0 }, ICoord3D { x: 10, y: 10, z: 0 }],
+        )
+        .unwrap();
+        w.terrain.set_triggers(vec![water_trig, non_water]);
+
+        let polys = water_polygons(&w);
+        assert_eq!(polys.len(), 1);
+        assert_eq!(polys[0].positions.len(), 6);
+        assert_eq!(polys[0].indices.len(), 4 * 3); // 6-gon -> 4 triangles
+        assert!(polys[0].positions.iter().all(|p| p[2] == 12.0));
+        assert_eq!(water_color(&WaterSettings::default()), [0.12, 0.36, 0.52, 0.58]);
+    }
+
+    #[test]
+    fn shroud_grid_reads_clear_fogged_shrouded_and_leaves_crcs_alone() {
+        use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+        use rts_lockstep_engine::logic::world::gate_scenario::{gate_world, run_gate_scenario};
+
+        let w = gate_world();
+        let grid = shroud_grid(&w, Some(0)).expect("grid");
+        assert_eq!((grid.width, grid.height), (11, 11));
+        assert_eq!(grid.rgba.len(), 11 * 11 * 4);
+        assert!(shroud_grid(&w, None).is_none());
+
+        let frames = 30;
+        let plain = run_gate_scenario(frames);
+        let mut gw = gate_world();
+        let mut crcs = Vec::new();
+        for _ in 0..frames {
+            gw.logic_update().expect("a frame");
+            let _ = water_polygons(&gw);
+            let _ = shroud_grid(&gw, Some(0));
+            crcs.push(gw.logic_crc(CRC_RECALC, None).expect("the CRC"));
+        }
+        assert_eq!(crcs, plain);
     }
 }

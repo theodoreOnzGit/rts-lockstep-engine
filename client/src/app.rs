@@ -76,7 +76,9 @@ use crate::demo::demo_world;
 use crate::drawables::{Art, WorldDrawables};
 use rts_lockstep_engine::common::file_system::LocalDevice;
 use crate::input::Controls;
-use crate::terrain::{spawn_terrain, terrain_look, Ground, TerrainBuild};
+use crate::terrain::{
+    shroud_grid, spawn_shroud_overlay, spawn_terrain, spawn_water, terrain_look, water_color, water_polygons, Ground, TerrainBuild, TerrainLook,
+};
 use crate::view::{interpolate, snapshot, to_bevy, Shape, Snapshot};
 
 /// The logic's frame rate (`LOGICFRAMES_PER_SECOND`).
@@ -461,7 +463,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .insert_resource(KeyboardScroll(1.0))
         .insert_non_send(Campaigns::default())
         .init_resource::<CampaignAction>()
-        .insert_resource(TerrainState { pending: true, look: "none" })
+        .insert_resource(TerrainState { pending: true, look: "none", shroud_image: None, shroud_dirty: false })
         .init_resource::<Drawn>()
         .init_resource::<Pointer>()
         .init_resource::<UiBar>()
@@ -479,6 +481,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         )
         .add_systems(Update, (radius_decal, logic_decals, world_tooltip).chain().after(show_cursor))
         .add_systems(Update, (letterbox_bars, cinematic_text, military_subtitle).chain().after(world_tooltip))
+        .add_systems(Update, update_shroud_overlay.after(update_terrain))
         .run();
 }
 
@@ -489,6 +492,10 @@ struct TerrainState {
     pending: bool,
     /// What it was drawn as (`TerrainLook::name`), for the HUD.
     look: &'static str,
+    /// (#240) The shroud overlay's texture and its last uploaded bytes.
+    shroud_image: Option<(Handle<Image>, Vec<u8>)>,
+    /// (#240) Set when a logic frame advances.
+    shroud_dirty: bool,
 }
 
 /// The view's centre and size: the map's extent, or a 400-unit square without a map.
@@ -528,6 +535,17 @@ fn update_terrain(
     }
     let width = world.terrain.logic_height_map().map_or(0, |m| m.x_extent());
     spawn_terrain(&mut commands, &mut meshes, &mut materials, &mut images, &look, width);
+    // #240: standing water polygons and terrain shroud (fog of war) overlay
+    let polys = water_polygons(world);
+    spawn_water(&mut commands, &mut meshes, &mut materials, &polys, water_color(&game.controls.radar.water));
+    let verts = match &look {
+        TerrainLook::Shaded { vertices } | TerrainLook::Textured { vertices, .. } => Some(vertices.as_slice()),
+        TerrainLook::Flat => None,
+    };
+    state.shroud_image = verts
+        .and_then(|v| shroud_grid(world, game.models.drawables.local_player_index).map(|g| (v, g)))
+        .and_then(|(v, g)| spawn_shroud_overlay(&mut commands, &mut meshes, &mut materials, &mut images, v, &g).map(|h| (h, g.rgba)));
+    state.shroud_dirty = false;
     info!("terrain: {}", look.name());
     // #35: the radar's terrain from the tiles' colours (`W3DRadar::buildTerrainTexture`'s `getTerrainColorAt`)
     let g = &mut *game;
@@ -636,7 +654,26 @@ fn replay_fast_forward(game: NonSend<Game>, mut fixed: ResMut<Time<Fixed>>) {
     }
 }
 
-fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Res<Time>, windows: Query<&Window>) {
+fn update_shroud_overlay(game: NonSend<Game>, mut state: ResMut<TerrainState>, mut images: ResMut<Assets<Image>>) {
+    if !state.shroud_dirty {
+        return;
+    }
+    state.shroud_dirty = false;
+    let Some((handle, prev)) = state.shroud_image.as_mut() else {
+        return;
+    };
+    let Some(grid) = shroud_grid(&game.controls.client.world, game.models.drawables.local_player_index) else {
+        return;
+    };
+    if grid.rgba != *prev {
+        if let Some(mut img) = images.get_mut(handle) {
+            img.data = Some(grid.rgba.clone());
+        }
+        *prev = grid.rgba;
+    }
+}
+
+fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, mut terrain: ResMut<TerrainState>, time: Res<Time>, windows: Query<&Window>) {
     // (#137) `ControlBar::update`'s animate lines, once a client frame at `timeGetTime()`: the client's frame is this
     // fixed step (30 Hz, the rate upstream's frame limiter holds GameEngine::update to; raised with the logic in a
     // replay's fast forward, as upstream's unlimited frames are), and upstream's client updates while the game is paused,
@@ -655,6 +692,7 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Re
     // (`GameEngine::update`'s logic half: the message stream's commands, then the frame)
     match g.controls.world().engine_update() {
         Ok(()) => {
+            terrain.shroud_dirty = true;
             // (#4: the frame, for the page's checks)
             crate::saves::page::set_frame(g.controls.client.world.frame());
             g.prev = std::mem::take(&mut g.cur);
