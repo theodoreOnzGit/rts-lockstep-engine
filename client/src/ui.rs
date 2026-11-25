@@ -231,6 +231,8 @@ pub struct GameUi {
     pub bar_colors: ControlBarColors,
     /// (#145) `m_isObserverCommandBar`, as [`GameUi::set_control_bar_scheme_by_player`] last set it.
     pub is_observer_command_bar: bool,
+    /// (#197) Client-side override for `ControlBar::updateSlotExitImage` (`CommandMarkerImage` from the active scheme).
+    pub slot_exit_image: Option<Vec<u8>>,
 }
 
 /// (#119) [`GenStarHost`] on the bar: the local player and its points, the InGameUI's input and the logic's frame as
@@ -534,6 +536,7 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         animate_now: 0,
         bar_colors: ControlBarColors::new(),
         is_observer_command_bar: false,
+        slot_exit_image: None,
         images,
         wm,
         schemes,
@@ -1332,6 +1335,26 @@ impl GameUi {
         rts_lockstep_engine::client::control_bar_scheme::control_bar_set_control_bar_scheme_by_player(player_active, &mut h);
     }
 
+    /// (#194) `ControlBar::setControlBarSchemeByPlayerTemplate(template)` (ControlBar.cpp:2795),
+    /// called when the local player dies and switches to the observer template.
+    pub fn set_control_bar_scheme_by_player_template(&mut self, side: &[u8], template: Option<usize>, observer_template: Option<usize>, find: impl Fn(&[u8]) -> Option<(usize, CommandButton)>) {
+        let mut h = SchemeByPlayerHost { ui: self, side, multiplayer: false, find, game_mode: 0, game_info_multi_player: false };
+        rts_lockstep_engine::client::control_bar_scheme::control_bar_set_control_bar_scheme_by_player_template(template, observer_template, &mut h);
+    }
+
+    /// (#197) Client-side override for `ControlBar::updateSlotExitImage` (ControlBar.cpp:3101):
+    /// `Command_StructureExit`, `Command_TransportExit`, `Command_BunkerExit` and `Command_FireBaseExit`
+    /// show the current scheme's `CommandMarkerImage` without mutating the logic's `CommandButton`.
+    pub fn apply_slot_exit_images<'a>(&self, state: &mut BarState, name_of: impl Fn(usize) -> Option<&'a [u8]>) {
+        const EXIT_COMMANDS: &[&[u8]] = &[b"Command_StructureExit", b"Command_TransportExit", b"Command_BunkerExit", b"Command_FireBaseExit"];
+        let Some(img) = &self.slot_exit_image else { return };
+        for slot in state.commands.iter_mut().flatten() {
+            if name_of(slot.button).is_some_and(|n| EXIT_COMMANDS.contains(&n)) {
+                slot.image = Some(img.clone());
+            }
+        }
+    }
+
     /// (#146) The command button the bar's communicator holds (its place in the World's list), as `setControlCommand`
     /// gave it.
     pub fn communicator_command(&self) -> Option<usize> {
@@ -1618,6 +1641,7 @@ impl GameUi {
         let scheme = &self.schemes.schemes[c];
         let queue_image = scheme.image("QueueButtonImage", &self.images).map(|i| i.name.clone());
         let hud_image = scheme.image("RightHUDImage", &self.images).map(|i| i.name.clone());
+        self.slot_exit_image = scheme.image("CommandMarkerImage", &self.images).map(|i| i.name.clone());
         update_build_queue_disabled_images(&mut self.wm.tree, &self.queue_windows, queue_image);
         let hud = self.wm.tree.find_by_name(b"ControlBar.wnd:RightHUD");
         update_right_hud_image(&mut self.wm.tree, hud, hud_image);
@@ -3005,5 +3029,50 @@ mod tests {
         assert!(!status_line_narrow(1024.0) && !status_line_narrow(1280.0));
         assert!(8.0 + STATUS_NARROW_FONT_PX * 1.2 < 36.0);
         assert!(radar_screen_rect(None, None, (844.0, 390.0))[1] >= 36.0);
+    }
+
+    #[test]
+    fn slot_exit_image_and_player_template_switch_work() {
+        let mut d = MemoryDevice::default();
+        let scheme = b"ControlBarScheme Default\n  ScreenCreationRes = X:800 Y:600\n  Side = Observer\n  CommandMarkerImage = ImgPortrait\nEnd\nControlBarScheme America\n  ScreenCreationRes = X:800 Y:600\n  Side = America\n  CommandMarkerImage = ImgButton\nEnd\n";
+        for (p, b) in synthetic_ui_files() {
+            let b = if p == b"Data\\INI\\ControlBarScheme.ini" { scheme.to_vec() } else { b };
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else {
+            panic!("synthetic bar")
+        };
+        ui.set_control_bar_scheme_by_player(b"America", false, true, 0, false, |_| None);
+        assert_eq!(ui.slot_exit_image.as_deref(), Some(&b"ImgButton"[..]));
+        assert!(!ui.is_observer_command_bar);
+
+        let mut state = BarState::default();
+        let slot = |button: usize, img: &[u8]| CommandSlot {
+            button,
+            image: Some(img.to_vec()),
+            label: Vec::new(),
+            description: Vec::new(),
+            availability: rts_lockstep_engine::client::control_bar_command::CommandAvailability::Available,
+            clock: None,
+            enabled: true,
+            not_ready: false,
+            always_color: false,
+            check_like: false,
+            checked: false,
+        };
+        state.commands = vec![Some(slot(0, b"OrigExit")), Some(slot(1, b"OrigBuild"))];
+        ui.apply_slot_exit_images(&mut state, |i| match i {
+            0 => Some(b"Command_StructureExit"),
+            1 => Some(b"Command_BuildTank"),
+            _ => None,
+        });
+        assert_eq!(state.commands[0].as_ref().unwrap().image.as_deref(), Some(&b"ImgButton"[..]));
+        assert_eq!(state.commands[1].as_ref().unwrap().image.as_deref(), Some(&b"OrigBuild"[..]));
+
+        ui.set_control_bar_scheme_by_player_template(b"Observer", Some(0), Some(0), |_| None);
+        assert!(ui.is_observer_command_bar);
+        assert_eq!(ui.slot_exit_image.as_deref(), Some(&b"ImgPortrait"[..]));
     }
 }

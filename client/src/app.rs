@@ -777,6 +777,37 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, mut terr
                 bar.gen_star_events(&events, local, points, c.ui.input_enabled());
                 let triggers = radar.feedback.iter().filter(|f| matches!(f, rts_lockstep_engine::client::radar::RadarFeedback::AttackGlow)).count();
                 bar.radar_attack_glow_frame(triggers);
+                // (#194) local player death / observer switch: apply ControlBarSchemeByPlayer / ControlBarSchemeByPlayerTemplate
+                for e in &events {
+                    use rts_lockstep_engine::logic::client_event::ClientEvent;
+                    use rts_lockstep_engine::logic::world::player_ops::PlayerClientEvent;
+                    match e {
+                        ClientEvent::Player(PlayerClientEvent::ControlBarSchemeByPlayer { player_index }) if *player_index as i32 == local => {
+                            let client = &g.controls.client;
+                            let side = client.world.players.get_nth(local).map(|p| p.side.clone()).unwrap_or_default();
+                            let multiplayer = client.world.recorder_is_multiplayer().unwrap_or(false);
+                            let active = client.world.players.get_nth(local).is_some_and(|p| !p.observer && !p.is_player_dead);
+                            let find = |name: &[u8]| {
+                                let i = client.world.cuts.command_buttons.iter().position(|b| b.name == name)?;
+                                rts_lockstep_engine::client::control_bar_command::ControlBarStateHost::button(client, i).map(|b| (i, b))
+                            };
+                            bar.set_control_bar_scheme_by_player(&side, multiplayer, active, client.world.cuts.game_loop.game_mode, multiplayer, find);
+                        }
+                        ClientEvent::Player(PlayerClientEvent::ControlBarSchemeByPlayerTemplate { template }) => {
+                            let client = &g.controls.client;
+                            let templates = client.world.statics.player_template_store.templates();
+                            let template_idx = template.map(|i| i as usize);
+                            let side = template_idx.and_then(|i| templates.get(i)).map(|t| t.side().to_vec()).unwrap_or_default();
+                            let observer_template = templates.iter().position(|t| client.world.names.key_to_name(t.name_key()) == b"FactionObserver");
+                            let find = |name: &[u8]| {
+                                let i = client.world.cuts.command_buttons.iter().position(|b| b.name == name)?;
+                                rts_lockstep_engine::client::control_bar_command::ControlBarStateHost::button(client, i).map(|b| (i, b))
+                            };
+                            bar.set_control_bar_scheme_by_player_template(&side, template_idx, observer_template, find);
+                        }
+                        _ => {}
+                    }
+                }
             }
             let heard: Vec<_> = events.iter().enumerate().filter(|(i, _)| !radar.refused.contains(i)).map(|(_, e)| e.clone()).collect();
             let radar_sounds = std::mem::take(&mut g.radar_event_sounds);
@@ -2764,6 +2795,9 @@ fn game_ui(
     let queue = sel.map(|o| c.client.production_queue(o)).unwrap_or_default();
     let (money, power) = c.client.money_and_power();
     let mut state = crate::ui::GameUi::bar_state(sel, &mut c.client, queue, money, power);
+    if let Some(ui) = g.ui.as_ref() {
+        ui.apply_slot_exit_images(&mut state, |i| c.client.world.cuts.command_buttons.get(i).map(|b| b.name.as_slice()));
+    }
     // (#195) what `W3DPowerDraw` and `W3DCommandBarGenExpDraw` read: `TheGlobalData`'s power bar values and the local
     // player's experience, from the World (read only)
     state.power_globals = c.client.power_bar_globals();
