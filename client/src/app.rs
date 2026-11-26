@@ -3208,13 +3208,20 @@ struct TooltipPanel(Vec<String>);
 /// `GameUi::shown_popup`, both tested in `ui`), as a
 /// panel just above the control bar, no wider than the screen less its 8-pixel margins (a phone's too). Rebuilt when its
 /// lines change; none while nothing is shown.
-fn tooltip_panel(mut commands: Commands, game: NonSend<Game>, mut panels: Query<(Entity, &mut TooltipPanel, &mut Node)>, windows: Query<&Window>, ui_bar: Res<UiBar>) {
+fn tooltip_panel(mut commands: Commands, mut game: NonSendMut<Game>, mut panels: Query<(Entity, &mut TooltipPanel, &mut Node)>, windows: Query<&Window>, ui_bar: Res<UiBar>) {
     // (#144) a window's popup (the money, power and general's experience windows) shows the text it was filled with
     let lines = match game.ui.as_ref().and_then(|u| u.shown_popup()) {
         Some((Some(b), _)) => game.tooltip_lines.iter().find(|(button, _)| *button == b).map(|(_, l)| l.clone()),
         Some((None, Some(_))) => game.window_popup_lines.clone(),
         _ => None,
     };
+    if let Some(ui) = game.ui.as_mut().filter(|u| u.popup_root.is_some()) {
+        ui.set_popup_lines(lines.as_deref());
+        if let Some((e, _, _)) = panels.iter_mut().next() {
+            commands.entity(e).despawn();
+        }
+        return;
+    }
     let ww = windows.single().map_or(800.0, |w| w.width());
     let width = (ww - 16.0).clamp(120.0, 420.0);
     let mut existing = panels.iter_mut().next();

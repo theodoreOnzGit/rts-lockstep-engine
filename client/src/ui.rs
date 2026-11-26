@@ -233,6 +233,8 @@ pub struct GameUi {
     pub is_observer_command_bar: bool,
     /// (#197) Client-side override for `ControlBar::updateSlotExitImage` (`CommandMarkerImage` from the active scheme).
     pub slot_exit_image: Option<Vec<u8>>,
+    /// (#198) Root window of `ControlBarPopupDescription.wnd` when present, drawn via `W3DCommandBarHelpPopupDraw`.
+    pub popup_root: Option<WinId>,
 }
 
 /// (#119) [`GenStarHost`] on the bar: the local player and its points, the InGameUI's input and the logic's frame as
@@ -489,6 +491,18 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
     if let Err(e) = wm.win_create_from_script(&mut WindowScript::new(), b"ControlBar.wnd", &wnd, &mut host, &mut NoGuiHost) {
         return UiBuild::Missing(format!("ControlBar.wnd did not read: {e:?}"));
     }
+    let mut popup_root = None;
+    if let Some(popup_wnd) = reads.open(b"Window\\ControlBarPopupDescription.wnd") {
+        let before = wm.tree.windows.len();
+        if wm.win_create_from_script(&mut WindowScript::new(), b"ControlBarPopupDescription.wnd", &popup_wnd, &mut host, &mut NoGuiHost).is_ok() {
+            popup_root = (before..wm.tree.windows.len()).find(|&i| wm.tree.windows[i].parent.is_none());
+            if let Some(root) = popup_root {
+                wm.win_hide(root, true);
+            }
+        }
+    } else if reads.waiting.get() {
+        return UiBuild::Waiting;
+    }
     schemes.set_control_bar_scheme_by_side(side, false, &mut wm.tree, LAYOUT, &images);
     let find = |n: String| wm.tree.find_by_name(n.as_bytes());
     let ui = GameUi {
@@ -537,6 +551,7 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         bar_colors: ControlBarColors::new(),
         is_observer_command_bar: false,
         slot_exit_image: None,
+        popup_root,
         images,
         wm,
         schemes,
@@ -1283,6 +1298,32 @@ impl GameUi {
         } else {
             self.popup
         }
+    }
+
+    /// (#198) Populate `ControlBarPopupDescription.wnd` (`StaticTextName`, `StaticTextCost`, `StaticTextDescription`)
+    /// and show or hide its root window when `ControlBarPopupDescription.wnd` was loaded.
+    pub fn set_popup_lines(&mut self, lines: Option<&[String]>) {
+        let Some(root) = self.popup_root else { return };
+        let Some(lines) = lines.filter(|l| !l.is_empty()) else {
+            self.wm.win_hide(root, true);
+            return;
+        };
+        let to_u16 = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
+        let name = to_u16(lines.first().map_or("", String::as_str));
+        let (cost, desc) = match lines.len() {
+            0 | 1 => (Vec::new(), Vec::new()),
+            2 => (Vec::new(), to_u16(&lines[1])),
+            _ => (to_u16(&lines[1]), to_u16(&lines[2..].join("\n"))),
+        };
+        for (win_name, text) in [
+            (&b"ControlBarPopupDescription.wnd:StaticTextName"[..], &name),
+            (&b"ControlBarPopupDescription.wnd:StaticTextCost"[..], &cost),
+            (&b"ControlBarPopupDescription.wnd:StaticTextDescription"[..], &desc),
+        ] {
+            let w = self.wm.tree.find_by_name(win_name);
+            gadget::static_text_set_text(&mut self.wm, &mut NoGuiHost, w, text);
+        }
+        self.wm.win_hide(root, false);
     }
 
     /// (#144) `ControlBar::init`'s tooltip callbacks (ControlBar.cpp:1190-1240,
@@ -3074,5 +3115,30 @@ mod tests {
         ui.set_control_bar_scheme_by_player_template(b"Observer", Some(0), Some(0), |_| None);
         assert!(ui.is_observer_command_bar);
         assert_eq!(ui.slot_exit_image.as_deref(), Some(&b"ImgPortrait"[..]));
+    }
+
+    #[test]
+    fn control_bar_popup_description_wnd_populates_and_draws() {
+        let mut d = MemoryDevice::default();
+        for (p, b) in synthetic_ui_files() {
+            d.insert(p, b);
+        }
+        let popup_wnd = b"FILE_VERSION = 2;\nSTARTLAYOUTBLOCK\n  LAYOUTINIT = [None];\n  LAYOUTUPDATE = [None];\n  LAYOUTSHUTDOWN = [None];\nENDLAYOUTBLOCK\nWINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 200 200, BOTTOMRIGHT: 500 340, CREATIONRESOLUTION: 800 600;\n  NAME = \"ControlBarPopupDescription.wnd:PopupParent\";\n  STATUS = ENABLED;\n  STYLE = USER;\n  DRAWCALLBACK = \"W3DCommandBarHelpPopupDraw\";\n  CHILD\n  WINDOW\n    WINDOWTYPE = STATICTEXT;\n    SCREENRECT = UPPERLEFT: 208 208, BOTTOMRIGHT: 492 228, CREATIONRESOLUTION: 800 600;\n    NAME = \"ControlBarPopupDescription.wnd:StaticTextName\";\n    STATUS = ENABLED;\n    STYLE = STATICTEXT;\n  END\n  WINDOW\n    WINDOWTYPE = STATICTEXT;\n    SCREENRECT = UPPERLEFT: 208 230, BOTTOMRIGHT: 492 248, CREATIONRESOLUTION: 800 600;\n    NAME = \"ControlBarPopupDescription.wnd:StaticTextCost\";\n    STATUS = ENABLED;\n    STYLE = STATICTEXT;\n  END\n  WINDOW\n    WINDOWTYPE = STATICTEXT;\n    SCREENRECT = UPPERLEFT: 208 252, BOTTOMRIGHT: 492 332, CREATIONRESOLUTION: 800 600;\n    NAME = \"ControlBarPopupDescription.wnd:StaticTextDescription\";\n    STATUS = ENABLED;\n    STYLE = STATICTEXT;\n  END\n  ENDALLCHILDREN\nEND\n";
+        d.insert(b"Window\\ControlBarPopupDescription.wnd".as_slice(), popup_wnd.to_vec());
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else {
+            panic!("synthetic bar with popup wnd")
+        };
+        let root = ui.popup_root.expect("popup_root");
+        assert!(ui.wm.tree.windows[root].is_hidden());
+        ui.set_popup_lines(Some(&["Crusader Tank".into(), "$900".into(), "Heavy armor.".into()]));
+        assert!(!ui.wm.tree.windows[root].is_hidden());
+        let name_w = ui.wm.tree.find_by_name(b"ControlBarPopupDescription.wnd:StaticTextName").unwrap();
+        assert_eq!(String::from_utf16_lossy(&gadget::static_text_get_text(&ui.wm, name_w)), "Crusader Tank");
+        let quads = ui.frame(&BarState::default());
+        assert!(quads.iter().any(|q| q.text.as_deref() == Some("Crusader Tank")));
+        ui.set_popup_lines(None);
+        assert!(ui.wm.tree.windows[root].is_hidden());
     }
 }
