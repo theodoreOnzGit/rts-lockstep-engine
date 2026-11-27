@@ -32,6 +32,7 @@
 //! - [`view`]: the view model. What is drawn, read from the `World`; plain Rust, no Bevy.
 //! - `model` (feature `app`): W3D models drawn with Bevy, and the model viewer's scene (#10, step 4).
 //! - `app` (feature `app`, on by default): the Bevy application.
+//! - `bink` (feature `bink`, off by default): the Bink movie player, `BinkVideoPlayer.cpp` on a pure-Rust decoder (#241).
 
 // #40, #127: `clippy.toml` (repository root) disallows `f32`/`f64` maths methods; call `ww::wwmath::sin(x)` etc.
 #![deny(clippy::disallowed_methods)]
@@ -57,6 +58,9 @@ pub mod view;
 /// UNTESTED DRAFTS (#202): not compiled, not tested. Behind the `untested-drafts` feature, off by default.
 #[cfg(feature = "untested-drafts")]
 pub mod drafts;
+
+#[cfg(feature = "bink")]
+pub mod bink;
 
 #[cfg(feature = "app")]
 pub mod app;

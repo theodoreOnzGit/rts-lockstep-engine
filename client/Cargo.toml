@@ -13,6 +13,10 @@ default = ["app"]
 app = ["dep:bevy"]
 # Untested drafts (#202), in `src/drafts/`: written without compiling or testing. Off by default.
 untested-drafts = ["app", "rts-lockstep-engine/untested-drafts"]
+# `bink` (#241): play the game's Bink movies (`src/bink.rs`) with `infinitier_bik_decoder`, a pure-Rust port of FFmpeg's
+# open Bink decoder (RAD's SDK was never released). Off by default. Needs no Bevy, so its tests run with
+# `--no-default-features --features bink`.
+bink = ["dep:infinitier_bik_decoder"]
 
 [dependencies]
 # The game logic (phase 1). The client only reads it and sends it the game's own commands (see `src/lib.rs`).
@@ -20,6 +24,9 @@ rts-lockstep-engine = { path = ".." }
 # PETIR at the logic crate's exact version (no new crate: the logic crate already builds it), for the drafts' C `double`
 # maths (`(Real)cos(double)` and the rest) in `src/drafts/terrain/double_math.rs` (#214).
 petir = { version = "=0.0.1", default-features = false }
+# The Bink decoder (#241), only with the `bink` feature: GPL-3.0-or-later, at an exact version. Builds natively and for
+# wasm32 on rustc 1.97.1 (checked 2026-11-27).
+infinitier_bik_decoder = { version = "=0.1.0", optional = true }
 
 # Bevy at an exact version, default features off: the renderer (core pipeline, PBR), UI, windowing, input, assets, logging.
 # `webgl2` is the web backend (WebGL2 runs in every current browser; a WebGPU build is a later step: Bevy builds one web
