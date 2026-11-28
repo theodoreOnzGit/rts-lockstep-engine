@@ -18,4 +18,8 @@
 #ifndef PI
 #define PI 3.14159265359f
 #endif
+/* #242: upstream's sscanf reads through a host-independent stand-in (glibc 2.39's %f), so the C++
+** answers do not move with the host's C library. */
+#include "host_scanf.h"
+#define sscanf Host_independent_sscanf
 #endif

@@ -79,7 +79,11 @@
 //! `scanInt`, `scanUnsignedInt` and `scanReal` are `sscanf` with `%d`, `%u`
 //! and `%f`. They are reproduced: leading C white space, an optional sign,
 //! the longest numeric prefix (`"12abc"` is 12, `"1.5.3"` is 1.5, `"1e"` is
-//! 1, as glibc reads it), and `%u` negates in unsigned arithmetic (`"-1"` is
+//! 1, ~~as glibc reads it~~ **Corrected 2026-11-28 (#242):** as glibc 2.39
+//! and earlier read it; later glibc follows the C standard and fails the
+//! match, so the differential tests read upstream's `sscanf` through
+//! `differential/shim/host_scanf.h`, glibc 2.39's reading on every host; how
+//! MSVC's runtime reads it is not verified), and `%u` negates in unsigned arithmetic (`"-1"` is
 //! 4294967295). `%f` rounds correctly to `f32` (as glibc's `strtof`; the
 //! original MSVC runtime of the shipped game went through `double`, so its
 //! result can differ in the last bit; not verified here). Where the C
